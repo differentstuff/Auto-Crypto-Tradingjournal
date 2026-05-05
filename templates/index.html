@@ -165,6 +165,32 @@ select:focus,input:focus{border-color:var(--accent)}
 .call-list li:last-child{border-bottom:none}
 .rr-pill{display:inline-block;padding:4px 12px;border-radius:20px;font-weight:700;font-size:.85rem;background:rgba(108,99,255,.15);color:var(--accent);margin-left:8px}
 .call-history-note{font-size:.75rem;color:var(--muted);padding:8px 12px;background:var(--bg3);border-radius:6px;margin-top:10px}
+.saved-calls-list{margin-top:28px}
+.saved-call-row{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.saved-call-row.matched{border-left:3px solid var(--accent3)}
+.saved-call-row.dismissed{opacity:.5}
+.saved-call-row.closed{opacity:.4}
+.call-status-chip{padding:2px 10px;border-radius:20px;font-size:.68rem;font-weight:700;text-transform:uppercase}
+.chip-saved{background:rgba(108,99,255,.15);color:var(--accent)}
+.chip-matched{background:rgba(38,217,107,.15);color:var(--accent3)}
+.chip-dismissed{background:rgba(121,134,203,.1);color:var(--muted)}
+.chip-closed{background:rgba(45,50,80,.5);color:var(--muted)}
+/* Match banner on live trade cards */
+.match-banner{background:rgba(255,179,0,.08);border-top:1px solid rgba(255,179,0,.3);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.match-banner-icon{font-size:1.2rem}
+.match-banner-text{flex:1;font-size:.82rem;line-height:1.5}
+.match-banner-text strong{color:var(--yellow);display:block;margin-bottom:2px}
+/* Call targets panel (shown on matched live positions) */
+.call-targets-panel{background:var(--bg3);border-top:1px solid var(--border);padding:16px 20px}
+.call-targets-panel h4{font-size:.72rem;text-transform:uppercase;color:var(--accent);font-weight:700;letter-spacing:.06em;margin-bottom:12px}
+.targets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+.target-cell{background:var(--bg2);border-radius:6px;padding:10px 12px;border:1px solid var(--border)}
+.target-cell-label{font-size:.67rem;color:var(--muted);text-transform:uppercase;margin-bottom:3px}
+.target-cell-price{font-size:.95rem;font-weight:700}
+.target-cell-dist{font-size:.72rem;margin-top:2px}
+.target-tp{border-color:rgba(38,217,107,.3)}
+.target-sl{border-color:rgba(239,83,80,.3)}
+.candle-sl-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.3);border-radius:6px;font-size:.75rem;color:var(--yellow);margin-top:8px}
 
 /* ── Live Trades ──────────────────────────────────────────────────────────────── */
 .live-header{display:flex;align-items:center;gap:14px;margin-bottom:20px}
@@ -553,6 +579,14 @@ select:focus,input:focus{border-color:var(--accent)}
         </div>
       </div>
 
+      <!-- Saved calls list (full width, below the grid) -->
+      <div class="saved-calls-list" id="saved-calls-section" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="page-subtitle" style="margin:0">Saved Call Analyses</div>
+        </div>
+        <div id="saved-calls-list"></div>
+      </div>
+
       <!-- Loading overlay inside result panel -->
       <div id="call-loading" style="display:none;text-align:center;padding:48px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-top:20px">
         <div class="spinner"></div>
@@ -577,6 +611,9 @@ select:focus,input:focus{border-color:var(--accent)}
           <button class="btn btn-secondary btn-sm" onclick="loadLiveTrades()">⟳ Refresh</button>
         </div>
       </div>
+
+      <!-- Pending match confirmations -->
+      <div id="match-confirmations"></div>
 
       <!-- Summary bar -->
       <div class="kpi-grid" style="max-width:800px;margin-bottom:24px" id="trades-kpi-grid"></div>
@@ -1499,6 +1536,91 @@ function renderCallResult(d) {
     ${d._input_tokens} in / ${d._output_tokens} out tokens · claude-sonnet-4-6</div>`;
 
   result.innerHTML = html;
+
+  // Append Save button after result renders
+  result.insertAdjacentHTML('beforeend', `
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center">
+      <button class="btn btn-primary" id="call-save-btn" onclick="saveCurrentCall()">💾 Save This Call</button>
+      <span id="call-save-msg" style="font-size:.8rem;color:var(--muted)"></span>
+    </div>`);
+}
+
+// Store last analysis result for saving
+let _lastCallResult = null;
+const _origRenderCallResult = renderCallResult;
+renderCallResult = function(d) { _lastCallResult = d; _origRenderCallResult(d); };
+
+async function saveCurrentCall() {
+  if (!_lastCallResult) return;
+  const btn = document.getElementById('call-save-btn');
+  const msg = document.getElementById('call-save-msg');
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving…';
+  try {
+    const res = await api('/api/calls/save', 'POST', _lastCallResult);
+    if (res.ok) {
+      btn.textContent = '✅ Saved';
+      msg.textContent = `Saved as call #${res.data.id} — visible in Saved Calls below`;
+      loadSavedCalls();
+    } else {
+      btn.textContent = '💾 Save This Call';
+      btn.disabled = false;
+      msg.textContent = '❌ ' + res.error;
+    }
+  } catch(e) {
+    btn.textContent = '💾 Save This Call';
+    btn.disabled = false;
+    msg.textContent = '❌ ' + e.message;
+  }
+}
+
+async function loadSavedCalls() {
+  const res = await api('/api/calls/saved');
+  if (!res.ok) return;
+  const calls = res.data;
+  const section = document.getElementById('saved-calls-section');
+  const list    = document.getElementById('saved-calls-list');
+  if (!calls.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+
+  list.innerHTML = calls.map(c => {
+    const chipCls = { saved:'chip-saved', matched:'chip-matched',
+                      dismissed:'chip-dismissed', closed:'chip-closed' }[c.status] || 'chip-saved';
+    return `
+    <div class="saved-call-row ${c.status}" id="saved-row-${c.id}">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <strong>${c.symbol} ${c.direction}</strong>
+          <span class="call-status-chip ${chipCls}">${c.status}</span>
+          ${c.setup_score ? `<span style="font-size:.75rem;color:var(--muted)">${c.setup_score}/10 ${c.setup_label||''}</span>` : ''}
+          ${c.rr_ratio ? `<span class="rr-pill" style="font-size:.72rem">${c.rr_ratio}</span>` : ''}
+        </div>
+        <div style="font-size:.75rem;color:var(--muted);margin-top:3px">
+          ${c.trade_type||''} ·
+          SL: <span style="color:var(--red)">${c.sl_price||'—'}</span> ·
+          TP1: <span style="color:var(--accent3)">${c.tp1_price||'—'}</span> ·
+          TP2: <span style="color:var(--accent3)">${c.tp2_price||'—'}</span> ·
+          ${c.total_notional ? c.total_notional + ' USDT notional' : ''} ·
+          Saved: ${(c.created_at||'').slice(0,16)}
+          ${c.matched_at ? ' · Matched: ' + c.matched_at.slice(0,16) : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        ${c.status === 'matched' ? `<button class="btn btn-secondary btn-sm" onclick="closeCall(${c.id})">Mark Closed</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deleteCall(${c.id})">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteCall(id) {
+  if (!confirm('Delete this saved call?')) return;
+  await api('/api/calls/' + id, 'DELETE');
+  loadSavedCalls();
+}
+async function closeCall(id) {
+  await api('/api/calls/' + id + '/close', 'POST');
+  loadSavedCalls();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1508,15 +1630,44 @@ let liveTradesInterval  = null;
 let livePositionsCache  = [];
 let liveAnalysisCache   = {};   // key: "SYMBOL_direction" → analysis result dict
 let liveOpenPanels      = new Set();  // indices of cards with open AI panels
+let liveCallMatches     = {};   // key: "SYMBOL_direction" → saved call data
 
 async function loadLiveTrades() {
   document.getElementById('trades-refresh-label').textContent = 'Refreshing…';
   try {
-    const res = await api('/api/live/positions');
-    if (!res.ok) throw new Error(res.error);
-    livePositionsCache = res.data.positions || [];
-    const eq = res.data.equity || {};
+    // Fetch positions and match checks in parallel
+    const [posRes, matchRes] = await Promise.all([
+      api('/api/live/positions'),
+      api('/api/calls/check-matches'),
+    ]);
+    if (!posRes.ok) throw new Error(posRes.error);
+
+    livePositionsCache = posRes.data.positions || [];
+    const eq = posRes.data.equity || {};
+
+    // Build match map: key = "SYMBOL_direction" → call
+    // Only store 'saved' status matches (need confirmation)
+    const pendingMatches = {};
+    const confirmedMatches = {};
+    if (matchRes.ok) {
+      (matchRes.data || []).forEach(m => {
+        const key = m.call.symbol + '_' + m.call.direction;
+        if (m.call.status === 'matched') confirmedMatches[key] = m.call;
+        else                             pendingMatches[key]   = m.call;
+      });
+    }
+    // Also fetch already-confirmed matches (status=matched)
+    const savedRes = await api('/api/calls/saved');
+    if (savedRes.ok) {
+      savedRes.data.filter(c => c.status === 'matched').forEach(c => {
+        confirmedMatches[c.symbol + '_' + c.direction] = c;
+      });
+    }
+
+    liveCallMatches = { ...confirmedMatches };
+
     renderLiveKpis(livePositionsCache, eq);
+    renderMatchBanners(pendingMatches, livePositionsCache);
     renderPositionCards(livePositionsCache);
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
@@ -1525,6 +1676,52 @@ async function loadLiveTrades() {
       `<div class="upload-result error">❌ ${e.message}</div>`;
     document.getElementById('trades-refresh-label').textContent = 'Error';
   }
+}
+
+function renderMatchBanners(pendingMatches, positions) {
+  const container = document.getElementById('match-confirmations');
+  const entries   = Object.entries(pendingMatches);
+  if (!entries.length) { container.innerHTML = ''; return; }
+
+  container.innerHTML = entries.map(([key, call]) => {
+    const pos = positions.find(p => p.symbol + '_' + p.direction === key);
+    if (!pos) return '';
+    const pnlStr = pos.unrealized_pnl >= 0 ? `+${fmtC(pos.unrealized_pnl)}` : fmtC(pos.unrealized_pnl);
+    return `
+    <div class="warn-box" style="margin-bottom:16px;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap" id="match-banner-${call.id}">
+      <div style="flex:1;min-width:200px">
+        <strong style="font-size:.9rem;color:var(--text)">📡 Call Match Detected: ${call.symbol} ${call.direction}</strong>
+        <div style="margin-top:4px;font-size:.8rem;line-height:1.5">
+          You have an open ${pos.direction} on <strong>${pos.symbol}</strong> (${pnlStr} USDT unrealized)
+          that matches your saved call from ${(call.created_at||'').slice(0,10)}.
+          <br>Setup: ${call.setup_score||'?'}/10 ${call.setup_label||''} · ${call.trade_type||''} ·
+          SL: <span style="color:var(--red)">${call.sl_price||'—'}</span> ·
+          TP1: <span style="color:var(--accent3)">${call.tp1_price||'—'}</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+        <button class="btn btn-primary btn-sm" onclick="confirmMatch(${call.id}, '${key}')">✅ Yes, this is that trade</button>
+        <button class="btn btn-secondary btn-sm" onclick="dismissMatch(${call.id})">✗ Not this trade</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function confirmMatch(callId, key) {
+  await api('/api/calls/' + callId + '/confirm-match', 'POST');
+  document.getElementById('match-banner-' + callId)?.remove();
+  // Fetch the call details and add to confirmed matches
+  const savedRes = await api('/api/calls/saved');
+  if (savedRes.ok) {
+    const call = savedRes.data.find(c => c.id === callId);
+    if (call) liveCallMatches[key] = call;
+  }
+  renderPositionCards(livePositionsCache);  // re-render with targets panel
+}
+
+async function dismissMatch(callId) {
+  await api('/api/calls/' + callId + '/dismiss', 'POST');
+  document.getElementById('match-banner-' + callId)?.remove();
 }
 
 function renderLiveKpis(positions, eq) {
@@ -1545,6 +1742,54 @@ function renderLiveKpis(positions, eq) {
     <div class="kpi-value ${k.cls}">${k.value}</div>
     <div class="kpi-sub">${k.sub||''}</div>
   </div>`).join('');
+}
+
+function renderCallTargetsPanel(call, pos) {
+  const mark  = parseFloat(pos.mark_price || 0);
+  const dir   = pos.direction === 'Long' ? 1 : -1;
+
+  function distRow(label, price, cls) {
+    if (!price) return '';
+    const p    = parseFloat(price);
+    const dist = ((p - mark) / mark * 100 * dir);  // positive = moving toward target
+    const distStr = (dist >= 0 ? '+' : '') + dist.toFixed(2) + '%';
+    const distCol = dist >= 0 ? 'color:var(--accent3)' : 'color:var(--red)';
+    return `
+      <div class="target-cell ${cls}">
+        <div class="target-cell-label">${label}</div>
+        <div class="target-cell-price" style="${cls.includes('sl') ? 'color:var(--red)' : 'color:var(--accent3)'}">${p}</div>
+        <div class="target-cell-dist" style="${distCol}">${distStr} from mark</div>
+      </div>`;
+  }
+
+  const entryDist = call.avg_entry
+    ? (((parseFloat(call.avg_entry) - mark) / mark * 100 * dir * -1)).toFixed(2)
+    : null;
+
+  return `
+    <div class="call-targets-panel">
+      <h4>📡 Linked Call — ${call.trade_type || ''} · ${call.setup_score || '?'}/10 ${call.setup_label || ''} · R:R ${call.rr_ratio || '—'}</h4>
+      <div class="targets-grid">
+        ${call.tp1_price ? distRow('Take Profit 1', call.tp1_price, 'target-tp') : ''}
+        ${call.tp2_price ? distRow('Take Profit 2', call.tp2_price, 'target-tp') : ''}
+        ${call.sl_price  ? distRow('Stop Loss',      call.sl_price,  'target-sl') : ''}
+        ${call.avg_entry ? `
+        <div class="target-cell">
+          <div class="target-cell-label">Call Avg Entry</div>
+          <div class="target-cell-price" style="color:var(--accent2)">${parseFloat(call.avg_entry).toPrecision(5)}</div>
+          <div class="target-cell-dist" style="${parseFloat(entryDist) >= 0 ? 'color:var(--accent3)' : 'color:var(--red)'}">
+            ${parseFloat(entryDist) >= 0 ? '+' : ''}${entryDist}% from mark
+          </div>
+        </div>` : ''}
+      </div>
+      ${call.has_candle_close_sl ? `
+        <div class="candle-sl-chip">⚠ Candle-close SL at ${call.sl_price} — monitor manually, close on 4H close below</div>` : ''}
+      ${call.entry_timing ? `
+        <div style="font-size:.75rem;color:var(--muted);margin-top:8px"><strong style="color:var(--text)">Entry timing:</strong> ${call.entry_timing}</div>` : ''}
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="closeCall(${call.id});loadLiveTrades()">Mark Call Closed</button>
+      </div>
+    </div>`;
 }
 
 function renderPositionCards(positions) {
@@ -1638,6 +1883,8 @@ function renderPositionCards(positions) {
           <span>Realized so far: <strong class="${pnlClass(p.achieved_profits)}">${p.achieved_profits>=0?'+':''}${fmtC(p.achieved_profits)}</strong></span>
         </div>
       </div>
+      <!-- Call targets panel (shown when matched to a saved call) -->
+      ${liveCallMatches[key] ? renderCallTargetsPanel(liveCallMatches[key], p) : ''}
       <!-- AI Analysis Panel — pre-open if it was open before the refresh -->
       <div class="pos-ai-panel${openByKey.has(key) ? ' open' : ''}" id="ai-panel-${i}"></div>
     </div>`;
@@ -1851,7 +2098,7 @@ showPage = function(name) {
     document.getElementById('nav-' + name).classList.add('active');
     currentPage = name;
     if (name === 'live')   pollSyncStatus();
-    if (name === 'calls')  loadCallEquity();
+    if (name === 'calls')  { loadCallEquity(); loadSavedCalls(); }
     if (name === 'trades') {
       loadLiveTrades();
       // Auto-refresh every 30s while on this page

@@ -406,6 +406,136 @@ def api_calls_analyze():
         return _err(str(e), 500)
 
 
+@app.route("/api/calls/saved", methods=["GET"])
+def api_calls_saved():
+    """List all saved call analyses, newest first."""
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("""
+        SELECT id, symbol, direction, trade_type, setup_score, setup_label,
+               rr_ratio, has_dca, has_candle_close_sl, sl_price, tp1_price, tp2_price,
+               entry_price, dca_price, avg_entry, total_notional, risk_pct,
+               status, matched_at, created_at
+        FROM analyzed_calls ORDER BY created_at DESC
+    """).fetchall()]
+    conn.close()
+    return _ok(rows)
+
+
+@app.route("/api/calls/save", methods=["POST"])
+def api_calls_save():
+    """Save a call analysis result to the DB."""
+    d    = request.get_json(force=True)
+    sz   = d.get("_sizing", {})
+    sq   = d.get("setup_quality", {})
+    rr   = d.get("risk_reward", {})
+    bs   = d.get("bitget_settings", {})
+    sl_b = bs.get("stop_loss", {})
+    tp1  = bs.get("take_profit_1", {})
+    tp2  = bs.get("take_profit_2", {})
+
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO analyzed_calls
+          (symbol, direction, call_text, entry_price, dca_price, sl_price,
+           tp1_price, tp2_price, avg_entry, total_notional, margin_needed,
+           risk_pct, risk_amount, leverage, has_dca, has_candle_close_sl,
+           setup_score, setup_label, rr_ratio, trade_type,
+           sl_warning, entry_timing, analysis_json)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        d.get("symbol"), d.get("direction"),
+        d.get("_call_text", ""),
+        sz.get("entry_price"), sz.get("dca_price"), sz.get("sl_price") or (float(sl_b.get("price") or 0) or None),
+        float(tp1.get("price") or 0) or None,
+        float(tp2.get("price") or 0) or None,
+        sz.get("avg_entry"), sz.get("total_notional_usdt"), sz.get("margin_needed_usdt"),
+        sz.get("risk_pct"), sz.get("risk_amount_usdt"), sz.get("leverage"),
+        1 if d.get("has_dca") else 0,
+        1 if d.get("has_candle_close_sl") else 0,
+        sq.get("score"), sq.get("label"),
+        rr.get("ratio"), d.get("trade_type"),
+        d.get("sl_warning"), d.get("entry_timing"),
+        json.dumps(d),
+    ))
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return _ok({"id": new_id}), 201
+
+
+@app.route("/api/calls/check-matches")
+def api_calls_check_matches():
+    """
+    Compare live open positions against saved (unmatched) calls.
+    Returns list of {call, position_symbol} for any symbol+direction match.
+    """
+    try:
+        positions = bitget_client.get_open_positions()
+    except Exception as e:
+        return _err(str(e), 500)
+
+    conn  = get_conn()
+    calls = [dict(r) for r in conn.execute("""
+        SELECT id, symbol, direction, trade_type, setup_score, setup_label,
+               rr_ratio, sl_price, tp1_price, tp2_price, entry_price, avg_entry,
+               has_dca, has_candle_close_sl, sl_warning, entry_timing,
+               risk_pct, total_notional, status, created_at
+        FROM analyzed_calls WHERE status = 'saved'
+    """).fetchall()]
+    conn.close()
+
+    matches = []
+    for pos in positions:
+        for call in calls:
+            if (call["symbol"]    == pos["symbol"] and
+                call["direction"] == pos["direction"]):
+                matches.append({"call": call, "position": pos})
+    return _ok(matches)
+
+
+@app.route("/api/calls/<int:call_id>/confirm-match", methods=["POST"])
+def api_calls_confirm_match(call_id):
+    """Mark a saved call as matched to an open position."""
+    conn = get_conn()
+    conn.execute(
+        "UPDATE analyzed_calls SET status='matched', matched_at=datetime('now') WHERE id=?",
+        (call_id,)
+    )
+    conn.commit()
+    conn.close()
+    return _ok({"matched": call_id})
+
+
+@app.route("/api/calls/<int:call_id>/dismiss", methods=["POST"])
+def api_calls_dismiss(call_id):
+    """Dismiss a match (not this trade) — keeps call as 'saved' but won't re-prompt."""
+    conn = get_conn()
+    conn.execute("UPDATE analyzed_calls SET status='dismissed' WHERE id=?", (call_id,))
+    conn.commit()
+    conn.close()
+    return _ok({"dismissed": call_id})
+
+
+@app.route("/api/calls/<int:call_id>/close", methods=["POST"])
+def api_calls_close(call_id):
+    """Mark a matched call as closed (trade exited)."""
+    conn = get_conn()
+    conn.execute("UPDATE analyzed_calls SET status='closed' WHERE id=?", (call_id,))
+    conn.commit()
+    conn.close()
+    return _ok({"closed": call_id})
+
+
+@app.route("/api/calls/<int:call_id>", methods=["DELETE"])
+def api_calls_delete(call_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM analyzed_calls WHERE id=?", (call_id,))
+    conn.commit()
+    conn.close()
+    return _ok({"deleted": call_id})
+
+
 @app.route("/api/live/positions")
 def api_live_positions():
     """Real-time open positions from Bitget API (never from DB — always live)."""

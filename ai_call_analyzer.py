@@ -283,6 +283,7 @@ def analyze_call(call_text: str, account_equity: float,
         }
 
     # Attach computed data
+    result["_call_text"]     = call_text
     result["_sizing"]        = sizing
     result["_history"]       = history
     result["_input_tokens"]  = message.usage.input_tokens

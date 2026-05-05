@@ -102,6 +102,41 @@ def init_db():
         )
     """)
 
+    # ── analyzed_calls ─────────────────────────────────────────────────────────
+    # Saved trade call analyses. One row per call the user analyzed and saved.
+    # status: 'saved' → 'matched' (confirmed link to live position) → 'closed'
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS analyzed_calls (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol           TEXT NOT NULL,
+            direction        TEXT NOT NULL,
+            call_text        TEXT,
+            entry_price      REAL,
+            dca_price        REAL,
+            sl_price         REAL,
+            tp1_price        REAL,
+            tp2_price        REAL,
+            avg_entry        REAL,
+            total_notional   REAL,
+            margin_needed    REAL,
+            risk_pct         REAL,
+            risk_amount      REAL,
+            leverage         INTEGER,
+            has_dca          INTEGER DEFAULT 0,
+            has_candle_close_sl INTEGER DEFAULT 0,
+            setup_score      INTEGER,
+            setup_label      TEXT,
+            rr_ratio         TEXT,
+            trade_type       TEXT,
+            sl_warning       TEXT,
+            entry_timing     TEXT,
+            analysis_json    TEXT,
+            status           TEXT DEFAULT 'saved',
+            matched_at       TEXT,
+            created_at       TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     # ── import_log ─────────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS import_log (
