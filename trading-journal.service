@@ -1,0 +1,16 @@
+[Unit]
+Description=Crypto Trading Journal
+After=network.target
+
+[Service]
+Type=simple
+User=fbauer
+WorkingDirectory=/home/fbauer/trading-journal
+Environment=PORT=8082
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,445 @@
+"""
+app.py — Flask web application for the Crypto Trading Journal.
+
+Routes:
+  GET  /                         → serve SPA (index.html)
+  POST /api/import               → upload & import a Bitget CSV export folder/zip
+  GET  /api/positions            → list positions with filters + pagination
+  POST /api/positions            → create a manual position
+  GET  /api/positions/<id>       → single position detail
+  PUT  /api/positions/<id>       → update notes / tags
+  GET  /api/dashboard/kpis       → dashboard KPI data
+  GET  /api/analytics/deep       → deep dive stats
+  POST /api/ai/analyze           → trigger Claude AI analysis
+  GET  /api/symbols              → distinct symbol list (for filter dropdowns)
+  GET  /api/wallet/history       → wallet balance curve
+  GET  /api/import/status        → import log
+  POST /api/sync                 → trigger manual Bitget API sync
+  GET  /api/sync/status          → last sync time, counts, account equity
+"""
+
+import json
+import os
+import traceback
+import zipfile
+import tempfile
+import shutil
+from datetime import datetime
+
+from flask import Flask, jsonify, request, render_template, send_from_directory
+
+from database     import init_db, get_conn
+from importer     import import_folder
+from analytics    import get_dashboard_kpis, get_deep_stats
+import ai_advisor
+import ai_live_trade
+import bitget_sync
+import bitget_client
+
+# ── app setup ──────────────────────────────────────────────────────────────────
+
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR  = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB upload limit
+
+
+# ── startup ────────────────────────────────────────────────────────────────────
+
+@app.before_request
+def _ensure_db():
+    pass  # init_db() is called once at the bottom
+
+# ── helpers ────────────────────────────────────────────────────────────────────
+
+def _filters_from_args():
+    return {
+        "symbol":    request.args.get("symbol",    "").strip() or None,
+        "direction": request.args.get("direction", "").strip() or None,
+        "date_from": request.args.get("date_from", "").strip() or None,
+        "date_to":   request.args.get("date_to",   "").strip() or None,
+    }
+
+def _ok(data):
+    return jsonify({"ok": True,  "data": data})
+
+def _err(msg, code=400):
+    return jsonify({"ok": False, "error": msg}), code
+
+
+# ── SPA ────────────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+# ── import ─────────────────────────────────────────────────────────────────────
+
+@app.route("/api/import", methods=["POST"])
+def api_import():
+    """
+    Accept either:
+      - A ZIP file containing the Bitget CSV exports
+      - A multipart upload of individual CSV files
+    Stores the files in data/ and runs import_folder().
+    """
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        if "file" in request.files:
+            f = request.files["file"]
+            fname = f.filename or "upload.zip"
+            fpath = os.path.join(tmp_dir, fname)
+            f.save(fpath)
+            if fname.lower().endswith(".zip"):
+                with zipfile.ZipFile(fpath, "r") as zf:
+                    zf.extractall(tmp_dir)
+                os.remove(fpath)
+            # also copy CSVs to data/ for re-import later
+            for fn in os.listdir(tmp_dir):
+                if fn.lower().endswith(".csv"):
+                    shutil.copy(os.path.join(tmp_dir, fn), DATA_DIR)
+            import_dir = tmp_dir
+        else:
+            # fall back to the bundled data/ directory
+            import_dir = DATA_DIR
+
+        conn    = get_conn()
+        results = import_folder(import_dir, conn)
+        conn.close()
+        return _ok(results)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e))
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.route("/api/import/status")
+def api_import_status():
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM import_log ORDER BY imported_at DESC"
+    ).fetchall()]
+    conn.close()
+    return _ok(rows)
+
+
+# ── positions ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/positions", methods=["GET"])
+def api_positions_list():
+    filters = _filters_from_args()
+    page    = max(1, int(request.args.get("page", 1)))
+    per_page= min(200, int(request.args.get("per_page", 50)))
+    offset  = (page - 1) * per_page
+
+    # build WHERE
+    clauses, params = [], []
+    if filters["symbol"]:
+        clauses.append("symbol = ?"); params.append(filters["symbol"])
+    if filters["direction"]:
+        clauses.append("direction = ?"); params.append(filters["direction"])
+    if filters["date_from"]:
+        clauses.append("close_time >= ?"); params.append(filters["date_from"])
+    if filters["date_to"]:
+        clauses.append("close_time <= ?"); params.append(filters["date_to"] + " 23:59:59")
+
+    # text search across symbol + notes
+    search = request.args.get("search", "").strip()
+    if search:
+        clauses.append("(symbol LIKE ? OR notes LIKE ?)")
+        params += [f"%{search}%", f"%{search}%"]
+
+    # pnl filter
+    pnl_side = request.args.get("pnl_side", "").strip()
+    if pnl_side == "win":
+        clauses.append("realized_pnl > 0")
+    elif pnl_side == "loss":
+        clauses.append("realized_pnl < 0")
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    conn  = get_conn()
+    total = conn.execute(f"SELECT COUNT(*) FROM positions {where}", params).fetchone()[0]
+    rows  = [dict(r) for r in conn.execute(
+        f"""SELECT id, symbol, direction, open_time, close_time, duration_minutes,
+                   entry_price, close_price, size_contracts, size_usdt,
+                   position_pnl, realized_pnl, total_fees, notes, tags, is_manual
+            FROM positions {where}
+            ORDER BY close_time DESC
+            LIMIT ? OFFSET ?""",
+        params + [per_page, offset]
+    ).fetchall()]
+    conn.close()
+
+    return _ok({
+        "positions": rows,
+        "total":     total,
+        "page":      page,
+        "per_page":  per_page,
+        "pages":     (total + per_page - 1) // per_page,
+    })
+
+
+@app.route("/api/positions", methods=["POST"])
+def api_positions_create():
+    """Create a manually entered trade."""
+    d = request.get_json(force=True)
+    required = ["symbol", "direction", "open_time", "close_time",
+                "entry_price", "close_price", "size_usdt", "realized_pnl"]
+    for field in required:
+        if not d.get(field) and d.get(field) != 0:
+            return _err(f"Missing field: {field}")
+
+    import re as _re
+    symbol    = d["symbol"].strip().upper()
+    base_asset= _re.sub(r'USDT$', '', symbol)
+
+    # calculate duration
+    try:
+        fmt = "%Y-%m-%d %H:%M:%S"
+        dur = int((datetime.strptime(d["close_time"], fmt) -
+                   datetime.strptime(d["open_time"],  fmt)).total_seconds() / 60)
+    except Exception:
+        dur = None
+
+    total_fees = float(d.get("total_fees", 0) or 0)
+
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO positions
+          (symbol, base_asset, direction, margin_mode,
+           open_time, close_time, duration_minutes,
+           entry_price, close_price, size_contracts, size_usdt,
+           position_pnl, realized_pnl,
+           opening_fee, closing_fee, total_fees,
+           notes, tags, is_manual)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+    """, (
+        symbol, base_asset,
+        d["direction"],
+        d.get("margin_mode", "Cross"),
+        d["open_time"], d["close_time"], dur,
+        float(d["entry_price"]),
+        float(d["close_price"]),
+        d.get("size_contracts", ""),
+        float(d["size_usdt"]),
+        float(d.get("position_pnl") or d["realized_pnl"]),
+        float(d["realized_pnl"]),
+        float(d.get("opening_fee", 0) or 0),
+        float(d.get("closing_fee", 0) or 0),
+        total_fees,
+        d.get("notes", ""),
+        d.get("tags", ""),
+    ))
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return _ok({"id": new_id}), 201
+
+
+@app.route("/api/positions/<int:pos_id>", methods=["GET"])
+def api_position_get(pos_id):
+    conn = get_conn()
+    row  = conn.execute("SELECT * FROM positions WHERE id = ?", (pos_id,)).fetchone()
+    conn.close()
+    if not row:
+        return _err("Not found", 404)
+    return _ok(dict(row))
+
+
+@app.route("/api/positions/<int:pos_id>", methods=["PUT"])
+def api_position_update(pos_id):
+    """Update editable fields: notes, tags."""
+    d    = request.get_json(force=True)
+    conn = get_conn()
+    row  = conn.execute("SELECT id FROM positions WHERE id = ?", (pos_id,)).fetchone()
+    if not row:
+        conn.close()
+        return _err("Not found", 404)
+
+    # Only allow safe editable fields
+    editable = ["notes", "tags", "entry_price", "close_price",
+                "size_usdt", "realized_pnl", "total_fees",
+                "open_time", "close_time", "direction"]
+    sets, vals = [], []
+    for key in editable:
+        if key in d:
+            sets.append(f"{key} = ?")
+            vals.append(d[key])
+    if not sets:
+        conn.close()
+        return _err("No updatable fields provided")
+
+    sets.append("updated_at = datetime('now')")
+    vals.append(pos_id)
+    conn.execute(f"UPDATE positions SET {', '.join(sets)} WHERE id = ?", vals)
+    conn.commit()
+    conn.close()
+    return _ok({"updated": pos_id})
+
+
+@app.route("/api/positions/<int:pos_id>", methods=["DELETE"])
+def api_position_delete(pos_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM positions WHERE id = ?", (pos_id,))
+    conn.commit()
+    conn.close()
+    return _ok({"deleted": pos_id})
+
+
+# ── dashboard ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/dashboard/kpis")
+def api_dashboard_kpis():
+    try:
+        data = get_dashboard_kpis(filters=_filters_from_args())
+        return _ok(data)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+# ── deep dive ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/analytics/deep")
+def api_analytics_deep():
+    try:
+        data = get_deep_stats(filters=_filters_from_args())
+        return _ok(data)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+# ── AI advisor ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/ai/analyze", methods=["POST"])
+def api_ai_analyze():
+    try:
+        filters = request.get_json(force=True) if request.content_length else {}
+        result  = ai_advisor.analyze(filters=filters or {})
+        return _ok(result)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+# ── helpers ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/symbols")
+def api_symbols():
+    conn  = get_conn()
+    rows  = conn.execute(
+        "SELECT DISTINCT symbol FROM positions ORDER BY symbol ASC"
+    ).fetchall()
+    conn.close()
+    return _ok([r[0] for r in rows])
+
+
+@app.route("/api/wallet/history")
+def api_wallet_history():
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("""
+        SELECT date, wallet_balance
+        FROM wallet_snapshots
+        WHERE wallet_balance IS NOT NULL
+        ORDER BY date ASC
+    """).fetchall()]
+    conn.close()
+    # downsample
+    step = max(1, len(rows) // 300)
+    return _ok(rows[::step])
+
+
+# ── Bitget live sync ────────────────────────────────────────────────────────────
+
+@app.route("/api/sync", methods=["POST"])
+def api_sync():
+    """Trigger an immediate sync from the Bitget API. Runs synchronously."""
+    try:
+        result = bitget_sync.run_sync()
+        if "error" in result:
+            return _err(result["error"])
+        return _ok(result)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+@app.route("/api/live/positions")
+def api_live_positions():
+    """Real-time open positions from Bitget API (never from DB — always live)."""
+    try:
+        positions = bitget_client.get_open_positions()
+        equity    = bitget_client.get_account_equity()
+        return _ok({"positions": positions, "equity": equity})
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+@app.route("/api/live/analyze", methods=["POST"])
+def api_live_analyze():
+    """Run Claude AI analysis on a single open position sent in the request body."""
+    try:
+        position = request.get_json(force=True)
+        if not position or not position.get("symbol"):
+            return _err("position data with symbol required")
+        result = ai_live_trade.analyze_position(position)
+        return _ok(result)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+@app.route("/api/sync/status")
+def api_sync_status():
+    """Return current sync state + last account equity from DB settings."""
+    status = bitget_sync.get_status()
+    conn   = get_conn()
+    bitget_sync._ensure_settings_table(conn)
+    status["account_equity"]    = conn.execute(
+        "SELECT value FROM settings WHERE key='account_equity'"
+    ).fetchone()
+    status["available_balance"] = conn.execute(
+        "SELECT value FROM settings WHERE key='available_balance'"
+    ).fetchone()
+    status["last_sync_ms"] = conn.execute(
+        "SELECT value FROM settings WHERE key='last_sync_ms'"
+    ).fetchone()
+    conn.close()
+    # sqlite3.Row to plain value
+    for k in ("account_equity", "available_balance", "last_sync_ms"):
+        if status[k]:
+            status[k] = status[k][0]
+    return _ok(status)
+
+
+# ── run ────────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    init_db()
+
+    # Auto-import CSV data if DB is empty
+    conn = get_conn()
+    count = conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0]
+    conn.close()
+    if count == 0:
+        csv_files = [f for f in os.listdir(DATA_DIR) if f.endswith(".csv")]
+        if csv_files:
+            print(f"[Startup] DB empty, auto-importing {len(csv_files)} CSV files from data/")
+            conn = get_conn()
+            import_folder(DATA_DIR, conn)
+            conn.close()
+
+    # Start live Bitget sync in background (syncs every 15 minutes)
+    bitget_sync.start_background_sync()
+
+    port = int(os.environ.get("PORT", 8082))
+    print(f"[App] Trading Journal running on http://0.0.0.0:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
