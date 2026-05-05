@@ -33,6 +33,7 @@ from importer     import import_folder
 from analytics    import get_dashboard_kpis, get_deep_stats
 import ai_advisor
 import ai_live_trade
+import ai_call_analyzer
 import bitget_sync
 import bitget_client
 
@@ -365,6 +366,40 @@ def api_sync():
         result = bitget_sync.run_sync()
         if "error" in result:
             return _err(result["error"])
+        return _ok(result)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+@app.route("/api/calls/analyze", methods=["POST"])
+def api_calls_analyze():
+    """
+    Analyze a trade call. Accepts JSON:
+      { call_text, image_b64 (optional), image_type (optional) }
+    Fetches current account equity from Bitget to calculate position sizing.
+    """
+    try:
+        body       = request.get_json(force=True)
+        call_text  = (body.get("call_text") or "").strip()
+        if not call_text:
+            return _err("call_text is required")
+        image_b64  = body.get("image_b64")
+        image_type = body.get("image_type", "image/png")
+
+        # Live equity for accurate position sizing
+        try:
+            eq_data = bitget_client.get_account_equity()
+            equity  = float(eq_data.get("accountEquity") or eq_data.get("available") or 1000)
+        except Exception:
+            equity  = 1000.0   # fallback if API unreachable
+
+        result = ai_call_analyzer.analyze_call(
+            call_text      = call_text,
+            account_equity = equity,
+            image_b64      = image_b64,
+            image_type     = image_type,
+        )
         return _ok(result)
     except Exception as e:
         traceback.print_exc()
