@@ -26,8 +26,6 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: python
-        env:
-          CODEQL_ENABLE_OVERLAY_DATABASE: "false"
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
@@ -35,4 +33,4 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: my-python-analysis
+          category: "/language:python"
