@@ -178,6 +178,13 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.6 — Live Market Context
+- **Fear & Greed Index** — live 0-100 sentiment score from alternative.me shown in a Market Pulse strip on the Dashboard
+- **Bitget Funding Rate** — per-symbol, shown as chip on every Live Positions card; injected into per-position Claude analysis
+- **Bitget Long/Short Ratio** — retail positioning per symbol on Live Positions cards; injected into analysis
+- All three sources feed Claude's trade grading, per-position analysis, and full AI Advisor
+- New module `market_context.py` with 5-minute in-memory cache; new `GET /api/market/context?symbols=` endpoint
+
 ### v1.5.5 — Edge Lab & UX Polish
 - **Deep Dive split into two pages**: Deep Dive (charts + stats) and Edge Lab (setup analysis, grade breakdown, pattern detector, R:R tracking)
 - **Analyst Leaderboard**: Edge Score (0-100) composite metric replaces raw table — ranks analysts by trade win rate, call outcome win rate, and TP1 hit rate. Medal rankings, color-coded rows, conversion rate column.

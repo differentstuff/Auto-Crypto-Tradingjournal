@@ -34,12 +34,13 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_call_analyzer.py     ← Analyst call analysis + pending limit analysis
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
+    ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache)
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
-templates/index.html            ← Frontend: HTML + CSS only (~1192 lines)
-static/app.js                   ← All frontend JavaScript (2507 lines)
+templates/index.html            ← Frontend: HTML + CSS only (~1197 lines)
+static/app.js                   ← All frontend JavaScript (2565 lines)
 static/                         ← Static assets (Chart.js via CDN)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
@@ -919,6 +920,55 @@ Filter dropdown added to journal filter bar between Result and From date. Reset 
 #### 10f. Setup Type in Add Trade modal
 
 `POST /api/positions` now accepts `setup_type` in request body and stores it at creation time. Dropdown added to the Add Trade modal above Notes.
+
+### 11. v1.6 — Live Market Context (`market_context.py`)
+
+Three real-time data sources injected into every Claude analysis.
+
+#### Sources
+
+| Source | Endpoint | Auth | Cache |
+|--------|----------|------|-------|
+| Fear & Greed Index | `https://api.alternative.me/fng/?limit=1` | None | 5 min |
+| Bitget funding rate | `/api/v2/mix/market/current-fund-rate` | Bitget (existing) | 5 min per symbol |
+| Bitget long/short ratio | `/api/v2/mix/market/account-long-short` | Bitget (existing) | 5 min per symbol |
+
+Cache is an in-process dict `{key: (timestamp, data)}` — resets on service restart.
+
+#### API
+
+`GET /api/market/context?symbols=BTCUSDT,SOLUSDT`
+
+Returns:
+```json
+{
+  "fear_greed": {"value": 46, "classification": "Fear", "ok": true},
+  "symbols": {
+    "BTCUSDT": {
+      "funding":    {"rate_pct": -0.0008, "direction": "shorts paying", "high": false, "ok": true},
+      "long_short": {"long_pct": 48.7, "short_pct": 51.3, "bias": "balanced", "ok": true}
+    }
+  }
+}
+```
+
+#### How Claude uses it
+
+| AI module | Context injected |
+|-----------|-----------------|
+| `ai_live_trade.py` | Funding rate + L/S ratio for the specific symbol being analyzed |
+| `ai_trade_grader.py` | Fear & Greed Index value at grading time |
+| `ai_advisor.py` | F&G + BTC funding rate for full portfolio analysis |
+
+`market_context.format_for_prompt(ctx)` converts the dict to a concise multi-line string appended to each Claude prompt.
+
+#### Frontend
+
+- **Dashboard** — Market Pulse strip above KPI grid: F&G badge + BTC funding + BTC L/S. Loads non-blocking after KPIs.
+- **Live Positions** — Two chips per card in the badge row:
+  - `F +0.0012%` (yellow = longs paying, green = shorts paying, ⚠ if ≥ 0.05%)
+  - `L/S 68/32` (yellow if either side > 65% = crowded trade)
+  - Market context fetched after positions render and triggers a re-render.
 
 ---
 
