@@ -137,6 +137,53 @@ def init_db():
         )
     """)
 
+    # ── analyzed_calls column migrations ──────────────────────────────────────────
+    _new_cols = [
+        ("analyst",         "TEXT DEFAULT ''"),
+        ("outcome",         "TEXT DEFAULT NULL"),
+        ("outcome_pnl",     "REAL DEFAULT NULL"),
+        ("hit_tp1",         "INTEGER DEFAULT 0"),
+        ("hit_tp2",         "INTEGER DEFAULT 0"),
+        ("hit_sl",          "INTEGER DEFAULT 0"),
+        ("outcome_at",      "TEXT DEFAULT NULL"),
+        ("actual_notional", "REAL DEFAULT NULL"),
+    ]
+    for _col, _typedef in _new_cols:
+        try:
+            cur.execute(f"ALTER TABLE analyzed_calls ADD COLUMN {_col} {_typedef}")
+        except sqlite3.OperationalError:
+            pass
+
+    # ── pending_limits ─────────────────────────────────────────────────────────
+    # Limit orders the user has placed on exchange but not yet triggered.
+    # "Shadow trades" — tracked for risk and correlation analysis before they fill.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pending_limits (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            call_id         INTEGER REFERENCES analyzed_calls(id) ON DELETE SET NULL,
+            symbol          TEXT NOT NULL,
+            direction       TEXT NOT NULL,
+            limit_price     REAL NOT NULL,
+            size_usdt       REAL,
+            leverage        INTEGER DEFAULT 10,
+            sl_price        REAL,
+            tp1_price       REAL,
+            tp2_price       REAL,
+            analyst         TEXT DEFAULT '',
+            status          TEXT DEFAULT 'waiting',
+            triggered_at    TEXT,
+            analysis_json   TEXT,
+            notes           TEXT DEFAULT '',
+            bitget_order_id TEXT,
+            created_at      TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    # Safe migration for bitget_order_id on existing tables
+    try:
+        cur.execute("ALTER TABLE pending_limits ADD COLUMN bitget_order_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     # ── import_log ─────────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS import_log (
