@@ -10,6 +10,7 @@ The database has four tables:
 
 import sqlite3
 import os
+from contextlib import contextmanager
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "trading_journal.db"))
 
@@ -21,6 +22,16 @@ def get_conn():
     conn.execute("PRAGMA journal_mode=WAL")   # safe for concurrent reads
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+@contextmanager
+def db_conn():
+    """Context manager that opens a connection and guarantees close on exit."""
+    conn = get_conn()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -186,6 +197,7 @@ def init_db():
 
     # ── positions column migrations ────────────────────────────────────────────
     _pos_new_cols = [
+        ("analyst",                "TEXT DEFAULT ''"),
         ("execution_grade",        "TEXT DEFAULT NULL"),
         ("execution_grade_reason", "TEXT DEFAULT NULL"),
         ("setup_type",             "TEXT DEFAULT ''"),

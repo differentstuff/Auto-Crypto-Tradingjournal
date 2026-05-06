@@ -1044,7 +1044,6 @@ function renderCallResult(d) {
   const result  = document.getElementById('call-result');
   const sq      = d.setup_quality || {};
   const rr      = d.risk_reward   || {};
-  const bs      = d.bitget_settings || {};
   const sz      = d._sizing       || {};
   const hist    = d._history      || {};
   const qlabel  = (sq.label || 'Unknown').toLowerCase();

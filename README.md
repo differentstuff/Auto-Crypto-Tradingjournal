@@ -149,8 +149,16 @@ The service uses `EnvironmentFile=` to load `.env` and restarts automatically on
 ## Project structure
 
 ```
-app.py                  Flask routes and startup
-database.py             Schema init and migrations
+app.py                  Flask startup + blueprint registration (~50 lines)
+helpers.py              Shared API helpers (_ok, _err, _filters_from_args)
+database.py             Schema init, migrations, get_conn(), db_conn()
+routes/
+  journal.py            Positions CRUD, import, symbols, wallet history
+  analytics.py          Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data
+  calls.py              Call analyzer, saved calls, outcomes, analyst stats
+  limits.py             Pending limit orders
+  live.py               Live Bitget positions and per-trade AI
+  sync.py               Sync trigger, sync status, AI advisor
 bitget_client.py        Bitget REST API v2 client (read-only)
 bitget_sync.py          Background sync logic
 importer.py             Bitget CSV import parser
@@ -158,8 +166,12 @@ analytics.py            Dashboard KPIs and deep dive stats
 ai_advisor.py           AI analysis for open positions
 ai_call_analyzer.py     AI trade call parser and scorer
 ai_live_trade.py        Per-trade AI on the live positions view
-templates/index.html    Single-page frontend (HTML + CSS)
-static/app.js           All frontend JavaScript
+ai_trade_grader.py      Execution grading via Claude
+ai_pattern_detector.py  Statistical pattern detection via Claude
+market_context.py       Fear & Greed, funding rate, L/S ratio, BTC dominance
+templates/index.html    Single-page frontend HTML (~910 lines, no inline CSS)
+static/style.css        All dark-theme CSS
+static/app.js           All frontend JavaScript (~2700 lines)
 docs/GUIDE.md           Developer reference (routes, schema, JS globals)
 docs/USER_GUIDE.md      End-user feature guide
 .env.example            Environment variable template
@@ -177,6 +189,13 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v1.8 — Architecture Refactor
+- **Flask Blueprints** — `app.py` reduced from 1158 to 52 lines; all routes split into `routes/` by domain: `journal`, `analytics`, `calls`, `limits`, `live`, `sync`
+- **`db_conn()` context manager** — every route now uses `with db_conn() as conn:`, guaranteeing connection close on exception. Added to `database.py`
+- **CSS extracted** — `templates/index.html` no longer contains inline CSS; all styles moved to `static/style.css` (cacheable, easier to edit)
+- **Shared helpers** — `helpers.py` provides `_ok()`, `_err()`, `_filters_from_args()` to all blueprints
+- **`analyst` migration consolidated** — moved from `app.py` startup into `database.py → init_db()` with all other column migrations
 
 ### v1.7 — Trading Tools & Heatmap
 - **Position Sizing Calculator** — inline in Call Analyzer: enter Entry + SL, risk % auto-populates from account equity, shows Position Size / Leverage / Risk Amount / Risk Distance. Auto-fills entry and SL after every call analysis.

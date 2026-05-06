@@ -25,8 +25,18 @@ A full-stack web application for Bitget USDT-M Futures traders:
 Browser (http://<your-pi-ip>:8082)
          │
          ▼
-    Flask (app.py)              ← HTTP server + all API routes
-    ├── database.py             ← SQLite schema + connection helpers
+    Flask (app.py)              ← ~50 lines: blueprint registration + startup
+    ├── helpers.py              ← Shared _ok(), _err(), _filters_from_args()
+    ├── database.py             ← SQLite schema, get_conn(), db_conn() context manager
+    │
+    ├── routes/                 ← Flask Blueprints — one file per domain
+    │   ├── journal.py          ← positions CRUD, symbols, wallet, import
+    │   ├── analytics.py        ← dashboard KPIs, deep dive, heatmap, patterns, R:R, market
+    │   ├── calls.py            ← call analyzer, saved calls, outcomes, analyst stats
+    │   ├── limits.py           ← pending limit orders
+    │   ├── live.py             ← live positions, pending orders, live AI analysis
+    │   └── sync.py             ← sync trigger, sync status, AI advisor
+    │
     ├── importer.py             ← Bitget CSV → SQLite (historical data)
     ├── analytics.py            ← KPI + stats calculations (pure Python)
     ├── ai_advisor.py           ← Full-portfolio Claude analysis
@@ -39,9 +49,9 @@ Browser (http://<your-pi-ip>:8082)
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
-templates/index.html            ← Frontend: HTML + CSS only (~1226 lines)
-static/app.js                   ← All frontend JavaScript (2701 lines)
-static/                         ← Static assets (Chart.js via CDN)
+templates/index.html            ← Frontend: HTML structure only (~910 lines)
+static/style.css                ← All dark-theme CSS (extracted from index.html)
+static/app.js                   ← All frontend JavaScript (~2700 lines)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
 docs/USER_GUIDE.md              ← User-facing manual
@@ -412,7 +422,20 @@ Assesses a pending limit order before it fills. Calculates: stop distance %, ris
 
 ---
 
-## `app.py` — Complete API Reference
+## Route Blueprints
+
+Routes are split across `routes/` — registered in `app.py` at startup. All blueprints share `helpers.py` (`_ok`, `_err`, `_filters_from_args`) and `database.db_conn()`.
+
+| Blueprint | File | Domain |
+|-----------|------|--------|
+| `journal` | `routes/journal.py` | Positions CRUD, import, symbols, wallet history |
+| `analytics` | `routes/analytics.py` | Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data |
+| `calls` | `routes/calls.py` | Call analyzer, saved calls, outcomes, analyst stats |
+| `limits` | `routes/limits.py` | Pending limit orders |
+| `live` | `routes/live.py` | Live Bitget positions, pending orders, per-trade AI |
+| `sync` | `routes/sync.py` | Sync trigger, sync status, AI advisor |
+
+## API Reference
 
 All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "..."}`.
 
@@ -500,13 +523,14 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 
 ## Frontend
 
-Split across two files:
-- `templates/index.html` — HTML structure + dark-theme CSS (~1080 lines)
-- `static/app.js` — all JavaScript (2269 lines), loaded via `<script src="/static/app.js">`
+Split across three files:
+- `templates/index.html` — HTML structure only (~910 lines), no inline CSS
+- `static/style.css` — all dark-theme CSS (~195 lines), loaded via `<link>`
+- `static/app.js` — all JavaScript (~2700 lines), loaded via `<script src="/static/app.js">`
 
 Structure:
 ```
-<style>   Dark theme CSS (CSS variables throughout)
+<link rel="stylesheet" href="/static/style.css">
 <body>
   <nav>   Sidebar: 9 navigation items
   sync-bar    Live sync status + Sync Now button
@@ -795,11 +819,7 @@ The `positions` table has an `analyst` column (migrated automatically at startup
 
 **Backend:** `PUT /api/positions/<id>` editable fields: `notes, tags, analyst, entry_price, close_price, size_usdt, realized_pnl, total_fees, open_time, close_time, direction`.
 
-**Migration guard** in `app.py` startup:
-```python
-if "analyst" not in cols:
-    conn.execute("ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
-```
+**Migration:** `analyst` column added via `_pos_new_cols` in `database.py → init_db()` (safe `ALTER TABLE … ADD COLUMN` with try/except, same as all other column migrations).
 
 ### 7. Security fixes (May 2026) — CodeQL alerts resolved
 
@@ -1089,13 +1109,27 @@ except sqlite3.OperationalError:
 ```
 
 ### New API endpoint
+
+Add the route to the appropriate blueprint in `routes/`. Use `db_conn()` so the connection always closes even on exception:
+
 ```python
-@app.route("/api/my-endpoint")
+# Example: routes/analytics.py
+from database import db_conn
+from helpers import _ok, _err
+
+@bp.route("/api/my-endpoint")
 def api_my_endpoint():
-    conn = get_conn()
-    data = [dict(r) for r in conn.execute("SELECT ... FROM positions").fetchall()]
-    conn.close()
+    with db_conn() as conn:
+        data = [dict(r) for r in conn.execute("SELECT ... FROM positions").fetchall()]
     return _ok(data)
+```
+
+`db_conn()` is a `contextlib.contextmanager` in `database.py` — opens with `get_conn()`, guarantees `conn.close()` on exit. Commits must still be explicit (`conn.commit()`) inside the `with` block.
+
+Register the blueprint in `app.py` if you create a new file:
+```python
+from routes.mymodule import bp as mymodule_bp
+app.register_blueprint(mymodule_bp)
 ```
 
 ### New KPI on Dashboard
