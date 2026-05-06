@@ -3168,24 +3168,32 @@ async function loadAnalystStats() {
   sec.style.display = '';
   con.innerHTML = `
     <div class="table-card">
+      <div style="font-size:.72rem;color:var(--muted);padding:8px 16px 4px">
+        Trades + PnL from journal · Call metrics from analyzer · Pending from open limits
+      </div>
       <table class="tbl">
         <thead><tr>
-          <th>Analyst</th><th>Analyzed</th><th>Entered</th>
-          <th>Wins</th><th>Losses</th><th>TP1 Hits</th><th>Avg PnL</th><th>Avg Score</th>
+          <th>Analyst</th>
+          <th title="Closed trades in journal">Trades</th>
+          <th title="Win rate from journal">Win %</th>
+          <th title="Total realized PnL from journal">Total PnL</th>
+          <th title="Average PnL per trade">Avg PnL</th>
+          <th title="Calls analyzed in Call Analyzer">Analyzed</th>
+          <th title="TP1 / TP2 / SL hits from call outcomes">TP1 / TP2 / SL</th>
+          <th title="Average setup score from call analyses">Avg Score</th>
+          <th title="Waiting limit orders">Pending</th>
         </tr></thead>
-        <tbody>${res.data.map(a => {
-          const wr = a.wins + a.losses > 0 ? (a.wins / (a.wins + a.losses) * 100).toFixed(0) + '%' : '—';
-          return `<tr>
-            <td><strong>${escHtml(a.analyst)}</strong></td>
-            <td>${a.total_analyzed}</td>
-            <td>${a.entered} <span style="color:var(--muted);font-size:.75rem">(${a.total_analyzed > 0 ? (a.entered/a.total_analyzed*100).toFixed(0) : 0}%)</span></td>
-            <td class="pos">${a.wins} <span style="color:var(--muted);font-size:.75rem">${wr}</span></td>
-            <td class="neg">${a.losses}</td>
-            <td class="${a.tp1_hits > 0 ? 'pos' : ''}">${a.tp1_hits}</td>
-            <td class="${pnlClass(a.avg_pnl)}">${a.avg_pnl != null ? (a.avg_pnl >= 0 ? '+' : '') + fmtC(a.avg_pnl) : '—'}</td>
-            <td>${a.avg_setup_score != null ? a.avg_setup_score + '/10' : '—'}</td>
-          </tr>`;
-        }).join('')}</tbody>
+        <tbody>${res.data.map(a => `<tr>
+          <td><strong>${escHtml(a.analyst)}</strong></td>
+          <td>${a.trade_count || 0}</td>
+          <td class="${a.win_rate >= 50 ? 'pos' : a.win_rate > 0 ? '' : 'neg'}">${a.trade_count > 0 ? a.win_rate + '%' : '—'}</td>
+          <td class="${pnlClass(a.total_pnl)}">${a.trade_count > 0 ? (a.total_pnl >= 0 ? '+' : '') + fmtC(a.total_pnl) : '—'}</td>
+          <td class="${pnlClass(a.avg_pnl)}">${a.trade_count > 0 ? (a.avg_pnl >= 0 ? '+' : '') + fmtC(a.avg_pnl) : '—'}</td>
+          <td>${a.total_analyzed || '—'}</td>
+          <td>${a.total_analyzed > 0 ? `<span class="pos">${a.tp1_hits}</span> / <span class="pos">${a.tp2_hits}</span> / <span class="neg">${a.sl_hits}</span>` : '—'}</td>
+          <td>${a.avg_setup_score != null ? a.avg_setup_score + '/10' : '—'}</td>
+          <td>${a.pending_count > 0 ? `<span style="color:var(--accent2)">${a.pending_count}</span>` : '—'}</td>
+        </tr>`).join('')}</tbody>
       </table>
     </div>`;
 }

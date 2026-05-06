@@ -130,6 +130,14 @@ def get_dashboard_kpis(filters=None, conn=None):
         LIMIT 10
     """, params)
 
+    # current calendar month PnL (always UTC, no filter applied)
+    from datetime import datetime as _dt
+    month_start = _dt.utcnow().strftime('%Y-%m-01')
+    current_month_pnl = round(_val(conn,
+        "SELECT SUM(realized_pnl) FROM positions WHERE close_time >= ?",
+        [month_start]
+    ), 4)
+
     # wallet balance curve (sample every 50th row to keep payload small)
     wallet_curve = _rows(conn, """
         SELECT date, wallet_balance
@@ -154,11 +162,12 @@ def get_dashboard_kpis(filters=None, conn=None):
         "avg_win":         avg_win,
         "avg_loss":        avg_loss,
         "profit_factor":   profit_factor,
-        "max_drawdown":    max_drawdown,
-        "pnl_curve":       pnl_curve,
-        "top_symbols":     top_symbols,
-        "recent_trades":   recent_trades,
-        "wallet_curve":    wallet_curve,
+        "max_drawdown":       max_drawdown,
+        "current_month_pnl":  current_month_pnl,
+        "pnl_curve":          pnl_curve,
+        "top_symbols":        top_symbols,
+        "recent_trades":      recent_trades,
+        "wallet_curve":       wallet_curve,
     }
 
 

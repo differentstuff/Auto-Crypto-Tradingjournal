@@ -861,25 +861,82 @@ def api_limits_analyze(lim_id):
 
 @app.route("/api/calls/analyst-stats")
 def api_calls_analyst_stats():
-    """Per-analyst performance stats across all saved calls."""
-    conn  = get_conn()
-    rows  = [dict(r) for r in conn.execute("""
+    """
+    Per-analyst stats combining three sources:
+      - positions   (analyst field set in journal) → actual trade performance
+      - analyzed_calls (analyst set at analysis time) → call quality metrics
+      - pending_limits (analyst field set)         → open/waiting trade count
+    """
+    conn = get_conn()
+
+    # Ground truth: actual closed trades by analyst
+    pos_rows = {r["analyst"]: dict(r) for r in conn.execute("""
         SELECT analyst,
-               COUNT(*)                                                          AS total_analyzed,
-               SUM(CASE WHEN status IN ('matched','closed') THEN 1 ELSE 0 END)  AS entered,
-               SUM(CASE WHEN outcome='won'    THEN 1 ELSE 0 END)                AS wins,
-               SUM(CASE WHEN outcome='lost'   THEN 1 ELSE 0 END)                AS losses,
-               SUM(CASE WHEN outcome='manual' THEN 1 ELSE 0 END)                AS manual_close,
-               ROUND(AVG(CASE WHEN outcome_pnl IS NOT NULL THEN outcome_pnl END), 2) AS avg_pnl,
-               SUM(CASE WHEN hit_tp1=1        THEN 1 ELSE 0 END)                AS tp1_hits,
-               ROUND(AVG(setup_score), 1)                                       AS avg_setup_score
+               COUNT(*)                                                            AS trade_count,
+               SUM(CASE WHEN realized_pnl > 0  THEN 1 ELSE 0 END)                AS wins,
+               SUM(CASE WHEN realized_pnl <= 0 THEN 1 ELSE 0 END)                AS losses,
+               ROUND(SUM(realized_pnl), 2)                                        AS total_pnl,
+               ROUND(AVG(realized_pnl), 2)                                        AS avg_pnl
+        FROM positions
+        WHERE analyst IS NOT NULL AND analyst != ''
+        GROUP BY analyst
+    """).fetchall()}
+
+    # Call analysis metrics
+    call_rows = {r["analyst"]: dict(r) for r in conn.execute("""
+        SELECT analyst,
+               COUNT(*)                                                            AS total_analyzed,
+               SUM(CASE WHEN status IN ('matched','closed') THEN 1 ELSE 0 END)    AS entered,
+               SUM(CASE WHEN outcome='won'  THEN 1 ELSE 0 END)                    AS call_wins,
+               SUM(CASE WHEN hit_tp1=1      THEN 1 ELSE 0 END)                    AS tp1_hits,
+               SUM(CASE WHEN hit_tp2=1      THEN 1 ELSE 0 END)                    AS tp2_hits,
+               SUM(CASE WHEN hit_sl=1       THEN 1 ELSE 0 END)                    AS sl_hits,
+               ROUND(AVG(setup_score), 1)                                          AS avg_setup_score
         FROM analyzed_calls
         WHERE analyst IS NOT NULL AND analyst != ''
         GROUP BY analyst
-        ORDER BY total_analyzed DESC
-    """).fetchall()]
+    """).fetchall()}
+
+    # Pending/waiting trades
+    lim_rows = {r["analyst"]: dict(r) for r in conn.execute("""
+        SELECT analyst,
+               COUNT(*) AS pending_count
+        FROM pending_limits
+        WHERE analyst IS NOT NULL AND analyst != '' AND status = 'waiting'
+        GROUP BY analyst
+    """).fetchall()}
+
+    all_analysts = set(pos_rows) | set(call_rows) | set(lim_rows)
+    result = []
+    for analyst in all_analysts:
+        p = pos_rows.get(analyst, {})
+        c = call_rows.get(analyst, {})
+        l = lim_rows.get(analyst, {})
+        trade_count = p.get("trade_count", 0)
+        wins        = p.get("wins", 0)
+        result.append({
+            "analyst":         analyst,
+            # From journal positions
+            "trade_count":     trade_count,
+            "wins":            wins,
+            "losses":          p.get("losses", 0),
+            "win_rate":        round(wins / trade_count * 100, 1) if trade_count else 0,
+            "total_pnl":       p.get("total_pnl", 0),
+            "avg_pnl":         p.get("avg_pnl", 0),
+            # From call analyses
+            "total_analyzed":  c.get("total_analyzed", 0),
+            "entered":         c.get("entered", 0),
+            "tp1_hits":        c.get("tp1_hits", 0),
+            "tp2_hits":        c.get("tp2_hits", 0),
+            "sl_hits":         c.get("sl_hits", 0),
+            "avg_setup_score": c.get("avg_setup_score"),
+            # From pending limits
+            "pending_count":   l.get("pending_count", 0),
+        })
+
+    result.sort(key=lambda x: x["total_pnl"] or 0, reverse=True)
     conn.close()
-    return _ok(rows)
+    return _ok(result)
 
 
 @app.route("/api/live/positions")
