@@ -52,7 +52,7 @@ requirements.txt                ← Python dependencies
 | Layer | Choice | Reason |
 |-------|--------|--------|
 | Language | Python 3.13 | Pre-installed on Pi, fast development |
-| Web framework | Flask 3.1 | Simple, no boilerplate |
+| Web framework | Flask 3.1.3 | Simple, no boilerplate |
 | Database | SQLite 3 (WAL mode) | Zero config, single file, built-in |
 | Frontend | Pure HTML/CSS/JavaScript | No build step, SPA with page-view switching |
 | Charts | Chart.js 4.4.0 (CDN) | One script tag, great defaults |
@@ -624,9 +624,11 @@ Configured on the public repo (`anvilfilbert/Auto-Crypto-Tradingjournal`):
 ### Python Dependencies (`requirements.txt`)
 
 ```
-flask>=3.1.0
-anthropic>=0.40.0
+flask>=3.1.3
+anthropic>=0.100.0
 ```
+
+Bumped May 2026 via Dependabot PRs #5 and #6. Both packages installed on Pi and service verified running after update.
 
 ---
 
