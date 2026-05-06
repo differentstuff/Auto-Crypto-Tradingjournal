@@ -9,6 +9,7 @@ filters is a dict with optional keys:
   symbol, direction, date_from, date_to
 """
 
+import re
 import sqlite3
 from database import get_conn
 
@@ -21,17 +22,22 @@ def _build_where(filters):
     params  = []
 
     if filters.get('symbol'):
-        clauses.append("symbol = ?")
-        params.append(filters['symbol'])
+        sym = filters['symbol'].strip().upper()
+        if re.match(r'^[A-Z0-9]+$', sym):
+            clauses.append("symbol = ?")
+            params.append(sym)
     if filters.get('direction'):
-        clauses.append("direction = ?")
-        params.append(filters['direction'])
+        if filters['direction'] in ('Long', 'Short'):
+            clauses.append("direction = ?")
+            params.append(filters['direction'])
     if filters.get('date_from'):
-        clauses.append("close_time >= ?")
-        params.append(filters['date_from'])
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', filters['date_from']):
+            clauses.append("close_time >= ?")
+            params.append(filters['date_from'])
     if filters.get('date_to'):
-        clauses.append("close_time <= ?")
-        params.append(filters['date_to'] + ' 23:59:59')
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', filters['date_to']):
+            clauses.append("close_time <= ?")
+            params.append(filters['date_to'] + ' 23:59:59')
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, params
@@ -310,6 +316,30 @@ def get_deep_stats(filters=None, conn=None):
         LIMIT 5
     """, params)
 
+    # by setup type
+    by_setup = _rows(conn, f"""
+        SELECT setup_type,
+               COUNT(*) AS trade_count,
+               ROUND(SUM(realized_pnl), 4) AS total_pnl,
+               ROUND(100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS win_rate,
+               ROUND(AVG(realized_pnl), 4) AS avg_pnl
+        FROM positions {where} {and_} setup_type IS NOT NULL AND setup_type != ''
+        GROUP BY setup_type
+        ORDER BY total_pnl DESC
+    """, params)
+
+    # by execution grade
+    by_grade = _rows(conn, f"""
+        SELECT execution_grade AS grade,
+               COUNT(*) AS trade_count,
+               ROUND(SUM(realized_pnl), 4) AS total_pnl,
+               ROUND(100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS win_rate,
+               ROUND(AVG(realized_pnl), 4) AS avg_pnl
+        FROM positions {where} {and_} execution_grade IS NOT NULL
+        GROUP BY grade
+        ORDER BY grade ASC
+    """, params)
+
     return {
         "by_symbol":        by_symbol,
         "by_month":         by_month,
@@ -320,6 +350,8 @@ def get_deep_stats(filters=None, conn=None):
         "streaks":          streaks,
         "fee_analysis":     fee_analysis,
         "worst_symbols":    worst_symbols,
+        "by_setup":         by_setup,
+        "by_grade":         by_grade,
     }
 
 
@@ -350,6 +382,79 @@ def _bucket_durations(rows):
     for k in buckets:
         buckets[k]['total_pnl'] = round(buckets[k]['total_pnl'], 4)
     return list(buckets.values())
+
+
+def get_heatmap_data(conn=None) -> list:
+    """
+    Trade stats grouped by weekday (0=Sun…6=Sat) and open hour (0-23 UTC).
+    Returns list of {weekday, hour, trade_count, total_pnl, win_rate}.
+    """
+    if conn is None:
+        conn = get_conn()
+    return _rows(conn, """
+        SELECT
+            CAST(strftime('%w', close_time) AS INTEGER) AS weekday,
+            CAST(strftime('%H', open_time)  AS INTEGER) AS hour,
+            COUNT(*)                                     AS trade_count,
+            ROUND(SUM(realized_pnl), 2)                  AS total_pnl,
+            ROUND(100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END)
+                  / COUNT(*), 1)                         AS win_rate
+        FROM positions
+        GROUP BY weekday, hour
+        ORDER BY weekday, hour
+    """)
+
+
+def get_rr_analysis(conn=None):
+    """
+    Planned vs realized R:R for trades linked to analyst calls via positions.call_id.
+    Realized R:R = (actual_close - planned_entry) / abs(planned_entry - planned_sl).
+    Returns list of dicts, most recent first, capped at 100 rows.
+    """
+    if conn is None:
+        conn = get_conn()
+    rows = _rows(conn, """
+        SELECT p.id, p.symbol, p.direction,
+               p.entry_price   AS actual_entry,
+               p.close_price   AS actual_close,
+               p.realized_pnl,
+               p.execution_grade,
+               p.setup_type,
+               c.entry_price   AS planned_entry,
+               c.sl_price      AS planned_sl,
+               c.tp1_price     AS planned_tp1,
+               c.rr_ratio      AS planned_rr_text,
+               c.outcome       AS call_outcome
+        FROM positions p
+        JOIN analyzed_calls c ON p.call_id = c.id
+        WHERE c.sl_price IS NOT NULL AND c.sl_price > 0
+          AND p.entry_price IS NOT NULL AND p.entry_price > 0
+        ORDER BY p.close_time DESC
+        LIMIT 100
+    """)
+
+    result = []
+    for r in rows:
+        p_entry = r["planned_entry"] or r["actual_entry"]
+        p_sl    = r["planned_sl"]
+        close   = r["actual_close"]
+        real_rr = None
+        if p_sl and p_entry and abs(p_entry - p_sl) > 0:
+            risk    = abs(p_entry - p_sl)
+            reward  = (close - p_entry) if r["direction"] == "Long" else (p_entry - close)
+            real_rr = round(reward / risk, 2)
+        result.append({
+            "id":          r["id"],
+            "symbol":      r["symbol"],
+            "direction":   r["direction"],
+            "planned_rr":  r["planned_rr_text"],
+            "realized_rr": real_rr,
+            "outcome":     r["call_outcome"],
+            "grade":       r["execution_grade"],
+            "pnl":         r["realized_pnl"],
+            "setup_type":  r["setup_type"],
+        })
+    return result
 
 
 def _calc_streaks(pnl_series):

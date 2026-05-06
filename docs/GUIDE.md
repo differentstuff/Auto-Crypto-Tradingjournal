@@ -1,10 +1,8 @@
 # Crypto Trading Journal — Full Technical Reference
 
-**Live URL:** http://192.168.1.21:8082  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
-**Source (Mac):** `/Users/fbauer/Documents/ClaudeAIData/trading-journal/`  
-**Pi path:** `/home/fbauer/trading-journal/`
+**Project path:** `/home/<your-user>/trading-journal/`
 
 ---
 
@@ -24,25 +22,41 @@ A full-stack web application for Bitget USDT-M Futures traders:
 ## Architecture
 
 ```
-Browser (http://192.168.1.21:8082)
+Browser (http://<your-pi-ip>:8082)
          │
          ▼
-    Flask (app.py)              ← HTTP server + all API routes
-    ├── database.py             ← SQLite schema + connection helpers
+    Flask (app.py)              ← ~50 lines: blueprint registration + startup
+    ├── helpers.py              ← Shared _ok(), _err(), _filters_from_args()
+    ├── database.py             ← SQLite schema, get_conn(), db_conn() context manager
+    │
+    ├── routes/                 ← Flask Blueprints — one file per domain
+    │   ├── journal.py          ← positions CRUD, symbols, wallet, import
+    │   ├── analytics.py        ← dashboard KPIs, deep dive, heatmap, patterns, R:R, market
+    │   ├── calls.py            ← call analyzer, saved calls, outcomes, analyst stats
+    │   ├── limits.py           ← pending limit orders
+    │   ├── live.py             ← live positions, pending orders, live AI analysis
+    │   └── sync.py             ← sync trigger, sync status, AI advisor
+    │
     ├── importer.py             ← Bitget CSV → SQLite (historical data)
     ├── analytics.py            ← KPI + stats calculations (pure Python)
     ├── ai_advisor.py           ← Full-portfolio Claude analysis
     ├── ai_live_trade.py        ← Per-trade Claude analysis for open positions
     ├── ai_call_analyzer.py     ← Analyst call analysis + pending limit analysis
+    ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
+    ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
+    ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache)
+    ├── chart_context.py        ← OHLCV candles + pandas-ta indicator suite (10-min cache)
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
-templates/index.html            ← Entire frontend: HTML + CSS + JavaScript (SPA, ~3000 lines)
-static/                         ← Static assets (empty, CDN-loaded Chart.js)
+templates/index.html            ← Frontend: HTML structure only (~910 lines)
+static/style.css                ← All dark-theme CSS (extracted from index.html)
+static/app.js                   ← All frontend JavaScript (~2700 lines)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
 docs/USER_GUIDE.md              ← User-facing manual
+docs/RATING_CRITERIA.md         ← All AI scoring/grading criteria documented
 trading-journal.service         ← systemd service file
 requirements.txt                ← Python dependencies
 ```
@@ -54,7 +68,7 @@ requirements.txt                ← Python dependencies
 | Layer | Choice | Reason |
 |-------|--------|--------|
 | Language | Python 3.13 | Pre-installed on Pi, fast development |
-| Web framework | Flask 3.1 | Simple, no boilerplate |
+| Web framework | Flask 3.1.3 | Simple, no boilerplate |
 | Database | SQLite 3 (WAL mode) | Zero config, single file, built-in |
 | Frontend | Pure HTML/CSS/JavaScript | No build step, SPA with page-view switching |
 | Charts | Chart.js 4.4.0 (CDN) | One script tag, great defaults |
@@ -89,7 +103,12 @@ requirements.txt                ← Python dependencies
 | total_fees | REAL | |
 | notes | TEXT | user-editable freetext |
 | tags | TEXT | comma-separated |
+| analyst | TEXT | signal source (e.g. "CryptoGuru") |
 | is_manual | INTEGER | 1 = hand-entered |
+| setup_type | TEXT | Breakout / Pullback / Trend Continuation / Range Fade / Reversal / News-Event / Other |
+| call_id | INTEGER | FK → analyzed_calls.id (links trade to analyst call for R:R analysis) |
+| execution_grade | TEXT | A / B / C / D — Claude-assigned execution quality grade |
+| execution_grade_reason | TEXT | Claude's written explanation for the grade |
 | external_id | TEXT | Bitget positionId (dedup key) |
 | created_at | TEXT | |
 | updated_at | TEXT | |
@@ -405,7 +424,20 @@ Assesses a pending limit order before it fills. Calculates: stop distance %, ris
 
 ---
 
-## `app.py` — Complete API Reference
+## Route Blueprints
+
+Routes are split across `routes/` — registered in `app.py` at startup. All blueprints share `helpers.py` (`_ok`, `_err`, `_filters_from_args`) and `database.db_conn()`.
+
+| Blueprint | File | Domain |
+|-----------|------|--------|
+| `journal` | `routes/journal.py` | Positions CRUD, import, symbols, wallet history |
+| `analytics` | `routes/analytics.py` | Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data |
+| `calls` | `routes/calls.py` | Call analyzer, saved calls, outcomes, analyst stats |
+| `limits` | `routes/limits.py` | Pending limit orders |
+| `live` | `routes/live.py` | Live Bitget positions, pending orders, per-trade AI |
+| `sync` | `routes/sync.py` | Sync trigger, sync status, AI advisor |
+
+## API Reference
 
 All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "..."}`.
 
@@ -491,11 +523,16 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 
 ---
 
-## Frontend (`templates/index.html`)
+## Frontend
 
-Single-file SPA, ~3000 lines. Structure:
+Split across three files:
+- `templates/index.html` — HTML structure only (~910 lines), no inline CSS
+- `static/style.css` — all dark-theme CSS (~195 lines), loaded via `<link>`
+- `static/app.js` — all JavaScript (~2700 lines), loaded via `<script src="/static/app.js">`
+
+Structure:
 ```
-<style>   Dark theme CSS (CSS variables throughout)
+<link rel="stylesheet" href="/static/style.css">
 <body>
   <nav>   Sidebar: 9 navigation items
   sync-bar    Live sync status + Sync Now button
@@ -516,7 +553,7 @@ Single-file SPA, ~3000 lines. Structure:
     #limit-modal       Add/edit pending limit order
     #match-modal       Track Bitget live order as shadow trade (+ link to call)
     #bulk-link-modal   Link multiple selected limits to one analyst call
-<script>  All JavaScript
+<script src="/static/app.js">
 ```
 
 **Navigation pattern:**
@@ -569,9 +606,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=fbauer
-WorkingDirectory=/home/fbauer/trading-journal
-EnvironmentFile=/home/fbauer/trading-journal/.env
+# Replace <your-user> with your Linux username
+User=<your-user>
+WorkingDirectory=/home/<your-user>/trading-journal
+EnvironmentFile=/home/<your-user>/trading-journal/.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 app.py
 Restart=on-failure
@@ -583,12 +621,54 @@ WantedBy=multi-user.target
 
 Credentials are loaded via `EnvironmentFile=` from `.env` (gitignored). Copy `.env.example` to `.env` and fill in values before starting the service.
 
+### Passwordless sudo (optional but recommended)
+
+Allows remote `sudo systemctl restart` without a password prompt. Run once on the Pi:
+
+```bash
+echo '<your-user> ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/99-<your-user>-nopasswd
+sudo chmod 440 /etc/sudoers.d/99-<your-user>-nopasswd
+```
+
+After this, `sudo systemctl restart trading-journal` works from non-interactive SSH sessions.
+
+### Git identity (important for contributors)
+
+Set git identity before making any commits, otherwise git falls back to the OS username:
+
+```bash
+git config --global user.name "your-github-username"
+git config --global user.email "your-github-username@users.noreply.github.com"
+```
+
+This persists across all repos on the machine. Without it, every commit leaks the OS username even if a repo-level config was previously set (e.g. after running `git filter-repo`, which reinitialises the repo and clears local config).
+
+### GitHub repository security settings
+
+Configured on the public repo (`anvilfilbert/Auto-Crypto-Tradingjournal`):
+
+| Setting | Value |
+|---------|-------|
+| Merge strategy | Squash merge only (merge commits + rebase disabled) |
+| Delete branch on merge | Enabled |
+| Branch protection | CodeQL must pass before any merge to `main` |
+| CodeQL workflow | `.github/workflows/codeql.yml` — runs on push, PR, and weekly (Monday 06:00 UTC). **Default Setup must stay disabled** — enabling it causes SARIF upload conflict with the custom workflow |
+| Dependabot | Weekly `pip` dependency updates via `.github/dependabot.yml` |
+| Secret scanning | Enabled — alerts on any committed credentials |
+| Wiki / Projects | Disabled |
+
+**Secret scanning incident (resolved):** An old Anthropic API key was found in an early commit blob. The key was already revoked by Anthropic before discovery. Git history had been scrubbed with `git filter-repo`. Alert closed as `revoked`.
+
+**Rule:** never commit credentials. All keys live in `.env` (gitignored, mode 600), loaded via systemd `EnvironmentFile=`.
+
 ### Python Dependencies (`requirements.txt`)
 
 ```
-flask>=3.1.0
-anthropic>=0.40.0
+flask>=3.1.3
+anthropic>=0.100.0
 ```
+
+Bumped May 2026 via Dependabot PRs #5 and #6. Both packages installed on Pi and service verified running after update.
 
 ---
 
@@ -615,19 +695,19 @@ cp .env.example .env
 # Edit .env — fill in BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE, ANTHROPIC_API_KEY
 ```
 
-**5. Initialize DB**
+**4. Initialize DB**
 ```bash
 python3 database.py          # creates trading_journal.db with all tables
 ```
 
-**6. Test the app manually first**
+**5. Test the app manually first**
 ```bash
 python3 app.py
 # Open http://<host>:8082 in browser — confirm it loads
 # Ctrl+C to stop
 ```
 
-**7. Install systemd service**
+**6. Install systemd service**
 ```bash
 sudo cp trading-journal.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -636,7 +716,7 @@ sudo systemctl start trading-journal
 systemctl status trading-journal
 ```
 
-**6. Verify**
+**7. Verify**
 ```bash
 curl -s http://localhost:8082/api/dashboard/kpis | python3 -m json.tool | head -20
 curl -s http://localhost:8082/api/sync/status | python3 -m json.tool
@@ -651,21 +731,26 @@ journalctl -u trading-journal -f
 # Restart after code update
 sudo systemctl restart trading-journal
 
-# Deploy code update from Mac
+# Deploy code update from a remote machine (preferred — preserves subdirectory structure)
 rsync -avz -e ssh \
-  /Users/fbauer/Documents/ClaudeAIData/trading-journal/ \
-  fbauer@192.168.1.21:/home/fbauer/trading-journal/ \
-  --exclude='*.db' --exclude='*.pyc'
-ssh fbauer@192.168.1.21 sudo systemctl restart trading-journal
+  /path/to/local/trading-journal/ \
+  <your-user>@<your-pi-ip>:/home/<your-user>/trading-journal/ \
+  --exclude='*.db' --exclude='*.pyc' --exclude='__pycache__'
+ssh <your-user>@<your-pi-ip> sudo systemctl restart trading-journal
+
+# WARNING: when using scp for individual files, always specify the full destination path
+# including subdirectory — e.g. static/app.js and templates/index.html live in subdirs.
+# Wrong:  scp static/app.js pi:~/trading-journal/          ← lands in wrong place
+# Right:  scp static/app.js pi:~/trading-journal/static/app.js
 
 # Wipe and reimport DB
-ssh fbauer@192.168.1.21 "cd /home/fbauer/trading-journal && \
+ssh <your-user>@<your-pi-ip> "cd /home/<your-user>/trading-journal && \
   rm trading_journal.db && \
   python3 importer.py data/ && \
   sudo systemctl restart trading-journal"
 
 # Add new Bitget export via API
-curl -X POST http://192.168.1.21:8082/api/import \
+curl -X POST http://<your-pi-ip>:8082/api/import \
   -F "file=@/path/to/export.zip"
 ```
 
@@ -711,17 +796,294 @@ On the **Waiting** tab, each pending limit card shows a checkbox in the top-left
 
 ### 4. Analyst Field on Journal Rows (added May 2026)
 
+### 5. Recent Trades totals footer (added May 2026)
+
+The recent trades table on the Dashboard now has a `<tfoot>` row summing realized P&L and fees across the displayed trades (last 10).
+
+**Code:** `templates/index.html`, `loadDashboard()` — computed after building tbody, written to `#recent-tfoot`.
+
+### 6. Open Position Risk — SL-based calculation (added May 2026)
+
+The **Open Position Risk** KPI on the Dashboard now shows true dollar risk to stop-loss, not margin locked.
+
+**Formula:**
+- Long: `risk = (entry_price − stop_loss) / entry_price × size_usdt`
+- Short: `risk = (stop_loss − entry_price) / entry_price × size_usdt`
+- No SL set: falls back to `margin_usdt` (collateral at risk)
+
+Sub-label shows `· SL-based` or `· no SL` to indicate which mode is active.
+
+**Code:** `templates/index.html`, `loadDashboard()` → async `/api/live/positions` call.
+
 The `positions` table has an `analyst` column (migrated automatically at startup if missing). The journal table now shows an **Analyst** column (`📡 Name` or `—`).
 
 **Flow:** Click any journal row → "Edit Trade" modal → Analyst input at top → Save → `PUT /api/positions/<id>` with `{analyst: "..."}`. Works on all trades including historical ones.
 
 **Backend:** `PUT /api/positions/<id>` editable fields: `notes, tags, analyst, entry_price, close_price, size_usdt, realized_pnl, total_fees, open_time, close_time, direction`.
 
-**Migration guard** in `app.py` startup:
-```python
-if "analyst" not in cols:
-    conn.execute("ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
+**Migration:** `analyst` column added via `_pos_new_cols` in `database.py → init_db()` (safe `ALTER TABLE … ADD COLUMN` with try/except, same as all other column migrations).
+
+### 7. Security fixes (May 2026) — CodeQL alerts resolved
+
+Six CodeQL alerts were found and resolved:
+
+| # | Rule | File | Fix |
+|---|------|------|-----|
+| 1 & 2 | `py/stack-trace-exposure` | `bitget_sync.py`, `app.py` | `str(e)` in sync error result replaced with generic string; all `_err(str(e), 500)` calls replaced with `"Internal server error"` |
+| 3 & 4 | `py/path-injection` | `app.py` | Uploaded filename sanitized with `werkzeug.utils.secure_filename()` before `os.path.join()` |
+| 5 & 6 | `py/sql-injection` | `analytics.py` | Dismissed as false positive — `_build_where()` only interpolates hardcoded SQL fragments into the query string; user values go into bound `?` params only. Added allowlist validation (symbol `[A-Z0-9]+`, direction `Long`/`Short`, dates `YYYY-MM-DD`) for extra safety |
+
+### 8. Incomplete string escaping fix (v1.4.1) — CWE-116
+
+After JS was extracted to `static/app.js`, CodeQL flagged alert #7:
+
+| # | Rule | File | Fix |
+|---|------|------|-----|
+| 7 | `js/incomplete-string-escaping` | `static/app.js:983` | Analyst name interpolated into an `onclick` attribute escaped `'` but not `\`. Fixed by escaping backslashes first: `.replace(/\\/g,"\\\\").replace(/'/g,"\\'")` |
+
+### 9. Trading precision features (v1.5)
+
+Three features to improve trade analysis and self-coaching.
+
+#### 9a. AI Execution Grading (`ai_trade_grader.py`)
+
+**What it does:** Grades a closed trade A/B/C/D based on execution quality — not just P&L outcome.
+
+**Grades:**
+- **A** — Excellent: entry near/better than planned, disciplined exit, strong realized R:R
+- **B** — Good: minor flaw only (small slippage, slightly early profitable exit)
+- **C** — Average: one clear flaw (chased entry, moved SL, cut winner very early)
+- **D** — Poor: multiple/severe flaws (no SL, reckless size, avoidable full loss)
+
+**Flow:** Click **⚡ Grade** button on any journal row → `POST /api/positions/<id>/grade` → `ai_trade_grader.grade_trade(id)` → Claude prompt with trade + linked call data → grade + reason stored in `positions.execution_grade` / `positions.execution_grade_reason` → badge shown inline.
+
+**With linked call:** Entry slippage, realized R:R vs planned R:R, and recorded outcome are all included in the Claude prompt for a richer, more accurate grade.
+
+**Without linked call:** Claude grades from P&L, duration, setup type, and notes alone.
+
+**Backend:** `ai_trade_grader.py` — `grade_trade(position_id, conn)` → `_ask_claude(pos, call)`. Returns `{"grade": "A|B|C|D", "reason": "..."}`.
+
+**Deep Dive:** Execution Grade Analysis table — win rate and avg P&L per grade (appears once trades have been graded).
+
+#### 9b. Setup Type Tagging
+
+**What it does:** Labels each trade with a setup category for pattern analysis.
+
+**Options:** Breakout · Pullback · Trend Continuation · Range Fade · Reversal · News/Event · Other
+
+**Flow:** Click any journal row → **Setup Type** dropdown → Save → stored in `positions.setup_type`.
+
+**Deep Dive:** P&L by Setup Type — two charts (total P&L bar, win rate bar) and a breakdown table. Only trades with a setup_type set are included.
+
+**Backend:** `setup_type` added to `PUT /api/positions/<id>` editable fields. `get_deep_stats()` returns `by_setup` list.
+
+#### 9c. Planned vs Realized R:R (`analytics.get_rr_analysis`)
+
+**What it does:** Compares the R:R planned in an analyst call against what was actually achieved in the trade.
+
+**Formula:**
 ```
+realized_R:R = (close_price − planned_entry) / abs(planned_entry − planned_sl)   [Long]
+realized_R:R = (planned_entry − close_price) / abs(planned_entry − planned_sl)   [Short]
+```
+
+**Flow:** Open any journal row → enter the **Call ID** (from Call Analyzer) → Save → `positions.call_id` is set → `GET /api/analytics/rr` joins positions to analyzed_calls → Deep Dive R:R table shows planned vs realized.
+
+**Backend:** `analytics.get_rr_analysis(conn)` — JOINs positions + analyzed_calls on `call_id`. Returns up to 100 most recent linked trades.
+
+**Deep Dive:** Planned vs Realized R:R table — symbol, direction, setup, grade, planned R:R, realized R:R (green ≥ 1R, red < 1R), outcome, P&L.
+
+### 10. v1.5.5 — Edge Lab & UX polish
+
+#### 10a. Deep Dive split into two nav pages
+
+| Page | Nav ID | Content |
+|------|--------|---------|
+| Deep Dive | `page-deep` | 6 breakdown charts, key stats pills, symbol table, worst symbols table |
+| Edge Lab | `page-edge` | Setup type charts/table, execution grade table, AI pattern detector, R:R table |
+
+`loadEdge()` handles the Edge Lab page — fetches `/api/analytics/deep` for `by_setup`/`by_grade` and `/api/analytics/rr` independently of `loadDeep()`.
+
+#### 10b. Analyst Leaderboard (Edge Score)
+
+`GET /api/calls/analyst-stats` now returns additional computed fields per analyst:
+
+| Field | Formula |
+|-------|---------|
+| `call_win_rate` | call outcomes won / (won + sl_hits) × 100 |
+| `tp1_hit_rate` | tp1_hits / total_analyzed × 100 |
+| `conv_rate` | entered / total_analyzed × 100 |
+| `edge_score` | `win_rate × 0.5 + call_win_rate × 0.3 + tp1_hit_rate × 0.2` (requires ≥ 3 trades) |
+
+Sorted by edge_score descending. Rows color-coded: green ≥ 65, red < 45.
+
+#### 10c. Correlation Detector (sector-aware)
+
+`renderCorrelationWarning()` in `app.js` groups open positions by sector:
+
+`Bitcoin` · `ETH/L2` · `SOL/L1` · `Meme` · `DeFi` · `AI/Infra`
+
+Two severity tiers: 🟡 yellow (2 positions same sector + direction), 🔴 red (3+). Background color changes with severity.
+
+#### 10d. AI Pattern Detector (`ai_pattern_detector.py`)
+
+`POST /api/analytics/patterns` — collects stats by setup, weekday, session (Asia/London/NY/Off-hours), direction, duration, grade. Minimum 20 total trades, minimum 5 per category. Claude returns up to 6 findings as `{type, title, finding, recommendation, confidence}`.
+
+Session buckets (UTC): Asia 00-08 · London 08-13 · NY/Overlap 13-21 · Late/Off-hours 21-24.
+
+#### 10e. Setup Type filter in Journal
+
+`GET /api/positions` now accepts `setup` query param:
+- `setup=untagged` → `(setup_type IS NULL OR setup_type = '')`
+- `setup=Breakout` (or any named type) → `setup_type = ?` (allowlist validated)
+
+Filter dropdown added to journal filter bar between Result and From date. Reset button clears it.
+
+#### 10f. Setup Type in Add Trade modal
+
+`POST /api/positions` now accepts `setup_type` in request body and stores it at creation time. Dropdown added to the Add Trade modal above Notes.
+
+### 12. v1.7 — Trading Tools & Heatmap
+
+#### 12a. Position Sizing Calculator
+
+Located in the Call Analyzer input panel. No backend needed — purely frontend.
+
+**Inputs:** Entry price · Stop Loss · Risk % (persisted to `localStorage`)
+**Auto-population:** Account equity loaded from `/api/sync/status` on page load. Entry and SL auto-filled from parsed call after every `analyzeCall()` run.
+
+**Formula:**
+```
+risk_amount  = equity × risk% / 100
+risk_dist    = |entry − sl| / entry
+size_usdt    = risk_amount / risk_dist
+leverage     = size_usdt / equity
+```
+
+Leverage color: green ≤7x · yellow ≤15x · red >15x.
+
+**Code:** `calcSizing()` in `static/app.js`. `_szEquity` global holds current equity. `renderCallResult()` auto-fills inputs after analysis.
+
+#### 12b. Economic Calendar
+
+**Source:** `https://nfs.faireconomy.media/ff_calendar_thisweek.json` — ForexFactory community mirror, no auth, 1-hour cache.
+
+**Filter:** High-impact USD events only. Events for today and tomorrow (UTC) are returned.
+
+**API:** `GET /api/market/calendar` → list of `{title, time, forecast, previous, when}`
+
+**Frontend:** Yellow warning banner on Live Positions page (`#eco-warning`), shown non-blocking after positions load. Hidden when no events.
+
+**Code:** `get_economic_calendar()` in `market_context.py`.
+
+#### 12c. Trade Heatmap (Hour × Day)
+
+**Analytics:** `get_heatmap_data(conn)` in `analytics.py` — groups all positions by `(strftime('%w', close_time), strftime('%H', open_time))`.
+
+**API:** `GET /api/analytics/heatmap` → list of `{weekday, hour, trade_count, total_pnl, win_rate}`
+
+**Frontend:** `renderHeatmap(rows)` in `static/app.js` — builds an HTML table (7 cols × 24 rows). Cells require ≥3 trades. Opacity scales with trade count (more trades = more opaque). Hover shows count + WR + P&L.
+
+Color key: green ≥65% WR · blue 50–64% · yellow 40–49% · red <40%
+
+**Location:** Deep Dive page, after Worst Symbols table.
+
+#### 12d. BTC Dominance
+
+Added to `get_market_context()` and `format_for_prompt()`.
+
+**Source:** `https://api.coingecko.com/api/v3/global` — CoinGecko free API, no auth, 15-min cache.
+
+**Returns:** `{btc_dominance: 58.58, change_24h: 0.14, ok: true}`
+
+**Frontend:** Market Pulse strip on Dashboard. Rising dominance = red (bad for altcoin longs). Falling = green.
+
+**Claude context:** BTC dominance + 24h change included in `format_for_prompt()` output → available in AI Advisor and live position analysis.
+
+### 11. v1.6 — Live Market Context (`market_context.py`)
+
+Three real-time data sources injected into every Claude analysis.
+
+#### Sources
+
+| Source | Endpoint | Auth | Cache |
+|--------|----------|------|-------|
+| Fear & Greed Index | `https://api.alternative.me/fng/?limit=1` | None | 5 min |
+| Bitget funding rate | `/api/v2/mix/market/current-fund-rate` | Bitget (existing) | 5 min per symbol |
+| Bitget long/short ratio | `/api/v2/mix/market/account-long-short` | Bitget (existing) | 5 min per symbol |
+
+Cache is an in-process dict `{key: (timestamp, data)}` — resets on service restart.
+
+#### API
+
+`GET /api/market/context?symbols=BTCUSDT,SOLUSDT`
+
+Returns:
+```json
+{
+  "fear_greed": {"value": 46, "classification": "Fear", "ok": true},
+  "symbols": {
+    "BTCUSDT": {
+      "funding":    {"rate_pct": -0.0008, "direction": "shorts paying", "high": false, "ok": true},
+      "long_short": {"long_pct": 48.7, "short_pct": 51.3, "bias": "balanced", "ok": true}
+    }
+  }
+}
+```
+
+#### How Claude uses it
+
+| AI module | Context injected |
+|-----------|-----------------|
+| `ai_live_trade.py` | Funding rate + L/S ratio for the specific symbol being analyzed |
+| `ai_trade_grader.py` | Fear & Greed Index value at grading time |
+| `ai_advisor.py` | F&G + BTC funding rate for full portfolio analysis |
+
+`market_context.format_for_prompt(ctx)` converts the dict to a concise multi-line string appended to each Claude prompt.
+
+#### Frontend
+
+- **Dashboard** — Market Pulse strip above KPI grid: F&G badge + BTC funding + BTC L/S. Loads non-blocking after KPIs.
+- **Live Positions** — Two chips per card in the badge row:
+  - `F +0.0012%` (yellow = longs paying, green = shorts paying, ⚠ if ≥ 0.05%)
+  - `L/S 68/32` (yellow if either side > 65% = crowded trade)
+  - Market context fetched after positions render and triggers a re-render.
+
+---
+
+## `chart_context.py` — Technical Indicators
+
+Fetches OHLCV candles from Bitget (`/api/v2/mix/market/candles`) and computes a full indicator suite using `pandas-ta`. Results are cached per `(symbol, timeframe)` for 10 minutes.
+
+#### Indicators computed
+
+| Indicator | Parameters | Signal thresholds |
+|-----------|-----------|------------------|
+| RSI | 14 | >70 overbought · <30 oversold |
+| MACD | 12/26/9 | bullish/bearish crossover detected |
+| EMA | 20, 50, 200 | stack alignment (bullish/bearish/mixed) |
+| Bollinger Bands | 20, 2σ | price percentile position (0–100) |
+| Stochastic RSI | K=14, D=3 | K>80 overbought · K<20 oversold |
+| ADX | 14 | >25 strong trend · 20-25 trending · <20 ranging |
+| ATR | 14 | expressed as % of price (SL sizing hint) |
+| Volume | 20-period avg | >1.5× high · <0.7× low |
+| Candle pattern | last 3 | bullish/bearish/doji + body % |
+
+#### API
+
+`GET /api/chart/indicators?symbol=BTCUSDT&timeframes=4H,1D`
+
+Returns per-timeframe indicator dict plus `prompt_text` — a pre-formatted text block ready for Claude.
+
+#### How Claude uses it
+
+Both `ai_live_trade.py` and `ai_call_analyzer.py` automatically call `chart_context.format_multi_tf_for_prompt(symbol, ["4H", "1D"])` and append the result to every prompt. Claude uses indicators to:
+- Judge momentum alignment with the trade direction
+- Identify overbought/oversold conditions at entry
+- Cross-reference call setups against current technicals
+- Contextualise SL recommendations using ATR
+
+See `docs/RATING_CRITERIA.md` for the full documented thresholds used per indicator.
 
 ---
 
@@ -729,21 +1091,18 @@ if "analyst" not in cols:
 
 | Item | Value |
 |------|-------|
-| Live URL | http://192.168.1.21:8082 |
+| Live URL | http://`<your-pi-ip>`:8082 |
 | GitHub | https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal |
-| Pi address | 192.168.1.21 |
-| Pi user | fbauer |
-| Pi project dir | /home/fbauer/trading-journal/ |
-| Mac source dir | /Users/fbauer/Documents/ClaudeAIData/Trading-Journal/ |
-| Credentials file | /home/fbauer/trading-journal/.env (gitignored, mode 600) |
+| Project dir | /home/`<your-user>`/trading-journal/ |
+| Credentials file | `.env` in project root (gitignored, mode 600) |
 | Database file | trading_journal.db (excluded from git, DO NOT wipe without backup) |
 | Service name | trading-journal |
-| Port | 8082 |
-| Sync interval | 15 minutes automatic + manual Sync Now |
+| Port | 8082 (configurable via PORT in .env) |
+| Sync interval | 5 minutes automatic + manual Sync Now |
 | AI model | claude-sonnet-4-6 |
 | Exchange | Bitget USDT-M Futures |
-| Anthropic key | in `ai_call_analyzer.py` line 30 + `ANTHROPIC_API_KEY` env var |
-| Bitget API key | `bg_99c0e8…` in `bitget_client.py` (read-only) |
+| Anthropic key | `ANTHROPIC_API_KEY` in `.env` |
+| Bitget keys | `BITGET_API_KEY`, `BITGET_SECRET_KEY`, `BITGET_PASSPHRASE` in `.env` |
 
 ---
 
@@ -765,6 +1124,10 @@ SQLite DB
   ├── analyzed_calls ──► Call Analyzer / Analyst Stats / Prediction Accuracy
   ├── pending_limits ──► Pending Orders / Risk Summary
   └── settings ──► sync state, account balance
+
+Bitget Candles API (unauthenticated market data)
+  └── chart_context.py ──► pandas-ta indicators ──► ai_live_trade + ai_call_analyzer
+        └── 10-min cache per (symbol, timeframe)
 
 Claude API (claude-sonnet-4-6)
   ├── ai_advisor.py ──► Portfolio analysis (~$0.02/call)
@@ -788,13 +1151,27 @@ except sqlite3.OperationalError:
 ```
 
 ### New API endpoint
+
+Add the route to the appropriate blueprint in `routes/`. Use `db_conn()` so the connection always closes even on exception:
+
 ```python
-@app.route("/api/my-endpoint")
+# Example: routes/analytics.py
+from database import db_conn
+from helpers import _ok, _err
+
+@bp.route("/api/my-endpoint")
 def api_my_endpoint():
-    conn = get_conn()
-    data = [dict(r) for r in conn.execute("SELECT ... FROM positions").fetchall()]
-    conn.close()
+    with db_conn() as conn:
+        data = [dict(r) for r in conn.execute("SELECT ... FROM positions").fetchall()]
     return _ok(data)
+```
+
+`db_conn()` is a `contextlib.contextmanager` in `database.py` — opens with `get_conn()`, guarantees `conn.close()` on exit. Commits must still be explicit (`conn.commit()`) inside the `with` block.
+
+Register the blueprint in `app.py` if you create a new file:
+```python
+from routes.mymodule import bp as mymodule_bp
+app.register_blueprint(mymodule_bp)
 ```
 
 ### New KPI on Dashboard
@@ -807,7 +1184,7 @@ def api_my_endpoint():
 
 ### Push new trade via API (automation)
 ```python
-requests.post("http://192.168.1.21:8082/api/positions", json={
+requests.post("http://<your-pi-ip>:8082/api/positions", json={
     "symbol": "BTCUSDT", "direction": "Long",
     "open_time": "2026-06-01 10:00:00", "close_time": "2026-06-01 14:00:00",
     "entry_price": 105000, "close_price": 107500,

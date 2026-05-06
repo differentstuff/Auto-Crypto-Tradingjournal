@@ -10,6 +10,7 @@ The database has four tables:
 
 import sqlite3
 import os
+from contextlib import contextmanager
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "trading_journal.db"))
 
@@ -21,6 +22,16 @@ def get_conn():
     conn.execute("PRAGMA journal_mode=WAL")   # safe for concurrent reads
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+@contextmanager
+def db_conn():
+    """Context manager that opens a connection and guarantees close on exit."""
+    conn = get_conn()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -136,6 +147,67 @@ def init_db():
             created_at       TEXT DEFAULT (datetime('now'))
         )
     """)
+
+    # ── analyzed_calls column migrations ──────────────────────────────────────────
+    _new_cols = [
+        ("analyst",         "TEXT DEFAULT ''"),
+        ("outcome",         "TEXT DEFAULT NULL"),
+        ("outcome_pnl",     "REAL DEFAULT NULL"),
+        ("hit_tp1",         "INTEGER DEFAULT 0"),
+        ("hit_tp2",         "INTEGER DEFAULT 0"),
+        ("hit_sl",          "INTEGER DEFAULT 0"),
+        ("outcome_at",      "TEXT DEFAULT NULL"),
+        ("actual_notional", "REAL DEFAULT NULL"),
+    ]
+    for _col, _typedef in _new_cols:
+        try:
+            cur.execute(f"ALTER TABLE analyzed_calls ADD COLUMN {_col} {_typedef}")
+        except sqlite3.OperationalError:
+            pass
+
+    # ── pending_limits ─────────────────────────────────────────────────────────
+    # Limit orders the user has placed on exchange but not yet triggered.
+    # "Shadow trades" — tracked for risk and correlation analysis before they fill.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pending_limits (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            call_id         INTEGER REFERENCES analyzed_calls(id) ON DELETE SET NULL,
+            symbol          TEXT NOT NULL,
+            direction       TEXT NOT NULL,
+            limit_price     REAL NOT NULL,
+            size_usdt       REAL,
+            leverage        INTEGER DEFAULT 10,
+            sl_price        REAL,
+            tp1_price       REAL,
+            tp2_price       REAL,
+            analyst         TEXT DEFAULT '',
+            status          TEXT DEFAULT 'waiting',
+            triggered_at    TEXT,
+            analysis_json   TEXT,
+            notes           TEXT DEFAULT '',
+            bitget_order_id TEXT,
+            created_at      TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    # Safe migration for bitget_order_id on existing tables
+    try:
+        cur.execute("ALTER TABLE pending_limits ADD COLUMN bitget_order_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    # ── positions column migrations ────────────────────────────────────────────
+    _pos_new_cols = [
+        ("analyst",                "TEXT DEFAULT ''"),
+        ("execution_grade",        "TEXT DEFAULT NULL"),
+        ("execution_grade_reason", "TEXT DEFAULT NULL"),
+        ("setup_type",             "TEXT DEFAULT ''"),
+        ("call_id",                "INTEGER DEFAULT NULL"),
+    ]
+    for _col, _typedef in _pos_new_cols:
+        try:
+            cur.execute(f"ALTER TABLE positions ADD COLUMN {_col} {_typedef}")
+        except sqlite3.OperationalError:
+            pass
 
     # ── import_log ─────────────────────────────────────────────────────────────
     cur.execute("""
