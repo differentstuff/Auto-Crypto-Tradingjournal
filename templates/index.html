@@ -260,6 +260,56 @@ select:focus,input:focus{border-color:var(--accent)}
 .upload-result.success{background:rgba(38,217,107,.1);border:1px solid rgba(38,217,107,.3);color:var(--accent3)}
 .upload-result.error{background:rgba(239,83,80,.1);border:1px solid rgba(239,83,80,.3);color:var(--red)}
 
+/* ── Time / regime warning ───────────────────────────────────────────────────── */
+.time-warning{background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.35);border-radius:8px;padding:11px 14px;font-size:.82rem;color:var(--red);margin-bottom:14px;line-height:1.5}
+.regime-select{background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:.85rem;width:100%}
+.regime-select:focus{border-color:var(--accent);outline:none}
+/* ── Correlation warning ─────────────────────────────────────────────────────── */
+.correlation-warn{background:rgba(255,179,0,.07);border:1px solid rgba(255,179,0,.35);border-radius:8px;padding:11px 16px;font-size:.82rem;color:var(--yellow);margin-bottom:16px;line-height:1.6}
+/* ── Postmortem banner ───────────────────────────────────────────────────────── */
+.postmortem-box{background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.3);border-radius:8px;padding:14px 16px;margin:14px 0;font-size:.82rem;line-height:1.6}
+.postmortem-box .pm-title{font-weight:700;color:var(--red);margin-bottom:8px}
+/* ── Prediction accuracy table ───────────────────────────────────────────────── */
+.accuracy-section{margin-top:24px}
+/* ── Pattern flags in call result ────────────────────────────────────────────── */
+.pattern-flag-box{background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.3);border-radius:8px;padding:12px 14px;margin:12px 0}
+.pattern-flag-box .pf-title{font-size:.72rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+
+/* ── Monitoring chips ────────────────────────────────────────────────────────── */
+.chip-48h{background:rgba(255,179,0,.15);color:var(--yellow);padding:2px 8px;border-radius:20px;font-size:.65rem;font-weight:700}
+.chip-liq-warn{background:rgba(239,83,80,.25);color:var(--red);padding:2px 8px;border-radius:20px;font-size:.65rem;font-weight:700;animation:pulse 1.5s infinite}
+.chip-streak-w{background:rgba(38,217,107,.15);color:var(--accent3);padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700}
+.chip-streak-l{background:rgba(239,83,80,.15);color:var(--red);padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700}
+.be-prompt{background:rgba(38,217,107,.08);border:1px solid rgba(38,217,107,.3);border-radius:6px;padding:8px 12px;font-size:.78rem;color:var(--accent3);margin:8px 0;display:flex;align-items:center;gap:8px;line-height:1.4}
+/* ── Monthly Target ──────────────────────────────────────────────────────────── */
+.target-bar-wrap{background:var(--bg3);border-radius:4px;height:8px;overflow:hidden;margin-top:6px}
+.target-bar{height:100%;border-radius:4px;transition:.4s;background:var(--accent3)}
+/* ── Outcome modal ───────────────────────────────────────────────────────────── */
+.outcome-option{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:.2s;margin-bottom:8px}
+.outcome-option:hover{border-color:var(--accent);background:rgba(108,99,255,.06)}
+.outcome-option input[type=radio]{accent-color:var(--accent);width:16px;height:16px}
+/* ── Risk checker ────────────────────────────────────────────────────────────── */
+.risk-checker{background:var(--bg3);border:1px dashed var(--border);border-radius:8px;padding:14px;margin:12px 0}
+
+/* ── Bitget Live Orders section ──────────────────────────────────────────────── */
+.bitget-orders-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:20px}
+.bitget-orders-section h3{font-size:.85rem;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.bitget-order-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(45,50,80,.5);flex-wrap:wrap}
+.bitget-order-row:last-child{border-bottom:none}
+.tracked-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.65rem;font-weight:700;background:rgba(38,217,107,.15);color:var(--accent3)}
+.exit-order-row{opacity:.55}
+/* ── Pending Limit Orders ────────────────────────────────────────────────────── */
+.pending-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+.pending-card.waiting{border-left:3px solid var(--accent2)}
+.pending-card.triggered{border-left:3px solid var(--accent3);opacity:.75}
+.pending-card.cancelled{border-left:3px solid var(--border);opacity:.4}
+.pending-card-header{display:flex;align-items:center;gap:12px;padding:14px 18px;flex-wrap:wrap}
+.limit-chip-waiting{background:rgba(79,195,247,.15);color:var(--accent2);padding:2px 10px;border-radius:20px;font-size:.68rem;font-weight:700;text-transform:uppercase}
+.limit-chip-triggered{background:rgba(38,217,107,.15);color:var(--accent3);padding:2px 10px;border-radius:20px;font-size:.68rem;font-weight:700;text-transform:uppercase}
+.limit-chip-cancelled{background:rgba(45,50,80,.5);color:var(--muted);padding:2px 10px;border-radius:20px;font-size:.68rem;font-weight:700;text-transform:uppercase}
+.pending-verdict{background:var(--bg3);border-radius:8px;padding:12px 14px;margin:0 18px 14px;font-size:.82rem;line-height:1.5}
+.pending-risk-banner{background:rgba(255,179,0,.07);border:1px solid rgba(255,179,0,.25);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:.82rem;color:var(--yellow)}
+
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
 @media(max-width:900px){
   nav{width:60px}.nav-item span,.nav-logo span,.nav-logo{display:none}
@@ -300,6 +350,9 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="nav-item" onclick="showPage('live')" id="nav-live">
       <span class="nav-icon">🔴</span><span>Live Sync</span>
     </div>
+    <div class="nav-item" onclick="showPage('pending')" id="nav-pending">
+      <span class="nav-icon">⏳</span><span>Pending Orders</span>
+    </div>
   </nav>
 
   <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
@@ -322,6 +375,28 @@ select:focus,input:focus{border-color:var(--accent)}
       <!-- KPI grid -->
       <div class="kpi-grid" id="kpi-grid">
         <!-- filled by JS -->
+      </div>
+
+      <!-- Monthly target tracker + streak -->
+      <div style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start;margin-bottom:20px;flex-wrap:wrap" id="dash-extras">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:180px">
+              <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Monthly P&L Target</div>
+              <div id="dash-target-label" style="font-weight:600;font-size:.9rem;margin-top:3px">Set a target to track this month's progress</div>
+              <div class="target-bar-wrap" id="dash-target-bar-wrap" style="display:none"><div class="target-bar" id="dash-target-bar"></div></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+              <input type="number" id="dash-target-input" placeholder="Target USDT" style="width:130px" step="any">
+              <button class="btn btn-secondary btn-sm" onclick="setMonthlyTarget()">Set</button>
+              <button class="btn btn-danger btn-sm" onclick="clearMonthlyTarget()" id="dash-target-clear" style="display:none">✕</button>
+            </div>
+          </div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;min-width:200px">
+          <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Current Streak</div>
+          <div id="dash-streak-display" style="font-size:1.1rem;font-weight:700">—</div>
+        </div>
       </div>
 
       <!-- Charts row 1 -->
@@ -415,7 +490,7 @@ select:focus,input:focus{border-color:var(--accent)}
           <thead><tr>
             <th>Symbol</th><th>Dir</th><th>Opened</th><th>Closed</th>
             <th>Duration</th><th>Entry</th><th>Exit</th>
-            <th>Size USDT</th><th>P&amp;L</th><th>Fees</th><th>Notes</th>
+            <th>Size USDT</th><th>P&amp;L</th><th>Fees</th><th>Analyst</th><th>Notes</th>
           </tr></thead>
           <tbody id="journal-tbody"></tbody>
         </table>
@@ -545,6 +620,12 @@ select:focus,input:focus{border-color:var(--accent)}
       <div class="page-title">Trade Call Analyzer</div>
       <div class="page-subtitle">Paste an analyst's trade call, attach the chart, get exact Bitget entry settings. Risk: 1% (no DCA) · 2% (with DCA).</div>
 
+      <!-- Time-of-day / drawdown warning -->
+      <div id="call-time-warning" class="time-warning" style="display:none"></div>
+
+      <!-- Postmortem result (shown after recording a loss) -->
+      <div id="postmortem-banner" class="postmortem-box" style="display:none"></div>
+
       <div class="call-layout">
         <!-- ── Input panel ── -->
         <div class="call-input-card">
@@ -563,6 +644,23 @@ select:focus,input:focus{border-color:var(--accent)}
             <img id="call-img-preview" class="img-preview" alt="chart preview">
             <input type="file" id="call-img-input" style="display:none"
                    accept="image/*" onchange="handleCallImageFile(this.files[0])">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">
+            <div>
+              <h3 style="margin-bottom:6px">Analyst / Source</h3>
+              <input type="text" id="call-analyst" placeholder="e.g. CryptoGuru…"
+                     style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:.85rem">
+            </div>
+            <div>
+              <h3 style="margin-bottom:6px">Market Regime</h3>
+              <select id="call-regime" class="regime-select">
+                <option value="">— Not specified</option>
+                <option value="Bull">🐂 Bull — uptrend, altcoins pumping</option>
+                <option value="Neutral">➡ Neutral — ranging / mixed</option>
+                <option value="Bear">🐻 Bear — downtrend, caution</option>
+                <option value="BTC Dump">💥 BTC Dump — active sell-off</option>
+              </select>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
             <button class="btn btn-primary" id="call-analyze-btn" onclick="analyzeCall()" style="padding:10px 24px">
@@ -585,6 +683,18 @@ select:focus,input:focus{border-color:var(--accent)}
           <div class="page-subtitle" style="margin:0">Saved Call Analyses</div>
         </div>
         <div id="saved-calls-list"></div>
+      </div>
+
+      <!-- Analyst Stats section -->
+      <div id="analyst-stats-section" style="display:none;margin-top:28px">
+        <div class="section-title" style="margin-top:0">Analyst Performance Tracker</div>
+        <div id="analyst-stats-content"></div>
+      </div>
+
+      <!-- Prediction Accuracy section -->
+      <div id="prediction-accuracy-section" style="display:none;margin-top:24px">
+        <div class="section-title" style="margin-top:0">Setup Score Prediction Accuracy</div>
+        <div id="prediction-accuracy-content"></div>
       </div>
 
       <!-- Loading overlay inside result panel -->
@@ -614,6 +724,9 @@ select:focus,input:focus{border-color:var(--accent)}
 
       <!-- Pending match confirmations -->
       <div id="match-confirmations"></div>
+
+      <!-- Correlation risk warning -->
+      <div id="correlation-warning" class="correlation-warn" style="display:none"></div>
 
       <!-- Summary bar -->
       <div class="kpi-grid" style="max-width:800px;margin-bottom:24px" id="trades-kpi-grid"></div>
@@ -674,6 +787,41 @@ select:focus,input:focus{border-color:var(--accent)}
           <tr><td style="color:var(--muted);padding:4px 0">Mode</td><td>Incremental (new trades only)</td></tr>
           <tr><td style="color:var(--muted);padding:4px 0">Permissions</td><td>Read-only · No trading possible</td></tr>
         </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- 9. PENDING LIMIT ORDERS                                            -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="page-pending" class="page-view">
+      <div class="page-title">Pending Limit Orders</div>
+      <div class="page-subtitle">Live Bitget limit orders + manually tracked shadow trades — matched to analyst calls</div>
+
+      <!-- Live orders from Bitget exchange -->
+      <div class="bitget-orders-section">
+        <h3>
+          <span style="color:var(--accent2)">⚡ Live on Bitget</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadBitgetOrders()" id="bitget-refresh-btn">⟳ Refresh</button>
+          <span id="bitget-orders-age" style="font-size:.72rem;color:var(--muted);font-weight:400;margin-left:auto"></span>
+        </h3>
+        <div id="bitget-orders-content">
+          <span style="color:var(--muted);font-size:.82rem">Loading from Bitget…</span>
+        </div>
+      </div>
+
+      <div id="pending-risk-banner" class="pending-risk-banner" style="display:none"></div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" id="pending-tab-waiting"   onclick="loadPendingLimits('waiting')"   style="border-color:var(--accent2);color:var(--accent2)">⏳ Tracked / Waiting</button>
+          <button class="btn btn-secondary btn-sm" id="pending-tab-triggered" onclick="loadPendingLimits('triggered')">✅ Triggered</button>
+          <button class="btn btn-secondary btn-sm" id="pending-tab-cancelled" onclick="loadPendingLimits('cancelled')">✕ Cancelled</button>
+        </div>
+        <button class="btn btn-primary" onclick="openLimitModal()">+ Add Manually</button>
+      </div>
+
+      <div id="pending-limits-list">
+        <div class="ai-loading"><div class="spinner"></div><p>Loading pending orders…</p></div>
       </div>
     </div>
 
@@ -742,11 +890,171 @@ select:focus,input:focus{border-color:var(--accent)}
   </div>
 </div>
 
+<!-- ── Outcome Recording Modal ─────────────────────────────────────────────── -->
+<div class="modal-overlay" id="outcome-modal">
+  <div class="modal" style="max-width:480px">
+    <h2>Record Trade Outcome</h2>
+    <input type="hidden" id="outcome-call-id">
+    <div style="margin-bottom:16px">
+      <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:10px">Result</label>
+      <div class="outcome-option">
+        <input type="radio" name="outcome-result" id="outcome-won" value="won">
+        <label for="outcome-won" style="cursor:pointer;flex:1">
+          <strong style="color:var(--accent3)">Won</strong> — trade closed profitably
+        </label>
+      </div>
+      <div class="outcome-option">
+        <input type="radio" name="outcome-result" id="outcome-lost" value="lost">
+        <label for="outcome-lost" style="cursor:pointer;flex:1">
+          <strong style="color:var(--red)">Lost</strong> — stop loss hit or closed at a loss
+        </label>
+      </div>
+      <div class="outcome-option">
+        <input type="radio" name="outcome-result" id="outcome-manual" value="manual">
+        <label for="outcome-manual" style="cursor:pointer;flex:1">
+          <strong style="color:var(--yellow)">Manual Close</strong> — exited before TP/SL
+        </label>
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Actual PnL (USDT)</label>
+        <input type="number" id="outcome-pnl" placeholder="+25.50 or -18.00" step="any">
+      </div>
+      <div class="form-group" style="justify-content:flex-end;gap:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="outcome-hit-tp1" style="width:16px;height:16px;accent-color:var(--accent3)">
+          <span>TP1 hit</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="outcome-hit-tp2" style="width:16px;height:16px;accent-color:var(--accent3)">
+          <span>TP2 hit</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="outcome-hit-sl" style="width:16px;height:16px;accent-color:var(--red)">
+          <span>SL triggered</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeOutcomeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitOutcome()">Record Outcome</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add / Edit Pending Limit Modal ─────────────────────────────────────── -->
+<div class="modal-overlay" id="limit-modal">
+  <div class="modal" style="max-width:560px">
+    <h2>⏳ Pending Limit Order</h2>
+    <input type="hidden" id="limit-modal-id">
+    <input type="hidden" id="limit-modal-call-id">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Symbol *</label>
+        <input type="text" id="lm-symbol" placeholder="BTCUSDT" style="text-transform:uppercase">
+      </div>
+      <div class="form-group">
+        <label>Direction *</label>
+        <select id="lm-direction"><option value="Long">Long</option><option value="Short">Short</option></select>
+      </div>
+      <div class="form-group">
+        <label>Limit Price * (entry level)</label>
+        <input type="number" id="lm-limit-price" placeholder="e.g. 0.0485" step="any">
+      </div>
+      <div class="form-group">
+        <label>Size USDT (notional at full fill)</label>
+        <input type="number" id="lm-size-usdt" placeholder="e.g. 2500" step="any">
+      </div>
+      <div class="form-group">
+        <label>Leverage</label>
+        <input type="number" id="lm-leverage" placeholder="10" value="10" min="1" max="125">
+      </div>
+      <div class="form-group">
+        <label>Stop Loss Price</label>
+        <input type="number" id="lm-sl-price" placeholder="SL level" step="any">
+      </div>
+      <div class="form-group">
+        <label>Take Profit 1</label>
+        <input type="number" id="lm-tp1-price" placeholder="TP1 level" step="any">
+      </div>
+      <div class="form-group">
+        <label>Take Profit 2</label>
+        <input type="number" id="lm-tp2-price" placeholder="TP2 level (optional)" step="any">
+      </div>
+      <div class="form-group">
+        <label>Analyst / Signal Source</label>
+        <input type="text" id="lm-analyst" placeholder="e.g. CryptoSignals">
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <input type="text" id="lm-notes" placeholder="Additional context">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeLimitModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLimitOrder()">Save Limit Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Match Bitget Order to Analyst Call Modal ────────────────────────────── -->
+<div class="modal-overlay" id="match-modal">
+  <div class="modal" style="max-width:600px">
+    <h2>⚡ Track Bitget Limit Order</h2>
+    <input type="hidden" id="match-order-id">
+
+    <!-- Read-only order summary -->
+    <div style="background:var(--bg3);border-radius:8px;padding:14px 16px;margin-bottom:18px;font-size:.85rem" id="match-order-summary"></div>
+
+    <!-- SL / TP (optional — not in Bitget order data) -->
+    <div style="margin-bottom:14px">
+      <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:8px">Add SL &amp; TP levels <span style="font-weight:400;text-transform:none">(optional — not visible in Bitget pending orders)</span></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Stop Loss Price</label>
+          <input type="number" id="match-sl-price" placeholder="SL level" step="any">
+        </div>
+        <div class="form-group">
+          <label>Take Profit 1</label>
+          <input type="number" id="match-tp1-price" placeholder="TP1 level" step="any">
+        </div>
+        <div class="form-group">
+          <label>Take Profit 2</label>
+          <input type="number" id="match-tp2-price" placeholder="TP2 level (optional)" step="any">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <input type="text" id="match-notes" placeholder="Any context">
+        </div>
+      </div>
+    </div>
+
+    <!-- Analyst call picker -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:8px">Link to Analyst Call <span style="font-weight:400;text-transform:none">(optional — pick the call that led to this order)</span></div>
+      <div id="match-call-picker" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <div style="padding:12px;color:var(--muted);font-size:.82rem">Loading saved calls…</div>
+      </div>
+      <input type="hidden" id="match-selected-call-id">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeMatchModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveMatchedOrder()">Track as Shadow Trade</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Edit Notes Modal ────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="notes-modal">
   <div class="modal" style="max-width:460px">
-    <h2>Edit Notes &amp; Tags</h2>
+    <h2>Edit Trade</h2>
     <input type="hidden" id="edit-id">
+    <div class="form-group" style="margin-bottom:12px">
+      <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Analyst</label>
+      <input type="text" id="edit-analyst" style="width:100%" placeholder="e.g. CryptoGuru">
+    </div>
     <div class="form-group" style="margin-bottom:12px">
       <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
       <textarea id="edit-notes" rows="4" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px;resize:vertical;width:100%"></textarea>
@@ -852,6 +1160,37 @@ async function loadDashboard() {
       ${k.sub ? `<div class="kpi-sub">${k.sub}</div>` : ''}
     </div>`).join('');
 
+  // Open position risk (async — non-blocking)
+  api('/api/live/positions').then(lr => {
+    if (!lr.ok) return;
+    const pos = lr.data.positions || [];
+    const eq  = parseFloat(lr.data.equity?.accountEquity || 0);
+    const totalMargin = pos.reduce((s, p) => s + (p.margin_usdt || 0), 0);
+    const riskPct = eq > 0 ? (totalMargin / eq * 100).toFixed(1) : 0;
+    const el = document.createElement('div');
+    el.className = 'kpi-card';
+    el.innerHTML = `
+      <div class="kpi-label">Open Position Risk</div>
+      <div class="kpi-value neu">${fmtC(totalMargin)} USDT</div>
+      <div class="kpi-sub">${riskPct}% of equity · ${pos.length} open</div>`;
+    document.getElementById('kpi-grid').appendChild(el);
+  }).catch(() => {});
+
+  // Streak display
+  const streakEl = document.getElementById('dash-streak-display');
+  if (streakEl) {
+    if (d.current_win_streak > 0) {
+      streakEl.innerHTML = `<span class="chip-streak-w">🔥 ${d.current_win_streak} WIN STREAK</span>`;
+    } else if (d.current_loss_streak > 0) {
+      streakEl.innerHTML = `<span class="chip-streak-l">❄ ${d.current_loss_streak} LOSS STREAK</span>`;
+    } else {
+      streakEl.textContent = 'No active streak';
+    }
+  }
+
+  // Monthly target tracker
+  updateMonthlyTargetUI(d.current_month_pnl ?? 0);
+
   // PnL curve chart
   if (d.pnl_curve.length) {
     // Sample to max 200 points for performance
@@ -948,8 +1287,8 @@ async function journalLoad(page) {
 
   document.getElementById('journal-count').textContent = `${total} trade${total !== 1 ? 's' : ''}`;
   document.getElementById('journal-tbody').innerHTML = positions.map(t => `
-    <tr onclick="openNotesModal(${t.id}, '${escHtml(t.notes||'')}', '${escHtml(t.tags||'')}')"
-        style="cursor:pointer" title="Click to edit notes">
+    <tr onclick="openNotesModal(${t.id}, '${escHtml(t.notes||'')}', '${escHtml(t.tags||'')}', '${escHtml(t.analyst||'')}')"
+        style="cursor:pointer" title="Click to edit analyst, notes & tags">
       <td><strong>${t.symbol}</strong></td>
       <td><span class="badge ${t.direction.toLowerCase()}">${t.direction}</span></td>
       <td>${t.open_time?.slice(0,16)}</td>
@@ -960,6 +1299,7 @@ async function journalLoad(page) {
       <td>${fmtC(t.size_usdt)}</td>
       <td class="${pnlClass(t.realized_pnl)}">${pnlSign(t.realized_pnl)}${fmtC(t.realized_pnl)}</td>
       <td class="neg">${fmtC(t.total_fees)}</td>
+      <td style="font-size:.78rem;color:var(--accent2)">${t.analyst ? '📡 '+escHtml(t.analyst) : '<span style="color:var(--muted)">—</span>'}</td>
       <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.78rem">
         ${t.notes || (t.tags ? '🏷 ' + t.tags : '')}</td>
     </tr>`).join('');
@@ -1021,10 +1361,11 @@ async function saveTrade() {
 }
 
 // ── Edit Notes Modal ───────────────────────────────────────────────────────────
-function openNotesModal(id, notes, tags) {
-  document.getElementById('edit-id').value    = id;
-  document.getElementById('edit-notes').value = notes;
-  document.getElementById('edit-tags').value  = tags;
+function openNotesModal(id, notes, tags, analyst) {
+  document.getElementById('edit-id').value      = id;
+  document.getElementById('edit-analyst').value = analyst || '';
+  document.getElementById('edit-notes').value   = notes;
+  document.getElementById('edit-tags').value    = tags;
   document.getElementById('notes-modal').classList.add('open');
 }
 function closeNotesModal() { document.getElementById('notes-modal').classList.remove('open'); }
@@ -1032,8 +1373,9 @@ function closeNotesModal() { document.getElementById('notes-modal').classList.re
 async function saveNotes() {
   const id = document.getElementById('edit-id').value;
   const body = {
-    notes: document.getElementById('edit-notes').value,
-    tags:  document.getElementById('edit-tags').value,
+    analyst: document.getElementById('edit-analyst').value.trim(),
+    notes:   document.getElementById('edit-notes').value,
+    tags:    document.getElementById('edit-tags').value,
   };
   const res = await api('/api/positions/' + id, 'PUT', body);
   if (res.ok) { closeNotesModal(); journalLoad(journalPage); }
@@ -1307,6 +1649,8 @@ document.getElementById('notes-modal').addEventListener('click', e => {
 let callImageB64  = null;
 let callImageType = 'image/png';
 
+let _deepStatsCache = null;
+
 async function loadCallEquity() {
   try {
     const res = await api('/api/sync/status');
@@ -1316,6 +1660,41 @@ async function loadCallEquity() {
         `Account equity: ${eq.toFixed(2)} USDT (used for sizing)`;
     }
   } catch(e) {}
+
+  // Fetch deep stats for time-of-day warning (cached)
+  if (!_deepStatsCache) {
+    try {
+      const dr = await api('/api/analytics/deep');
+      if (dr.ok) _deepStatsCache = dr.data;
+    } catch(e) {}
+  }
+  if (_deepStatsCache) showCallTimeWarning(_deepStatsCache);
+}
+
+function showCallTimeWarning(deep) {
+  const el = document.getElementById('call-time-warning');
+  if (!el) return;
+  const nowHour = new Date().getUTCHours();
+  const nowDayIdx = new Date().getUTCDay(); // 0=Sun
+  const dayNames  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const nowDay    = dayNames[nowDayIdx];
+
+  const worstHours = [...(deep.by_hour || [])].sort((a,b) => a.total_pnl - b.total_pnl).slice(0,3);
+  const worstDays  = [...(deep.by_weekday || [])].sort((a,b) => a.total_pnl - b.total_pnl).slice(0,2);
+
+  const warnings = [];
+  const hourHit  = worstHours.find(h => h.hour === nowHour);
+  const dayHit   = worstDays.find(d  => d.weekday === nowDay);
+
+  if (hourHit) warnings.push(`${nowHour}:00 UTC is your #${worstHours.indexOf(hourHit)+1} worst hour (${fmtC(hourHit.total_pnl)} USDT, ${hourHit.win_rate}% WR)`);
+  if (dayHit)  warnings.push(`${nowDay} is one of your worst trading days (${fmtC(dayHit.total_pnl)} USDT, ${dayHit.win_rate}% WR)`);
+
+  if (warnings.length) {
+    el.innerHTML = `⚠ <strong>Poor timing detected:</strong> ${warnings.join(' · ')} — consider waiting for a better window`;
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 function handleCallImageDrop(e) {
@@ -1366,7 +1745,8 @@ async function analyzeCall() {
   loading.style.display = 'block';
 
   try {
-    const body = { call_text: text };
+    const regime = document.getElementById('call-regime')?.value || '';
+    const body = { call_text: text, market_regime: regime || null };
     if (callImageB64) { body.image_b64 = callImageB64; body.image_type = callImageType; }
 
     const res = await api('/api/calls/analyze', 'POST', body);
@@ -1403,6 +1783,22 @@ function renderCallResult(d) {
       <span class="quality-badge quality-${qlabel}">${sq.score || 0}/10 ${sq.label || ''}</span>
       ${rr.ratio ? `<span class="rr-pill">R:R ${rr.ratio}</span>` : ''}
     </div>`;
+
+  // Drawdown warning if sizing was reduced
+  if (sz.drawdown_note) {
+    html += `<div class="warn-box" style="margin-bottom:14px">
+      <strong>⚠ Drawdown Protection Active</strong> ${sz.drawdown_note}
+      — base risk ${sz.base_risk_pct}% reduced to ${sz.risk_pct}%
+    </div>`;
+  }
+
+  // Pattern flags from Claude
+  if (d.pattern_flags?.length) {
+    html += `<div class="pattern-flag-box">
+      <div class="pf-title">⚠ Personal Pattern Warnings</div>
+      ${d.pattern_flags.map(f => `<div style="margin-bottom:4px;color:var(--text)">• ${f}</div>`).join('')}
+    </div>`;
+  }
 
   // Chart analysis (if available)
   if (d.chart_analysis) {
@@ -1442,6 +1838,26 @@ function renderCallResult(d) {
         <div class="sizing-cell-label">DCA Entry 2 (${sz.entry_2_pct}%)</div>
         <div class="sizing-cell-val entry">${sz.entry_2_notional} USDT</div>
       </div>` : ''}
+    </div>`;
+  }
+
+  // Position Size Checker (after sizing grid)
+  if (sz.total_notional_usdt) {
+    html += `
+    <div class="risk-checker" id="size-checker-panel"
+         data-recommended="${sz.total_notional_usdt}" data-risk="${sz.risk_pct || 1}">
+      <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:8px">
+        ✓ Position Size Checker
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:.82rem;color:var(--muted)">What notional did you actually open?</span>
+        <input type="number" id="actual-notional-input" placeholder="${sz.total_notional_usdt}"
+               style="width:120px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+                      color:var(--text);padding:6px 10px;font-size:.82rem"
+               step="any" oninput="checkPositionSize(this.value)">
+        <span style="font-size:.82rem;color:var(--muted)">USDT</span>
+      </div>
+      <div id="size-check-result" style="font-weight:700;margin-top:6px;font-size:.82rem"></div>
     </div>`;
   }
 
@@ -1557,7 +1973,9 @@ async function saveCurrentCall() {
   btn.disabled = true;
   btn.textContent = '⏳ Saving…';
   try {
-    const res = await api('/api/calls/save', 'POST', _lastCallResult);
+    const analyst = (document.getElementById('call-analyst')?.value || '').trim();
+    const payload = Object.assign({}, _lastCallResult, { _analyst: analyst });
+    const res = await api('/api/calls/save', 'POST', payload);
     if (res.ok) {
       btn.textContent = '✅ Saved';
       msg.textContent = `Saved as call #${res.data.id} — visible in Saved Calls below`;
@@ -1586,26 +2004,33 @@ async function loadSavedCalls() {
   list.innerHTML = calls.map(c => {
     const chipCls = { saved:'chip-saved', matched:'chip-matched',
                       dismissed:'chip-dismissed', closed:'chip-closed' }[c.status] || 'chip-saved';
+    const outcomeTag = c.outcome ? `<span class="call-status-chip ${c.outcome==='won'?'chip-matched':c.outcome==='lost'?'chip-dismissed':'chip-saved'}">${c.outcome==='won'?'✅ Won':c.outcome==='lost'?'❌ Lost':'↩ Manual'} ${c.outcome_pnl!=null?fmtC(c.outcome_pnl)+' USDT':''}</span>` : '';
     return `
     <div class="saved-call-row ${c.status}" id="saved-row-${c.id}">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <strong>${c.symbol} ${c.direction}</strong>
           <span class="call-status-chip ${chipCls}">${c.status}</span>
+          ${outcomeTag}
+          ${c.analyst ? `<span style="font-size:.72rem;background:rgba(79,195,247,.1);color:var(--accent2);padding:1px 8px;border-radius:20px">📡 ${escHtml(c.analyst)}</span>` : ''}
           ${c.setup_score ? `<span style="font-size:.75rem;color:var(--muted)">${c.setup_score}/10 ${c.setup_label||''}</span>` : ''}
           ${c.rr_ratio ? `<span class="rr-pill" style="font-size:.72rem">${c.rr_ratio}</span>` : ''}
         </div>
         <div style="font-size:.75rem;color:var(--muted);margin-top:3px">
           ${c.trade_type||''} ·
           SL: <span style="color:var(--red)">${c.sl_price||'—'}</span> ·
-          TP1: <span style="color:var(--accent3)">${c.tp1_price||'—'}</span> ·
-          TP2: <span style="color:var(--accent3)">${c.tp2_price||'—'}</span> ·
+          TP1: <span style="color:var(--accent3)">${c.tp1_price||'—'}</span>
+          ${c.hit_tp1 ? '<span style="color:var(--accent3)">✓</span>' : ''} ·
+          TP2: <span style="color:var(--accent3)">${c.tp2_price||'—'}</span>
+          ${c.hit_tp2 ? '<span style="color:var(--accent3)">✓</span>' : ''} ·
           ${c.total_notional ? c.total_notional + ' USDT notional' : ''} ·
           Saved: ${(c.created_at||'').slice(0,16)}
           ${c.matched_at ? ' · Matched: ' + c.matched_at.slice(0,16) : ''}
         </div>
       </div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${c.status !== 'closed' ? `<button class="btn btn-sm" style="background:rgba(79,195,247,.12);color:var(--accent2);border:1px solid rgba(79,195,247,.3)" onclick="openLimitModal(null,{call_id:${c.id},symbol:'${c.symbol}',direction:'${c.direction}',sl_price:${c.sl_price||'null'},tp1_price:${c.tp1_price||'null'},tp2_price:${c.tp2_price||'null'},entry_price:${c.entry_price||'null'},total_notional:${c.total_notional||'null'},analyst:'${(c.analyst||'').replace(/'/g,"\\'")}',leverage:${c.leverage||10}})">⏳ Set Limit</button>` : ''}
+        ${(c.status === 'matched' || c.status === 'closed') && !c.outcome ? `<button class="btn btn-secondary btn-sm" onclick="openOutcomeModal(${c.id})">📊 Record Outcome</button>` : ''}
         ${c.status === 'matched' ? `<button class="btn btn-secondary btn-sm" onclick="closeCall(${c.id})">Mark Closed</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="deleteCall(${c.id})">Delete</button>
       </div>
@@ -1668,6 +2093,7 @@ async function loadLiveTrades() {
 
     renderLiveKpis(livePositionsCache, eq);
     renderMatchBanners(pendingMatches, livePositionsCache);
+    renderCorrelationWarning(livePositionsCache);
     renderPositionCards(livePositionsCache);
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
@@ -1745,8 +2171,14 @@ function renderLiveKpis(positions, eq) {
 }
 
 function renderCallTargetsPanel(call, pos) {
-  const mark  = parseFloat(pos.mark_price || 0);
-  const dir   = pos.direction === 'Long' ? 1 : -1;
+  const mark   = parseFloat(pos.mark_price || 0);
+  const dir    = pos.direction === 'Long' ? 1 : -1;
+  const tp1p   = parseFloat(call.tp1_price || 0);
+  const beP    = parseFloat(pos.break_even_price || 0);
+  const tp1Crossed = tp1p > 0 && mark > 0 && (
+    (pos.direction === 'Long'  && mark >= tp1p) ||
+    (pos.direction === 'Short' && mark <= tp1p)
+  );
 
   function distRow(label, price, cls) {
     if (!price) return '';
@@ -1782,6 +2214,10 @@ function renderCallTargetsPanel(call, pos) {
           </div>
         </div>` : ''}
       </div>
+      ${tp1Crossed ? `
+        <div class="be-prompt">
+          ✅ <strong>TP1 reached</strong> — consider moving Stop Loss to break-even (${beP > 0 ? beP.toPrecision(5) : 'entry price'}) to protect profits
+        </div>` : ''}
       ${call.has_candle_close_sl ? `
         <div class="candle-sl-chip">⚠ Candle-close SL at ${call.sl_price} — monitor manually, close on 4H close below</div>` : ''}
       ${call.entry_timing ? `
@@ -1822,6 +2258,14 @@ function renderPositionCards(positions) {
     const noTp       = !p.take_profit;
     const dur        = p.duration_minutes != null ? durFmt(p.duration_minutes) : '—';
     const hadAnalysis = liveAnalysisCache[key];
+    const is48h      = p.duration_minutes != null && p.duration_minutes > 2880;
+    const liqDist    = (() => {
+      const mark = parseFloat(p.mark_price || 0);
+      const liq  = parseFloat(p.liquidation_price || 0);
+      if (!liq || !mark) return Infinity;
+      return Math.abs((liq - mark) / mark * 100);
+    })();
+    const isLiqNear  = liqDist < 15;
 
     return `
     <div class="position-card ${cardClass}" id="card-${i}">
@@ -1834,6 +2278,8 @@ function renderPositionCards(positions) {
             <span class="badge" style="background:rgba(108,99,255,.15);color:var(--accent)">${p.leverage}x</span>
             ${noSl ? '<span class="badge" style="background:rgba(239,83,80,.15);color:var(--red);font-size:.65rem">NO SL</span>' : ''}
             ${isCritical ? '<span class="badge" style="background:rgba(239,83,80,.25);color:var(--red);animation:pulse 1.5s infinite">⚠ CRITICAL</span>' : ''}
+            ${is48h ? `<span class="chip-48h">⏱ ${Math.floor(p.duration_minutes/1440)}d+ OPEN</span>` : ''}
+            ${isLiqNear ? `<span class="chip-liq-warn">⚡ LIQ ${liqDist.toFixed(1)}% AWAY</span>` : ''}
           </div>
         </div>
         <!-- Stats -->
@@ -2003,6 +2449,748 @@ function renderTradeAnalysis(idx, d) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CORRELATION WARNING
+// ══════════════════════════════════════════════════════════════════════════════
+function renderCorrelationWarning(positions) {
+  const el = document.getElementById('correlation-warning');
+  if (!el) return;
+  const longs  = positions.filter(p => p.direction === 'Long');
+  const shorts = positions.filter(p => p.direction === 'Short');
+  const warnings = [];
+  if (longs.length >= 2) {
+    const totalM = longs.reduce((s, p) => s + (p.margin_usdt || 0), 0);
+    warnings.push(`${longs.length} simultaneous LONG positions (${fmtC(totalM)} USDT margin) — correlated downside risk: one BTC move hits all of them`);
+  }
+  if (shorts.length >= 2) {
+    const totalM = shorts.reduce((s, p) => s + (p.margin_usdt || 0), 0);
+    warnings.push(`${shorts.length} simultaneous SHORT positions (${fmtC(totalM)} USDT margin) — correlated upside risk`);
+  }
+  if (warnings.length) {
+    el.innerHTML = warnings.map(w => `<div>⚡ ${w}</div>`).join('');
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PREDICTION ACCURACY
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadPredictionAccuracy() {
+  const res = await api('/api/calls/prediction-accuracy');
+  const sec = document.getElementById('prediction-accuracy-section');
+  const con = document.getElementById('prediction-accuracy-content');
+  if (!res.ok || !res.data.length) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  con.innerHTML = `
+    <div class="table-card">
+      <div style="padding:12px 16px;font-size:.78rem;color:var(--muted)">
+        Based on ${res.data.reduce((s,r)=>s+r.total,0)} recorded outcomes — shows whether setup scores predict actual results
+      </div>
+      <table class="tbl">
+        <thead><tr>
+          <th>Score Band</th><th>Calls</th><th>Wins</th><th>Losses</th>
+          <th>Actual Win Rate</th><th>TP1 Hits</th><th>Avg PnL</th>
+        </tr></thead>
+        <tbody>${res.data.map(r => {
+          const calibration = r.score_band.startsWith('8') ? 'Should be 70%+' :
+                              r.score_band.startsWith('6') ? 'Should be 55-70%' :
+                              r.score_band.startsWith('4') ? 'Should be 40-55%' : 'Should be <40%';
+          const isCalibrated = (r.score_band.startsWith('8') && r.win_rate >= 65) ||
+                               (r.score_band.startsWith('6') && r.win_rate >= 50) ||
+                               (r.score_band.startsWith('4') && r.win_rate >= 35);
+          return `<tr>
+            <td><strong>${r.score_band}</strong></td>
+            <td>${r.total}</td>
+            <td class="pos">${r.wins}</td>
+            <td class="neg">${r.losses}</td>
+            <td class="${r.win_rate >= 55 ? 'pos' : r.win_rate >= 40 ? 'neu' : 'neg'}">
+              <strong>${r.win_rate}%</strong>
+              <span style="font-size:.7rem;color:var(--muted)"> · ${calibration}</span>
+            </td>
+            <td>${r.tp1_hits}</td>
+            <td class="${pnlClass(r.avg_pnl)}">${r.avg_pnl != null ? (r.avg_pnl>=0?'+':'') + fmtC(r.avg_pnl) : '—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST-MORTEM LOSS ANALYSIS
+// ══════════════════════════════════════════════════════════════════════════════
+async function fetchAndShowPostmortem(callId) {
+  const el = document.getElementById('postmortem-banner');
+  if (!el) return;
+  try {
+    const res = await api('/api/calls/' + callId + '/postmortem');
+    if (!res.ok || !res.data.findings.length) return;
+    el.innerHTML = `
+      <div class="pm-title">📋 Loss Post-Mortem — ${res.data.symbol}</div>
+      ${res.data.findings.map(f => `<div style="margin-bottom:5px">• ${f}</div>`).join('')}
+      <div style="margin-top:8px;font-size:.75rem;color:var(--muted)">Review these patterns before the next similar trade.</div>`;
+    el.style.display = '';
+    // Scroll to it
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch(e) {}
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CALL OUTCOME RECORDING
+// ══════════════════════════════════════════════════════════════════════════════
+function openOutcomeModal(callId) {
+  document.getElementById('outcome-call-id').value = callId;
+  document.querySelectorAll('input[name="outcome-result"]').forEach(r => r.checked = false);
+  document.getElementById('outcome-pnl').value = '';
+  document.getElementById('outcome-hit-tp1').checked = false;
+  document.getElementById('outcome-hit-tp2').checked = false;
+  document.getElementById('outcome-hit-sl').checked  = false;
+  document.getElementById('outcome-modal').classList.add('open');
+}
+function closeOutcomeModal() {
+  document.getElementById('outcome-modal').classList.remove('open');
+}
+async function submitOutcome() {
+  const callId  = document.getElementById('outcome-call-id').value;
+  const outcome = document.querySelector('input[name="outcome-result"]:checked')?.value;
+  if (!outcome) { alert('Please select a result (Won / Lost / Manual Close).'); return; }
+  const body = {
+    outcome,
+    outcome_pnl: parseFloat(document.getElementById('outcome-pnl').value) || null,
+    hit_tp1:     document.getElementById('outcome-hit-tp1').checked,
+    hit_tp2:     document.getElementById('outcome-hit-tp2').checked,
+    hit_sl:      document.getElementById('outcome-hit-sl').checked,
+  };
+  const res = await api('/api/calls/' + callId + '/record-outcome', 'POST', body);
+  if (res.ok) {
+    closeOutcomeModal();
+    loadSavedCalls();
+    loadAnalystStats();
+    loadPredictionAccuracy();
+    if (outcome === 'lost' || outcome === 'manual') {
+      fetchAndShowPostmortem(callId);
+    }
+  } else alert('Error: ' + res.error);
+}
+document.getElementById('outcome-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeOutcomeModal();
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MONTHLY TARGET TRACKER
+// ══════════════════════════════════════════════════════════════════════════════
+function setMonthlyTarget() {
+  const val = parseFloat(document.getElementById('dash-target-input').value);
+  if (!val || val <= 0) { alert('Enter a positive USDT target.'); return; }
+  localStorage.setItem('monthly_pnl_target', val);
+  updateMonthlyTargetUI();
+}
+function clearMonthlyTarget() {
+  localStorage.removeItem('monthly_pnl_target');
+  document.getElementById('dash-target-input').value = '';
+  document.getElementById('dash-target-label').textContent = 'Set a target to track this month\'s progress';
+  document.getElementById('dash-target-bar-wrap').style.display = 'none';
+  document.getElementById('dash-target-clear').style.display = 'none';
+}
+function updateMonthlyTargetUI(currentPnl) {
+  const target = parseFloat(localStorage.getItem('monthly_pnl_target') || 0);
+  const label  = document.getElementById('dash-target-label');
+  const barWrap= document.getElementById('dash-target-bar-wrap');
+  const bar    = document.getElementById('dash-target-bar');
+  const clear  = document.getElementById('dash-target-clear');
+  if (!label) return;
+  if (!target) { updateMonthlyTargetUI._pending = currentPnl; return; }
+  document.getElementById('dash-target-input').value = target;
+  clear.style.display = '';
+  barWrap.style.display = '';
+  if (currentPnl != null) {
+    const pct  = Math.min(100, Math.max(0, currentPnl / target * 100));
+    bar.style.width      = pct + '%';
+    bar.style.background = currentPnl >= target ? 'var(--accent3)' : currentPnl >= 0 ? 'var(--accent)' : 'var(--red)';
+    const rem  = target - currentPnl;
+    label.innerHTML = `<span class="${pnlClass(currentPnl)}">${currentPnl >= 0 ? '+' : ''}${fmtC(currentPnl)} USDT</span>
+      &nbsp;/ ${fmtC(target)} USDT (${pct.toFixed(0)}%)
+      ${rem > 0 ? `<span style="color:var(--muted);font-size:.8rem"> · ${fmtC(rem)} to go</span>` : ' <span style="color:var(--accent3)">🎉 Target reached!</span>'}`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POSITION SIZE CHECKER
+// ══════════════════════════════════════════════════════════════════════════════
+function checkPositionSize(actual) {
+  const panel = document.getElementById('size-checker-panel');
+  const el    = document.getElementById('size-check-result');
+  if (!panel || !el || !actual) { el && (el.textContent = ''); return; }
+  const recommended = parseFloat(panel.dataset.recommended);
+  const riskPct     = parseFloat(panel.dataset.risk);
+  if (!recommended) return;
+  const pct  = (actual - recommended) / recommended * 100;
+  const diff = actual - recommended;
+  if (Math.abs(pct) < 2) {
+    el.style.color  = 'var(--accent3)';
+    el.textContent  = `✅ On target — matches ${riskPct}% risk rule`;
+  } else if (pct > 0) {
+    el.style.color  = 'var(--red)';
+    el.textContent  = `⚠ Over-sized by ${pct.toFixed(1)}% (+${diff.toFixed(0)} USDT) — exceeds ${riskPct}% risk target`;
+  } else {
+    el.style.color  = 'var(--yellow)';
+    el.textContent  = `Under-sized by ${Math.abs(pct).toFixed(1)}% (${diff.toFixed(0)} USDT) — less risk than planned`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BITGET LIVE PENDING ORDERS
+// ══════════════════════════════════════════════════════════════════════════════
+let _bitgetOrdersCache = null;   // { entry:[], exit:[], tracked_ids:[], fetched_at }
+
+async function loadBitgetOrders() {
+  const content = document.getElementById('bitget-orders-content');
+  const ageEl   = document.getElementById('bitget-orders-age');
+  const btn     = document.getElementById('bitget-refresh-btn');
+  if (!content) return;
+
+  content.innerHTML = '<span style="color:var(--muted);font-size:.82rem">Fetching from Bitget…</span>';
+  if (btn) btn.disabled = true;
+
+  const res = await api('/api/live/pending-orders');
+  if (btn) btn.disabled = false;
+
+  if (!res.ok) {
+    content.innerHTML = `<span style="color:var(--red);font-size:.82rem">❌ ${res.error}</span>`;
+    return;
+  }
+
+  _bitgetOrdersCache = {
+    entry:       res.data.bitget_orders?.entry  || [],
+    exit:        res.data.bitget_orders?.exit   || [],
+    tracked_ids: new Set(res.data.tracked_ids   || []),
+    fetched_at:  new Date(),
+  };
+
+  renderBitgetOrdersSection();
+  if (ageEl) ageEl.textContent = 'Updated just now';
+}
+
+function renderBitgetOrdersSection() {
+  const content = document.getElementById('bitget-orders-content');
+  if (!content || !_bitgetOrdersCache) return;
+
+  const { entry, exit, tracked_ids } = _bitgetOrdersCache;
+
+  if (!entry.length && !exit.length) {
+    content.innerHTML = '<span style="color:var(--muted);font-size:.82rem">No pending limit orders on Bitget right now.</span>';
+    return;
+  }
+
+  let html = '';
+
+  if (entry.length) {
+    html += `<div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:8px">Entry Orders (${entry.length})</div>`;
+    html += entry.map(o => renderBitgetOrderRow(o, tracked_ids, false)).join('');
+  }
+
+  if (exit.length) {
+    html += `<div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin:14px 0 8px">Exit / TP-SL Orders (${exit.length})</div>`;
+    html += exit.map(o => renderBitgetOrderRow(o, tracked_ids, true)).join('');
+  }
+
+  content.innerHTML = html;
+}
+
+function renderBitgetOrderRow(o, trackedIds, isExit) {
+  const tracked  = trackedIds.has(o.order_id);
+  const dirClass = o.direction === 'Long' ? 'long' : 'short';
+  const rowClass = isExit ? 'bitget-order-row exit-order-row' : 'bitget-order-row';
+
+  const trackBtn = (!isExit && !tracked)
+    ? `<button class="btn btn-sm" style="background:rgba(108,99,255,.15);color:var(--accent);border:1px solid rgba(108,99,255,.3);white-space:nowrap" onclick='openMatchModal(${JSON.stringify(o)})'>🔗 Track &amp; Match</button>`
+    : (tracked ? `<span class="tracked-badge">✓ Tracked</span>` : '');
+
+  const notional = o.notional_usdt ? `<span style="color:var(--yellow)">${fmtC(o.notional_usdt)} USDT</span>` : '';
+  const lev      = o.leverage ? `<span style="font-size:.75rem;color:var(--muted)">${o.leverage}x</span>` : '';
+
+  return `<div class="${rowClass}">
+    <span style="font-weight:700;min-width:90px">${escHtml(o.symbol)}</span>
+    <span class="badge ${dirClass}">${o.direction}</span>
+    ${isExit ? `<span style="font-size:.72rem;background:rgba(239,83,80,.12);color:var(--red);padding:2px 8px;border-radius:20px">Exit</span>` : ''}
+    <span style="color:var(--accent2);font-weight:600">@ ${o.price}</span>
+    ${notional} ${lev}
+    <span style="font-size:.75rem;color:var(--muted);margin-left:4px">${o.created_at}</span>
+    <span style="margin-left:auto">${trackBtn}</span>
+  </div>`;
+}
+
+let _matchOrderData = null;
+
+async function openMatchModal(order) {
+  _matchOrderData = order;
+  document.getElementById('match-order-id').value     = order.order_id;
+  document.getElementById('match-sl-price').value     = '';
+  document.getElementById('match-tp1-price').value    = '';
+  document.getElementById('match-tp2-price').value    = '';
+  document.getElementById('match-notes').value        = '';
+  document.getElementById('match-selected-call-id').value = '';
+
+  // Build order summary card
+  document.getElementById('match-order-summary').innerHTML = `
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:1.1rem;font-weight:700">${escHtml(order.symbol)}</span>
+      <span class="badge ${order.direction==='Long'?'long':'short'}">${order.direction}</span>
+      <div><div style="font-size:.7rem;color:var(--muted)">Limit Price</div><div style="font-weight:700;color:var(--accent2)">${order.price}</div></div>
+      ${order.notional_usdt ? `<div><div style="font-size:.7rem;color:var(--muted)">Notional</div><div style="font-weight:700;color:var(--yellow)">${fmtC(order.notional_usdt)} USDT</div></div>` : ''}
+      ${order.leverage ? `<div><div style="font-size:.7rem;color:var(--muted)">Leverage</div><div style="font-weight:700">${order.leverage}x</div></div>` : ''}
+      <div style="margin-left:auto;font-size:.75rem;color:var(--muted)">${order.created_at}</div>
+    </div>`;
+
+  // Load saved calls for picker
+  const picker = document.getElementById('match-call-picker');
+  picker.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:.82rem">Loading…</div>';
+
+  const res = await api('/api/calls/saved');
+  if (!res.ok || !res.data.length) {
+    picker.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:.82rem">No saved calls found. Analyze and save a call first, or track without linking.</div>';
+  } else {
+    // Sort: same symbol+direction first
+    const sym = order.symbol;
+    const dir = order.direction;
+    const sorted = [...res.data].sort((a, b) => {
+      const aMatch = (a.symbol === sym && a.direction === dir) ? 0 : 1;
+      const bMatch = (b.symbol === sym && b.direction === dir) ? 0 : 1;
+      return aMatch - bMatch;
+    });
+
+    picker.innerHTML = sorted.map(c => {
+      const isMatch = c.symbol === sym && c.direction === dir;
+      return `<div class="outcome-option" id="call-pick-${c.id}" onclick="selectCallForMatch(${c.id})" style="${isMatch ? 'border-color:var(--accent);' : ''}">
+        <input type="radio" name="match-call-radio" value="${c.id}" style="width:14px;height:14px;accent-color:var(--accent)">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:.85rem">
+            ${escHtml(c.symbol)} ${c.direction}
+            ${isMatch ? '<span style="color:var(--accent3);font-size:.72rem"> ✓ matches this order</span>' : ''}
+          </div>
+          <div style="font-size:.75rem;color:var(--muted)">
+            Score: ${c.setup_score||'—'}/10 · ${c.trade_type||''} ·
+            SL: ${c.sl_price||'—'} · TP1: ${c.tp1_price||'—'}
+            ${c.analyst ? ' · 📡 '+escHtml(c.analyst) : ''}
+            · ${(c.created_at||'').slice(0,10)}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('match-modal').classList.add('open');
+}
+
+function selectCallForMatch(callId) {
+  document.getElementById('match-selected-call-id').value = callId;
+  // Tick the radio + highlight
+  document.querySelectorAll('input[name="match-call-radio"]').forEach(r => {
+    r.checked = (parseInt(r.value) === callId);
+  });
+  document.querySelectorAll('#match-call-picker .outcome-option').forEach(el => {
+    el.style.background = '';
+  });
+  const picked = document.getElementById('call-pick-' + callId);
+  if (picked) picked.style.background = 'rgba(108,99,255,.08)';
+}
+
+function closeMatchModal() {
+  document.getElementById('match-modal').classList.remove('open');
+  _matchOrderData = null;
+}
+
+async function saveMatchedOrder() {
+  if (!_matchOrderData) return;
+  const o       = _matchOrderData;
+  const callId  = document.getElementById('match-selected-call-id').value || null;
+
+  // Look up analyst from the selected call
+  let analyst = '';
+  if (callId) {
+    const radio = document.querySelector(`input[name="match-call-radio"][value="${callId}"]`);
+    const callRow = radio?.closest('.outcome-option');
+    if (callRow) {
+      const analystSpan = callRow.querySelector('.analyst-tag');
+      if (analystSpan) analyst = analystSpan.textContent.replace('📡','').trim();
+    }
+    // Try from the summary text
+    const matchText = callRow?.textContent || '';
+    const m = matchText.match(/📡\s*([^\s·]+)/);
+    if (m) analyst = m[1].trim();
+  }
+
+  const body = {
+    symbol:          o.symbol,
+    direction:       o.direction,
+    limit_price:     o.price,
+    size_usdt:       o.notional_usdt || null,
+    leverage:        parseInt(o.leverage) || 10,
+    sl_price:        parseFloat(document.getElementById('match-sl-price').value)  || null,
+    tp1_price:       parseFloat(document.getElementById('match-tp1-price').value) || null,
+    tp2_price:       parseFloat(document.getElementById('match-tp2-price').value) || null,
+    notes:           document.getElementById('match-notes').value.trim(),
+    call_id:         callId ? parseInt(callId) : null,
+    analyst,
+    bitget_order_id: o.order_id,
+  };
+
+  const res = await api('/api/limits', 'POST', body);
+  if (res.ok) {
+    closeMatchModal();
+    loadBitgetOrders();
+    loadPendingLimits('waiting');
+  } else {
+    alert('Error: ' + res.error);
+  }
+}
+
+document.getElementById('match-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeMatchModal();
+});
+
+async function openLinkCallModal(limitId) {
+  // Re-use match modal for linking an existing pending_limit to a call
+  _matchOrderData = { _existing_limit_id: limitId };
+
+  // Fetch the limit to get its symbol/direction
+  const res = await api('/api/limits?status=waiting');
+  const lim  = (res.data || []).find(l => l.id === limitId);
+  if (!lim) return;
+
+  document.getElementById('match-order-id').value = '';
+  document.getElementById('match-sl-price').value  = lim.sl_price  || '';
+  document.getElementById('match-tp1-price').value = lim.tp1_price || '';
+  document.getElementById('match-tp2-price').value = lim.tp2_price || '';
+  document.getElementById('match-notes').value     = lim.notes     || '';
+  document.getElementById('match-selected-call-id').value = '';
+
+  document.getElementById('match-order-summary').innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:1rem;font-weight:700">${escHtml(lim.symbol)}</span>
+      <span class="badge ${lim.direction==='Long'?'long':'short'}">${lim.direction}</span>
+      <div><div style="font-size:.7rem;color:var(--muted)">Limit Price</div><div style="font-weight:700;color:var(--accent2)">${lim.limit_price}</div></div>
+      ${lim.size_usdt ? `<div><div style="font-size:.7rem;color:var(--muted)">Size</div><div style="font-weight:700;color:var(--yellow)">${fmtC(lim.size_usdt)} USDT</div></div>` : ''}
+      <span style="font-size:.75rem;color:var(--muted);margin-left:auto">Limit #${limitId}</span>
+    </div>`;
+
+  // Load call picker (same as openMatchModal)
+  const picker = document.getElementById('match-call-picker');
+  picker.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:.82rem">Loading…</div>';
+
+  const callsRes = await api('/api/calls/saved');
+  if (!callsRes.ok || !callsRes.data.length) {
+    picker.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:.82rem">No saved calls found.</div>';
+  } else {
+    const sym = lim.symbol; const dir = lim.direction;
+    const sorted = [...callsRes.data].sort((a, b) =>
+      ((a.symbol===sym&&a.direction===dir)?0:1) - ((b.symbol===sym&&b.direction===dir)?0:1)
+    );
+    picker.innerHTML = sorted.map(c => {
+      const isMatch = c.symbol === sym && c.direction === dir;
+      return `<div class="outcome-option" id="call-pick-${c.id}" onclick="selectCallForMatch(${c.id})" style="${isMatch?'border-color:var(--accent);':''}">
+        <input type="radio" name="match-call-radio" value="${c.id}" style="width:14px;height:14px;accent-color:var(--accent)">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:.85rem">${escHtml(c.symbol)} ${c.direction}
+            ${isMatch?'<span style="color:var(--accent3);font-size:.72rem"> ✓ matches</span>':''}
+          </div>
+          <div style="font-size:.75rem;color:var(--muted)">Score: ${c.setup_score||'—'}/10 · ${c.trade_type||''} · SL: ${c.sl_price||'—'} · TP1: ${c.tp1_price||'—'}${c.analyst?' · 📡 '+escHtml(c.analyst):''} · ${(c.created_at||'').slice(0,10)}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('match-modal').classList.add('open');
+}
+
+// Override saveMatchedOrder to handle existing limit case
+const _origSaveMatchedOrder = saveMatchedOrder;
+saveMatchedOrder = async function() {
+  if (_matchOrderData?._existing_limit_id) {
+    // Linking an existing limit to a call
+    const limitId = _matchOrderData._existing_limit_id;
+    const callId  = document.getElementById('match-selected-call-id').value;
+    const updates = {
+      call_id:   callId ? parseInt(callId) : null,
+      sl_price:  parseFloat(document.getElementById('match-sl-price').value)  || null,
+      tp1_price: parseFloat(document.getElementById('match-tp1-price').value) || null,
+      tp2_price: parseFloat(document.getElementById('match-tp2-price').value) || null,
+      notes:     document.getElementById('match-notes').value.trim(),
+    };
+    const res = await api('/api/limits/' + limitId, 'PATCH', updates);
+    if (res.ok) { closeMatchModal(); loadPendingLimits('waiting'); }
+    else alert('Error: ' + res.error);
+    return;
+  }
+  await _origSaveMatchedOrder();
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PENDING LIMIT ORDERS
+// ══════════════════════════════════════════════════════════════════════════════
+let currentLimitStatus = 'waiting';
+
+async function loadPendingLimits(status) {
+  currentLimitStatus = status || 'waiting';
+  // Update tab button highlights
+  ['waiting','triggered','cancelled'].forEach(s => {
+    const btn = document.getElementById('pending-tab-' + s);
+    if (!btn) return;
+    btn.style.borderColor = s === currentLimitStatus ? 'var(--accent)' : '';
+    btn.style.color       = s === currentLimitStatus ? 'var(--accent)' : '';
+  });
+
+  const list = document.getElementById('pending-limits-list');
+  if (!list) return;
+  list.innerHTML = '<div class="ai-loading"><div class="spinner"></div><p>Loading…</p></div>';
+
+  if (currentLimitStatus === 'waiting') loadPendingRiskSummary();
+  else { const b = document.getElementById('pending-risk-banner'); if (b) b.style.display = 'none'; }
+
+  const res = await api('/api/limits?status=' + currentLimitStatus);
+  if (!res.ok) { list.innerHTML = '<p style="color:var(--red);padding:20px">Error loading orders</p>'; return; }
+
+  if (!res.data.length) {
+    const msgs = {
+      waiting:   'No pending limit orders. Click "+ Add Limit Order" to track a trade setup.',
+      triggered: 'No triggered limits yet.',
+      cancelled: 'No cancelled limits.',
+    };
+    list.innerHTML = `<div class="no-positions"><div class="icon">⏳</div><p style="color:var(--muted)">${msgs[currentLimitStatus]}</p></div>`;
+    return;
+  }
+  list.innerHTML = res.data.map(renderPendingLimitCard).join('');
+}
+
+async function loadPendingRiskSummary() {
+  const banner = document.getElementById('pending-risk-banner');
+  if (!banner) return;
+  const res = await api('/api/limits/risk-summary');
+  if (!res.ok || !res.data.pending_count) { banner.style.display = 'none'; return; }
+  const d = res.data;
+  banner.style.display = '';
+  const syms = d.by_symbol.map(s => `${s.symbol}: <strong>${fmtC(s.notional)} USDT</strong>`).join(' · ');
+  banner.innerHTML = `<strong>⚠ ${d.pending_count} pending order${d.pending_count!==1?'s':''} · ${fmtC(d.total_notional_usdt)} USDT notional committed if all fill</strong>${syms ? `<div style="margin-top:4px;font-size:.75rem;opacity:.85">${syms}</div>` : ''}`;
+}
+
+function renderPendingLimitCard(lim) {
+  const chipClass = 'limit-chip-' + lim.status;
+  const chipLabel = {waiting:'⏳ Waiting', triggered:'✅ Triggered', cancelled:'✕ Cancelled'}[lim.status] || lim.status;
+  const dirClass  = lim.direction === 'Long' ? 'long' : 'short';
+
+  // Stop distance & risk
+  let riskStr = '';
+  if (lim.limit_price && lim.sl_price && lim.size_usdt) {
+    const stopDist = Math.abs(lim.limit_price - lim.sl_price) / lim.limit_price * 100;
+    const riskUsdt = lim.size_usdt * stopDist / 100;
+    riskStr = `Risk if SL: <span class="neg">${fmtC(riskUsdt)} USDT</span> (${stopDist.toFixed(1)}% stop)`;
+  }
+
+  // R:R to TP1
+  let rrStr = '';
+  if (lim.tp1_price && lim.sl_price && lim.limit_price) {
+    const gain = Math.abs(lim.tp1_price - lim.limit_price);
+    const loss = Math.abs(lim.limit_price - lim.sl_price);
+    if (loss > 0) rrStr = ` · R:R <strong style="color:var(--accent)">${(gain/loss).toFixed(1)}:1</strong>`;
+  }
+
+  // Stored AI verdict
+  let verdictHtml = '';
+  if (lim.analysis_json) {
+    try {
+      const a = JSON.parse(lim.analysis_json);
+      const vColor = a.verdict==='Keep' ? 'var(--accent3)' : a.verdict==='Adjust' ? 'var(--yellow)' : 'var(--red)';
+      verdictHtml = `<div class="pending-verdict">
+        <span style="font-weight:700;color:${vColor}">${a.verdict}</span>
+        <span style="color:var(--muted)"> · Score ${a.setup_score}/10 · ${a.confidence} confidence</span>
+        <div style="margin-top:6px;color:var(--muted);font-size:.8rem">${escHtml(a.summary||'')}</div>
+        ${a.adjustments?.length ? `<div style="margin-top:8px;font-size:.78rem">${a.adjustments.map(x=>`<div style="padding:3px 0;border-bottom:1px solid var(--border)">→ ${escHtml(x)}</div>`).join('')}</div>` : ''}
+        ${a.risks?.length ? `<div style="margin-top:6px;font-size:.75rem;color:var(--red)">${a.risks.map(r=>`<div>⚠ ${escHtml(r)}</div>`).join('')}</div>` : ''}
+      </div>`;
+    } catch(e) {}
+  }
+
+  const waitingActions = lim.status === 'waiting' ? `
+    <button class="btn btn-sm" style="background:linear-gradient(135deg,#6c63ff,#4fc3f7);color:#fff;border:none" onclick="analyzePendingLimit(${lim.id})">🤖 AI Analysis</button>
+    ${!lim.call_id ? `<button class="btn btn-sm" style="background:rgba(108,99,255,.12);color:var(--accent);border:1px solid rgba(108,99,255,.3)" onclick="openLinkCallModal(${lim.id})">🔗 Link Call</button>` : ''}
+    <button class="btn btn-sm btn-secondary" onclick="openLimitModal(${lim.id})">✏ Edit</button>
+    <button class="btn btn-sm" style="background:rgba(38,217,107,.15);color:var(--accent3);border:1px solid rgba(38,217,107,.3)" onclick="markLimitTriggered(${lim.id})">✅ Mark Triggered</button>
+    <button class="btn btn-sm btn-danger" onclick="cancelPendingLimit(${lim.id})">✕ Cancel</button>` :
+    `<button class="btn btn-sm btn-danger" onclick="deleteLimit(${lim.id})">🗑 Delete</button>`;
+
+  return `<div class="pending-card ${lim.status}" id="pending-card-${lim.id}">
+    <div class="pending-card-header">
+      <span style="font-size:1rem;font-weight:700">${escHtml(lim.symbol)}</span>
+      <span class="badge ${dirClass}">${lim.direction}</span>
+      <span class="${chipClass}">${chipLabel}</span>
+      ${lim.bitget_order_id ? `<span style="font-size:.65rem;background:rgba(79,195,247,.12);color:var(--accent2);padding:2px 8px;border-radius:20px;font-weight:700">⚡ Bitget</span>` : ''}
+      ${lim.call_id ? `<span style="font-size:.65rem;background:rgba(108,99,255,.12);color:var(--accent);padding:2px 8px;border-radius:20px;font-weight:700">📡 Linked Call #${lim.call_id}</span>` : ''}
+      ${lim.analyst ? `<span style="font-size:.75rem;color:var(--muted)">${escHtml(lim.analyst)}</span>` : ''}
+      <div style="display:flex;gap:16px;align-items:center;margin-left:auto;flex-wrap:wrap">
+        ${lim.limit_price ? `<div class="pos-stat"><div class="pos-stat-label">Limit</div><div class="pos-stat-val" style="color:var(--accent2)">${lim.limit_price}</div></div>` : ''}
+        ${lim.sl_price    ? `<div class="pos-stat"><div class="pos-stat-label">SL</div><div class="pos-stat-val" style="color:var(--red)">${lim.sl_price}</div></div>` : ''}
+        ${lim.tp1_price   ? `<div class="pos-stat"><div class="pos-stat-label">TP1</div><div class="pos-stat-val" style="color:var(--accent3)">${lim.tp1_price}</div></div>` : ''}
+        ${lim.tp2_price   ? `<div class="pos-stat"><div class="pos-stat-label">TP2</div><div class="pos-stat-val" style="color:var(--accent3)">${lim.tp2_price}</div></div>` : ''}
+        ${lim.size_usdt   ? `<div class="pos-stat"><div class="pos-stat-label">Size</div><div class="pos-stat-val" style="color:var(--yellow)">${fmtC(lim.size_usdt)} USDT</div></div>` : ''}
+        ${lim.leverage    ? `<div class="pos-stat"><div class="pos-stat-label">Lev</div><div class="pos-stat-val">${lim.leverage}x</div></div>` : ''}
+      </div>
+    </div>
+    ${(riskStr || rrStr || lim.notes || lim.triggered_at) ? `<div style="padding:0 18px 8px;font-size:.75rem;color:var(--muted)">
+      ${riskStr}${rrStr}
+      ${lim.notes ? `<span style="margin-left:8px">· ${escHtml(lim.notes)}</span>` : ''}
+      ${lim.triggered_at ? `<span style="margin-left:8px">· Triggered: ${lim.triggered_at.slice(0,16)}</span>` : ''}
+      <span style="margin-left:8px">· Added: ${(lim.created_at||'').slice(0,10)}</span>
+    </div>` : ''}
+    ${verdictHtml}
+    <div id="pending-analyze-${lim.id}" style="display:none;padding:0 18px 12px"></div>
+    <div style="display:flex;gap:8px;padding:10px 18px 14px;flex-wrap:wrap">${waitingActions}</div>
+  </div>`;
+}
+
+function openLimitModal(limitId, prefill) {
+  const fields = ['lm-symbol','lm-limit-price','lm-size-usdt','lm-sl-price','lm-tp1-price','lm-tp2-price','lm-analyst','lm-notes'];
+  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('lm-leverage').value   = '10';
+  document.getElementById('lm-direction').value  = 'Long';
+  document.getElementById('limit-modal-id').value    = limitId || '';
+  document.getElementById('limit-modal-call-id').value = (prefill && prefill.call_id) ? prefill.call_id : '';
+
+  if (prefill) {
+    if (prefill.symbol)        document.getElementById('lm-symbol').value        = prefill.symbol;
+    if (prefill.direction)     document.getElementById('lm-direction').value     = prefill.direction;
+    if (prefill.sl_price)      document.getElementById('lm-sl-price').value      = prefill.sl_price;
+    if (prefill.tp1_price)     document.getElementById('lm-tp1-price').value     = prefill.tp1_price;
+    if (prefill.tp2_price)     document.getElementById('lm-tp2-price').value     = prefill.tp2_price;
+    if (prefill.entry_price)   document.getElementById('lm-limit-price').value   = prefill.entry_price;
+    if (prefill.total_notional)document.getElementById('lm-size-usdt').value     = prefill.total_notional;
+    if (prefill.analyst)       document.getElementById('lm-analyst').value       = prefill.analyst;
+    if (prefill.leverage)      document.getElementById('lm-leverage').value      = prefill.leverage;
+  }
+
+  if (limitId && !prefill) {
+    api('/api/limits?status=waiting').then(res => {
+      const lim = (res.data||[]).find(l => l.id === limitId);
+      if (!lim) return;
+      document.getElementById('lm-symbol').value        = lim.symbol;
+      document.getElementById('lm-direction').value     = lim.direction;
+      document.getElementById('lm-limit-price').value   = lim.limit_price;
+      if (lim.size_usdt)  document.getElementById('lm-size-usdt').value  = lim.size_usdt;
+      if (lim.leverage)   document.getElementById('lm-leverage').value   = lim.leverage;
+      if (lim.sl_price)   document.getElementById('lm-sl-price').value   = lim.sl_price;
+      if (lim.tp1_price)  document.getElementById('lm-tp1-price').value  = lim.tp1_price;
+      if (lim.tp2_price)  document.getElementById('lm-tp2-price').value  = lim.tp2_price;
+      if (lim.analyst)    document.getElementById('lm-analyst').value    = lim.analyst;
+      if (lim.notes)      document.getElementById('lm-notes').value      = lim.notes;
+    });
+  }
+  document.getElementById('limit-modal').classList.add('open');
+}
+
+function closeLimitModal() {
+  document.getElementById('limit-modal').classList.remove('open');
+}
+
+async function saveLimitOrder() {
+  const limitId    = document.getElementById('limit-modal-id').value;
+  const symbol     = document.getElementById('lm-symbol').value.trim().toUpperCase();
+  const limitPrice = parseFloat(document.getElementById('lm-limit-price').value);
+  if (!symbol || !limitPrice) { alert('Symbol and Limit Price are required.'); return; }
+
+  const body = {
+    symbol,
+    direction:  document.getElementById('lm-direction').value,
+    limit_price: limitPrice,
+    size_usdt:  parseFloat(document.getElementById('lm-size-usdt').value)  || null,
+    leverage:   parseInt(document.getElementById('lm-leverage').value)     || 10,
+    sl_price:   parseFloat(document.getElementById('lm-sl-price').value)   || null,
+    tp1_price:  parseFloat(document.getElementById('lm-tp1-price').value)  || null,
+    tp2_price:  parseFloat(document.getElementById('lm-tp2-price').value)  || null,
+    analyst:    document.getElementById('lm-analyst').value.trim(),
+    notes:      document.getElementById('lm-notes').value.trim(),
+    call_id:    document.getElementById('limit-modal-call-id').value || null,
+  };
+
+  const res = limitId
+    ? await api('/api/limits/' + limitId, 'PATCH', body)
+    : await api('/api/limits', 'POST', body);
+
+  if (res.ok) {
+    closeLimitModal();
+    if (currentPage === 'pending') loadPendingLimits(currentLimitStatus);
+  } else alert('Error: ' + res.error);
+}
+
+async function analyzePendingLimit(limitId) {
+  const analyzeDiv = document.getElementById('pending-analyze-' + limitId);
+  if (analyzeDiv) {
+    analyzeDiv.style.display = '';
+    analyzeDiv.innerHTML = '<div style="padding:12px;color:var(--muted);display:flex;align-items:center;gap:8px"><div class="spinner" style="width:18px;height:18px;border-width:2px;margin:0"></div> Analyzing with Claude…</div>';
+  }
+  const res = await api('/api/limits/' + limitId + '/analyze', 'POST');
+  if (analyzeDiv) analyzeDiv.style.display = 'none';
+  if (!res.ok) { alert('Analysis error: ' + res.error); return; }
+  loadPendingLimits(currentLimitStatus);
+}
+
+async function markLimitTriggered(limitId) {
+  if (!confirm('Mark this limit as triggered / filled?')) return;
+  const res = await api('/api/limits/' + limitId, 'PATCH', { status: 'triggered' });
+  if (res.ok) loadPendingLimits(currentLimitStatus);
+  else alert('Error: ' + res.error);
+}
+
+async function cancelPendingLimit(limitId) {
+  if (!confirm('Cancel this pending limit order?')) return;
+  const res = await api('/api/limits/' + limitId, 'PATCH', { status: 'cancelled' });
+  if (res.ok) loadPendingLimits(currentLimitStatus);
+  else alert('Error: ' + res.error);
+}
+
+async function deleteLimit(limitId) {
+  if (!confirm('Permanently delete this limit record?')) return;
+  const res = await api('/api/limits/' + limitId, 'DELETE');
+  if (res.ok) loadPendingLimits(currentLimitStatus);
+  else alert('Error: ' + res.error);
+}
+
+document.getElementById('limit-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeLimitModal();
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ANALYST STATS
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadAnalystStats() {
+  const res = await api('/api/calls/analyst-stats');
+  const sec = document.getElementById('analyst-stats-section');
+  const con = document.getElementById('analyst-stats-content');
+  if (!res.ok || !res.data.length) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  con.innerHTML = `
+    <div class="table-card">
+      <table class="tbl">
+        <thead><tr>
+          <th>Analyst</th><th>Analyzed</th><th>Entered</th>
+          <th>Wins</th><th>Losses</th><th>TP1 Hits</th><th>Avg PnL</th><th>Avg Score</th>
+        </tr></thead>
+        <tbody>${res.data.map(a => {
+          const wr = a.wins + a.losses > 0 ? (a.wins / (a.wins + a.losses) * 100).toFixed(0) + '%' : '—';
+          return `<tr>
+            <td><strong>${escHtml(a.analyst)}</strong></td>
+            <td>${a.total_analyzed}</td>
+            <td>${a.entered} <span style="color:var(--muted);font-size:.75rem">(${a.total_analyzed > 0 ? (a.entered/a.total_analyzed*100).toFixed(0) : 0}%)</span></td>
+            <td class="pos">${a.wins} <span style="color:var(--muted);font-size:.75rem">${wr}</span></td>
+            <td class="neg">${a.losses}</td>
+            <td class="${a.tp1_hits > 0 ? 'pos' : ''}">${a.tp1_hits}</td>
+            <td class="${pnlClass(a.avg_pnl)}">${a.avg_pnl != null ? (a.avg_pnl >= 0 ? '+' : '') + fmtC(a.avg_pnl) : '—'}</td>
+            <td>${a.avg_setup_score != null ? a.avg_setup_score + '/10' : '—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // LIVE SYNC
 // ══════════════════════════════════════════════════════════════════════════════
 let syncPolling = null;
@@ -2090,15 +3278,16 @@ async function triggerSync(fromLivePage = false) {
 // showPage extension for live pages
 const _origShowPage = showPage;
 showPage = function(name) {
-  const extras = ['live', 'trades', 'calls'];
+  const extras = ['live', 'trades', 'calls', 'pending'];
   if (extras.includes(name)) {
     document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     document.getElementById('page-' + name).classList.add('active');
     document.getElementById('nav-' + name).classList.add('active');
     currentPage = name;
-    if (name === 'live')   pollSyncStatus();
-    if (name === 'calls')  { loadCallEquity(); loadSavedCalls(); }
+    if (name === 'live')    pollSyncStatus();
+    if (name === 'calls')   { loadCallEquity(); loadSavedCalls(); loadAnalystStats(); loadPredictionAccuracy(); }
+    if (name === 'pending') { loadBitgetOrders(); loadPendingLimits('waiting'); }
     if (name === 'trades') {
       loadLiveTrades();
       // Auto-refresh every 30s while on this page

@@ -168,7 +168,7 @@ def api_positions_list():
     rows  = [dict(r) for r in conn.execute(
         f"""SELECT id, symbol, direction, open_time, close_time, duration_minutes,
                    entry_price, close_price, size_contracts, size_usdt,
-                   position_pnl, realized_pnl, total_fees, notes, tags, is_manual
+                   position_pnl, realized_pnl, total_fees, notes, tags, is_manual, analyst
             FROM positions {where}
             ORDER BY close_time DESC
             LIMIT ? OFFSET ?""",
@@ -264,7 +264,7 @@ def api_position_update(pos_id):
         return _err("Not found", 404)
 
     # Only allow safe editable fields
-    editable = ["notes", "tags", "entry_price", "close_price",
+    editable = ["notes", "tags", "analyst", "entry_price", "close_price",
                 "size_usdt", "realized_pnl", "total_fees",
                 "open_time", "close_time", "direction"]
     sets, vals = [], []
@@ -394,11 +394,13 @@ def api_calls_analyze():
         except Exception:
             equity  = 1000.0   # fallback if API unreachable
 
+        market_regime = (body.get("market_regime") or "").strip() or None
         result = ai_call_analyzer.analyze_call(
             call_text      = call_text,
             account_equity = equity,
             image_b64      = image_b64,
             image_type     = image_type,
+            market_regime  = market_regime,
         )
         return _ok(result)
     except Exception as e:
@@ -414,7 +416,8 @@ def api_calls_saved():
         SELECT id, symbol, direction, trade_type, setup_score, setup_label,
                rr_ratio, has_dca, has_candle_close_sl, sl_price, tp1_price, tp2_price,
                entry_price, dca_price, avg_entry, total_notional, risk_pct,
-               status, matched_at, created_at
+               status, matched_at, created_at,
+               analyst, outcome, outcome_pnl, hit_tp1, hit_tp2, hit_sl, outcome_at
         FROM analyzed_calls ORDER BY created_at DESC
     """).fetchall()]
     conn.close()
@@ -441,8 +444,8 @@ def api_calls_save():
            tp1_price, tp2_price, avg_entry, total_notional, margin_needed,
            risk_pct, risk_amount, leverage, has_dca, has_candle_close_sl,
            setup_score, setup_label, rr_ratio, trade_type,
-           sl_warning, entry_timing, analysis_json)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           sl_warning, entry_timing, analysis_json, analyst)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         d.get("symbol"), d.get("direction"),
         d.get("_call_text", ""),
@@ -457,6 +460,7 @@ def api_calls_save():
         rr.get("ratio"), d.get("trade_type"),
         d.get("sl_warning"), d.get("entry_timing"),
         json.dumps(d),
+        (d.get("_analyst") or "").strip(),
     ))
     new_id = cur.lastrowid
     conn.commit()
@@ -527,6 +531,26 @@ def api_calls_close(call_id):
     return _ok({"closed": call_id})
 
 
+@app.route("/api/calls/<int:call_id>", methods=["PATCH"])
+def api_calls_patch(call_id):
+    """Update editable call fields: analyst, notes."""
+    d = request.get_json(force=True)
+    editable = ["analyst", "notes"]
+    sets, vals = [], []
+    for key in editable:
+        if key in d:
+            sets.append(f"{key} = ?")
+            vals.append(d[key])
+    if not sets:
+        return _err("No updatable fields")
+    vals.append(call_id)
+    conn = get_conn()
+    conn.execute(f"UPDATE analyzed_calls SET {', '.join(sets)} WHERE id = ?", vals)
+    conn.commit()
+    conn.close()
+    return _ok({"updated": call_id})
+
+
 @app.route("/api/calls/<int:call_id>", methods=["DELETE"])
 def api_calls_delete(call_id):
     conn = get_conn()
@@ -534,6 +558,328 @@ def api_calls_delete(call_id):
     conn.commit()
     conn.close()
     return _ok({"deleted": call_id})
+
+
+@app.route("/api/calls/<int:call_id>/record-outcome", methods=["POST"])
+def api_calls_record_outcome(call_id):
+    """Record the actual outcome of a trade linked to a saved call."""
+    d    = request.get_json(force=True)
+    conn = get_conn()
+    conn.execute("""
+        UPDATE analyzed_calls
+        SET outcome     = ?,
+            outcome_pnl = ?,
+            hit_tp1     = ?,
+            hit_tp2     = ?,
+            hit_sl      = ?,
+            outcome_at  = datetime('now'),
+            status      = 'closed'
+        WHERE id = ?
+    """, (
+        d.get("outcome"),
+        d.get("outcome_pnl"),
+        1 if d.get("hit_tp1") else 0,
+        1 if d.get("hit_tp2") else 0,
+        1 if d.get("hit_sl") else 0,
+        call_id,
+    ))
+    conn.commit()
+    conn.close()
+    return _ok({"recorded": call_id})
+
+
+@app.route("/api/calls/prediction-accuracy")
+def api_calls_prediction_accuracy():
+    """How well do setup scores predict actual trade outcomes?"""
+    conn  = get_conn()
+    rows  = [dict(r) for r in conn.execute("""
+        SELECT
+          CASE WHEN setup_score >= 8 THEN '8-10 Excellent/Strong'
+               WHEN setup_score >= 6 THEN '6-7 Good/Moderate'
+               WHEN setup_score >= 4 THEN '4-5 Weak/Moderate'
+               ELSE '1-3 Poor/Weak' END            AS score_band,
+          MIN(setup_score)                          AS min_score,
+          COUNT(*)                                  AS total,
+          SUM(CASE WHEN outcome='won' THEN 1 ELSE 0 END)    AS wins,
+          SUM(CASE WHEN outcome='lost' THEN 1 ELSE 0 END)   AS losses,
+          ROUND(AVG(CASE WHEN outcome_pnl IS NOT NULL THEN outcome_pnl END), 2) AS avg_pnl,
+          SUM(CASE WHEN hit_tp1=1 THEN 1 ELSE 0 END)        AS tp1_hits
+        FROM analyzed_calls
+        WHERE outcome IS NOT NULL AND setup_score IS NOT NULL
+        GROUP BY score_band
+        ORDER BY min_score DESC
+    """).fetchall()]
+    conn.close()
+    for r in rows:
+        r["win_rate"] = round(r["wins"] / r["total"] * 100, 1) if r["total"] else 0
+    return _ok(rows)
+
+
+@app.route("/api/calls/<int:call_id>/postmortem")
+def api_calls_postmortem(call_id):
+    """
+    Rule-based post-mortem: compare call attributes against trader's known
+    weak patterns and return a list of findings.
+    """
+    conn  = get_conn()
+    call  = conn.execute("SELECT * FROM analyzed_calls WHERE id=?", (call_id,)).fetchone()
+    if not call:
+        conn.close()
+        return _err("Not found", 404)
+    call = dict(call)
+
+    from analytics import get_deep_stats
+    deep = get_deep_stats(conn=conn)
+    conn.close()
+
+    findings = []
+
+    # Direction weakness
+    dir_data = {d["direction"]: d for d in deep.get("by_direction", [])}
+    direction = call.get("direction", "")
+    if direction in dir_data:
+        all_wrs = [d["win_rate"] for d in dir_data.values()]
+        d = dir_data[direction]
+        if d["win_rate"] == min(all_wrs) and d["win_rate"] < 55:
+            findings.append(
+                f"{direction} is your weaker direction ({d['win_rate']}% WR, "
+                f"{'+' if d['total_pnl']>=0 else ''}{d['total_pnl']:.0f} USDT total) — "
+                f"consider tighter sizing on {direction.lower()} trades"
+            )
+
+    # Symbol is a net loser
+    symbol = call.get("symbol", "")
+    sym_data = next((s for s in deep.get("by_symbol", []) if s["symbol"] == symbol), None)
+    if sym_data and sym_data["total_pnl"] < 0:
+        findings.append(
+            f"{symbol} is a net loser in your history "
+            f"({sym_data['total_pnl']:+.2f} USDT over {sym_data['trade_count']} trades, "
+            f"{sym_data['win_rate']}% WR) — recurring trouble spot"
+        )
+
+    # Low R:R
+    rr = call.get("rr_ratio", "")
+    if rr:
+        try:
+            rr_val = float(str(rr).split(":")[-1])
+            if rr_val < 1.5:
+                findings.append(
+                    f"R:R was {rr} — below the 1:1.5 minimum. Low R:R means losses hurt more than wins help"
+                )
+        except Exception:
+            pass
+
+    # Low setup score entered anyway
+    score = call.get("setup_score")
+    if score and score < 5 and call.get("status") in ("matched", "closed"):
+        findings.append(
+            f"Setup score was {score}/10 (below 5) but the trade was entered — "
+            f"consider a minimum score threshold before entering"
+        )
+
+    # Hold-time pattern from deep stats
+    dur_buckets = {b["label"]: b for b in deep.get("duration_buckets", [])}
+    long_dur = dur_buckets.get("> 7 days", {})
+    if long_dur and long_dur.get("total_pnl", 0) < -500:
+        findings.append(
+            f"Trades held >7 days total {long_dur['total_pnl']:+.0f} USDT — "
+            f"if this trade was held too long, that's a known losing pattern"
+        )
+
+    if not findings:
+        findings.append("No specific pattern violations detected — this may have been an unforeseeable market move")
+
+    return _ok({"call_id": call_id, "symbol": symbol, "findings": findings})
+
+
+@app.route("/api/limits", methods=["GET"])
+def api_limits_list():
+    """List pending limit orders, filtered by status (default: waiting)."""
+    status = request.args.get("status", "waiting")
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM pending_limits WHERE status = ? ORDER BY created_at DESC",
+        (status,)
+    ).fetchall()]
+    conn.close()
+    return _ok(rows)
+
+
+@app.route("/api/limits", methods=["POST"])
+def api_limits_create():
+    """Create a new pending limit order (shadow trade)."""
+    d = request.get_json(force=True)
+    if not d.get("symbol") or not d.get("limit_price") or not d.get("direction"):
+        return _err("symbol, direction, and limit_price are required")
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO pending_limits
+          (call_id, symbol, direction, limit_price, size_usdt,
+           leverage, sl_price, tp1_price, tp2_price, analyst, notes, bitget_order_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        d.get("call_id") or None,
+        d["symbol"].strip().upper(),
+        d["direction"],
+        float(d["limit_price"]),
+        float(d["size_usdt"])  if d.get("size_usdt")  else None,
+        int(d.get("leverage", 10)),
+        float(d["sl_price"])   if d.get("sl_price")   else None,
+        float(d["tp1_price"])  if d.get("tp1_price")  else None,
+        float(d["tp2_price"])  if d.get("tp2_price")  else None,
+        (d.get("analyst") or "").strip(),
+        (d.get("notes")   or "").strip(),
+        d.get("bitget_order_id") or None,
+    ))
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return _ok({"id": new_id}), 201
+
+
+@app.route("/api/limits/bulk-update", methods=["POST"])
+def api_limits_bulk_update():
+    """Bulk update multiple pending limits at once (sl_price, tp_prices, call_id, status…)."""
+    d   = request.get_json(force=True)
+    ids = [int(x) for x in (d.get("ids") or [])]
+    if not ids:
+        return _err("ids list is required")
+    editable = ["status", "sl_price", "tp1_price", "tp2_price", "call_id", "analyst", "notes"]
+    sets, vals = [], []
+    for key in editable:
+        if key in d:
+            sets.append(f"{key} = ?")
+            vals.append(d[key])
+    if d.get("status") == "triggered":
+        sets.append("triggered_at = datetime('now')")
+    if not sets:
+        return _err("No updatable fields")
+    placeholders = ",".join(["?"] * len(ids))
+    conn = get_conn()
+    conn.execute(
+        f"UPDATE pending_limits SET {', '.join(sets)} WHERE id IN ({placeholders})",
+        vals + ids,
+    )
+    conn.commit()
+    conn.close()
+    return _ok({"updated_count": len(ids)})
+
+
+@app.route("/api/limits/risk-summary")
+def api_limits_risk_summary():
+    """Total capital exposure if all waiting limits fill."""
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT symbol, direction, limit_price, size_usdt, sl_price FROM pending_limits WHERE status='waiting'"
+    ).fetchall()]
+    conn.close()
+    total_notional = sum(r["size_usdt"] or 0 for r in rows)
+    by_symbol = {}
+    for r in rows:
+        sym = r["symbol"]
+        by_symbol[sym] = by_symbol.get(sym, 0) + (r["size_usdt"] or 0)
+    return _ok({
+        "pending_count":      len(rows),
+        "total_notional_usdt": round(total_notional, 2),
+        "by_symbol": [{"symbol": k, "notional": round(v, 2)} for k, v in by_symbol.items()],
+    })
+
+
+@app.route("/api/limits/<int:lim_id>", methods=["PATCH"])
+def api_limits_update(lim_id):
+    """Update a pending limit (status, prices, notes)."""
+    d    = request.get_json(force=True)
+    conn = get_conn()
+    editable = ["status", "limit_price", "size_usdt", "leverage", "sl_price",
+                "tp1_price", "tp2_price", "analyst", "notes", "analysis_json",
+                "call_id", "bitget_order_id"]
+    sets, vals = [], []
+    for key in editable:
+        if key in d:
+            sets.append(f"{key} = ?")
+            vals.append(d[key])
+    if d.get("status") == "triggered":
+        sets.append("triggered_at = datetime('now')")
+    if not sets:
+        conn.close()
+        return _err("No updatable fields")
+    vals.append(lim_id)
+    conn.execute(f"UPDATE pending_limits SET {', '.join(sets)} WHERE id = ?", vals)
+    conn.commit()
+    conn.close()
+    return _ok({"updated": lim_id})
+
+
+@app.route("/api/limits/<int:lim_id>", methods=["DELETE"])
+def api_limits_delete(lim_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM pending_limits WHERE id = ?", (lim_id,))
+    conn.commit()
+    conn.close()
+    return _ok({"deleted": lim_id})
+
+
+@app.route("/api/limits/<int:lim_id>/analyze", methods=["POST"])
+def api_limits_analyze(lim_id):
+    """Run AI risk/setup analysis on a pending limit order."""
+    try:
+        conn = get_conn()
+        lim  = conn.execute("SELECT * FROM pending_limits WHERE id=?", (lim_id,)).fetchone()
+        if not lim:
+            conn.close()
+            return _err("Not found", 404)
+        lim = dict(lim)
+
+        other_limits = [dict(r) for r in conn.execute(
+            "SELECT symbol, direction, limit_price, size_usdt FROM pending_limits WHERE status='waiting' AND id != ?",
+            (lim_id,)
+        ).fetchall()]
+        conn.close()
+
+        try:
+            eq_data        = bitget_client.get_account_equity()
+            equity         = float(eq_data.get("accountEquity") or eq_data.get("available") or 1000)
+            open_positions = bitget_client.get_open_positions()
+        except Exception:
+            equity, open_positions = 1000.0, []
+
+        result = ai_call_analyzer.analyze_pending_limit(lim, equity, open_positions, other_limits)
+
+        conn2 = get_conn()
+        conn2.execute(
+            "UPDATE pending_limits SET analysis_json = ? WHERE id = ?",
+            (json.dumps(result), lim_id)
+        )
+        conn2.commit()
+        conn2.close()
+        return _ok(result)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+
+@app.route("/api/calls/analyst-stats")
+def api_calls_analyst_stats():
+    """Per-analyst performance stats across all saved calls."""
+    conn  = get_conn()
+    rows  = [dict(r) for r in conn.execute("""
+        SELECT analyst,
+               COUNT(*)                                                          AS total_analyzed,
+               SUM(CASE WHEN status IN ('matched','closed') THEN 1 ELSE 0 END)  AS entered,
+               SUM(CASE WHEN outcome='won'    THEN 1 ELSE 0 END)                AS wins,
+               SUM(CASE WHEN outcome='lost'   THEN 1 ELSE 0 END)                AS losses,
+               SUM(CASE WHEN outcome='manual' THEN 1 ELSE 0 END)                AS manual_close,
+               ROUND(AVG(CASE WHEN outcome_pnl IS NOT NULL THEN outcome_pnl END), 2) AS avg_pnl,
+               SUM(CASE WHEN hit_tp1=1        THEN 1 ELSE 0 END)                AS tp1_hits,
+               ROUND(AVG(setup_score), 1)                                       AS avg_setup_score
+        FROM analyzed_calls
+        WHERE analyst IS NOT NULL AND analyst != ''
+        GROUP BY analyst
+        ORDER BY total_analyzed DESC
+    """).fetchall()]
+    conn.close()
+    return _ok(rows)
 
 
 @app.route("/api/live/positions")
@@ -546,6 +892,32 @@ def api_live_positions():
     except Exception as e:
         traceback.print_exc()
         return _err(str(e), 500)
+
+
+@app.route("/api/live/pending-orders")
+def api_live_pending_orders():
+    """
+    Fetch unfilled limit orders from Bitget + tracked pending_limits for cross-reference.
+    Returns:
+      bitget_orders  — live orders split into entry/exit lists
+      tracked_ids    — set of bitget_order_id values already in pending_limits
+    """
+    try:
+        orders = bitget_client.get_pending_orders()
+    except Exception as e:
+        traceback.print_exc()
+        return _err(str(e), 500)
+
+    conn = get_conn()
+    tracked = [r[0] for r in conn.execute(
+        "SELECT bitget_order_id FROM pending_limits WHERE bitget_order_id IS NOT NULL"
+    ).fetchall()]
+    conn.close()
+
+    return _ok({
+        "bitget_orders": orders,
+        "tracked_ids":   tracked,
+    })
 
 
 @app.route("/api/live/analyze", methods=["POST"])
@@ -589,6 +961,14 @@ def api_sync_status():
 
 if __name__ == "__main__":
     init_db()
+
+    # Schema migrations — add columns that may be missing from older DBs
+    _mig_conn = get_conn()
+    _cols = [r[1] for r in _mig_conn.execute("PRAGMA table_info(positions)").fetchall()]
+    if "analyst" not in _cols:
+        _mig_conn.execute("ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
+        _mig_conn.commit()
+    _mig_conn.close()
 
     # Auto-import CSV data if DB is empty
     conn = get_conn()

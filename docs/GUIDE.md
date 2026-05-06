@@ -1,173 +1,211 @@
-# Crypto Trading Journal — Complete Builder's Guide
+# Crypto Trading Journal — Full Technical Reference
 
 **Live URL:** http://192.168.1.21:8082  
-**Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian  
-**Built:** May 2026
+**Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
+**Built:** May 2026  
+**Source (Mac):** `/Users/fbauer/Documents/ClaudeAIData/trading-journal/`  
+**Pi path:** `/home/fbauer/trading-journal/`
 
 ---
 
 ## What This Is
 
-A full-stack web application that:
+A full-stack web application for Bitget USDT-M Futures traders:
 
-1. **Imports** 6 months of Bitget USDT-M Futures history from CSV export
-2. **Syncs live** new closed trades automatically every 15 minutes via Bitget API
-3. **Shows** a 5-module dashboard: KPIs, trade journal, deep analytics, AI advisor, live trades
-4. **Analyzes** every open position with Claude AI on demand
-5. **Runs forever** as a systemd service, auto-starts on Pi boot
+1. **Imports** Bitget CSV history (positions, orders, transactions)
+2. **Syncs live** new closed trades every 15 minutes via Bitget API
+3. **Analyzes** every open position with Claude AI on demand
+4. **Analyzes** analyst trade calls before entering — with chart image vision, position sizing, scoring
+5. **Tracks** pending limit orders as shadow trades (risk + correlation analysis)
+6. **Runs forever** as a systemd service on Raspberry Pi 5
 
 ---
 
-## Architecture at a Glance
+## Architecture
 
 ```
 Browser (http://192.168.1.21:8082)
          │
          ▼
-    Flask (app.py)          ← HTTP server + all API routes
-    ├── database.py         ← SQLite schema + helpers
-    ├── importer.py         ← Bitget CSV → SQLite (historical data)
-    ├── analytics.py        ← KPI + stats calculations (pure Python)
-    ├── ai_advisor.py       ← Full-portfolio Claude analysis
-    ├── ai_live_trade.py    ← Per-trade Claude analysis for open positions
-    ├── bitget_client.py    ← Authenticated Bitget REST API v2 client
-    ├── bitget_sync.py      ← Background sync thread (every 15 min)
-    └── trading_journal.db  ← SQLite database (auto-created)
+    Flask (app.py)              ← HTTP server + all API routes
+    ├── database.py             ← SQLite schema + connection helpers
+    ├── importer.py             ← Bitget CSV → SQLite (historical data)
+    ├── analytics.py            ← KPI + stats calculations (pure Python)
+    ├── ai_advisor.py           ← Full-portfolio Claude analysis
+    ├── ai_live_trade.py        ← Per-trade Claude analysis for open positions
+    ├── ai_call_analyzer.py     ← Analyst call analysis + pending limit analysis
+    ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
+    ├── bitget_sync.py          ← Background sync thread (every 15 min)
+    └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
-templates/index.html        ← Entire frontend: HTML + CSS + JavaScript (SPA)
-data/                       ← CSV files for import
-docs/GUIDE.md               ← This file
+templates/index.html            ← Entire frontend: HTML + CSS + JavaScript (SPA, ~3000 lines)
+static/                         ← Static assets (empty, CDN-loaded Chart.js)
+data/                           ← CSV files for import
+docs/GUIDE.md                   ← This file (technical)
+docs/USER_GUIDE.md              ← User-facing manual
+trading-journal.service         ← systemd service file
+requirements.txt                ← Python dependencies
 ```
 
 ---
 
-## The Tech Stack
+## Tech Stack
 
-| Layer | Choice | Why |
-|-------|--------|-----|
-| Language | Python 3.13 | Pre-installed on Pi, fast to write |
-| Web framework | Flask 3.1 | Simple, no boilerplate, already installed |
-| Database | SQLite 3 | Zero config, single file, built into Python |
-| Frontend | Plain HTML/CSS/JS | No build step, readable, runs in any browser |
-| Charts | Chart.js 4 (CDN) | One `<script>` tag, great defaults |
-| AI | Anthropic claude-sonnet-4-6 | Best model for trading analysis |
-| Exchange API | Bitget REST v2 | Read-only, HMAC-SHA256 auth |
+| Layer | Choice | Reason |
+|-------|--------|--------|
+| Language | Python 3.13 | Pre-installed on Pi, fast development |
+| Web framework | Flask 3.1 | Simple, no boilerplate |
+| Database | SQLite 3 (WAL mode) | Zero config, single file, built-in |
+| Frontend | Pure HTML/CSS/JavaScript | No build step, SPA with page-view switching |
+| Charts | Chart.js 4.4.0 (CDN) | One script tag, great defaults |
+| AI | Anthropic claude-sonnet-4-6 | Best reasoning/vision model available |
+| Exchange API | Bitget REST v2 | Read-only HMAC-SHA256 auth |
 | Process manager | systemd | Auto-start on boot, auto-restart on crash |
 
 ---
 
-## File-by-File Reference
+## Database Schema (`database.py`)
 
-### `database.py` — Schema & Connection
+### `positions` — Core trade data (one row per closed trade)
 
-Creates and manages four SQLite tables:
-
-**`positions`** — One row per closed trade. This is the core data.
-
-| Column | Type | Source |
-|--------|------|--------|
+| Column | Type | Notes |
+|--------|------|-------|
 | id | INTEGER PK | auto |
 | symbol | TEXT | e.g. `BOMEUSDT` |
 | base_asset | TEXT | e.g. `BOME` |
 | direction | TEXT | `Long` or `Short` |
 | margin_mode | TEXT | `Cross` or `Isolated` |
-| open_time | TEXT | ISO datetime |
-| close_time | TEXT | ISO datetime |
-| duration_minutes | INTEGER | calculated |
+| open_time | TEXT | ISO datetime string |
+| close_time | TEXT | ISO datetime string |
+| duration_minutes | INTEGER | calculated: close − open |
 | entry_price | REAL | avg open price |
 | close_price | REAL | avg close price |
 | size_contracts | TEXT | raw: `400000BOME` |
-| size_usdt | REAL | position value in USDT |
+| size_usdt | REAL | position value USDT |
 | position_pnl | REAL | gross PnL before fees |
 | realized_pnl | REAL | net PnL (after fees) |
 | opening_fee | REAL | |
 | closing_fee | REAL | |
 | total_fees | REAL | |
-| notes | TEXT | user-editable |
+| notes | TEXT | user-editable freetext |
 | tags | TEXT | comma-separated |
 | is_manual | INTEGER | 1 = hand-entered |
-| external_id | TEXT | Bitget positionId (for dedup) |
+| external_id | TEXT | Bitget positionId (dedup key) |
+| created_at | TEXT | |
+| updated_at | TEXT | |
 
-**`orders`** — Individual order fills from Bitget order history.
+### `orders` — Individual order fills (from Bitget order history CSV/API)
 
-**`wallet_snapshots`** — Every account transaction event with resulting balance. Powers the wallet equity curve chart. Has a `bill_id` column added by `bitget_sync.py` for deduplication.
+Key columns: `order_id` (UNIQUE dedup), `date`, `direction`, `symbol`, `avg_price`, `trading_volume`, `realized_pnl`, `position_id` (FK to positions).
 
-**`settings`** — Key/value store. Holds `last_sync_ms`, `account_equity`, `available_balance`.
+### `wallet_snapshots` — Every account transaction event
 
-**`import_log`** — Audit trail of CSV imports.
+Powers the wallet equity curve chart. Key columns: `date`, `symbol`, `type`, `amount`, `fee`, `wallet_balance`, `bill_id` (UNIQUE dedup for API sync).
 
-Key function: `get_conn()` returns a `sqlite3.Connection` with `row_factory=sqlite3.Row` so rows behave like dicts. WAL mode enabled for safe concurrent reads.
+### `settings` — Key/value store
+
+Used by `bitget_sync.py` to persist: `last_sync_ms`, `account_equity`, `available_balance`.
+
+### `analyzed_calls` — Saved call analyses
+
+One row per analyst call the user analyzed and chose to save.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | |
+| symbol | TEXT | |
+| direction | TEXT | |
+| call_text | TEXT | raw analyst call paste |
+| entry_price | REAL | extracted from call |
+| dca_price | REAL | |
+| sl_price | REAL | |
+| tp1_price | REAL | |
+| tp2_price | REAL | |
+| avg_entry | REAL | weighted avg of entry+DCA |
+| total_notional | REAL | USDT notional |
+| margin_needed | REAL | |
+| risk_pct | REAL | |
+| risk_amount | REAL | |
+| leverage | INTEGER | |
+| has_dca | INTEGER | 0/1 |
+| has_candle_close_sl | INTEGER | 0/1 |
+| setup_score | INTEGER | 1-10 |
+| setup_label | TEXT | Poor/Weak/Moderate/Good/Strong/Excellent |
+| rr_ratio | TEXT | e.g. `1:2.3` |
+| trade_type | TEXT | Breakout/Trend Follow/Reversal etc |
+| sl_warning | TEXT | instruction for candle-close SL |
+| entry_timing | TEXT | |
+| analysis_json | TEXT | full Claude JSON response |
+| analyst | TEXT | source (e.g. "CryptoGuru") |
+| status | TEXT | `saved` → `matched` → `closed` \| `dismissed` |
+| matched_at | TEXT | when linked to a live position |
+| outcome | TEXT | `won` / `lost` / `manual` |
+| outcome_pnl | REAL | actual PnL when closed |
+| hit_tp1 | INTEGER | 0/1 |
+| hit_tp2 | INTEGER | 0/1 |
+| hit_sl | INTEGER | 0/1 |
+| outcome_at | TEXT | when outcome was recorded |
+| actual_notional | REAL | actual trade size used |
+| created_at | TEXT | |
+
+### `pending_limits` — Shadow trades (limit orders not yet triggered)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | |
+| call_id | INTEGER | FK to analyzed_calls (nullable) |
+| symbol | TEXT | |
+| direction | TEXT | `Long` or `Short` |
+| limit_price | REAL | target entry price |
+| size_usdt | REAL | notional at full fill |
+| leverage | INTEGER | default 10 |
+| sl_price | REAL | |
+| tp1_price | REAL | |
+| tp2_price | REAL | |
+| analyst | TEXT | source of the signal |
+| status | TEXT | `waiting` → `triggered` / `cancelled` |
+| triggered_at | TEXT | when limit filled |
+| analysis_json | TEXT | stored AI analysis blob |
+| notes | TEXT | |
+| created_at | TEXT | |
+
+### `import_log` — Audit trail of all CSV imports
 
 ---
 
-### `importer.py` — CSV Import
+## `importer.py` — CSV Import
 
-Parses all four Bitget USDT-M export CSVs:
+Parses Bitget USDT-M export CSVs. Handles two Bitget quirks:
 
-| File pattern | Table | Rows (6 months) |
-|---|---|---|
-| `position history` | positions | 808 |
-| `order history` | orders | 7,008 |
-| `order details` | (skipped, redundant) | — |
-| `transactions` | wallet_snapshots | 10,000 |
+1. **BOM prefix** — files start with invisible UTF-8 byte-order mark → `encoding='utf-8-sig'`
+2. **Units in numbers** — values like `19.36USDT` or `400000BOME` → strip trailing letters with regex
 
-**Two Bitget quirks handled:**
+Duplicate prevention: checks `(symbol, open_time, close_time)` uniqueness for positions.
 
-1. **BOM prefix** — Files start with invisible UTF-8 byte-order mark. Fixed by `encoding='utf-8-sig'`.
-2. **Units in numbers** — Values like `19.3581879USDT` and `235.75USDT`. Fixed by `_clean_float()`:
-   ```python
-   val = re.sub(r'[A-Za-z]+$', '', val).strip()  # strip trailing letters
-   float(val)
-   ```
-
-**Duplicate prevention:** position import checks `(symbol, open_time, close_time)` uniqueness before inserting.
-
-**CLI usage:**
-```bash
-python3 importer.py data/
-```
+File type detection by keyword in filename:
+- `position history` → `positions` table
+- `order history` → `orders` table
+- `order details` → skipped (redundant)
+- `transactions` → `wallet_snapshots` table
 
 ---
 
-### `bitget_client.py` — Exchange API Client
+## `bitget_client.py` — Exchange API Client
 
-Handles all communication with Bitget REST API v2.
-
-**Authentication (HMAC-SHA256):**
+HMAC-SHA256 authentication:
 ```
-message  = timestamp + "GET" + path + "?" + query_string
-signature = base64( hmac_sha256(secret_key, message) )
-
-Headers:
-  ACCESS-KEY: <api_key>
-  ACCESS-SIGN: <signature>
-  ACCESS-TIMESTAMP: <unix_ms>
-  ACCESS-PASSPHRASE: <passphrase>
+message   = timestamp + "GET" + path + "?" + query_string
+signature = base64(hmac_sha256(secret_key, message))
+Headers: ACCESS-KEY, ACCESS-SIGN, ACCESS-TIMESTAMP, ACCESS-PASSPHRASE
 ```
 
-**Credentials:**
-- API Key: `REDACTED_API_KEY` (read-only)
-- Passphrase: stored in `bitget_client.py`, overridable via `BITGET_PASSPHRASE` env var
+**Pagination rule (critical):** Bitget cursor-based pagination.
+- Page 1: send `startTime` + `endTime` (max 90-day window)
+- Page 2+: send **only** `endId` — **never** resend the time range (causes error 00001 if range > 90 days)
 
-**Pagination design:** Bitget uses cursor-based pagination. Critical rule discovered through testing:
+**Confirmed live API field names:**
 
-- **Page 1:** send `startTime` + `endTime` (max 90-day window per request)
-- **Page 2+:** send **only** `endId` — do NOT resend time range. Resending causes Bitget to recompute the interval from startTime to the cursor, which can exceed 90 days and triggers error `00001`.
-- **Safeguard:** each fetched row's timestamp is checked against `start_ms`; once a row is older than the window, pagination stops. This prevents paginating through the entire account history.
-
-**Public methods:**
-
-| Method | Endpoint | Returns |
-|--------|----------|---------|
-| `get_account_equity()` | `/api/v2/mix/account/accounts` | Current balance dict |
-| `get_position_history(start_ms, end_ms)` | `/api/v2/mix/position/history-position` | Closed positions list |
-| `get_order_history(start_ms, end_ms)` | `/api/v2/mix/order/orders-history` | Orders list |
-| `get_account_bills(start_ms, end_ms)` | `/api/v2/mix/account/bill` | Bills list |
-| `get_open_positions()` | `/api/v2/mix/position/all-position` | Live open positions |
-
-**Confirmed field names from live API:**
-
-*Position history:* `positionId`, `holdSide`, `openAvgPrice`, `closeAvgPrice`, `openTotalPos`, `pnl`, `netProfit`, `openFee`, `closeFee`, `totalFunding`, `marginMode`, `ctime`/`utime` (**lowercase** — unlike orders which use uppercase)
+*Position history:* `positionId`, `holdSide`, `openAvgPrice`, `closeAvgPrice`, `openTotalPos`, `pnl`, `netProfit`, `openFee`, `closeFee`, `totalFunding`, `marginMode`, `ctime`/`utime` (lowercase)
 
 *Orders:* `orderId`, `priceAvg`, `quoteVolume`, `fee`, `totalProfits`, `side`, `posSide`, `tradeSide`, `orderSource`, `cTime`/`uTime` (uppercase)
 
@@ -175,37 +213,30 @@ Headers:
 
 *Open positions:* `symbol`, `holdSide`, `openPriceAvg`, `markPrice`, `unrealizedPL`, `marginSize`, `total`, `leverage`, `takeProfit`, `stopLoss`, `liquidationPrice`, `breakEvenPrice`, `achievedProfits`, `totalFee`, `cTime`
 
+**Credentials (stored in bitget_client.py, overridable via env vars):**
+- API Key: `REDACTED_API_KEY` (read-only)
+- `BITGET_PASSPHRASE` env var or hardcoded fallback
+
 ---
 
-### `bitget_sync.py` — Background Sync Engine
+## `bitget_sync.py` — Background Sync
 
-Runs as a daemon thread inside Flask. Syncs Bitget → SQLite every 15 minutes.
+Daemon thread, runs inside Flask, syncs every 15 minutes.
 
-**First-run logic:** Uses the timestamp of the most recent position already in the database as the sync start point. This means:
-- CSV import covers the full history
-- API sync only fetches trades *after* the latest CSV trade
-- No redundant 85-day backfill on first start
+**First-run logic:** Uses timestamp of most recent DB position as sync start point → no redundant 85-day backfill.
 
-**Chunked time ranges:** All requests are split into ≤89-day windows using `_chunked_sync()`. This is necessary because Bitget's API rejects requests where `endTime - startTime > 90 days`.
+**Chunked time ranges:** All requests split into ≤89-day windows (Bitget rejects >90-day windows).
 
-**Deduplication:** Uses `external_id` (= Bitget `positionId`) for positions, `order_id` for orders, `bill_id` for bills. All stored in the DB so re-runs are safe.
+**Deduplication:** `external_id` for positions, `order_id` for orders, `bill_id` for bills.
 
-**Thread safety:** `threading.Lock()` prevents two syncs running simultaneously. The `/api/sync` endpoint returns `{"error": "Sync already running"}` if a background sync is in progress.
+**Thread safety:** `threading.Lock()` prevents concurrent syncs.
 
-**Background thread:**
-```python
-def start_background_sync():
-    thread = threading.Thread(target=loop, daemon=True)
-    thread.start()
-```
-Called once from `app.py __main__`. Daemon thread means it auto-stops when Flask stops.
-
-**Sync status** stored in module-level `_sync_status` dict:
+**Status dict** (module-level `_sync_status`):
 ```python
 {
   "running": bool,
-  "last_run": "2026-05-05 14:27:50 UTC",
-  "last_result": {"positions": 2, "orders": 5, "bills": 8, "equity": {...}},
+  "last_run": "2026-05-05 14:27 UTC",
+  "last_result": {"positions": 2, "orders": 5, "bills": 8},
   "last_error": None,
   "next_run": "2026-05-05 16:42:49"
 }
@@ -213,40 +244,43 @@ Called once from `app.py __main__`. Daemon thread means it auto-stops when Flask
 
 ---
 
-### `analytics.py` — KPI Calculations
+## `analytics.py` — KPI Calculations
 
-Pure Python calculations over the SQLite data. No external libraries.
+Pure Python over SQLite. Two public functions:
 
-**`get_dashboard_kpis(filters)`** returns:
+**`get_dashboard_kpis(filters, conn)`** — returns dict with:
+- `total_trades`, `win_trades`, `loss_trades`, `win_rate`
+- `total_pnl`, `total_fees`, `net_pnl`
+- `best_trade`, `worst_trade`, `avg_win`, `avg_loss`
+- `profit_factor` = Σ(wins) / abs(Σ(losses))
+- `max_drawdown` = largest peak-to-trough on cumulative PnL curve
+- `pnl_curve` = `[{date, cumulative_pnl}]` sorted ascending
+- `wallet_curve` = downsampled to ≤200 points
+- `top_symbols` = top 5 by realized PnL
+- `recent_trades` = last 10 closed positions
+- `current_month_pnl` = this calendar month's PnL
+- `current_win_streak`, `current_loss_streak`
 
-| Field | Formula |
-|-------|---------|
-| win_rate | `win_trades / total_trades × 100` |
-| profit_factor | `Σ(winning trades) / abs(Σ(losing trades))` |
-| max_drawdown | Largest peak-to-trough drop on cumulative PnL curve |
-| pnl_curve | `[{date, cumulative_pnl}]` array for line chart |
-| wallet_curve | Downsampled to ≤200 points for performance |
-| top_symbols | Top 5 by total realized PnL |
-
-**`get_deep_stats(filters)`** returns breakdowns by:
-- Symbol (all 194 symbols, sorted by PnL)
-- Month (calendar month aggregation)
-- Weekday (Monday–Sunday)
+**`get_deep_stats(filters, conn)`** — returns breakdowns by:
+- Symbol (all, sorted by PnL)
+- Month (calendar month)
+- Weekday (Mon–Sun, `strftime('%w')`)
 - Hour of day (0–23 UTC, based on open_time)
 - Direction (Long vs Short)
-- Duration bucket (`< 1h`, `1-4h`, `4-24h`, `1-7 days`, `> 7 days`)
-- Streaks (longest consecutive win/loss run)
+- Duration buckets (`< 1h`, `1-4h`, `4-24h`, `1-7 days`, `> 7 days`)
+- Streaks (max + current win/loss streaks)
 - Fee analysis (total, avg, % of gross PnL)
+- Worst 5 symbols
 
-**Filters:** All functions accept `{symbol, direction, date_from, date_to}`. Built into safe parameterized SQL with `?` placeholders — no SQL injection possible.
+**Filter building:** `_build_where(filters)` returns parameterized `(where_clause, params)` — no SQL injection possible.
 
 ---
 
-### `ai_advisor.py` — Portfolio AI Analysis
+## `ai_advisor.py` — Portfolio AI Analysis
 
-Sends the trader's full 6-month statistics to Claude claude-sonnet-4-6 and returns a structured trading assessment.
+Sends full 6-month stats (~23k tokens) to Claude, returns structured trading assessment.
 
-**Prompt design:** Serializes `get_dashboard_kpis()` + `get_deep_stats()` to JSON (~23,000 tokens input). Instructs Claude to return pure JSON with a specific schema. Strips markdown code fences from the response before parsing (Claude sometimes wraps output in ` ```json ``` ` even when told not to).
+**Prompt:** Serializes `get_dashboard_kpis()` + `get_deep_stats()` to JSON. Instructs JSON-only response (no markdown). Strips code fences from response before parsing.
 
 **Response schema:**
 ```json
@@ -256,23 +290,17 @@ Sends the trader's full 6-month statistics to Claude claude-sonnet-4-6 and retur
   "strengths": [{"title": "...", "detail": "..."}],
   "weaknesses": [{"title": "...", "detail": "..."}],
   "recommendations": [{"priority": "High", "title": "...", "action": "...", "expected_impact": "..."}],
-  "symbol_insights": [{"symbol": "BTCUSDT", "insight": "..."}],
+  "symbol_insights": [{"symbol": "...", "insight": "..."}],
   "risk_management": "paragraph",
   "mindset_note": "sentence"
 }
 ```
 
-**Cost:** ~$0.02 per analysis (23k input + ~2k output tokens at Sonnet pricing).
-
 ---
 
-### `ai_live_trade.py` — Per-Trade AI Analysis
+## `ai_live_trade.py` — Per-Trade AI Analysis
 
-Analyzes a single **open** position and gives specific trade management advice.
-
-**Context provided to Claude:**
-1. The live position data (entry, mark price, unrealized PnL, TP/SL, leverage, duration)
-2. The trader's historical closed-trade stats for that symbol (last 30 trades: win rate, avg win/loss, total PnL, avg hold time)
+Analyzes a single **open** position with context: live position data + last 30 closed trades on that symbol.
 
 **Response schema:**
 ```json
@@ -282,191 +310,257 @@ Analyzes a single **open** position and gives specific trade management advice.
   "action_reason": "one sentence",
   "tp_recommendation": {"price": "0.038", "rationale": "..."},
   "sl_recommendation": {"price": "0.030", "rationale": "..."},
-  "key_risks": ["risk 1", "risk 2", "risk 3"],
-  "historical_context": "your past 12 BOME trades had 72% WR",
+  "key_risks": ["...", "..."],
+  "historical_context": "your past 12 BOME trades: 72% WR",
   "time_urgency": "Immediate",
   "summary": "2-3 sentence assessment"
 }
 ```
 
-**Analysis rules embedded in the prompt:**
-- If `unrealized_pct < -30%` → seriously recommend Close Now or Partial Close
-- If `stop_loss` is empty AND `unrealized_pct < -5%` → set SL immediately
-- Reference actual numbers: entry, mark price, PnL%, TP/SL
+---
 
-**Cost:** ~$0.003 per analysis (~670 input + ~540 output tokens).
+## `ai_call_analyzer.py` — Call Analyzer + Pending Limit Analysis
+
+The most complex AI module. Two public functions.
+
+### `analyze_call(call_text, account_equity, image_b64, image_type, market_regime)`
+
+**Price extraction:** Regex patterns for `entry at $X`, `dca: $X`, `sl under $X`, `@$X` etc. Falls back to highest/lowest price in text for entry/SL.
+
+**Position sizing formula:**
+```
+base_risk_pct = 2.0% (DCA) or 1.0% (no DCA)
+risk_multiplier = 0.25 (account ≤-20% from peak) | 0.5 (≤-10%) | 1.0 (normal)
+risk_pct = base_risk_pct × risk_multiplier
+risk_amount = equity × risk_pct / 100
+stop_dist = (avg_entry − sl) / avg_entry
+notional = risk_amount / stop_dist
+margin = notional / leverage
+```
+
+**Pattern context injected into prompt:**
+- Worst 3 weekdays by PnL
+- Worst 3 hours (UTC) by PnL
+- Direction performance (Long vs Short)
+- Win/loss hold duration ratio
+- Overall win rate + avg win/loss
+
+**Scoring rules embedded in prompt:**
+- R:R < 1:1.5 → cap score at 6/10 max
+- Bear regime + Long direction → deduct 1-2 points
+- Account in drawdown → "7/10 call becomes 5-6/10"
+- Pattern violations pre-computed and injected as explicit checklist
+
+**Response schema** (Claude returns pure JSON):
+```json
+{
+  "symbol": "XYZUSDT",
+  "direction": "Long",
+  "trade_type": "Breakout",
+  "has_dca": true,
+  "has_candle_close_sl": false,
+  "setup_quality": {"score": 7, "label": "Good"},
+  "chart_analysis": "...",
+  "risk_reward": {"ratio": "1:2.3", "entry": 0.0485, "sl": 0.041, "tp1": 0.057, "tp2": 0.068},
+  "pattern_flags": ["Friday trade (your worst day)", "..."],
+  "bitget_settings": {
+    "symbol": "XYZUSDT", "direction": "Long / Buy",
+    "margin_mode": "Cross", "leverage": "10x",
+    "order_1": {"type": "Market", "notional_usdt": 1800, "note": "60% of position"},
+    "order_2": {"type": "Limit", "price": "0.042", "notional_usdt": 1200, "note": "DCA"},
+    "stop_loss": {"price": "0.041", "type": "Price SL", "bitget_instruction": "..."},
+    "take_profit_1": {"price": "0.057", "note": "Resistance zone"},
+    "take_profit_2": {"price": "0.068", "note": "Major resistance"}
+  },
+  "entry_timing": "...",
+  "optimizations": ["...", "..."],
+  "risks": ["...", "..."],
+  "historical_context": "...",
+  "sl_warning": "...",
+  "summary": "..."
+}
+```
+
+### `analyze_pending_limit(limit, account_equity, open_positions, other_limits)`
+
+Assesses a pending limit order before it fills. Calculates: stop distance %, risk if SL hit (USDT + % of account), R:R to TP1, total pending exposure vs equity. Sends to Claude with open positions + other pending limits as correlation context.
+
+**Response schema:**
+```json
+{
+  "verdict": "Keep | Adjust | Cancel",
+  "confidence": "High | Medium | Low",
+  "setup_score": 7,
+  "sizing_ok": true,
+  "limit_price_assessment": "...",
+  "sl_assessment": "...",
+  "tp_assessment": "...",
+  "correlation_risk": "...",
+  "total_exposure_warning": "...",
+  "adjustments": ["..."],
+  "risks": ["..."],
+  "summary": "..."
+}
+```
 
 ---
 
-### `app.py` — Flask Web Server
+## `app.py` — Complete API Reference
 
-Maps URLs to Python functions. All responses use the same envelope:
-```json
-{"ok": true,  "data": {...}}   // success
-{"ok": false, "error": "..."}  // failure
-```
+All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "..."}`.
 
-**Complete API reference:**
+### Core Data
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Serve SPA (index.html) |
-| GET | `/api/dashboard/kpis` | Dashboard KPI data + chart arrays |
-| GET | `/api/positions` | Paginated position list with filters |
-| POST | `/api/positions` | Create manual trade entry |
-| GET | `/api/positions/<id>` | Single position detail |
-| PUT | `/api/positions/<id>` | Edit notes, tags, or trade fields |
-| DELETE | `/api/positions/<id>` | Delete a position |
-| GET | `/api/analytics/deep` | Full deep-dive stats object |
-| POST | `/api/ai/analyze` | Portfolio AI analysis (Claude) |
-| GET | `/api/symbols` | List of distinct symbols |
+| GET | `/api/dashboard/kpis` | Dashboard KPIs + chart arrays |
+| GET | `/api/analytics/deep` | Deep-dive stats object |
+| GET | `/api/symbols` | Distinct symbol list |
 | GET | `/api/wallet/history` | Wallet balance curve (downsampled) |
-| POST | `/api/import` | Upload CSV or ZIP for import |
-| GET | `/api/import/status` | Import log |
-| POST | `/api/sync` | Trigger immediate Bitget API sync |
-| GET | `/api/sync/status` | Sync state + account equity |
-| GET | `/api/live/positions` | Real-time open positions from Bitget |
-| POST | `/api/live/analyze` | Per-trade AI analysis for open position |
 
-**Startup sequence:**
-1. `init_db()` — create tables if not exist
-2. If DB empty + CSVs in `data/` → auto-import
-3. `bitget_sync.start_background_sync()` — start the 15-minute sync loop
-4. `app.run()` — start Flask on port 8082
+### Positions (Trade Journal)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/positions` | Paginated list with filters: symbol, direction, date_from, date_to, search, pnl_side |
+| POST | `/api/positions` | Create manual trade |
+| GET | `/api/positions/<id>` | Single position |
+| PUT | `/api/positions/<id>` | Edit notes, tags, analyst, prices |
+| DELETE | `/api/positions/<id>` | Delete |
+
+### Import / Sync
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/import` | Upload CSV or ZIP |
+| GET | `/api/import/status` | Import log |
+| POST | `/api/sync` | Trigger immediate Bitget sync |
+| GET | `/api/sync/status` | Sync state + account equity |
+
+### Live Positions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/live/positions` | Real-time open positions from Bitget |
+| POST | `/api/live/analyze` | Per-trade Claude analysis |
+
+### AI Advisor
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/ai/analyze` | Full portfolio Claude analysis |
+
+### Call Analyzer
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/calls/analyze` | Analyze a call (text + optional image) |
+| POST | `/api/calls/save` | Save analysis to DB |
+| GET | `/api/calls/saved` | List all saved calls |
+| PATCH | `/api/calls/<id>` | Update editable fields: `analyst`, `notes` |
+| GET | `/api/calls/check-matches` | Match saved calls against open positions |
+| POST | `/api/calls/<id>/confirm-match` | Mark call as matched to live position |
+| POST | `/api/calls/<id>/dismiss` | Dismiss a match |
+| POST | `/api/calls/<id>/close` | Mark matched call as closed |
+| DELETE | `/api/calls/<id>` | Delete call |
+| POST | `/api/calls/<id>/record-outcome` | Record won/lost/manual + actual PnL, TP/SL hit |
+| GET | `/api/calls/<id>/postmortem` | Rule-based loss postmortem |
+| GET | `/api/calls/analyst-stats` | Per-analyst performance table |
+| GET | `/api/calls/prediction-accuracy` | Score band → actual win rate |
+
+### Pending Limit Orders
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/limits` | List limits by `?status=waiting\|triggered\|cancelled` |
+| POST | `/api/limits` | Create pending limit order |
+| PATCH | `/api/limits/<id>` | Update status, prices, notes, call_id |
+| DELETE | `/api/limits/<id>` | Delete |
+| GET | `/api/limits/risk-summary` | Total notional if all waiting limits fill |
+| POST | `/api/limits/bulk-update` | Bulk update multiple limits: `{ids:[...], sl_price?, tp1_price?, tp2_price?, call_id?, status?}` |
+| POST | `/api/limits/<id>/analyze` | Run Claude analysis on a pending limit |
+
+### Live Bitget Feed
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/live/positions` | Real-time open positions from Bitget |
+| GET | `/api/live/pending-orders` | Unfilled limit orders from Bitget + `tracked_ids` set |
+| POST | `/api/live/analyze` | Per-trade Claude analysis |
 
 ---
 
-### `templates/index.html` — The Frontend (SPA)
+## Frontend (`templates/index.html`)
 
-One file, ~1,400 lines. Structured as:
+Single-file SPA, ~3000 lines. Structure:
 ```
-<style>   All CSS (dark theme with CSS variables)
+<style>   Dark theme CSS (CSS variables throughout)
 <body>
-  <nav>   Sidebar with 7 nav items
-  <div>
-    sync-bar            Live sync status + Sync Now button
-    <main>
-      #page-dashboard   KPI cards + 4 charts + recent trades
-      #page-journal     Filter bar + paginated table + modals
-      #page-deep        6 analytics charts + stats tables
-      #page-ai          Portfolio AI advisor
-      #page-trades      Live open positions + per-trade AI
-      #page-import      Drag-drop CSV upload
-      #page-live        Sync status + account details
-  #trade-modal   Add manual trade form
-  #notes-modal   Edit notes/tags form
-<script>  All JavaScript (~800 lines)
+  <nav>   Sidebar: 9 navigation items
+  sync-bar    Live sync status + Sync Now button
+  <main>
+    #page-dashboard    KPI cards + 4 charts + target tracker + streak
+    #page-journal      Filter bar + paginated table + notes/trade modals
+    #page-deep         6 analytics charts + symbol/fee tables
+    #page-ai           Portfolio AI advisor
+    #page-calls        Call Analyzer + saved calls + analyst stats
+    #page-trades       Live open positions + per-trade AI
+    #page-import       Drag-drop CSV upload
+    #page-live         Bitget sync status + account details
+    #page-pending      Pending limit orders + risk summary
+  Modals:
+    #trade-modal       Add/edit manual trade
+    #notes-modal       Edit trade — analyst, notes, tags
+    #outcome-modal     Record call outcome (won/lost/manual)
+    #limit-modal       Add/edit pending limit order
+    #match-modal       Track Bitget live order as shadow trade (+ link to call)
+    #bulk-link-modal   Link multiple selected limits to one analyst call
+<script>  All JavaScript
 ```
 
-**SPA navigation pattern:**
+**Navigation pattern:**
 ```javascript
-function showPage(name) {
-  // hide all .page-view elements
-  // show #page-<name>
-  // mark #nav-<name> as active
-  // call the load function for that page
-}
+showPage(name) → hide all .page-view → show #page-<name> → mark nav active → call load function
 ```
 
-**Live Trades module state management:**
-- `livePositionsCache` — last fetched positions array
-- `liveAnalysisCache` — AI results keyed by `SYMBOL_direction` string
+Special pages handled by `showPage()` override: `['live', 'trades', 'calls', 'pending']`
+
+**Key JS globals:**
+- `currentPage` — active page name
+- `livePositionsCache` — last fetched open positions
+- `liveAnalysisCache` — AI results keyed by `"SYMBOL_direction"` (survives auto-refresh)
 - `liveOpenPanels` — Set of card indices with open AI panels
+- `liveCallMatches` — matched calls keyed by `"SYMBOL_direction"`
+- `_deepStatsCache` — cached `/api/analytics/deep` result (fetched once per Call Analyzer load)
+- `_lastCallResult` — latest call analysis result (for saving)
+- `currentLimitStatus` — active filter tab on Pending Orders page (`waiting`/`triggered`/`cancelled`)
+- `selectedLimitIds` — Set of pending limit IDs selected for bulk operations
+- `_bitgetOrdersCache` — last fetched live Bitget orders (for match modal pre-fill)
+- `_matchOrderData` — current order/limit being tracked in match modal
 
-When auto-refresh fires (every 30 seconds), `renderPositionCards()` re-renders the HTML but then immediately re-injects any cached AI analyses and re-opens previously open panels. This is why clicking AI Analysis and then waiting for auto-refresh doesn't lose your results.
+**Auto-refresh:** Live Trades auto-refreshes every 30s via `liveTradesInterval`. AI analysis results and open panels are preserved across refreshes using the cache globals.
 
-**Dark color scheme (CSS variables):**
+**Color scheme:**
 ```css
 --bg:      #0f1117   page background
---bg2:     #1a1d2e   card background
+--bg2:     #1a1d2e   card background  
 --bg3:     #22263a   secondary surface
---accent:  #6c63ff   purple — primary action
---accent2: #4fc3f7   blue — neutral highlight
---accent3: #26d96b   green — profit
+--accent:  #6c63ff   purple (primary action)
+--accent2: #4fc3f7   blue (neutral highlight)
+--accent3: #26d96b   green (profit)
 --red:     #ef5350   loss / danger
 --yellow:  #ffb300   warning / medium risk
 ```
 
 ---
 
-## The 7 Modules
-
-### 1. Dashboard
-Overview of the full 6-month trading history.
-- **10 KPI cards:** Total Realized PnL, Total Fees, Win Rate, Profit Factor, Best Trade, Worst Trade, Avg Win, Avg Loss, Max Drawdown, Total Trades
-- **Cumulative PnL curve** — line chart, all 808 closed trades
-- **Wallet Balance History** — equity curve from transaction data
-- **Top 5 Symbols by PnL** — bar chart
-- **Win vs Loss** — doughnut chart
-- **Recent 10 Trades** — table
-
-### 2. Journal
-Full trade management interface.
-- **Filters:** Symbol, Direction (Long/Short), Result (Win/Loss), Date range, Free text search
-- **Paginated table** — 50 trades/page, sortable columns
-- **Click a row** → edit notes and tags inline
-- **+ Add Trade** — manual entry form (symbol, direction, entry/exit price, size, PnL, fees, notes, tags)
-- **Delete** — per-trade delete with confirmation
-
-### 3. Deep Dive
-Advanced pattern analysis.
-- **P&L by Symbol** — horizontal bar chart, all 194 symbols
-- **Monthly P&L** — bar chart per calendar month
-- **P&L by Day of Week** — Mon–Sun breakdown
-- **P&L by Open Hour (UTC)** — 0–23 hour heatmap-style chart
-- **Long vs Short** — doughnut comparison
-- **Trade Duration Breakdown** — `< 1h`, `1-4h`, `4-24h`, `1-7 days`, `> 7 days`
-- **Key Stats pills:** win streaks, fee analysis
-- **Full Symbol Table** — every symbol: trades, win rate, total/avg/best/worst PnL, fees
-- **Worst Symbols** — bottom 5 loss leaders
-
-### 4. AI Advisor
-Full-portfolio Claude analysis.
-- **"Analyze My Trading" button** → sends all stats to Claude, returns in ~15 seconds
-- **Score card** (1–10 with color)
-- **Strengths** — what the trader does well (with specific numbers)
-- **Areas to Improve** — concrete weaknesses
-- **Action Plan** — prioritized recommendations (High/Medium/Low) with specific actions and expected impact
-- **Symbol Insights** — per-symbol observations
-- **Risk Management** section
-- **Mindset note**
-
-### 5. Live Trades ⚡
-Real-time open positions dashboard.
-- **Auto-refreshes every 30 seconds** from Bitget API
-- **4 summary KPIs:** Open Positions, Total Unrealized P&L, Margin In Use, Account Equity
-- **Position cards** — one per open trade, sorted by worst loss first
-  - Visual alerts: **NO SL** badge (red), **CRITICAL** badge with pulse animation (unrealized < -30%)
-  - Shows: Symbol, Direction + Leverage badge, Size (USDT), Entry Price, Mark Price, Unrealized P&L + %, TP/SL prices, Duration open
-  - Click card header → expands to show Break Even price, Liquidation price, Margin, Fees, Achieved profits
-- **🤖 AI Analysis button** per trade:
-  - Sends live position + 30-trade historical stats for that symbol to Claude
-  - Returns in ~5 seconds
-  - Shows: Risk Rating (1–10), Time Urgency chip, Action recommendation, TP/SL suggestions with rationale, Key Risks, Historical Context
-  - Results cached — survive the 30-second auto-refresh (panel stays open, results preserved)
-  - Button becomes **🔄 Re-analyze** after first analysis
-
-### 6. Import Data
-CSV upload interface.
-- Drag-and-drop or click to upload
-- Accepts: individual `.csv` files or `.zip` archive
-- Auto-detects file type by filename keyword (`position history`, `order history`, `transactions`)
-- Shows import history log
-
-### 7. Live Sync 🔴
-Sync status and connection details.
-- Account Equity, Available Balance, Last Sync time, Next Sync time
-- **Sync Now button** — triggers immediate sync
-- Last sync result (new positions/orders/bills)
-- Connection details (API key, interval, mode, permissions)
-
----
-
 ## Deployment
 
-### Systemd Service
+### systemd Service
 
-File: `/etc/systemd/system/trading-journal.service`
+File on Pi: `/etc/systemd/system/trading-journal.service`
+Source: `trading-journal.service` in project root
 
 ```ini
 [Unit]
@@ -487,120 +581,132 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-### Common Operations
+### Python Dependencies (`requirements.txt`)
 
-```bash
-# Check status
-systemctl status trading-journal
-
-# View live logs
-journalctl -u trading-journal -f
-
-# Restart after code changes
-sudo systemctl restart trading-journal
-
-# Stop / start
-sudo systemctl stop trading-journal
-sudo systemctl start trading-journal
+```
+flask>=3.0
+anthropic>=0.25
+requests>=2.31
 ```
 
-### Updating the App
+---
 
+## Restore From Scratch
+
+See `docs/USER_GUIDE.md` for usage documentation.
+
+### Complete restore procedure (new Pi or new machine):
+
+**1. Install Python dependencies**
 ```bash
-# On your Mac: edit files, then sync to Pi
+pip3 install flask anthropic requests
+```
+
+**2. Clone / copy source files**
+```bash
+# From Mac to Pi
 rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
   /Users/fbauer/Documents/ClaudeAIData/trading-journal/ \
   fbauer@192.168.1.21:/home/fbauer/trading-journal/ \
-  --exclude='*.db' --exclude='*.pyc'
-
-# On the Pi: restart
-sudo systemctl restart trading-journal
+  --exclude='*.db' --exclude='*.pyc' --exclude='__pycache__'
 ```
 
-### Re-importing CSV Data
-
+**3. Initialize DB and import historical data**
 ```bash
 ssh fbauer@192.168.1.21
 cd /home/fbauer/trading-journal
-rm trading_journal.db           # wipe existing
-python3 importer.py data/       # reimport from CSVs
+python3 database.py          # creates trading_journal.db with all tables
+python3 importer.py data/    # imports CSV files from data/
+```
+
+**4. Test the app manually first**
+```bash
+python3 app.py
+# Open http://192.168.1.21:8082 in browser — confirm data loads
+# Ctrl+C to stop
+```
+
+**5. Install systemd service**
+```bash
+sudo cp trading-journal.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable trading-journal
+sudo systemctl start trading-journal
+systemctl status trading-journal
+```
+
+**6. Verify**
+```bash
+curl -s http://localhost:8082/api/dashboard/kpis | python3 -m json.tool | head -20
+curl -s http://localhost:8082/api/sync/status | python3 -m json.tool
+```
+
+### Common Operations
+
+```bash
+# Logs
+journalctl -u trading-journal -f
+
+# Restart after code update
 sudo systemctl restart trading-journal
-```
 
-### Adding a New Bitget Export
+# Deploy code update from Mac
+rsync -avz -e ssh \
+  /Users/fbauer/Documents/ClaudeAIData/trading-journal/ \
+  fbauer@192.168.1.21:/home/fbauer/trading-journal/ \
+  --exclude='*.db' --exclude='*.pyc'
+ssh fbauer@192.168.1.21 sudo systemctl restart trading-journal
 
-1. Go to Import tab in the UI
-2. Drag-drop the ZIP file or individual CSVs
-3. Duplicate detection handles overlapping records automatically
+# Wipe and reimport DB
+ssh fbauer@192.168.1.21 "cd /home/fbauer/trading-journal && \
+  rm trading_journal.db && \
+  python3 importer.py data/ && \
+  sudo systemctl restart trading-journal"
 
----
-
-## Data Flow Diagram
-
-```
-Bitget Exchange
-      │
-      ├── CSV export (historical, one-time)
-      │       └──► importer.py ──► SQLite positions table
-      │
-      └── REST API (ongoing, every 15 min)
-              └──► bitget_client.py
-                      ├──► bitget_sync.py ──► SQLite (new positions/orders/bills)
-                      └──► /api/live/positions ──► Live Trades module (real-time, not cached)
-
-SQLite DB
-  ├── positions ──► analytics.py ──► Dashboard / Journal / Deep Dive
-  ├── wallet_snapshots ──► equity curve charts
-  └── settings ──► sync state, account balance
-
-Claude API (claude-sonnet-4-6)
-  ├── ai_advisor.py ──► Portfolio analysis (full stats)
-  └── ai_live_trade.py ──► Per-trade analysis (live position + symbol history)
+# Add new Bitget export via API
+curl -X POST http://192.168.1.21:8082/api/import \
+  -F "file=@/path/to/export.zip"
 ```
 
 ---
 
-## Adding New Features
+## Round 3 UI Features (added May 2026)
 
-### New KPI on Dashboard
-1. Calculate value in `analytics.py → get_dashboard_kpis()`, add to returned dict
-2. Add entry to the `kpis` array in `loadDashboard()` in `index.html`
+### 1. Analyst Inline Edit (Call Analyzer page)
 
-### New Chart on Deep Dive
-1. Add `<canvas id="myChart">` in a `.chart-card` div in `#page-deep`
-2. Call `makeChart('myChart', 'bar', {labels:[...], datasets:[...]})` in `loadDeep()`
+Each saved call row shows a small ✏ button next to the analyst badge.
 
-### New Filter on Journal
-1. Add HTML input/select to the filters bar
-2. Read value in `journalLoad()`, add to `params` URLSearchParams
-3. Add WHERE clause in `app.py → api_positions_list()`
+**Flow:**
+1. Click ✏ → `editCallAnalyst(callId, currentAnalyst)` replaces the tag with an `<input>` pre-filled with the current name
+2. User types new name → Enter or "Save" → `saveCallAnalyst(callId)` → `PATCH /api/calls/<id>` → `loadSavedCalls()`
+3. Escape or ✕ → `loadSavedCalls()` (resets to original)
 
-### New REST Endpoint
-```python
-@app.route("/api/my-endpoint")
-def api_my_endpoint():
-    conn = get_conn()
-    data = conn.execute("SELECT ... FROM positions").fetchall()
-    conn.close()
-    return _ok([dict(r) for r in data])
-```
+**Backend:** `PATCH /api/calls/<id>` accepts `{analyst, notes}` — any subset.
 
-### Connect Bitget Automation (future)
-The REST API is already automation-ready. To push new closed trades automatically:
-```python
-# POST new trade via API
-requests.post("http://192.168.1.21:8082/api/positions", json={
-    "symbol": "BTCUSDT",
-    "direction": "Long",
-    "open_time": "2026-06-01 10:00:00",
-    "close_time": "2026-06-01 14:00:00",
-    "entry_price": 105000,
-    "close_price": 107500,
-    "size_usdt": 500,
-    "realized_pnl": 11.90,
-    "total_fees": -0.48,
-})
-```
+### 2. Bulk Selection (Pending Orders page)
+
+On the **Waiting** tab, each pending limit card shows a checkbox in the top-left corner.
+
+**Selection state:** `selectedLimitIds` (JavaScript `Set<number>`) — cleared when switching tabs or after any bulk action.
+
+**Bulk action bar:** Appears sticky at the bottom of the page when `selectedLimitIds.size > 0`.
+
+| Button | Action | Endpoint |
+|--------|--------|----------|
+| Set SL | `prompt()` for price → applies to all selected | `POST /api/limits/bulk-update` `{ids, sl_price}` |
+| Set TP1 | Same for tp1_price | same |
+| Set TP2 | Same for tp2_price | same |
+| 🔗 Link to Call | Opens `#bulk-link-modal` → pick call → apply call_id | `POST /api/limits/bulk-update` `{ids, call_id}` |
+| ✕ Cancel All | Confirm → set all to cancelled | `POST /api/limits/bulk-update` `{ids, status:'cancelled'}` |
+| ✕ Clear | Deselects all (no API call) | — |
+
+**Helper functions:** `toggleLimitSelection(id, checked)`, `updateBulkBar()`, `clearBulkSelection()`, `bulkSetField(field, label)`, `bulkCancel()`, `bulkLinkCall()`, `selectBulkCall(callId)`, `confirmBulkLink()`, `closeBulkLinkModal()`.
+
+### 3. Bulk Link to Analyst Call
+
+**`#bulk-link-modal`:** Shows count of selected limits + scrollable call picker (same style as match modal). Picking a call highlights it with an accent border. "Link Selected" button calls `confirmBulkLink()` → bulk-update → clears selection.
+
+**Backend:** `POST /api/limits/bulk-update` with `{ids: [...], call_id: N}` — sets `call_id` on all specified rows in one `UPDATE ... WHERE id IN (...)` statement.
 
 ---
 
@@ -612,12 +718,82 @@ requests.post("http://192.168.1.21:8082/api/positions", json={
 | Pi address | 192.168.1.21 |
 | Pi user | fbauer |
 | Pi project dir | /home/fbauer/trading-journal/ |
-| Mac backup dir | /Users/fbauer/Documents/ClaudeAIData/trading-journal/ |
-| Database | trading_journal.db (excluded from git) |
+| Mac source dir | /Users/fbauer/Documents/ClaudeAIData/trading-journal/ |
+| Database file | trading_journal.db (excluded from git, DO NOT wipe without backup) |
 | Service name | trading-journal |
 | Port | 8082 |
-| Sync interval | 15 minutes |
+| Sync interval | 15 minutes automatic + manual Sync Now |
 | AI model | claude-sonnet-4-6 |
 | Exchange | Bitget USDT-M Futures |
-| Positions in DB | 808 (as of May 2026 export) |
-| Symbols traded | 194 unique pairs |
+| Anthropic key | in `ai_call_analyzer.py` line 30 + `ANTHROPIC_API_KEY` env var |
+| Bitget API key | `bg_99c0e8…` in `bitget_client.py` (read-only) |
+
+---
+
+## Data Flow
+
+```
+Bitget Exchange
+  ├── CSV export (historical, one-time)
+  │       └──► importer.py ──► SQLite positions/orders/wallet_snapshots
+  │
+  └── REST API (ongoing, every 15 min)
+          └──► bitget_client.py
+                  ├──► bitget_sync.py ──► SQLite (new positions, orders, bills)
+                  └──► /api/live/positions ──► Live Trades (real-time, not cached in DB)
+
+SQLite DB
+  ├── positions ──► analytics.py ──► Dashboard / Journal / Deep Dive
+  ├── wallet_snapshots ──► equity curve + drawdown calculation
+  ├── analyzed_calls ──► Call Analyzer / Analyst Stats / Prediction Accuracy
+  ├── pending_limits ──► Pending Orders / Risk Summary
+  └── settings ──► sync state, account balance
+
+Claude API (claude-sonnet-4-6)
+  ├── ai_advisor.py ──► Portfolio analysis (~$0.02/call)
+  ├── ai_live_trade.py ──► Per-trade analysis (~$0.003/call)
+  └── ai_call_analyzer.py
+        ├── analyze_call() ──► Call analysis with vision (~$0.02/call)
+        └── analyze_pending_limit() ──► Limit order analysis (~$0.005/call)
+```
+
+---
+
+## Adding New Features
+
+### New DB column (safe migration pattern)
+```python
+# In init_db(), after CREATE TABLE:
+try:
+    cur.execute("ALTER TABLE my_table ADD COLUMN new_col TEXT DEFAULT ''")
+except sqlite3.OperationalError:
+    pass  # column already exists
+```
+
+### New API endpoint
+```python
+@app.route("/api/my-endpoint")
+def api_my_endpoint():
+    conn = get_conn()
+    data = [dict(r) for r in conn.execute("SELECT ... FROM positions").fetchall()]
+    conn.close()
+    return _ok(data)
+```
+
+### New KPI on Dashboard
+1. Calculate in `analytics.py → get_dashboard_kpis()`, add to returned dict
+2. Add to `kpis` array in `loadDashboard()` JS function in `index.html`
+
+### New Chart
+1. Add `<canvas id="myChart">` in a `.chart-card` in the target page
+2. Call `makeChart('myChart', 'bar', {labels:[...], datasets:[...]})` in the load function
+
+### Push new trade via API (automation)
+```python
+requests.post("http://192.168.1.21:8082/api/positions", json={
+    "symbol": "BTCUSDT", "direction": "Long",
+    "open_time": "2026-06-01 10:00:00", "close_time": "2026-06-01 14:00:00",
+    "entry_price": 105000, "close_price": 107500,
+    "size_usdt": 500, "realized_pnl": 11.90, "total_fees": -0.48,
+})
+```

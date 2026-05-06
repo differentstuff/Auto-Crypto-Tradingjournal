@@ -22,9 +22,9 @@ import urllib.parse
 import urllib.request
 
 BASE_URL   = "https://api.bitget.com"
-API_KEY    = os.environ.get("BITGET_API_KEY",    "REDACTED_API_KEY")
-SECRET_KEY = os.environ.get("BITGET_SECRET_KEY", "REDACTED_SECRET_KEY")
-PASSPHRASE = os.environ.get("BITGET_PASSPHRASE", "REDACTED_PASSPHRASE")
+API_KEY    = os.environ.get("BITGET_API_KEY",    "")
+SECRET_KEY = os.environ.get("BITGET_SECRET_KEY", "")
+PASSPHRASE = os.environ.get("BITGET_PASSPHRASE", "")
 
 
 class BitgetAPIError(Exception):
@@ -126,16 +126,48 @@ def _paginate(path: str, row_key: str, start_ms: int, end_ms: int,
     return all_rows
 
 
+def get_recent_positions(max_pages: int = 5) -> list:
+    """
+    Fetch the most recently CLOSED positions using cursor-only pagination.
+    Returns up to max_pages * 100 rows, newest first.
+
+    WHY no time filter: Bitget's /history-position startTime/endTime filters by
+    OPEN time (ctime), NOT close time (utime).  A position held for 2 weeks but
+    closed today has ctime=14 days ago → it never appears when startTime is
+    set to anything within the last few days.  Cursor-only pagination avoids
+    this entirely: we get the freshest N closed positions regardless of when
+    they were opened, then stop on the first positionId we already know.
+    """
+    all_rows = []
+    end_id   = None
+    LIMIT    = 100
+
+    for _ in range(max_pages):
+        params = {"productType": "USDT-FUTURES", "limit": str(LIMIT)}
+        if end_id:
+            params["endId"] = end_id
+
+        data    = _get("/api/v2/mix/position/history-position", params)
+        rows    = (data.get("list") or []) if isinstance(data, dict) else []
+        next_id = data.get("endId")        if isinstance(data, dict) else None
+
+        all_rows.extend(rows)
+        if not rows or len(rows) < LIMIT or not next_id:
+            break
+        end_id = next_id
+
+    return all_rows
+
+
 def get_position_history(start_ms: int = None, end_ms: int = None) -> list:
     """
-    Fetch closed positions in the given time window.
-    Field keys: positionId, holdSide, openAvgPrice, closeAvgPrice,
-                openTotalPos, pnl, netProfit, openFee, closeFee,
-                totalFunding, marginMode, symbol, ctime, utime
+    Kept for backward compatibility / manual queries.
+    NOTE: startTime/endTime on this endpoint filter by OPEN time, not close time.
+    Use get_recent_positions() for live sync.
     """
     return _paginate(
         "/api/v2/mix/position/history-position", "list",
-        start_ms, end_ms, time_key="ctime"   # positions use lowercase ctime
+        start_ms, end_ms, time_key="ctime"
     )
 
 
@@ -216,6 +248,75 @@ def get_open_positions() -> list:
     # Sort by unrealized PnL ascending (worst losses first)
     result.sort(key=lambda x: x["unrealized_pnl"])
     return result
+
+
+def _ms_to_str(ms: int) -> str:
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+
+
+def get_pending_orders() -> list:
+    """
+    Fetch all unfilled limit orders on USDT-M Futures.
+
+    Returns two lists under keys 'entry' and 'exit':
+      entry  — tradeSide=open  (limit orders to enter a position)
+      exit   — tradeSide=close (TP/SL limit orders on open positions)
+
+    Confirmed v2 fields: orderId, symbol, side, posSide, tradeSide, orderType,
+    price, size, notionalUsd, leverage, marginMode, status, cTime, clientOid
+    """
+    try:
+        data = _get("/api/v2/mix/order/orders-pending",
+                    {"productType": "USDT-FUTURES"})
+    except BitgetAPIError:
+        return []
+
+    rows = []
+    if isinstance(data, dict):
+        rows = data.get("entrustedList") or data.get("list") or []
+    elif isinstance(data, list):
+        rows = data
+
+    entry_orders = []
+    exit_orders  = []
+
+    for r in rows:
+        if (r.get("orderType") or "").lower() != "limit":
+            continue
+
+        pos_side   = (r.get("posSide") or "").lower()
+        trade_side = (r.get("tradeSide") or "open").lower()
+        direction  = "Long" if pos_side == "long" else "Short"
+        price      = float(r.get("price") or 0)
+        size       = float(r.get("size")  or 0)
+        notional   = float(r.get("notionalUsd") or 0)
+        if not notional and price and size:
+            notional = round(price * size, 2)
+        c_time_ms  = int(r.get("cTime") or 0)
+        margin_mode = r.get("marginMode") or "crossed"
+
+        order = {
+            "order_id":    r.get("orderId"),
+            "symbol":      r.get("symbol"),
+            "direction":   direction,
+            "trade_side":  trade_side,
+            "price":       price,
+            "size":        size,
+            "notional_usdt": round(notional, 2),
+            "leverage":    r.get("leverage"),
+            "margin_mode": "Cross" if "cross" in margin_mode.lower() else "Isolated",
+            "status":      r.get("status"),
+            "client_oid":  r.get("clientOid"),
+            "created_ms":  c_time_ms,
+            "created_at":  _ms_to_str(c_time_ms) if c_time_ms else "",
+        }
+        if trade_side == "open":
+            entry_orders.append(order)
+        else:
+            exit_orders.append(order)
+
+    return {"entry": entry_orders, "exit": exit_orders}
 
 
 def test_connection() -> dict:
