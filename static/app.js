@@ -980,7 +980,7 @@ async function loadSavedCalls() {
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${c.status !== 'closed' ? `<button class="btn btn-sm" style="background:rgba(79,195,247,.12);color:var(--accent2);border:1px solid rgba(79,195,247,.3)" onclick="openLimitModal(null,{call_id:${c.id},symbol:'${c.symbol}',direction:'${c.direction}',sl_price:${c.sl_price||'null'},tp1_price:${c.tp1_price||'null'},tp2_price:${c.tp2_price||'null'},entry_price:${c.entry_price||'null'},total_notional:${c.total_notional||'null'},analyst:'${(c.analyst||'').replace(/'/g,"\\'")}',leverage:${c.leverage||10}})">⏳ Set Limit</button>` : ''}
+        ${c.status !== 'closed' ? `<button class="btn btn-sm" style="background:rgba(79,195,247,.12);color:var(--accent2);border:1px solid rgba(79,195,247,.3)" onclick="openLimitModal(null,{call_id:${c.id},symbol:'${c.symbol}',direction:'${c.direction}',sl_price:${c.sl_price||'null'},tp1_price:${c.tp1_price||'null'},tp2_price:${c.tp2_price||'null'},entry_price:${c.entry_price||'null'},total_notional:${c.total_notional||'null'},analyst:'${(c.analyst||'').replace(/\\/g,"\\\\").replace(/'/g,"\\'")}',leverage:${c.leverage||10}})">⏳ Set Limit</button>` : ''}
         ${(c.status === 'matched' || c.status === 'closed') && !c.outcome ? `<button class="btn btn-secondary btn-sm" onclick="openOutcomeModal(${c.id})">📊 Record Outcome</button>` : ''}
         ${c.status === 'matched' ? `<button class="btn btn-secondary btn-sm" onclick="closeCall(${c.id})">Mark Closed</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="deleteCall(${c.id})">Delete</button>

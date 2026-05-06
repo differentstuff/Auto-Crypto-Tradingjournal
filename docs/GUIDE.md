@@ -798,6 +798,14 @@ Six CodeQL alerts were found and resolved:
 | 3 & 4 | `py/path-injection` | `app.py` | Uploaded filename sanitized with `werkzeug.utils.secure_filename()` before `os.path.join()` |
 | 5 & 6 | `py/sql-injection` | `analytics.py` | Dismissed as false positive — `_build_where()` only interpolates hardcoded SQL fragments into the query string; user values go into bound `?` params only. Added allowlist validation (symbol `[A-Z0-9]+`, direction `Long`/`Short`, dates `YYYY-MM-DD`) for extra safety |
 
+### 8. Incomplete string escaping fix (v1.4.1) — CWE-116
+
+After JS was extracted to `static/app.js`, CodeQL flagged alert #7:
+
+| # | Rule | File | Fix |
+|---|------|------|-----|
+| 7 | `js/incomplete-string-escaping` | `static/app.js:983` | Analyst name interpolated into an `onclick` attribute escaped `'` but not `\`. Fixed by escaping backslashes first: `.replace(/\\/g,"\\\\").replace(/'/g,"\\'")` |
+
 ---
 
 ## Quick Reference

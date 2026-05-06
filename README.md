@@ -178,6 +178,9 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.4.1 — Security Fix
+- Incomplete string escaping fixed in `static/app.js` — backslashes now escaped before single quotes in analyst name interpolation (CWE-116)
+
 ### v1.4 — Code Quality & Security Completion
 - `SECURITY.md` added — lightweight vulnerability reporting policy via GitHub private advisories
 - CodeQL workflow added (`.github/workflows/codeql.yml`) — analysis now actually runs on push, PR, and weekly; branch protection is fully operational
