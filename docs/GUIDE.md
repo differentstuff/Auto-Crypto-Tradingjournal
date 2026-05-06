@@ -624,7 +624,7 @@ Configured on the public repo (`anvilfilbert/Auto-Crypto-Tradingjournal`):
 | Merge strategy | Squash merge only (merge commits + rebase disabled) |
 | Delete branch on merge | Enabled |
 | Branch protection | CodeQL must pass before any merge to `main` |
-| CodeQL workflow | `.github/workflows/codeql.yml` — runs on push, PR, and weekly (Monday 06:00 UTC) |
+| CodeQL workflow | `.github/workflows/codeql.yml` — runs on push, PR, and weekly (Monday 06:00 UTC). **Default Setup must stay disabled** — enabling it causes SARIF upload conflict with the custom workflow |
 | Dependabot | Weekly `pip` dependency updates via `.github/dependabot.yml` |
 | Secret scanning | Enabled — alerts on any committed credentials |
 | Wiki / Projects | Disabled |
