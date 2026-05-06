@@ -1,10 +1,8 @@
 # Crypto Trading Journal — Full Technical Reference
 
-**Live URL:** http://192.168.1.21:8082  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
-**Source (Mac):** `/Users/fbauer/Documents/ClaudeAIData/trading-journal/`  
-**Pi path:** `/home/fbauer/trading-journal/`
+**Project path:** `/home/<your-user>/trading-journal/`
 
 ---
 
@@ -24,7 +22,7 @@ A full-stack web application for Bitget USDT-M Futures traders:
 ## Architecture
 
 ```
-Browser (http://192.168.1.21:8082)
+Browser (http://<your-pi-ip>:8082)
          │
          ▼
     Flask (app.py)              ← HTTP server + all API routes
@@ -569,9 +567,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=fbauer
-WorkingDirectory=/home/fbauer/trading-journal
-EnvironmentFile=/home/fbauer/trading-journal/.env
+# Replace <your-user> with your Linux username
+User=<your-user>
+WorkingDirectory=/home/<your-user>/trading-journal
+EnvironmentFile=/home/<your-user>/trading-journal/.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 app.py
 Restart=on-failure
@@ -651,21 +650,21 @@ journalctl -u trading-journal -f
 # Restart after code update
 sudo systemctl restart trading-journal
 
-# Deploy code update from Mac
+# Deploy code update from a remote machine
 rsync -avz -e ssh \
-  /Users/fbauer/Documents/ClaudeAIData/trading-journal/ \
-  fbauer@192.168.1.21:/home/fbauer/trading-journal/ \
+  /path/to/local/trading-journal/ \
+  <your-user>@<your-pi-ip>:/home/<your-user>/trading-journal/ \
   --exclude='*.db' --exclude='*.pyc'
-ssh fbauer@192.168.1.21 sudo systemctl restart trading-journal
+ssh <your-user>@<your-pi-ip> sudo systemctl restart trading-journal
 
 # Wipe and reimport DB
-ssh fbauer@192.168.1.21 "cd /home/fbauer/trading-journal && \
+ssh <your-user>@<your-pi-ip> "cd /home/<your-user>/trading-journal && \
   rm trading_journal.db && \
   python3 importer.py data/ && \
   sudo systemctl restart trading-journal"
 
 # Add new Bitget export via API
-curl -X POST http://192.168.1.21:8082/api/import \
+curl -X POST http://<your-pi-ip>:8082/api/import \
   -F "file=@/path/to/export.zip"
 ```
 
@@ -729,21 +728,18 @@ if "analyst" not in cols:
 
 | Item | Value |
 |------|-------|
-| Live URL | http://192.168.1.21:8082 |
+| Live URL | http://`<your-pi-ip>`:8082 |
 | GitHub | https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal |
-| Pi address | 192.168.1.21 |
-| Pi user | fbauer |
-| Pi project dir | /home/fbauer/trading-journal/ |
-| Mac source dir | /Users/fbauer/Documents/ClaudeAIData/Trading-Journal/ |
-| Credentials file | /home/fbauer/trading-journal/.env (gitignored, mode 600) |
+| Project dir | /home/`<your-user>`/trading-journal/ |
+| Credentials file | `.env` in project root (gitignored, mode 600) |
 | Database file | trading_journal.db (excluded from git, DO NOT wipe without backup) |
 | Service name | trading-journal |
-| Port | 8082 |
-| Sync interval | 15 minutes automatic + manual Sync Now |
+| Port | 8082 (configurable via PORT in .env) |
+| Sync interval | 5 minutes automatic + manual Sync Now |
 | AI model | claude-sonnet-4-6 |
 | Exchange | Bitget USDT-M Futures |
-| Anthropic key | in `ai_call_analyzer.py` line 30 + `ANTHROPIC_API_KEY` env var |
-| Bitget API key | `bg_99c0e8…` in `bitget_client.py` (read-only) |
+| Anthropic key | `ANTHROPIC_API_KEY` in `.env` |
+| Bitget keys | `BITGET_API_KEY`, `BITGET_SECRET_KEY`, `BITGET_PASSPHRASE` in `.env` |
 
 ---
 
@@ -807,7 +803,7 @@ def api_my_endpoint():
 
 ### Push new trade via API (automation)
 ```python
-requests.post("http://192.168.1.21:8082/api/positions", json={
+requests.post("http://<your-pi-ip>:8082/api/positions", json={
     "symbol": "BTCUSDT", "direction": "Long",
     "open_time": "2026-06-01 10:00:00", "close_time": "2026-06-01 14:00:00",
     "entry_price": 105000, "close_price": 107500,

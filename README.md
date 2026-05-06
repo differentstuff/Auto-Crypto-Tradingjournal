@@ -61,7 +61,7 @@ A self-hosted crypto futures trading journal with live Bitget API sync, AI-power
 | Database | SQLite (via Python `sqlite3`) |
 | Frontend | Vanilla JS SPA (single `index.html`, no build step) |
 | Charts | Chart.js |
-| AI | Anthropic Claude API (`claude-opus-4-5` / vision) |
+| AI | Anthropic Claude API (`claude-sonnet-4-6` / vision) |
 | Exchange API | Bitget REST API v2 |
 | Process manager | systemd |
 
@@ -80,7 +80,7 @@ A self-hosted crypto futures trading journal with live Bitget API sync, AI-power
 
 ```bash
 git clone https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal.git
-cd trading-journal
+cd Auto-Crypto-Tradingjournal
 pip3 install -r requirements.txt
 ```
 

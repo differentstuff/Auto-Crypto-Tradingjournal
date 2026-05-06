@@ -1,6 +1,6 @@
 # Crypto Trading Journal — User Guide
 
-**App URL:** http://192.168.1.21:8082  
+**App URL:** http://`<your-host>`:8082  
 **Exchange:** Bitget USDT-M Futures
 
 ---
