@@ -732,7 +732,13 @@ On the **Waiting** tab, each pending limit card shows a checkbox in the top-left
 
 ### 4. Analyst Field on Journal Rows (added May 2026)
 
-### 5. Open Position Risk — SL-based calculation (added May 2026)
+### 5. Recent Trades totals footer (added May 2026)
+
+The recent trades table on the Dashboard now has a `<tfoot>` row summing realized P&L and fees across the displayed trades (last 10).
+
+**Code:** `templates/index.html`, `loadDashboard()` — computed after building tbody, written to `#recent-tfoot`.
+
+### 6. Open Position Risk — SL-based calculation (added May 2026)
 
 The **Open Position Risk** KPI on the Dashboard now shows true dollar risk to stop-loss, not margin locked.
 
