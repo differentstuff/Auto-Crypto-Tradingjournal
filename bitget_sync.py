@@ -446,10 +446,9 @@ def run_sync(conn=None) -> dict:
 
     except Exception as e:
         import traceback
-        err = str(e)
         traceback.print_exc()
-        _sync_status["last_error"] = err
-        return {"error": err}
+        _sync_status["last_error"] = "Sync failed — see server logs"
+        return {"error": "Sync failed — see server logs"}
     finally:
         _sync_status["running"] = False
         _sync_lock.release()
