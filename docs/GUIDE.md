@@ -582,6 +582,17 @@ WantedBy=multi-user.target
 
 Credentials are loaded via `EnvironmentFile=` from `.env` (gitignored). Copy `.env.example` to `.env` and fill in values before starting the service.
 
+### Passwordless sudo (optional but recommended)
+
+Allows remote `sudo systemctl restart` without a password prompt. Run once on the Pi:
+
+```bash
+echo '<your-user> ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/99-<your-user>-nopasswd
+sudo chmod 440 /etc/sudoers.d/99-<your-user>-nopasswd
+```
+
+After this, `sudo systemctl restart trading-journal` works from non-interactive SSH sessions.
+
 ### Python Dependencies (`requirements.txt`)
 
 ```
@@ -614,19 +625,19 @@ cp .env.example .env
 # Edit .env — fill in BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE, ANTHROPIC_API_KEY
 ```
 
-**5. Initialize DB**
+**4. Initialize DB**
 ```bash
 python3 database.py          # creates trading_journal.db with all tables
 ```
 
-**6. Test the app manually first**
+**5. Test the app manually first**
 ```bash
 python3 app.py
 # Open http://<host>:8082 in browser — confirm it loads
 # Ctrl+C to stop
 ```
 
-**7. Install systemd service**
+**6. Install systemd service**
 ```bash
 sudo cp trading-journal.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -635,7 +646,7 @@ sudo systemctl start trading-journal
 systemctl status trading-journal
 ```
 
-**6. Verify**
+**7. Verify**
 ```bash
 curl -s http://localhost:8082/api/dashboard/kpis | python3 -m json.tool | head -20
 curl -s http://localhost:8082/api/sync/status | python3 -m json.tool
@@ -709,6 +720,19 @@ On the **Waiting** tab, each pending limit card shows a checkbox in the top-left
 **Backend:** `POST /api/limits/bulk-update` with `{ids: [...], call_id: N}` — sets `call_id` on all specified rows in one `UPDATE ... WHERE id IN (...)` statement.
 
 ### 4. Analyst Field on Journal Rows (added May 2026)
+
+### 5. Open Position Risk — SL-based calculation (added May 2026)
+
+The **Open Position Risk** KPI on the Dashboard now shows true dollar risk to stop-loss, not margin locked.
+
+**Formula:**
+- Long: `risk = (entry_price − stop_loss) / entry_price × size_usdt`
+- Short: `risk = (stop_loss − entry_price) / entry_price × size_usdt`
+- No SL set: falls back to `margin_usdt` (collateral at risk)
+
+Sub-label shows `· SL-based` or `· no SL` to indicate which mode is active.
+
+**Code:** `templates/index.html`, `loadDashboard()` → async `/api/live/positions` call.
 
 The `positions` table has an `analyst` column (migrated automatically at startup if missing). The journal table now shows an **Analyst** column (`📡 Name` or `—`).
 
