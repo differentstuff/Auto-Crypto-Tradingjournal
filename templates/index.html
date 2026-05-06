@@ -589,6 +589,12 @@ select:focus,input:focus{border-color:var(--accent)}
         </table>
       </div>
 
+      <div class="section-title">Trade Heatmap — Hour × Day</div>
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:10px">Win rate by open hour (UTC) and close day · cells need ≥3 trades · green ≥65% · blue 50-64% · yellow 40-49% · red &lt;40%</div>
+      <div class="table-card" style="overflow-x:auto">
+        <div id="heatmap-container" style="padding:12px"></div>
+      </div>
+
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -755,6 +761,26 @@ select:focus,input:focus{border-color:var(--accent)}
             <button class="btn btn-secondary btn-sm" onclick="clearCall()">Clear</button>
             <span id="call-equity-label" style="margin-left:auto;font-size:.78rem;color:var(--muted)">Loading account equity…</span>
           </div>
+
+          <!-- Position Sizing Calculator -->
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">⚡ Position Sizing</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+              <div class="filter-group">
+                <label>Entry</label>
+                <input type="number" id="sz-entry" placeholder="0.00" step="any" oninput="calcSizing()">
+              </div>
+              <div class="filter-group">
+                <label>Stop Loss</label>
+                <input type="number" id="sz-sl" placeholder="0.00" step="any" oninput="calcSizing()">
+              </div>
+              <div class="filter-group">
+                <label>Risk %</label>
+                <input type="number" id="sz-risk" value="1" min="0.1" max="10" step="0.1" oninput="calcSizing()">
+              </div>
+            </div>
+            <div id="sz-result" style="font-size:.82rem;min-height:24px"></div>
+          </div>
         </div>
 
         <!-- ── Result panel ── -->
@@ -810,6 +836,9 @@ select:focus,input:focus{border-color:var(--accent)}
 
       <!-- Pending match confirmations -->
       <div id="match-confirmations"></div>
+
+      <!-- Economic calendar warning -->
+      <div id="eco-warning" style="display:none;background:rgba(255,179,0,.08);border:1px solid rgba(255,179,0,.35);border-radius:8px;padding:10px 14px;font-size:.82rem;color:var(--yellow);margin-bottom:12px;line-height:1.7"></div>
 
       <!-- Correlation risk warning -->
       <div id="correlation-warning" class="correlation-warn" style="display:none"></div>

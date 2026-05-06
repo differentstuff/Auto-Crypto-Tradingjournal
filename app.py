@@ -34,7 +34,7 @@ from werkzeug.utils import secure_filename
 
 from database     import init_db, get_conn
 from importer     import import_folder
-from analytics    import get_dashboard_kpis, get_deep_stats, get_rr_analysis
+from analytics    import get_dashboard_kpis, get_deep_stats, get_rr_analysis, get_heatmap_data
 import ai_advisor
 import ai_live_trade
 import ai_call_analyzer
@@ -345,6 +345,27 @@ def api_analytics_deep():
         data = get_deep_stats(filters=_filters_from_args())
         return _ok(data)
     except Exception as e:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@app.route("/api/market/calendar")
+def api_market_calendar():
+    try:
+        return _ok(market_context.get_economic_calendar())
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@app.route("/api/analytics/heatmap")
+def api_analytics_heatmap():
+    try:
+        conn = get_conn()
+        data = get_heatmap_data(conn=conn)
+        conn.close()
+        return _ok(data)
+    except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
 

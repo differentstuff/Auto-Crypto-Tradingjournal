@@ -39,8 +39,8 @@ Browser (http://<your-pi-ip>:8082)
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
-templates/index.html            ← Frontend: HTML + CSS only (~1197 lines)
-static/app.js                   ← All frontend JavaScript (2565 lines)
+templates/index.html            ← Frontend: HTML + CSS only (~1226 lines)
+static/app.js                   ← All frontend JavaScript (2701 lines)
 static/                         ← Static assets (Chart.js via CDN)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
@@ -920,6 +920,63 @@ Filter dropdown added to journal filter bar between Result and From date. Reset 
 #### 10f. Setup Type in Add Trade modal
 
 `POST /api/positions` now accepts `setup_type` in request body and stores it at creation time. Dropdown added to the Add Trade modal above Notes.
+
+### 12. v1.7 — Trading Tools & Heatmap
+
+#### 12a. Position Sizing Calculator
+
+Located in the Call Analyzer input panel. No backend needed — purely frontend.
+
+**Inputs:** Entry price · Stop Loss · Risk % (persisted to `localStorage`)
+**Auto-population:** Account equity loaded from `/api/sync/status` on page load. Entry and SL auto-filled from parsed call after every `analyzeCall()` run.
+
+**Formula:**
+```
+risk_amount  = equity × risk% / 100
+risk_dist    = |entry − sl| / entry
+size_usdt    = risk_amount / risk_dist
+leverage     = size_usdt / equity
+```
+
+Leverage color: green ≤7x · yellow ≤15x · red >15x.
+
+**Code:** `calcSizing()` in `static/app.js`. `_szEquity` global holds current equity. `renderCallResult()` auto-fills inputs after analysis.
+
+#### 12b. Economic Calendar
+
+**Source:** `https://nfs.faireconomy.media/ff_calendar_thisweek.json` — ForexFactory community mirror, no auth, 1-hour cache.
+
+**Filter:** High-impact USD events only. Events for today and tomorrow (UTC) are returned.
+
+**API:** `GET /api/market/calendar` → list of `{title, time, forecast, previous, when}`
+
+**Frontend:** Yellow warning banner on Live Positions page (`#eco-warning`), shown non-blocking after positions load. Hidden when no events.
+
+**Code:** `get_economic_calendar()` in `market_context.py`.
+
+#### 12c. Trade Heatmap (Hour × Day)
+
+**Analytics:** `get_heatmap_data(conn)` in `analytics.py` — groups all positions by `(strftime('%w', close_time), strftime('%H', open_time))`.
+
+**API:** `GET /api/analytics/heatmap` → list of `{weekday, hour, trade_count, total_pnl, win_rate}`
+
+**Frontend:** `renderHeatmap(rows)` in `static/app.js` — builds an HTML table (7 cols × 24 rows). Cells require ≥3 trades. Opacity scales with trade count (more trades = more opaque). Hover shows count + WR + P&L.
+
+Color key: green ≥65% WR · blue 50–64% · yellow 40–49% · red <40%
+
+**Location:** Deep Dive page, after Worst Symbols table.
+
+#### 12d. BTC Dominance
+
+Added to `get_market_context()` and `format_for_prompt()`.
+
+**Source:** `https://api.coingecko.com/api/v3/global` — CoinGecko free API, no auth, 15-min cache.
+
+**Returns:** `{btc_dominance: 58.58, change_24h: 0.14, ok: true}`
+
+**Frontend:** Market Pulse strip on Dashboard. Rising dominance = red (bad for altcoin longs). Falling = green.
+
+**Claude context:** BTC dominance + 24h change included in `format_for_prompt()` output → available in AI Advisor and live position analysis.
 
 ### 11. v1.6 — Live Market Context (`market_context.py`)
 

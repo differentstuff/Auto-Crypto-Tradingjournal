@@ -384,6 +384,27 @@ def _bucket_durations(rows):
     return list(buckets.values())
 
 
+def get_heatmap_data(conn=None) -> list:
+    """
+    Trade stats grouped by weekday (0=Sun…6=Sat) and open hour (0-23 UTC).
+    Returns list of {weekday, hour, trade_count, total_pnl, win_rate}.
+    """
+    if conn is None:
+        conn = get_conn()
+    return _rows(conn, """
+        SELECT
+            CAST(strftime('%w', close_time) AS INTEGER) AS weekday,
+            CAST(strftime('%H', open_time)  AS INTEGER) AS hour,
+            COUNT(*)                                     AS trade_count,
+            ROUND(SUM(realized_pnl), 2)                  AS total_pnl,
+            ROUND(100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END)
+                  / COUNT(*), 1)                         AS win_rate
+        FROM positions
+        GROUP BY weekday, hour
+        ORDER BY weekday, hour
+    """)
+
+
 def get_rr_analysis(conn=None):
     """
     Planned vs realized R:R for trades linked to analyst calls via positions.call_id.

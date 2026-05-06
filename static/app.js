@@ -74,6 +74,12 @@ async function loadDashboard() {
                       fg.value <= 55 ? 'var(--muted)'   : fg.value <= 75 ? 'var(--yellow)' : 'var(--red)';
       parts.push(`<span>😨 Fear &amp; Greed: <strong style="color:${fgColor}">${fg.value} — ${fg.classification}</strong></span>`);
     }
+    const bd = mr.data.btc_dominance || {};
+    if (bd.ok) {
+      const arrow = bd.change_24h >= 0 ? '↑' : '↓';
+      const bdColor = bd.change_24h >= 0 ? 'var(--red)' : 'var(--accent3)';  // rising dom = bad for alts
+      parts.push(`<span>🏆 BTC Dom: <strong style="color:${bdColor}">${bd.btc_dominance}% ${arrow}${Math.abs(bd.change_24h)}%</strong></span>`);
+    }
     if (fr.ok) {
       const frColor = fr.rate > 0 ? 'var(--red)' : 'var(--accent3)';
       const frFlag  = fr.high ? ' ⚠' : '';
@@ -424,6 +430,99 @@ async function deleteTrade() {
 // DEEP DIVE
 // ══════════════════════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════════════════
+// HEATMAP
+// ══════════════════════════════════════════════════════════════════════════════
+function renderHeatmap(rows) {
+  const container = document.getElementById('heatmap-container');
+  if (!container) return;
+  if (!rows.length) {
+    container.innerHTML = '<div style="color:var(--muted);padding:8px">No trade data yet.</div>';
+    return;
+  }
+
+  // Build lookup grid[weekday][hour]
+  const grid = {};
+  for (const r of rows) {
+    if (!grid[r.weekday]) grid[r.weekday] = {};
+    grid[r.weekday][r.hour] = r;
+  }
+
+  const days    = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MIN     = 3;
+
+  let html = '<table style="border-collapse:collapse;font-size:.7rem;width:100%">';
+  html += '<tr><th style="padding:3px 8px;color:var(--muted);text-align:right;width:44px">UTC</th>';
+  for (const d of days)
+    html += `<th style="padding:3px 6px;color:var(--muted);text-align:center;min-width:52px">${d}</th>`;
+  html += '</tr>';
+
+  for (let h = 0; h < 24; h++) {
+    html += `<tr><td style="padding:2px 8px;color:var(--muted);text-align:right;font-size:.68rem;white-space:nowrap">${String(h).padStart(2,'0')}:00</td>`;
+    for (let d = 0; d < 7; d++) {
+      const c = (grid[d] || {})[h];
+      if (!c || c.trade_count < MIN) {
+        html += '<td style="padding:2px;background:var(--bg3);border:1px solid var(--bg)"></td>';
+      } else {
+        const wr  = c.win_rate;
+        const opc = Math.min(0.85, 0.25 + c.trade_count / 25);
+        const bg  = wr >= 65 ? `rgba(38,217,107,${opc})`
+                  : wr >= 50 ? `rgba(79,195,247,${opc})`
+                  : wr >= 40 ? `rgba(255,179,0,${opc})`
+                  :            `rgba(239,83,80,${opc})`;
+        const pnl = c.total_pnl >= 0 ? `+${c.total_pnl.toFixed(0)}` : c.total_pnl.toFixed(0);
+        html += `<td style="padding:3px 2px;background:${bg};border:1px solid var(--bg);text-align:center;cursor:default"
+                    title="${c.trade_count} trades · ${wr}% WR · ${pnl} USDT">
+                   <div style="font-weight:700">${wr}%</div>
+                   <div style="opacity:.75">${c.trade_count}t</div>
+                 </td>`;
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</table>';
+  container.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POSITION SIZING CALCULATOR
+// ══════════════════════════════════════════════════════════════════════════════
+let _szEquity = 0;
+
+function calcSizing() {
+  const entry  = parseFloat(document.getElementById('sz-entry')?.value) || 0;
+  const sl     = parseFloat(document.getElementById('sz-sl')?.value)    || 0;
+  const risk   = parseFloat(document.getElementById('sz-risk')?.value)  || 1;
+  const equity = _szEquity || 0;
+  const out    = document.getElementById('sz-result');
+  if (!out) return;
+
+  localStorage.setItem('sz_risk_pct', risk);
+
+  if (!entry || !sl || !equity) {
+    out.innerHTML = `<span style="color:var(--muted)">Waiting for entry, SL${!equity ? ' and account equity' : ''}…</span>`;
+    return;
+  }
+  const riskDist = Math.abs(entry - sl) / entry;
+  if (riskDist <= 0) { out.innerHTML = '<span style="color:var(--red)">SL must differ from entry</span>'; return; }
+
+  const riskAmt  = equity * risk / 100;
+  const sizeUsdt = riskAmt / riskDist;
+  const leverage = sizeUsdt / equity;
+  const levColor = leverage > 15 ? 'var(--red)' : leverage > 7 ? 'var(--yellow)' : 'var(--accent3)';
+
+  out.innerHTML = `<div style="display:flex;gap:20px;flex-wrap:wrap;padding:8px 0">
+    <div><div style="color:var(--muted);font-size:.7rem;text-transform:uppercase">Risk Amount</div>
+         <div style="font-weight:700;color:var(--yellow)">${fmtC(riskAmt)} USDT (${risk}%)</div></div>
+    <div><div style="color:var(--muted);font-size:.7rem;text-transform:uppercase">Position Size</div>
+         <div style="font-weight:700">${fmtC(sizeUsdt)} USDT</div></div>
+    <div><div style="color:var(--muted);font-size:.7rem;text-transform:uppercase">Leverage</div>
+         <div style="font-weight:700;color:${levColor}">${leverage.toFixed(1)}x</div></div>
+    <div><div style="color:var(--muted);font-size:.7rem;text-transform:uppercase">Risk Distance</div>
+         <div style="font-weight:700;color:var(--muted)">${(riskDist * 100).toFixed(2)}%</div></div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PATTERN DETECTOR
 // ══════════════════════════════════════════════════════════════════════════════
 async function runPatternDetector() {
@@ -577,6 +676,10 @@ async function loadDeep() {
       <td>${s.trade_count}</td>
       <td class="neg">${fmtC(s.total_pnl)}</td>
     </tr>`).join('');
+
+  // Heatmap
+  const hmRes = await api('/api/analytics/heatmap');
+  if (hmRes.ok) renderHeatmap(hmRes.data);
 
 }
 
@@ -814,6 +917,11 @@ async function loadCallEquity() {
     if (eq) {
       document.getElementById('call-equity-label').textContent =
         `Account equity: ${eq.toFixed(2)} USDT (used for sizing)`;
+      _szEquity = eq;
+      // Restore saved risk %
+      const saved = localStorage.getItem('sz_risk_pct');
+      if (saved) document.getElementById('sz-risk').value = saved;
+      calcSizing();
     }
   } catch(e) {}
 
@@ -921,6 +1029,18 @@ async function analyzeCall() {
 }
 
 function renderCallResult(d) {
+  // Auto-fill sizing calculator with parsed entry and SL
+  const bs = d.bitget_settings || {};
+  const entryP = parseFloat(bs.entry_price || d.entry_price || 0);
+  const slP    = parseFloat(bs.sl_price    || d.sl_price    || 0);
+  if (entryP && document.getElementById('sz-entry')) {
+    document.getElementById('sz-entry').value = entryP;
+  }
+  if (slP && document.getElementById('sz-sl')) {
+    document.getElementById('sz-sl').value = slP;
+  }
+  if (entryP || slP) calcSizing();
+
   const result  = document.getElementById('call-result');
   const sq      = d.setup_quality || {};
   const rr      = d.risk_reward   || {};
@@ -1226,6 +1346,22 @@ async function loadLiveTrades() {
 
     livePositionsCache = posRes.data.positions || [];
     const eq = posRes.data.equity || {};
+
+    // Economic calendar warning (non-blocking)
+    api('/api/market/calendar').then(cr => {
+      const el = document.getElementById('eco-warning');
+      if (!el) return;
+      if (cr.ok && cr.data.length) {
+        const lines = cr.data.map(e =>
+          `📅 <strong>${e.title}</strong> ${e.when} ${e.time ? 'at ' + e.time + ' ET' : ''}` +
+          `${e.forecast ? ' — Forecast: ' + e.forecast : ''}${e.previous ? ' · Prev: ' + e.previous : ''}`
+        );
+        el.innerHTML = '⚠ High-impact USD events:<br>' + lines.join('<br>');
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+    });
 
     // Fetch market context for all open symbols (non-blocking)
     if (livePositionsCache.length) {
