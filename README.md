@@ -178,6 +178,11 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.6 — Strategy & Pattern Intelligence
+- **Analyst Leaderboard** — Edge Score (0-100) ranks analysts by composite metric: 50% trade win rate + 30% call outcome win rate + 20% TP1 hit rate. Color-coded rows, medal rankings, TP1 hit rate and call-to-trade conversion rate columns added.
+- **Correlation Detector (enhanced)** — Now groups open positions by sector (Bitcoin / ETH+L2 / SOL+L1 / Meme / DeFi / AI+Infra). Two-tier severity: yellow (2 positions same sector/direction), red (3+). Triggered from Live Positions panel.
+- **AI Pattern Detector** — New button in Deep Dive. Claude analyses full trade history by setup type, session, weekday, direction, duration, and grade. Returns up to 6 findings: warnings (edge leaks), insights (notable patterns), and strengths (what's working). Needs 20+ trades and 5+ per category.
+
 ### v1.5 — Trading Precision Features
 - **AI Execution Grading** — click ⚡ Grade on any trade; Claude assigns A/B/C/D with a written explanation based on entry quality, exit discipline, and realized R:R. Richer analysis when trade is linked to an analyst call.
 - **Setup Type Tagging** — label trades as Breakout, Pullback, Trend Continuation, Range Fade, Reversal, News/Event, or Other. Deep Dive shows P&L and win rate broken down by setup type.

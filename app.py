@@ -39,6 +39,7 @@ import ai_advisor
 import ai_live_trade
 import ai_call_analyzer
 import ai_trade_grader
+import ai_pattern_detector
 import bitget_sync
 import bitget_client
 
@@ -332,6 +333,18 @@ def api_analytics_deep():
         data = get_deep_stats(filters=_filters_from_args())
         return _ok(data)
     except Exception as e:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@app.route("/api/analytics/patterns", methods=["POST"])
+def api_analytics_patterns():
+    try:
+        conn   = get_conn()
+        result = ai_pattern_detector.detect_patterns(conn=conn)
+        conn.close()
+        return _ok(result)
+    except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
 
@@ -943,29 +956,51 @@ def api_calls_analyst_stats():
         p = pos_rows.get(analyst, {})
         c = call_rows.get(analyst, {})
         l = lim_rows.get(analyst, {})
-        trade_count = p.get("trade_count", 0)
-        wins        = p.get("wins", 0)
+        trade_count   = p.get("trade_count", 0)
+        wins          = p.get("wins", 0)
+        total_analyzed= c.get("total_analyzed", 0)
+        call_wins     = c.get("call_wins", 0)
+        sl_hits       = c.get("sl_hits", 0)
+        tp1_hits      = c.get("tp1_hits", 0)
+        entered       = c.get("entered", 0)
+
+        win_rate      = round(wins / trade_count * 100, 1) if trade_count else 0
+        call_outcomes = call_wins + sl_hits
+        call_win_rate = round(call_wins / call_outcomes * 100, 1) if call_outcomes else None
+        tp1_hit_rate  = round(tp1_hits / total_analyzed * 100, 1) if total_analyzed else None
+        conv_rate     = round(entered / total_analyzed * 100, 1) if total_analyzed else None
+
+        # Edge score (0-100): only meaningful with ≥3 closed trades
+        if trade_count >= 3:
+            wr  = win_rate
+            cwr = call_win_rate if call_win_rate is not None else win_rate
+            tp1 = tp1_hit_rate  if tp1_hit_rate  is not None else 50.0
+            edge_score = round(wr * 0.5 + cwr * 0.3 + tp1 * 0.2)
+        else:
+            edge_score = None
+
         result.append({
-            "analyst":         analyst,
-            # From journal positions
-            "trade_count":     trade_count,
-            "wins":            wins,
-            "losses":          p.get("losses", 0),
-            "win_rate":        round(wins / trade_count * 100, 1) if trade_count else 0,
-            "total_pnl":       p.get("total_pnl", 0),
-            "avg_pnl":         p.get("avg_pnl", 0),
-            # From call analyses
-            "total_analyzed":  c.get("total_analyzed", 0),
-            "entered":         c.get("entered", 0),
-            "tp1_hits":        c.get("tp1_hits", 0),
-            "tp2_hits":        c.get("tp2_hits", 0),
-            "sl_hits":         c.get("sl_hits", 0),
-            "avg_setup_score": c.get("avg_setup_score"),
-            # From pending limits
-            "pending_count":   l.get("pending_count", 0),
+            "analyst":        analyst,
+            "trade_count":    trade_count,
+            "wins":           wins,
+            "losses":         p.get("losses", 0),
+            "win_rate":       win_rate,
+            "total_pnl":      p.get("total_pnl", 0),
+            "avg_pnl":        p.get("avg_pnl", 0),
+            "total_analyzed": total_analyzed,
+            "entered":        entered,
+            "call_win_rate":  call_win_rate,
+            "tp1_hit_rate":   tp1_hit_rate,
+            "tp2_hits":       c.get("tp2_hits", 0),
+            "sl_hits":        sl_hits,
+            "conv_rate":      conv_rate,
+            "avg_setup_score":c.get("avg_setup_score"),
+            "pending_count":  l.get("pending_count", 0),
+            "edge_score":     edge_score,
         })
 
-    result.sort(key=lambda x: x["total_pnl"] or 0, reverse=True)
+    # Sort by edge_score (ranked analysts first), then total_pnl
+    result.sort(key=lambda x: (x["edge_score"] is None, -(x["edge_score"] or 0), -(x["total_pnl"] or 0)))
     conn.close()
     return _ok(result)
 

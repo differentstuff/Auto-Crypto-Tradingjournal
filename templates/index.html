@@ -597,6 +597,13 @@ select:focus,input:focus{border-color:var(--accent)}
         </table>
       </div>
 
+      <div class="section-title">AI Pattern Detector</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="pattern-btn" onclick="runPatternDetector()">🔍 Detect Patterns</button>
+        <span style="font-size:.82rem;color:var(--muted)">Analyses your full trade history for statistical edge leaks and strengths — needs 20+ trades</span>
+      </div>
+      <div id="pattern-results"></div>
+
       <div class="section-title">Planned vs Realized R:R</div>
       <div class="table-card">
         <table class="tbl">

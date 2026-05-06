@@ -390,6 +390,61 @@ async function deleteTrade() {
 // ══════════════════════════════════════════════════════════════════════════════
 // DEEP DIVE
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// PATTERN DETECTOR
+// ══════════════════════════════════════════════════════════════════════════════
+async function runPatternDetector() {
+  const btn = document.getElementById('pattern-btn');
+  const box = document.getElementById('pattern-results');
+  btn.disabled    = true;
+  btn.textContent = '🔍 Analysing…';
+  box.innerHTML   = '<div style="color:var(--muted);font-size:.85rem;padding:8px 0">Running Claude analysis on your trade history…</div>';
+
+  const res = await api('/api/analytics/patterns', 'POST');
+  btn.disabled    = false;
+  btn.textContent = '🔍 Detect Patterns';
+
+  if (!res.ok) {
+    box.innerHTML = `<div style="color:var(--red)">Analysis failed: ${res.error || 'unknown error'}</div>`;
+    return;
+  }
+
+  const d = res.data;
+  if (d.insufficient_data) {
+    box.innerHTML = `<div style="color:var(--muted);font-size:.85rem;padding:8px 0">${d.message}</div>`;
+    return;
+  }
+
+  const typeStyle = {
+    warning:  { icon: '⚠️', border: 'var(--red)',     bg: 'rgba(239,83,80,.08)',    label: 'Warning',  lc: 'var(--red)' },
+    insight:  { icon: '💡', border: 'var(--yellow)',   bg: 'rgba(255,179,0,.08)',    label: 'Insight',  lc: 'var(--yellow)' },
+    strength: { icon: '✅', border: 'var(--accent3)',  bg: 'rgba(38,217,107,.08)',   label: 'Strength', lc: 'var(--accent3)' },
+  };
+  const confColor = { high: 'var(--accent3)', medium: 'var(--yellow)', low: 'var(--muted)' };
+
+  box.innerHTML = `
+    <div style="font-size:.78rem;color:var(--muted);margin-bottom:12px">
+      Based on ${d.trade_count} trades — ${d.findings.length} pattern${d.findings.length !== 1 ? 's' : ''} found
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px">
+      ${d.findings.map(f => {
+        const s = typeStyle[f.type] || typeStyle.insight;
+        return `<div style="background:${s.bg};border:1px solid ${s.border};border-radius:var(--radius);padding:16px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:1.1rem">${s.icon}</span>
+            <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:${s.lc}">${s.label}</span>
+            <span style="margin-left:auto;font-size:.68rem;color:${confColor[f.confidence] || 'var(--muted)'};text-transform:uppercase">${f.confidence} confidence</span>
+          </div>
+          <div style="font-weight:700;margin-bottom:6px;font-size:.9rem">${f.title}</div>
+          <div style="font-size:.82rem;color:var(--muted);line-height:1.5;margin-bottom:8px">${f.finding}</div>
+          <div style="font-size:.82rem;color:var(--text);border-top:1px solid ${s.border};padding-top:8px;margin-top:4px">
+            → ${f.recommendation}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
 async function loadDeep() {
   const res = await api('/api/analytics/deep');
   if (!res.ok) return;
@@ -1514,19 +1569,61 @@ function renderTradeAnalysis(idx, d) {
 function renderCorrelationWarning(positions) {
   const el = document.getElementById('correlation-warning');
   if (!el) return;
-  const longs  = positions.filter(p => p.direction === 'Long');
-  const shorts = positions.filter(p => p.direction === 'Short');
+
+  const SECTORS = {
+    'Bitcoin':    ['BTCUSDT','WBTCUSDT'],
+    'ETH / L2':   ['ETHUSDT','ARBUSDT','OPUSDT','MATICUSDT','STRKUSDT','ZKUSDT','SCROLLUSDT'],
+    'SOL / L1':   ['SOLUSDT','AVAXUSDT','SUIUSDT','APTUSDT','NEARUSDT','SEIUSDT','INJUSDT'],
+    'Meme':       ['DOGEUSDT','SHIBUSDT','PEPEUSDT','BOMEUSDT','WIFUSDT','BONKUSDT','FLOKIUSDT','MOGUSDT','POPCATUSDT'],
+    'DeFi':       ['UNIUSDT','AAVEUSDT','CRVUSDT','MKRUSDT','SNXUSDT','COMPUSDT','DYDXUSDT'],
+    'AI / Infra': ['FETUSDT','RENDERUSDT','WLDUSDT','TAOUSDT','AGIXUSDT','GRTUSDT'],
+  };
+
   const warnings = [];
-  if (longs.length >= 2) {
-    const totalM = longs.reduce((s, p) => s + (p.margin_usdt || 0), 0);
-    warnings.push(`${longs.length} simultaneous LONG positions (${fmtC(totalM)} USDT margin) — correlated downside risk: one BTC move hits all of them`);
+
+  // Sector correlation: 2+ positions in same sector, same direction
+  for (const [sector, symbols] of Object.entries(SECTORS)) {
+    for (const dir of ['Long', 'Short']) {
+      const group = positions.filter(p => p.direction === dir && symbols.includes(p.symbol));
+      if (group.length >= 2) {
+        const exposure = group.reduce((s, p) => s + (p.size_usdt || p.margin_usdt || 0), 0);
+        const severity = group.length >= 3 ? '🔴' : '🟡';
+        warnings.push({
+          severity: group.length >= 3 ? 2 : 1,
+          text: `${severity} ${group.length}× ${dir} in <strong>${sector}</strong> sector `
+              + `(${group.map(p=>p.symbol).join(', ')}) — `
+              + `${fmtC(exposure)} USDT exposure moves together`,
+        });
+      }
+    }
   }
-  if (shorts.length >= 2) {
-    const totalM = shorts.reduce((s, p) => s + (p.margin_usdt || 0), 0);
-    warnings.push(`${shorts.length} simultaneous SHORT positions (${fmtC(totalM)} USDT margin) — correlated upside risk`);
+
+  // Directional overload: 3+ positions all same direction across any sectors
+  const longs  = positions.filter(p => p.direction === 'Long');
+  const shorts  = positions.filter(p => p.direction === 'Short');
+  if (longs.length >= 3) {
+    const m = longs.reduce((s,p) => s + (p.margin_usdt || 0), 0);
+    warnings.push({ severity: 2, text: `🔴 ${longs.length} simultaneous LONG positions — one BTC dump hits all of them (${fmtC(m)} USDT margin)` });
+  } else if (longs.length === 2) {
+    const m = longs.reduce((s,p) => s + (p.margin_usdt || 0), 0);
+    warnings.push({ severity: 1, text: `🟡 2 simultaneous LONG positions (${fmtC(m)} USDT margin) — correlated downside risk` });
   }
-  if (warnings.length) {
-    el.innerHTML = warnings.map(w => `<div>⚡ ${w}</div>`).join('');
+  if (shorts.length >= 3) {
+    const m = shorts.reduce((s,p) => s + (p.margin_usdt || 0), 0);
+    warnings.push({ severity: 2, text: `🔴 ${shorts.length} simultaneous SHORT positions (${fmtC(m)} USDT margin) — correlated upside risk` });
+  } else if (shorts.length === 2) {
+    const m = shorts.reduce((s,p) => s + (p.margin_usdt || 0), 0);
+    warnings.push({ severity: 1, text: `🟡 2 simultaneous SHORT positions (${fmtC(m)} USDT margin) — correlated upside risk` });
+  }
+
+  // Deduplicate and sort by severity
+  const unique = [...new Map(warnings.map(w => [w.text, w])).values()]
+    .sort((a, b) => b.severity - a.severity);
+
+  if (unique.length) {
+    const bg = unique.some(w => w.severity >= 2) ? 'rgba(239,83,80,.12)' : 'rgba(255,179,0,.10)';
+    el.style.background = bg;
+    el.innerHTML = unique.map(w => `<div style="margin-bottom:4px">${w.text}</div>`).join('');
     el.style.display = '';
   } else {
     el.style.display = 'none';
@@ -2218,7 +2315,7 @@ document.getElementById('limit-modal').addEventListener('click', e => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ANALYST STATS
+// ANALYST LEADERBOARD
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadAnalystStats() {
   const res = await api('/api/calls/analyst-stats');
@@ -2226,34 +2323,54 @@ async function loadAnalystStats() {
   const con = document.getElementById('analyst-stats-content');
   if (!res.ok || !res.data.length) { sec.style.display = 'none'; return; }
   sec.style.display = '';
+
+  const medals = ['🥇','🥈','🥉'];
+
+  function edgeBadge(score) {
+    if (score == null) return '<span style="color:var(--muted);font-size:.75rem">need 3+ trades</span>';
+    const color = score >= 65 ? 'var(--accent3)' : score >= 45 ? 'var(--yellow)' : 'var(--red)';
+    const bg    = score >= 65 ? 'rgba(38,217,107,.15)' : score >= 45 ? 'rgba(255,179,0,.15)' : 'rgba(239,83,80,.15)';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:.8rem;font-weight:800;background:${bg};color:${color}">${score}</span>`;
+  }
+
   con.innerHTML = `
     <div class="table-card">
       <div style="font-size:.72rem;color:var(--muted);padding:8px 16px 4px">
-        Trades + PnL from journal · Call metrics from analyzer · Pending from open limits
+        Sorted by Edge Score (0-100) · 50% trade win rate + 30% call outcome win rate + 20% TP1 hit rate · Needs 3+ closed trades to score
       </div>
       <table class="tbl">
         <thead><tr>
-          <th>Analyst</th>
+          <th>#</th><th>Analyst</th>
+          <th title="Edge Score (0-100 composite)">Edge</th>
           <th title="Closed trades in journal">Trades</th>
-          <th title="Win rate from journal">Win %</th>
-          <th title="Total realized PnL from journal">Total PnL</th>
+          <th title="Journal win rate">Win %</th>
+          <th title="Total realized PnL">Total PnL</th>
           <th title="Average PnL per trade">Avg PnL</th>
-          <th title="Calls analyzed in Call Analyzer">Analyzed</th>
-          <th title="TP1 / TP2 / SL hits from call outcomes">TP1 / TP2 / SL</th>
-          <th title="Average setup score from call analyses">Avg Score</th>
-          <th title="Waiting limit orders">Pending</th>
+          <th title="Calls recorded as won vs SL hit">Call W/L</th>
+          <th title="TP1 hit rate from recorded outcomes">TP1 Rate</th>
+          <th title="How often you enter their calls">Entry Rate</th>
+          <th title="Avg setup score">Score</th>
+          <th title="Waiting limits">Pending</th>
         </tr></thead>
-        <tbody>${res.data.map(a => `<tr>
-          <td><strong>${escHtml(a.analyst)}</strong></td>
-          <td>${a.trade_count || 0}</td>
-          <td class="${a.win_rate >= 50 ? 'pos' : a.win_rate > 0 ? '' : 'neg'}">${a.trade_count > 0 ? a.win_rate + '%' : '—'}</td>
-          <td class="${pnlClass(a.total_pnl)}">${a.trade_count > 0 ? (a.total_pnl >= 0 ? '+' : '') + fmtC(a.total_pnl) : '—'}</td>
-          <td class="${pnlClass(a.avg_pnl)}">${a.trade_count > 0 ? (a.avg_pnl >= 0 ? '+' : '') + fmtC(a.avg_pnl) : '—'}</td>
-          <td>${a.total_analyzed || '—'}</td>
-          <td>${a.total_analyzed > 0 ? `<span class="pos">${a.tp1_hits}</span> / <span class="pos">${a.tp2_hits}</span> / <span class="neg">${a.sl_hits}</span>` : '—'}</td>
-          <td>${a.avg_setup_score != null ? a.avg_setup_score + '/10' : '—'}</td>
-          <td>${a.pending_count > 0 ? `<span style="color:var(--accent2)">${a.pending_count}</span>` : '—'}</td>
-        </tr>`).join('')}</tbody>
+        <tbody>${res.data.map((a, i) => {
+          const ranked = a.edge_score != null;
+          const rowStyle = ranked && a.edge_score >= 65 ? 'background:rgba(38,217,107,.04)'
+                         : ranked && a.edge_score < 45  ? 'background:rgba(239,83,80,.04)' : '';
+          return `<tr style="${rowStyle}">
+            <td style="color:var(--muted);font-size:.9rem">${medals[i] || (i+1)}</td>
+            <td><strong>${escHtml(a.analyst)}</strong></td>
+            <td>${edgeBadge(a.edge_score)}</td>
+            <td>${a.trade_count || 0}</td>
+            <td class="${a.win_rate >= 50 ? 'pos' : 'neg'}">${a.trade_count > 0 ? a.win_rate + '%' : '—'}</td>
+            <td class="${pnlClass(a.total_pnl)}">${a.trade_count > 0 ? pnlSign(a.total_pnl) + fmtC(a.total_pnl) : '—'}</td>
+            <td class="${pnlClass(a.avg_pnl)}">${a.trade_count > 0 ? pnlSign(a.avg_pnl) + fmtC(a.avg_pnl) : '—'}</td>
+            <td>${a.call_win_rate != null ? `<span class="pos">${a.call_win_rate}%</span>` : '—'}</td>
+            <td>${a.tp1_hit_rate != null ? `<span class="${a.tp1_hit_rate >= 50 ? 'pos' : 'neg'}">${a.tp1_hit_rate}%</span>` : '—'}</td>
+            <td style="color:var(--muted)">${a.conv_rate != null ? a.conv_rate + '%' : '—'}</td>
+            <td style="color:var(--muted)">${a.avg_setup_score != null ? a.avg_setup_score + '/10' : '—'}</td>
+            <td>${a.pending_count > 0 ? `<span style="color:var(--accent2)">${a.pending_count}</span>` : '—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
       </table>
     </div>`;
 }
