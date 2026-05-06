@@ -32,12 +32,13 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_advisor.py           ← Full-portfolio Claude analysis
     ├── ai_live_trade.py        ← Per-trade Claude analysis for open positions
     ├── ai_call_analyzer.py     ← Analyst call analysis + pending limit analysis
+    ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
 templates/index.html            ← Frontend: HTML + CSS only (~1080 lines)
-static/app.js                   ← All frontend JavaScript (2269 lines, extracted May 2026)
+static/app.js                   ← All frontend JavaScript (2378 lines)
 static/                         ← Static assets (Chart.js via CDN)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
@@ -88,7 +89,12 @@ requirements.txt                ← Python dependencies
 | total_fees | REAL | |
 | notes | TEXT | user-editable freetext |
 | tags | TEXT | comma-separated |
+| analyst | TEXT | signal source (e.g. "CryptoGuru") |
 | is_manual | INTEGER | 1 = hand-entered |
+| setup_type | TEXT | Breakout / Pullback / Trend Continuation / Range Fade / Reversal / News-Event / Other |
+| call_id | INTEGER | FK → analyzed_calls.id (links trade to analyst call for R:R analysis) |
+| execution_grade | TEXT | A / B / C / D — Claude-assigned execution quality grade |
+| execution_grade_reason | TEXT | Claude's written explanation for the grade |
 | external_id | TEXT | Bitget positionId (dedup key) |
 | created_at | TEXT | |
 | updated_at | TEXT | |
@@ -805,6 +811,58 @@ After JS was extracted to `static/app.js`, CodeQL flagged alert #7:
 | # | Rule | File | Fix |
 |---|------|------|-----|
 | 7 | `js/incomplete-string-escaping` | `static/app.js:983` | Analyst name interpolated into an `onclick` attribute escaped `'` but not `\`. Fixed by escaping backslashes first: `.replace(/\\/g,"\\\\").replace(/'/g,"\\'")` |
+
+### 9. Trading precision features (v1.5)
+
+Three features to improve trade analysis and self-coaching.
+
+#### 9a. AI Execution Grading (`ai_trade_grader.py`)
+
+**What it does:** Grades a closed trade A/B/C/D based on execution quality — not just P&L outcome.
+
+**Grades:**
+- **A** — Excellent: entry near/better than planned, disciplined exit, strong realized R:R
+- **B** — Good: minor flaw only (small slippage, slightly early profitable exit)
+- **C** — Average: one clear flaw (chased entry, moved SL, cut winner very early)
+- **D** — Poor: multiple/severe flaws (no SL, reckless size, avoidable full loss)
+
+**Flow:** Click **⚡ Grade** button on any journal row → `POST /api/positions/<id>/grade` → `ai_trade_grader.grade_trade(id)` → Claude prompt with trade + linked call data → grade + reason stored in `positions.execution_grade` / `positions.execution_grade_reason` → badge shown inline.
+
+**With linked call:** Entry slippage, realized R:R vs planned R:R, and recorded outcome are all included in the Claude prompt for a richer, more accurate grade.
+
+**Without linked call:** Claude grades from P&L, duration, setup type, and notes alone.
+
+**Backend:** `ai_trade_grader.py` — `grade_trade(position_id, conn)` → `_ask_claude(pos, call)`. Returns `{"grade": "A|B|C|D", "reason": "..."}`.
+
+**Deep Dive:** Execution Grade Analysis table — win rate and avg P&L per grade (appears once trades have been graded).
+
+#### 9b. Setup Type Tagging
+
+**What it does:** Labels each trade with a setup category for pattern analysis.
+
+**Options:** Breakout · Pullback · Trend Continuation · Range Fade · Reversal · News/Event · Other
+
+**Flow:** Click any journal row → **Setup Type** dropdown → Save → stored in `positions.setup_type`.
+
+**Deep Dive:** P&L by Setup Type — two charts (total P&L bar, win rate bar) and a breakdown table. Only trades with a setup_type set are included.
+
+**Backend:** `setup_type` added to `PUT /api/positions/<id>` editable fields. `get_deep_stats()` returns `by_setup` list.
+
+#### 9c. Planned vs Realized R:R (`analytics.get_rr_analysis`)
+
+**What it does:** Compares the R:R planned in an analyst call against what was actually achieved in the trade.
+
+**Formula:**
+```
+realized_R:R = (close_price − planned_entry) / abs(planned_entry − planned_sl)   [Long]
+realized_R:R = (planned_entry − close_price) / abs(planned_entry − planned_sl)   [Short]
+```
+
+**Flow:** Open any journal row → enter the **Call ID** (from Call Analyzer) → Save → `positions.call_id` is set → `GET /api/analytics/rr` joins positions to analyzed_calls → Deep Dive R:R table shows planned vs realized.
+
+**Backend:** `analytics.get_rr_analysis(conn)` — JOINs positions + analyzed_calls on `call_id`. Returns up to 100 most recent linked trades.
+
+**Deep Dive:** Planned vs Realized R:R table — symbol, direction, setup, grade, planned R:R, realized R:R (green ≥ 1R, red < 1R), outcome, P&L.
 
 ---
 

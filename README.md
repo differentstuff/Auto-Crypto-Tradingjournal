@@ -178,6 +178,13 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.5 — Trading Precision Features
+- **AI Execution Grading** — click ⚡ Grade on any trade; Claude assigns A/B/C/D with a written explanation based on entry quality, exit discipline, and realized R:R. Richer analysis when trade is linked to an analyst call.
+- **Setup Type Tagging** — label trades as Breakout, Pullback, Trend Continuation, Range Fade, Reversal, News/Event, or Other. Deep Dive shows P&L and win rate broken down by setup type.
+- **Planned vs Realized R:R** — link a trade to an analyst call (via Call ID in the edit modal); Deep Dive computes and displays planned R:R vs what was actually achieved.
+- Deep Dive gains three new sections: Execution Grade Analysis, P&L by Setup Type, Planned vs Realized R:R.
+- New backend module `ai_trade_grader.py`; new API routes `POST /api/positions/<id>/grade` and `GET /api/analytics/rr`.
+
 ### v1.4.1 — Security Fix
 - Incomplete string escaping fixed in `static/app.js` — backslashes now escaped before single quotes in analyst name interpolation (CWE-116)
 

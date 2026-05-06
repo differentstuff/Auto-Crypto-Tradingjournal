@@ -7,9 +7,12 @@ Routes:
   GET  /api/positions            → list positions with filters + pagination
   POST /api/positions            → create a manual position
   GET  /api/positions/<id>       → single position detail
-  PUT  /api/positions/<id>       → update notes / tags
+  PUT  /api/positions/<id>       → update notes / tags / setup_type / call_id
+  DELETE /api/positions/<id>     → delete a position
+  POST /api/positions/<id>/grade → auto-grade execution quality via Claude
   GET  /api/dashboard/kpis       → dashboard KPI data
-  GET  /api/analytics/deep       → deep dive stats
+  GET  /api/analytics/deep       → deep dive stats (incl. by_setup, by_grade)
+  GET  /api/analytics/rr         → planned vs realized R:R for linked trades
   POST /api/ai/analyze           → trigger Claude AI analysis
   GET  /api/symbols              → distinct symbol list (for filter dropdowns)
   GET  /api/wallet/history       → wallet balance curve
