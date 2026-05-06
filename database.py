@@ -184,6 +184,19 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # ── positions column migrations ────────────────────────────────────────────
+    _pos_new_cols = [
+        ("execution_grade",        "TEXT DEFAULT NULL"),
+        ("execution_grade_reason", "TEXT DEFAULT NULL"),
+        ("setup_type",             "TEXT DEFAULT ''"),
+        ("call_id",                "INTEGER DEFAULT NULL"),
+    ]
+    for _col, _typedef in _pos_new_cols:
+        try:
+            cur.execute(f"ALTER TABLE positions ADD COLUMN {_col} {_typedef}")
+        except sqlite3.OperationalError:
+            pass
+
     # ── import_log ─────────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS import_log (

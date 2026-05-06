@@ -31,10 +31,11 @@ from werkzeug.utils import secure_filename
 
 from database     import init_db, get_conn
 from importer     import import_folder
-from analytics    import get_dashboard_kpis, get_deep_stats
+from analytics    import get_dashboard_kpis, get_deep_stats, get_rr_analysis
 import ai_advisor
 import ai_live_trade
 import ai_call_analyzer
+import ai_trade_grader
 import bitget_sync
 import bitget_client
 
@@ -169,7 +170,8 @@ def api_positions_list():
     rows  = [dict(r) for r in conn.execute(
         f"""SELECT id, symbol, direction, open_time, close_time, duration_minutes,
                    entry_price, close_price, size_contracts, size_usdt,
-                   position_pnl, realized_pnl, total_fees, notes, tags, is_manual, analyst
+                   position_pnl, realized_pnl, total_fees, notes, tags, is_manual, analyst,
+                   setup_type, call_id, execution_grade, execution_grade_reason
             FROM positions {where}
             ORDER BY close_time DESC
             LIMIT ? OFFSET ?""",
@@ -267,7 +269,8 @@ def api_position_update(pos_id):
     # Only allow safe editable fields
     editable = ["notes", "tags", "analyst", "entry_price", "close_price",
                 "size_usdt", "realized_pnl", "total_fees",
-                "open_time", "close_time", "direction"]
+                "open_time", "close_time", "direction",
+                "setup_type", "call_id"]
     sets, vals = [], []
     for key in editable:
         if key in d:
@@ -294,6 +297,18 @@ def api_position_delete(pos_id):
     return _ok({"deleted": pos_id})
 
 
+@app.route("/api/positions/<int:pos_id>/grade", methods=["POST"])
+def api_position_grade(pos_id):
+    try:
+        result = ai_trade_grader.grade_trade(pos_id)
+        if "error" in result:
+            return _err(result["error"])
+        return _ok(result)
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 # ── dashboard ──────────────────────────────────────────────────────────────────
 
 @app.route("/api/dashboard/kpis")
@@ -314,6 +329,18 @@ def api_analytics_deep():
         data = get_deep_stats(filters=_filters_from_args())
         return _ok(data)
     except Exception as e:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@app.route("/api/analytics/rr")
+def api_analytics_rr():
+    try:
+        conn = get_conn()
+        data = get_rr_analysis(conn=conn)
+        conn.close()
+        return _ok({"items": data})
+    except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
 

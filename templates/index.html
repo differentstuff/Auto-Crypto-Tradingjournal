@@ -68,6 +68,11 @@ main{flex:1;overflow-y:auto;padding:28px;background:var(--bg)}
 .badge.short{background:rgba(239,83,80,.15);color:var(--red)}
 .badge.win{background:rgba(38,217,107,.15);color:var(--accent3)}
 .badge.loss{background:rgba(239,83,80,.15);color:var(--red)}
+.grade-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:.78rem;font-weight:800;margin-right:4px;cursor:help}
+.grade-A{background:rgba(38,217,107,.18);color:var(--accent3)}
+.grade-B{background:rgba(79,195,247,.18);color:var(--accent2)}
+.grade-C{background:rgba(255,179,0,.18);color:var(--yellow)}
+.grade-D{background:rgba(239,83,80,.18);color:var(--red)}
 
 /* ── Filters bar ────────────────────────────────────────────────────────────── */
 .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
@@ -492,7 +497,7 @@ select:focus,input:focus{border-color:var(--accent)}
           <thead><tr>
             <th>Symbol</th><th>Dir</th><th>Opened</th><th>Closed</th>
             <th>Duration</th><th>Entry</th><th>Exit</th>
-            <th>Size USDT</th><th>P&amp;L</th><th>Fees</th><th>Analyst</th><th>Notes</th>
+            <th>Size USDT</th><th>P&amp;L</th><th>Fees</th><th>Grade</th><th>Analyst</th><th>Notes</th>
           </tr></thead>
           <tbody id="journal-tbody"></tbody>
         </table>
@@ -559,6 +564,47 @@ select:focus,input:focus{border-color:var(--accent)}
         <table class="tbl">
           <thead><tr><th>Symbol</th><th>Trades</th><th>Total P&amp;L</th></tr></thead>
           <tbody id="deep-worst-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">P&amp;L by Setup Type</div>
+      <div class="chart-row cols-2">
+        <div class="chart-card">
+          <div class="chart-title">P&amp;L by Setup</div>
+          <div class="chart-wrap"><canvas id="bySetupChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Win Rate by Setup (%)</div>
+          <div class="chart-wrap"><canvas id="bySetupWinChart"></canvas></div>
+        </div>
+      </div>
+      <div class="table-card">
+        <table class="tbl">
+          <thead><tr>
+            <th>Setup Type</th><th>Trades</th><th>Win Rate</th><th>Total P&amp;L</th><th>Avg P&amp;L</th>
+          </tr></thead>
+          <tbody id="deep-setup-tbody"><tr><td colspan="5" style="color:var(--muted);text-align:center">Tag trades with a setup type to see data here</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">Execution Grade Analysis</div>
+      <div class="table-card">
+        <table class="tbl">
+          <thead><tr>
+            <th>Grade</th><th>Trades</th><th>Win Rate</th><th>Total P&amp;L</th><th>Avg P&amp;L</th>
+          </tr></thead>
+          <tbody id="deep-grade-tbody"><tr><td colspan="5" style="color:var(--muted);text-align:center">Grade trades via the journal to see data here</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">Planned vs Realized R:R</div>
+      <div class="table-card">
+        <table class="tbl">
+          <thead><tr>
+            <th>Symbol</th><th>Dir</th><th>Setup</th><th>Grade</th>
+            <th>Planned R:R</th><th>Realized R:R</th><th>Outcome</th><th>P&amp;L</th>
+          </tr></thead>
+          <tbody id="deep-rr-tbody"><tr><td colspan="8" style="color:var(--muted);text-align:center">Link trades to analyst calls to see R:R data here</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1058,12 +1104,34 @@ select:focus,input:focus{border-color:var(--accent)}
       <input type="text" id="edit-analyst" style="width:100%" placeholder="e.g. CryptoGuru">
     </div>
     <div class="form-group" style="margin-bottom:12px">
-      <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
-      <textarea id="edit-notes" rows="4" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px;resize:vertical;width:100%"></textarea>
+      <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Setup Type</label>
+      <select id="edit-setup" style="width:100%">
+        <option value="">— not set —</option>
+        <option value="Breakout">Breakout</option>
+        <option value="Pullback">Pullback</option>
+        <option value="Trend Continuation">Trend Continuation</option>
+        <option value="Range Fade">Range Fade</option>
+        <option value="Reversal">Reversal</option>
+        <option value="News/Event">News/Event</option>
+        <option value="Other">Other</option>
+      </select>
     </div>
-    <div class="form-group" style="margin-bottom:20px">
+    <div class="form-group" style="margin-bottom:12px">
+      <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
+      <textarea id="edit-notes" rows="3" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px;resize:vertical;width:100%"></textarea>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
       <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Tags</label>
       <input type="text" id="edit-tags" style="width:100%" placeholder="comma-separated tags">
+    </div>
+    <div class="form-group" style="margin-bottom:20px">
+      <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Link to Analyst Call <span style="color:var(--muted);font-weight:400;text-transform:none">(call ID — enables R:R analysis)</span></label>
+      <input type="number" id="edit-call-id" style="width:100%" placeholder="e.g. 42">
+    </div>
+    <div id="edit-grade-box" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:16px;font-size:.82rem">
+      <span style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:700">Execution Grade</span>
+      <span id="edit-grade-badge" style="margin-left:8px;font-size:1rem;font-weight:800"></span>
+      <div id="edit-grade-reason" style="margin-top:6px;color:var(--muted);line-height:1.5"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-danger btn-sm" onclick="deleteTrade()">Delete</button>
