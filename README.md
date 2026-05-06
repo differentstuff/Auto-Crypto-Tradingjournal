@@ -178,6 +178,11 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.2 — Security Fixes
+- Stack trace exposure fixed — exception details no longer returned to the client (CWE-209)
+- Path traversal fixed — uploaded filenames sanitized with `secure_filename` before use (CWE-022)
+- SQL filter inputs now validated with an allowlist before reaching the query layer (CWE-089)
+
 ### v1.1 — Privacy, Fixes & Polish
 - **Open Position Risk** now shows true SL-based dollar risk instead of margin locked
 - Recent trades table has a totals footer (sum of P&L and fees)
