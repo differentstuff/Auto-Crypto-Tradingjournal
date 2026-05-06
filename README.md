@@ -79,7 +79,7 @@ A self-hosted crypto futures trading journal with live Bitget API sync, AI-power
 ## Installation
 
 ```bash
-git clone https://github.com/anvilfilbert/trading-journal.git
+git clone https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal.git
 cd trading-journal
 pip3 install -r requirements.txt
 ```
