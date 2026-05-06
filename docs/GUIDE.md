@@ -593,6 +593,17 @@ sudo chmod 440 /etc/sudoers.d/99-<your-user>-nopasswd
 
 After this, `sudo systemctl restart trading-journal` works from non-interactive SSH sessions.
 
+### Git identity (important for contributors)
+
+Set git identity before making any commits, otherwise git falls back to the OS username:
+
+```bash
+git config --global user.name "your-github-username"
+git config --global user.email "your-github-username@users.noreply.github.com"
+```
+
+This persists across all repos on the machine. Without it, every commit leaks the OS username even if a repo-level config was previously set (e.g. after running `git filter-repo`, which reinitialises the repo and clears local config).
+
 ### Python Dependencies (`requirements.txt`)
 
 ```
