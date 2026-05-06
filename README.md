@@ -176,6 +176,28 @@ trading-journal.service systemd unit file
 
 ---
 
+## Changelog
+
+### v1.1 — Privacy, Fixes & Polish
+- **Open Position Risk** now shows true SL-based dollar risk instead of margin locked
+- Recent trades table has a totals footer (sum of P&L and fees)
+- Added 📈 favicon
+- Dashboard monthly P&L was showing 0 — fixed
+- Removed personal identifiers from all public files and docs
+- systemd service template updated with `EnvironmentFile=` and generic placeholders
+
+### v1.0 — Initial Release
+- Full trade journal synced from Bitget USDT-M Futures
+- Dashboard KPIs, P&L curve, equity curve, streak tracker, monthly target
+- Deep Dive analytics by symbol, month, weekday, hour, direction, duration
+- AI Call Analyzer: paste analyst call → Claude scores setup, tracks outcomes
+- Pending Limits / Shadow Trades with bulk operations and AI analysis
+- Live Positions with per-trade Claude analysis
+- Background auto-sync every 5 minutes (cursor-based, no gaps)
+- Analyst performance stats across journal, calls and pending limits
+
+---
+
 ## License
 
 GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
