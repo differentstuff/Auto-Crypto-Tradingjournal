@@ -432,6 +432,7 @@ select:focus,input:focus{border-color:var(--accent)}
             <th>Duration</th><th>Size (USDT)</th><th>Realized P&amp;L</th><th>Fees</th>
           </tr></thead>
           <tbody id="recent-tbody"></tbody>
+          <tfoot id="recent-tfoot"></tfoot>
         </table>
       </div>
     </div>
@@ -1270,6 +1271,16 @@ async function loadDashboard() {
       <td class="${pnlClass(t.realized_pnl)}">${pnlSign(t.realized_pnl)}${fmtC(t.realized_pnl)}</td>
       <td class="neg">${fmtC(t.total_fees)}</td>
     </tr>`).join('');
+
+  // Totals footer
+  const totalPnl  = d.recent_trades.reduce((s, t) => s + (t.realized_pnl || 0), 0);
+  const totalFees = d.recent_trades.reduce((s, t) => s + (t.total_fees  || 0), 0);
+  document.getElementById('recent-tfoot').innerHTML = `
+    <tr style="border-top:1px solid var(--border);font-weight:600;font-size:.82rem;color:var(--muted)">
+      <td colspan="6" style="text-align:right;padding-right:12px">Total (last ${d.recent_trades.length})</td>
+      <td class="${pnlClass(totalPnl)}">${pnlSign(totalPnl)}${fmtC(totalPnl)}</td>
+      <td class="neg">${fmtC(totalFees)}</td>
+    </tr>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
