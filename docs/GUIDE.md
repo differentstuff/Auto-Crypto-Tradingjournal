@@ -763,6 +763,16 @@ if "analyst" not in cols:
     conn.execute("ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
 ```
 
+### 7. Security fixes (May 2026) — CodeQL alerts resolved
+
+Six CodeQL alerts were found and resolved:
+
+| # | Rule | File | Fix |
+|---|------|------|-----|
+| 1 & 2 | `py/stack-trace-exposure` | `bitget_sync.py`, `app.py` | `str(e)` in sync error result replaced with generic string; all `_err(str(e), 500)` calls replaced with `"Internal server error"` |
+| 3 & 4 | `py/path-injection` | `app.py` | Uploaded filename sanitized with `werkzeug.utils.secure_filename()` before `os.path.join()` |
+| 5 & 6 | `py/sql-injection` | `analytics.py` | Dismissed as false positive — `_build_where()` only interpolates hardcoded SQL fragments into the query string; user values go into bound `?` params only. Added allowlist validation (symbol `[A-Z0-9]+`, direction `Long`/`Short`, dates `YYYY-MM-DD`) for extra safety |
+
 ---
 
 ## Quick Reference
