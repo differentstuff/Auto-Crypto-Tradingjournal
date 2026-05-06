@@ -178,6 +178,13 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.3 — Repository Hardening
+- Branch protection on `main` — CodeQL must pass before merge
+- Dependabot weekly pip dependency updates
+- Squash merge only — cleaner commit history
+- LICENSE fixed to standard GPL v3 (was showing as unrecognised)
+- Secret scanning alert resolved — old revoked API key removed from history
+
 ### v1.2 — Security Fixes
 - Stack trace exposure fixed — exception details no longer returned to the client (CWE-209)
 - Path traversal fixed — uploaded filenames sanitized with `secure_filename` before use (CWE-022)
