@@ -158,8 +158,8 @@ analytics.py            Dashboard KPIs and deep dive stats
 ai_advisor.py           AI analysis for open positions
 ai_call_analyzer.py     AI trade call parser and scorer
 ai_live_trade.py        Per-trade AI on the live positions view
-templates/index.html    Single-page frontend (all UI)
-static/                 CSS, icons
+templates/index.html    Single-page frontend (HTML + CSS)
+static/app.js           All frontend JavaScript
 docs/GUIDE.md           Developer reference (routes, schema, JS globals)
 docs/USER_GUIDE.md      End-user feature guide
 .env.example            Environment variable template

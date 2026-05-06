@@ -36,8 +36,9 @@ Browser (http://<your-pi-ip>:8082)
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
-templates/index.html            ← Entire frontend: HTML + CSS + JavaScript (SPA, ~3000 lines)
-static/                         ← Static assets (empty, CDN-loaded Chart.js)
+templates/index.html            ← Frontend: HTML + CSS only (~1080 lines)
+static/app.js                   ← All frontend JavaScript (2269 lines, extracted May 2026)
+static/                         ← Static assets (Chart.js via CDN)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
 docs/USER_GUIDE.md              ← User-facing manual
@@ -489,9 +490,13 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 
 ---
 
-## Frontend (`templates/index.html`)
+## Frontend
 
-Single-file SPA, ~3000 lines. Structure:
+Split across two files:
+- `templates/index.html` — HTML structure + dark-theme CSS (~1080 lines)
+- `static/app.js` — all JavaScript (2269 lines), loaded via `<script src="/static/app.js">`
+
+Structure:
 ```
 <style>   Dark theme CSS (CSS variables throughout)
 <body>
@@ -514,7 +519,7 @@ Single-file SPA, ~3000 lines. Structure:
     #limit-modal       Add/edit pending limit order
     #match-modal       Track Bitget live order as shadow trade (+ link to call)
     #bulk-link-modal   Link multiple selected limits to one analyst call
-<script>  All JavaScript
+<script src="/static/app.js">
 ```
 
 **Navigation pattern:**
@@ -613,6 +618,7 @@ Configured on the public repo (`anvilfilbert/Auto-Crypto-Tradingjournal`):
 | Merge strategy | Squash merge only (merge commits + rebase disabled) |
 | Delete branch on merge | Enabled |
 | Branch protection | CodeQL must pass before any merge to `main` |
+| CodeQL workflow | `.github/workflows/codeql.yml` — runs on push, PR, and weekly (Monday 06:00 UTC) |
 | Dependabot | Weekly `pip` dependency updates via `.github/dependabot.yml` |
 | Secret scanning | Enabled — alerts on any committed credentials |
 | Wiki / Projects | Disabled |
