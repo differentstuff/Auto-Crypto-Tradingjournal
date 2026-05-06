@@ -480,6 +480,20 @@ select:focus,input:focus{border-color:var(--accent)}
           </select>
         </div>
         <div class="filter-group">
+          <label>Setup</label>
+          <select id="j-setup">
+            <option value="">All</option>
+            <option value="untagged">⚪ Untagged</option>
+            <option value="Breakout">Breakout</option>
+            <option value="Pullback">Pullback</option>
+            <option value="Trend Continuation">Trend Continuation</option>
+            <option value="Range Fade">Range Fade</option>
+            <option value="Reversal">Reversal</option>
+            <option value="News/Event">News/Event</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="filter-group">
           <label>From</label>
           <input type="date" id="j-from">
         </div>
@@ -940,6 +954,19 @@ select:focus,input:focus{border-color:var(--accent)}
       <div class="form-group">
         <label>Margin Mode</label>
         <select id="m-margin"><option value="Cross">Cross</option><option value="Isolated">Isolated</option></select>
+      </div>
+      <div class="form-group full">
+        <label>Setup Type</label>
+        <select id="m-setup">
+          <option value="">— not set —</option>
+          <option value="Breakout">Breakout</option>
+          <option value="Pullback">Pullback</option>
+          <option value="Trend Continuation">Trend Continuation</option>
+          <option value="Range Fade">Range Fade</option>
+          <option value="Reversal">Reversal</option>
+          <option value="News/Event">News/Event</option>
+          <option value="Other">Other</option>
+        </select>
       </div>
       <div class="form-group full">
         <label>Notes</label>

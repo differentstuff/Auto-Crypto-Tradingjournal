@@ -167,6 +167,16 @@ def api_positions_list():
     elif pnl_side == "loss":
         clauses.append("realized_pnl < 0")
 
+    # setup type filter
+    setup = request.args.get("setup", "").strip()
+    allowed_setups = {"Breakout", "Pullback", "Trend Continuation",
+                      "Range Fade", "Reversal", "News/Event", "Other"}
+    if setup == "untagged":
+        clauses.append("(setup_type IS NULL OR setup_type = '')")
+    elif setup in allowed_setups:
+        clauses.append("setup_type = ?")
+        params.append(setup)
+
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
 
     conn  = get_conn()
@@ -225,8 +235,8 @@ def api_positions_create():
            entry_price, close_price, size_contracts, size_usdt,
            position_pnl, realized_pnl,
            opening_fee, closing_fee, total_fees,
-           notes, tags, is_manual)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+           notes, tags, setup_type, is_manual)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
     """, (
         symbol, base_asset,
         d["direction"],
@@ -243,6 +253,7 @@ def api_positions_create():
         total_fees,
         d.get("notes", ""),
         d.get("tags", ""),
+        d.get("setup_type", ""),
     ))
     new_id = cur.lastrowid
     conn.commit()

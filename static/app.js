@@ -230,6 +230,7 @@ async function journalLoad(page) {
     symbol:    document.getElementById('j-symbol').value,
     direction: document.getElementById('j-direction').value,
     pnl_side:  document.getElementById('j-pnl').value,
+    setup:     document.getElementById('j-setup').value,
     date_from: document.getElementById('j-from').value,
     date_to:   document.getElementById('j-to').value,
   });
@@ -279,7 +280,7 @@ async function journalLoad(page) {
 
 function journalReset() {
   ['j-search','j-from','j-to'].forEach(id => document.getElementById(id).value = '');
-  ['j-symbol','j-direction','j-pnl'].forEach(id => document.getElementById(id).value = '');
+  ['j-symbol','j-direction','j-pnl','j-setup'].forEach(id => document.getElementById(id).value = '');
   journalLoad(1);
 }
 
@@ -291,6 +292,7 @@ function openAddModal() {
   ['m-symbol','m-open','m-close','m-entry','m-exit','m-size','m-pnl','m-fees','m-notes','m-tags'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  document.getElementById('m-setup').value = '';
   document.getElementById('trade-modal').classList.add('open');
 }
 function closeModal() { document.getElementById('trade-modal').classList.remove('open'); }
@@ -307,6 +309,7 @@ async function saveTrade() {
     realized_pnl: parseFloat(document.getElementById('m-pnl').value) || 0,
     total_fees:   parseFloat(document.getElementById('m-fees').value) || 0,
     margin_mode:  document.getElementById('m-margin').value,
+    setup_type:   document.getElementById('m-setup').value,
     notes:        document.getElementById('m-notes').value,
     tags:         document.getElementById('m-tags').value,
   };
