@@ -18,7 +18,8 @@ from datetime import datetime, timezone
 import bitget_client as bc
 from database import get_conn
 
-SYNC_INTERVAL_SECONDS = 15 * 60   # auto-sync every 15 minutes
+SYNC_INTERVAL_SECONDS  = 5 * 60    # auto-sync every 5 minutes
+STARTUP_LOOKBACK_DAYS  = 2         # orders/bills catch-up window on first sync after (re)start
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -30,10 +31,12 @@ def _ensure_settings_table(conn):
             value TEXT
         )
     """)
-    # Add external_id column to positions if not present (migration)
+    # Migrations — add columns that may be missing from older DBs
     cols = [r[1] for r in conn.execute("PRAGMA table_info(positions)").fetchall()]
     if "external_id" not in cols:
         conn.execute("ALTER TABLE positions ADD COLUMN external_id TEXT")
+    if "analyst" not in cols:
+        conn.execute("ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
     conn.commit()
 
 
@@ -81,12 +84,19 @@ def _duration_minutes(open_str: str, close_str: str):
 
 # ── Position sync ──────────────────────────────────────────────────────────────
 
-def _sync_positions(conn, start_ms: int, end_ms: int = None) -> int:
+def _sync_positions(conn) -> int:
     """
-    Fetch new closed positions from Bitget since start_ms and upsert into DB.
+    Fetch new closed positions using cursor-only pagination (no time filter).
+
+    Bitget's position history startTime/endTime filter by OPEN time, not close
+    time. Any position held longer than the sync window would be silently
+    missed. Instead we fetch the newest 300 positions (3 pages x 100), check
+    each one against the DB, and insert any that are not already stored.
+    All checks are by positionId (unique external_id index), so this is fast.
+
     Returns number of new rows inserted.
     """
-    rows = bc.get_position_history(start_ms=start_ms, end_ms=end_ms)
+    rows = bc.get_recent_positions(max_pages=3)
     if not rows:
         return 0
 
@@ -98,34 +108,31 @@ def _sync_positions(conn, start_ms: int, end_ms: int = None) -> int:
         if not ext_id:
             continue
 
-        # Skip if already in DB by external_id
         exists = cur.execute(
             "SELECT id FROM positions WHERE external_id=?", (ext_id,)
         ).fetchone()
         if exists:
-            continue
+            continue  # already stored — keep checking, don't break
 
-        symbol    = r.get("symbol", "")
-        base_asset= re.sub(r"USDT$", "", symbol)
-        direction = "Long" if r.get("holdSide", "").lower() == "long" else "Short"
-        margin    = "Cross" if "cross" in r.get("marginMode", "").lower() else "Isolated"
-        open_time = _ms_to_dt(r.get("ctime"))    # lowercase ctime for positions
-        close_time= _ms_to_dt(r.get("utime"))    # lowercase utime for positions
-        duration  = _duration_minutes(open_time, close_time)
+        symbol     = r.get("symbol", "")
+        base_asset = re.sub(r"USDT$", "", symbol)
+        direction  = "Long" if r.get("holdSide", "").lower() == "long" else "Short"
+        margin     = "Cross" if "cross" in r.get("marginMode", "").lower() else "Isolated"
+        open_time  = _ms_to_dt(r.get("ctime"))
+        close_time = _ms_to_dt(r.get("utime"))
+        duration   = _duration_minutes(open_time, close_time)
 
         entry_price  = _f(r.get("openAvgPrice"))
         close_price  = _f(r.get("closeAvgPrice"))
         size_raw     = str(r.get("openTotalPos", ""))
-        size_usdt    = _f(r.get("closeTotalPos"))  # in USDT for perpetuals
-        realized_pnl = _f(r.get("pnl"))           # net after fees
-        position_pnl = _f(r.get("netProfit"))      # gross
+        size_usdt    = _f(r.get("closeTotalPos"))
+        realized_pnl = _f(r.get("pnl"))
+        position_pnl = _f(r.get("netProfit"))
         opening_fee  = _f(r.get("openFee"))
         closing_fee  = _f(r.get("closeFee"))
         funding      = _f(r.get("totalFunding"), 0)
         total_fees   = (opening_fee or 0) + (closing_fee or 0) + funding
 
-        # quoteVolume (USDT value) is more reliable than closeTotalPos for USDT-M
-        # Fall back to contracts * close_price if not available
         if size_usdt is None and close_price and size_raw:
             try:
                 size_usdt = float(size_raw) * close_price
@@ -157,6 +164,86 @@ def _sync_positions(conn, start_ms: int, end_ms: int = None) -> int:
     return inserted
 
 
+# ── Auto-close matched calls ───────────────────────────────────────────────────
+
+def _auto_close_calls(conn) -> int:
+    """
+    For every 'matched' call, find the most recent closed position with the
+    same symbol and compatible direction that closed AFTER the call was created.
+    Determines outcome from close_price vs SL/TP levels, then marks the call closed.
+
+    Run after every position sync — safe to call repeatedly (only touches
+    calls still in 'matched' status).
+
+    Returns number of calls auto-closed.
+    """
+    cur   = conn.cursor()
+    calls = cur.execute("""
+        SELECT id, symbol, direction, sl_price, tp1_price, tp2_price, created_at
+        FROM analyzed_calls
+        WHERE status = 'matched'
+    """).fetchall()
+
+    closed = 0
+    for call in calls:
+        call_id, symbol, direction, sl_price, tp1_price, tp2_price, created_at = call
+
+        is_long = "long" in (direction or "").lower()
+        pos_dir = "Long" if is_long else "Short"
+
+        pos = cur.execute("""
+            SELECT close_price, realized_pnl
+            FROM positions
+            WHERE symbol    = ?
+              AND direction = ?
+              AND close_time > ?
+            ORDER BY close_time DESC
+            LIMIT 1
+        """, (symbol, pos_dir, created_at or "")).fetchone()
+
+        if not pos:
+            continue
+
+        close_price, realized_pnl = pos
+        if close_price is None:
+            continue
+
+        hit_sl = hit_tp1 = hit_tp2 = 0
+        outcome = "manual"
+
+        if is_long:
+            if sl_price and close_price <= sl_price:
+                hit_sl, outcome = 1, "lost"
+            elif tp2_price and close_price >= tp2_price:
+                hit_tp1, hit_tp2, outcome = 1, 1, "won"
+            elif tp1_price and close_price >= tp1_price:
+                hit_tp1, outcome = 1, "won"
+        else:
+            if sl_price and close_price >= sl_price:
+                hit_sl, outcome = 1, "lost"
+            elif tp2_price and close_price <= tp2_price:
+                hit_tp1, hit_tp2, outcome = 1, 1, "won"
+            elif tp1_price and close_price <= tp1_price:
+                hit_tp1, outcome = 1, "won"
+
+        cur.execute("""
+            UPDATE analyzed_calls
+            SET status      = 'closed',
+                outcome     = ?,
+                outcome_pnl = ?,
+                hit_tp1     = ?,
+                hit_tp2     = ?,
+                hit_sl      = ?,
+                outcome_at  = datetime('now')
+            WHERE id = ?
+        """, (outcome, realized_pnl, hit_tp1, hit_tp2, hit_sl, call_id))
+        closed += 1
+        print(f"[Sync] Auto-closed call #{call_id} {symbol} {pos_dir} → {outcome} (PnL: {realized_pnl})", flush=True)
+
+    conn.commit()
+    return closed
+
+
 # ── Order sync ─────────────────────────────────────────────────────────────────
 
 def _sync_orders(conn, start_ms: int, end_ms: int = None) -> int:
@@ -173,7 +260,6 @@ def _sync_orders(conn, start_ms: int, end_ms: int = None) -> int:
         if not order_id:
             continue
 
-        # tradeSide: 'open' or 'close'; side: 'buy' or 'sell'; posSide: 'long'/'short'
         trade_side = r.get("tradeSide", "")
         pos_side   = r.get("posSide", "")
         if trade_side == "open":
@@ -191,7 +277,7 @@ def _sync_orders(conn, start_ms: int, end_ms: int = None) -> int:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 order_id,
-                _ms_to_dt(r.get("cTime")),   # uppercase cTime for orders
+                _ms_to_dt(r.get("cTime")),
                 direction,
                 r.get("symbol", ""),
                 r.get("enterPointSource", ""),
@@ -224,7 +310,6 @@ def _sync_bills(conn, start_ms: int, end_ms: int = None) -> int:
     cur      = conn.cursor()
     inserted = 0
 
-    # Use billId as idempotency key — add column if missing
     cols = [c[1] for c in conn.execute("PRAGMA table_info(wallet_snapshots)").fetchall()]
     if "bill_id" not in cols:
         conn.execute("ALTER TABLE wallet_snapshots ADD COLUMN bill_id TEXT")
@@ -264,11 +349,12 @@ def _sync_bills(conn, start_ms: int, end_ms: int = None) -> int:
 
 # ── Main sync function ─────────────────────────────────────────────────────────
 
-_sync_lock  = threading.Lock()
-_sync_status = {
+_sync_lock    = threading.Lock()
+_startup_done = False
+_sync_status  = {
     "running":      False,
-    "last_run":     None,   # ISO string
-    "last_result":  None,   # dict with counts
+    "last_run":     None,
+    "last_result":  None,
     "last_error":   None,
     "next_run":     None,
 }
@@ -278,10 +364,7 @@ MAX_WINDOW_MS = 89 * 24 * 60 * 60 * 1000   # Bitget max: 90 days per request
 
 
 def _chunked_sync(sync_fn, conn, start_ms: int, end_ms: int) -> int:
-    """
-    Call sync_fn(conn, start_ms, end_ms) in ≤90-day chunks.
-    Returns total rows inserted across all chunks.
-    """
+    """Call sync_fn in ≤90-day chunks. Returns total rows inserted."""
     total = 0
     cursor = start_ms
     while cursor < end_ms:
@@ -294,11 +377,14 @@ def _chunked_sync(sync_fn, conn, start_ms: int, end_ms: int) -> int:
 def run_sync(conn=None) -> dict:
     """
     Run a full incremental sync.
-    Fetches everything newer than the last successful sync timestamp.
-    Splits into 90-day chunks to comply with Bitget API limits.
+    - Positions: cursor-based (no time filter) — catches trades regardless of hold duration.
+    - Orders + bills: time-filtered, split into 90-day chunks.
+    - Auto-closes any 'matched' analyst calls whose position has now closed.
     Thread-safe via _sync_lock.
-    Returns: {"positions": N, "orders": N, "bills": N, "equity": {...}}
+    Returns: {"positions": N, "orders": N, "bills": N, "calls_closed": N, "equity": {...}}
     """
+    global _startup_done
+
     if not _sync_lock.acquire(blocking=False):
         return {"error": "Sync already running"}
 
@@ -312,27 +398,31 @@ def run_sync(conn=None) -> dict:
 
         _ensure_settings_table(conn)
 
-        # Default start: timestamp of the most recent position already in DB.
-        # This ensures the first API sync only fetches trades AFTER the CSV import ended,
-        # not the full history (which is already imported from CSV).
-        # Falls back to 2 days ago if the DB is empty.
-        two_days_ago = int((time.time() - 2 * 86400) * 1000)
+        startup_lookback_ms = int((time.time() - STARTUP_LOOKBACK_DAYS * 86400) * 1000)
         latest_in_db = conn.execute(
             "SELECT MAX(strftime('%s', close_time)) FROM positions"
         ).fetchone()[0]
         if latest_in_db:
-            # Start 1 minute before the latest known position to catch any overlap
             default_start = int(latest_in_db) * 1000 - 60_000
         else:
-            default_start = two_days_ago
-        last_ms  = int(_get_setting(conn, "last_sync_ms", default_start))
-        now_ms   = int(time.time() * 1000)
+            default_start = startup_lookback_ms
 
-        print(f"[Sync] Fetching data since {_ms_to_dt(str(last_ms))} ...")
+        last_ms = int(_get_setting(conn, "last_sync_ms", default_start))
+        now_ms  = int(time.time() * 1000)
 
-        n_pos    = _chunked_sync(_sync_positions, conn, last_ms, now_ms)
-        n_orders = _chunked_sync(_sync_orders,    conn, last_ms, now_ms)
-        n_bills  = _chunked_sync(_sync_bills,     conn, last_ms, now_ms)
+        if not _startup_done:
+            last_ms = min(last_ms, startup_lookback_ms)
+            print(f"[Sync] Startup catch-up: extending window to {STARTUP_LOOKBACK_DAYS} days back", flush=True)
+
+        print(f"[Sync] Fetching data since {_ms_to_dt(str(last_ms))} ...", flush=True)
+
+        # Positions: cursor-based — sees all recently closed trades regardless of open time
+        n_pos    = _sync_positions(conn)
+        # Auto-close any matched calls whose position has now synced
+        n_closed = _auto_close_calls(conn)
+        # Orders + bills: time-filtered
+        n_orders = _chunked_sync(_sync_orders, conn, last_ms, now_ms)
+        n_bills  = _chunked_sync(_sync_bills,  conn, last_ms, now_ms)
         equity   = bc.get_account_equity()
 
         _set_setting(conn, "last_sync_ms", now_ms)
@@ -340,16 +430,18 @@ def run_sync(conn=None) -> dict:
         _set_setting(conn, "available_balance", equity.get("available", ""))
 
         result = {
-            "positions": n_pos,
-            "orders":    n_orders,
-            "bills":     n_bills,
-            "equity":    equity,
-            "synced_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "positions":    n_pos,
+            "orders":       n_orders,
+            "bills":        n_bills,
+            "calls_closed": n_closed,
+            "equity":       equity,
+            "synced_at":    datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
         }
 
+        _startup_done = True
         _sync_status["last_run"]    = result["synced_at"]
         _sync_status["last_result"] = result
-        print(f"[Sync] Done — {n_pos} positions, {n_orders} orders, {n_bills} bills")
+        print(f"[Sync] Done — {n_pos} positions, {n_orders} orders, {n_bills} bills, {n_closed} calls auto-closed", flush=True)
         return result
 
     except Exception as e:
@@ -377,10 +469,9 @@ def start_background_sync():
     """
     global _bg_thread
     if _bg_thread and _bg_thread.is_alive():
-        return  # already running
+        return
 
     def loop():
-        # Initial delay so the app finishes starting up
         time.sleep(10)
         while True:
             next_time = time.time() + SYNC_INTERVAL_SECONDS
@@ -388,14 +479,13 @@ def start_background_sync():
             try:
                 run_sync()
             except Exception as e:
-                print(f"[Sync] Background error: {e}")
-            # Sleep until next interval
+                print(f"[Sync] Background error: {e}", flush=True)
             wait = max(0, next_time - time.time())
             time.sleep(wait)
 
     _bg_thread = threading.Thread(target=loop, daemon=True, name="bitget-sync")
     _bg_thread.start()
-    print(f"[Sync] Background auto-sync started (every {SYNC_INTERVAL_SECONDS//60}m)")
+    print(f"[Sync] Background auto-sync started (every {SYNC_INTERVAL_SECONDS//60}m)", flush=True)
 
 
 def get_status() -> dict:
