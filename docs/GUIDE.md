@@ -703,12 +703,17 @@ journalctl -u trading-journal -f
 # Restart after code update
 sudo systemctl restart trading-journal
 
-# Deploy code update from a remote machine
+# Deploy code update from a remote machine (preferred — preserves subdirectory structure)
 rsync -avz -e ssh \
   /path/to/local/trading-journal/ \
   <your-user>@<your-pi-ip>:/home/<your-user>/trading-journal/ \
-  --exclude='*.db' --exclude='*.pyc'
+  --exclude='*.db' --exclude='*.pyc' --exclude='__pycache__'
 ssh <your-user>@<your-pi-ip> sudo systemctl restart trading-journal
+
+# WARNING: when using scp for individual files, always specify the full destination path
+# including subdirectory — e.g. static/app.js and templates/index.html live in subdirs.
+# Wrong:  scp static/app.js pi:~/trading-journal/          ← lands in wrong place
+# Right:  scp static/app.js pi:~/trading-journal/static/app.js
 
 # Wipe and reimport DB
 ssh <your-user>@<your-pi-ip> "cd /home/<your-user>/trading-journal && \
