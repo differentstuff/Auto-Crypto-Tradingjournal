@@ -178,6 +178,11 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.4 — Code Quality & Security Completion
+- `SECURITY.md` added — lightweight vulnerability reporting policy via GitHub private advisories
+- CodeQL workflow added (`.github/workflows/codeql.yml`) — analysis now actually runs on push, PR, and weekly; branch protection is fully operational
+- Frontend JS extracted from `templates/index.html` into `static/app.js` — `index.html` reduced from 3348 to 1078 lines
+
 ### v1.3 — Repository Hardening
 - Branch protection on `main` — CodeQL must pass before merge
 - Dependabot weekly pip dependency updates
