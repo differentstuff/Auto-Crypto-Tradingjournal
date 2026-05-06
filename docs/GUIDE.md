@@ -33,12 +33,13 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_live_trade.py        ← Per-trade Claude analysis for open positions
     ├── ai_call_analyzer.py     ← Analyst call analysis + pending limit analysis
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
+    ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
-templates/index.html            ← Frontend: HTML + CSS only (~1080 lines)
-static/app.js                   ← All frontend JavaScript (2378 lines)
+templates/index.html            ← Frontend: HTML + CSS only (~1192 lines)
+static/app.js                   ← All frontend JavaScript (2507 lines)
 static/                         ← Static assets (Chart.js via CDN)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
@@ -868,6 +869,56 @@ realized_R:R = (planned_entry − close_price) / abs(planned_entry − planned_s
 **Backend:** `analytics.get_rr_analysis(conn)` — JOINs positions + analyzed_calls on `call_id`. Returns up to 100 most recent linked trades.
 
 **Deep Dive:** Planned vs Realized R:R table — symbol, direction, setup, grade, planned R:R, realized R:R (green ≥ 1R, red < 1R), outcome, P&L.
+
+### 10. v1.5.5 — Edge Lab & UX polish
+
+#### 10a. Deep Dive split into two nav pages
+
+| Page | Nav ID | Content |
+|------|--------|---------|
+| Deep Dive | `page-deep` | 6 breakdown charts, key stats pills, symbol table, worst symbols table |
+| Edge Lab | `page-edge` | Setup type charts/table, execution grade table, AI pattern detector, R:R table |
+
+`loadEdge()` handles the Edge Lab page — fetches `/api/analytics/deep` for `by_setup`/`by_grade` and `/api/analytics/rr` independently of `loadDeep()`.
+
+#### 10b. Analyst Leaderboard (Edge Score)
+
+`GET /api/calls/analyst-stats` now returns additional computed fields per analyst:
+
+| Field | Formula |
+|-------|---------|
+| `call_win_rate` | call outcomes won / (won + sl_hits) × 100 |
+| `tp1_hit_rate` | tp1_hits / total_analyzed × 100 |
+| `conv_rate` | entered / total_analyzed × 100 |
+| `edge_score` | `win_rate × 0.5 + call_win_rate × 0.3 + tp1_hit_rate × 0.2` (requires ≥ 3 trades) |
+
+Sorted by edge_score descending. Rows color-coded: green ≥ 65, red < 45.
+
+#### 10c. Correlation Detector (sector-aware)
+
+`renderCorrelationWarning()` in `app.js` groups open positions by sector:
+
+`Bitcoin` · `ETH/L2` · `SOL/L1` · `Meme` · `DeFi` · `AI/Infra`
+
+Two severity tiers: 🟡 yellow (2 positions same sector + direction), 🔴 red (3+). Background color changes with severity.
+
+#### 10d. AI Pattern Detector (`ai_pattern_detector.py`)
+
+`POST /api/analytics/patterns` — collects stats by setup, weekday, session (Asia/London/NY/Off-hours), direction, duration, grade. Minimum 20 total trades, minimum 5 per category. Claude returns up to 6 findings as `{type, title, finding, recommendation, confidence}`.
+
+Session buckets (UTC): Asia 00-08 · London 08-13 · NY/Overlap 13-21 · Late/Off-hours 21-24.
+
+#### 10e. Setup Type filter in Journal
+
+`GET /api/positions` now accepts `setup` query param:
+- `setup=untagged` → `(setup_type IS NULL OR setup_type = '')`
+- `setup=Breakout` (or any named type) → `setup_type = ?` (allowlist validated)
+
+Filter dropdown added to journal filter bar between Result and From date. Reset button clears it.
+
+#### 10f. Setup Type in Add Trade modal
+
+`POST /api/positions` now accepts `setup_type` in request body and stores it at creation time. Dropdown added to the Add Trade modal above Notes.
 
 ---
 

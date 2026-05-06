@@ -178,6 +178,14 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v1.5.5 — Edge Lab & UX Polish
+- **Deep Dive split into two pages**: Deep Dive (charts + stats) and Edge Lab (setup analysis, grade breakdown, pattern detector, R:R tracking)
+- **Analyst Leaderboard**: Edge Score (0-100) composite metric replaces raw table — ranks analysts by trade win rate, call outcome win rate, and TP1 hit rate. Medal rankings, color-coded rows, conversion rate column.
+- **Correlation Detector enhanced**: sector-aware grouping (Bitcoin / ETH+L2 / SOL+L1 / Meme / DeFi / AI+Infra), two severity tiers (yellow = 2 positions, red = 3+)
+- **AI Pattern Detector**: Claude analyses full trade history by setup, session, weekday, direction, duration, grade — returns warnings, insights, and strengths as cards
+- **Setup Type filter in Journal**: filter by specific setup or ⚪ Untagged to quickly find and tag historical trades
+- **Setup Type in Add Trade modal**: captured at creation time for manual trades
+
 ### v1.6 — Strategy & Pattern Intelligence
 - **Analyst Leaderboard** — Edge Score (0-100) ranks analysts by composite metric: 50% trade win rate + 30% call outcome win rate + 20% TP1 hit rate. Color-coded rows, medal rankings, TP1 hit rate and call-to-trade conversion rate columns added.
 - **Correlation Detector (enhanced)** — Now groups open positions by sector (Bitcoin / ETH+L2 / SOL+L1 / Meme / DeFi / AI+Infra). Two-tier severity: yellow (2 positions same sector/direction), red (3+). Triggered from Live Positions panel.
