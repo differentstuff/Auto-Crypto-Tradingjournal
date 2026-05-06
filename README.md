@@ -184,6 +184,7 @@ trading-journal.service systemd unit file
 - Squash merge only — cleaner commit history
 - LICENSE fixed to standard GPL v3 (was showing as unrecognised)
 - Secret scanning alert resolved — old revoked API key removed from history
+- Dependencies bumped: Flask 3.1.3, Anthropic SDK 0.100.0
 
 ### v1.2 — Security Fixes
 - Stack trace exposure fixed — exception details no longer returned to the client (CWE-209)
