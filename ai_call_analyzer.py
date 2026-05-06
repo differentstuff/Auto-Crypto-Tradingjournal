@@ -28,7 +28,7 @@ from database import get_conn
 
 ANTHROPIC_API_KEY = os.environ.get(
     "ANTHROPIC_API_KEY",
-    "REDACTED_ANTHROPIC_KEY"
+    """"
 )
 MODEL      = "claude-sonnet-4-6"
 LEVERAGE   = 10   # default for position sizing; user can override
