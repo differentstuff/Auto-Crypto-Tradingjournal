@@ -16,6 +16,7 @@ import json
 import os
 import anthropic
 from database import get_conn
+import market_context
 
 ANTHROPIC_API_KEY = os.environ.get(
     "ANTHROPIC_API_KEY",
@@ -54,9 +55,11 @@ def _get_symbol_history(symbol: str, conn) -> dict:
     }
 
 
-def _build_prompt(position: dict, history: dict) -> str:
+def _build_prompt(position: dict, history: dict, mkt_ctx: str = "") -> str:
     pos_json  = json.dumps(position, indent=2)
     hist_json = json.dumps(history, indent=2)
+
+    mkt_block = f"\nCURRENT MARKET CONTEXT:\n{mkt_ctx}\n" if mkt_ctx else ""
 
     return f"""You are a professional crypto futures trading advisor. Analyze this OPEN position and give a specific, honest, actionable recommendation. The trader needs clear guidance — not generic advice.
 
@@ -65,12 +68,13 @@ OPEN POSITION:
 
 TRADER'S HISTORY ON {position['symbol']} (last {history.get('trades', 0)} closed trades):
 {hist_json}
-
+{mkt_block}
 Key context:
 - unrealized_pct is the current unrealized P/L as % of margin used
 - take_profit / stop_loss: empty string means NO order is set
 - duration_minutes: how long this trade has been open
 - liquidation_price: the price where the position gets forcibly closed
+- Use market context (funding rate, long/short ratio, Fear & Greed) to assess whether the crowd is against this position
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 
@@ -94,7 +98,9 @@ def analyze_position(position: dict) -> dict:
     history = _get_symbol_history(position["symbol"], conn)
     conn.close()
 
-    prompt = _build_prompt(position, history)
+    ctx     = market_context.get_market_context([position["symbol"]])
+    mkt_str = market_context.format_for_prompt(ctx)
+    prompt  = _build_prompt(position, history, mkt_str)
 
     client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(

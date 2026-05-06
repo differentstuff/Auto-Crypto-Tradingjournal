@@ -40,6 +40,7 @@ import ai_live_trade
 import ai_call_analyzer
 import ai_trade_grader
 import ai_pattern_detector
+import market_context
 import bitget_sync
 import bitget_client
 
@@ -344,6 +345,18 @@ def api_analytics_deep():
         data = get_deep_stats(filters=_filters_from_args())
         return _ok(data)
     except Exception as e:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@app.route("/api/market/context")
+def api_market_context():
+    try:
+        symbols_raw = request.args.get("symbols", "")
+        symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()] if symbols_raw else []
+        data = market_context.get_market_context(symbols or None)
+        return _ok(data)
+    except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
 

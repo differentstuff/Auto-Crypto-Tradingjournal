@@ -16,6 +16,7 @@ import traceback
 
 import anthropic
 from database import get_conn
+import market_context
 
 
 def grade_trade(position_id: int, conn=None) -> dict:
@@ -40,7 +41,8 @@ def grade_trade(position_id: int, conn=None) -> dict:
             if row:
                 call = dict(row)
 
-        result = _ask_claude(pos, call)
+        fg     = market_context.get_fear_greed()
+        result = _ask_claude(pos, call, fg)
 
         conn.execute(
             """UPDATE positions
@@ -59,7 +61,7 @@ def grade_trade(position_id: int, conn=None) -> dict:
             conn.close()
 
 
-def _ask_claude(pos: dict, call: dict | None) -> dict:
+def _ask_claude(pos: dict, call: dict | None, fg: dict | None = None) -> dict:
     direction  = pos.get("direction", "")
     entry      = pos.get("entry_price") or 0
     close_p    = pos.get("close_price") or 0
@@ -112,11 +114,16 @@ def _ask_claude(pos: dict, call: dict | None) -> dict:
         else:
             call_section = "\nNo analyst call linked."
 
+    fg_block = ""
+    if fg and fg.get("ok"):
+        fg_block = f"\nMARKET CONTEXT AT TIME OF GRADING:\nFear & Greed Index: {fg['value']}/100 — {fg['classification']}\n"
+
     prompt = (
         "Grade the EXECUTION QUALITY of this crypto futures trade. "
         "Focus on HOW it was executed, not purely on P&L outcome.\n\n"
         f"{trade_section}\n"
-        f"{call_section}\n\n"
+        f"{call_section}\n"
+        f"{fg_block}\n"
         "Grading rubric:\n"
         "A — Excellent: entry at/near planned level, exit disciplined (TP hit or clear "
         "rule-based close), risk managed throughout, strong realized R:R\n"

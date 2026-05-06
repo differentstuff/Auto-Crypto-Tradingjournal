@@ -60,6 +60,35 @@ async function loadDashboard() {
   if (!res.ok) return;
   const d = res.data;
 
+  // Market Pulse (non-blocking, loads in parallel)
+  api('/api/market/context?symbols=BTCUSDT').then(mr => {
+    const el = document.getElementById('market-pulse');
+    if (!mr.ok || !el) return;
+    const fg  = mr.data.fear_greed || {};
+    const btc = (mr.data.symbols || {})['BTCUSDT'] || {};
+    const fr  = btc.funding    || {};
+    const ls  = btc.long_short || {};
+    const parts = [];
+    if (fg.ok) {
+      const fgColor = fg.value <= 25 ? 'var(--accent3)' : fg.value <= 45 ? 'var(--accent3)' :
+                      fg.value <= 55 ? 'var(--muted)'   : fg.value <= 75 ? 'var(--yellow)' : 'var(--red)';
+      parts.push(`<span>😨 Fear &amp; Greed: <strong style="color:${fgColor}">${fg.value} — ${fg.classification}</strong></span>`);
+    }
+    if (fr.ok) {
+      const frColor = fr.rate > 0 ? 'var(--red)' : 'var(--accent3)';
+      const frFlag  = fr.high ? ' ⚠' : '';
+      parts.push(`<span>📈 BTC Funding: <strong style="color:${frColor}">${fr.rate_pct > 0 ? '+' : ''}${fr.rate_pct}% (${fr.direction})${frFlag}</strong></span>`);
+    }
+    if (ls.ok) {
+      const lsColor = ls.long_pct > 65 ? 'var(--yellow)' : ls.short_pct > 65 ? 'var(--yellow)' : 'var(--muted)';
+      parts.push(`<span>⚖ BTC L/S: <strong style="color:${lsColor}">${ls.long_pct}% long / ${ls.short_pct}% short</strong></span>`);
+    }
+    if (parts.length) {
+      el.innerHTML = parts.join('<span style="color:var(--border)">|</span>');
+      el.style.display = 'flex';
+    }
+  });
+
   document.getElementById('dash-subtitle').textContent =
     `${d.total_trades} closed positions · Win rate ${d.win_rate}% · Profit factor ${d.profit_factor ?? '—'}`;
 
@@ -1183,6 +1212,7 @@ let livePositionsCache  = [];
 let liveAnalysisCache   = {};   // key: "SYMBOL_direction" → analysis result dict
 let liveOpenPanels      = new Set();  // indices of cards with open AI panels
 let liveCallMatches     = {};   // key: "SYMBOL_direction" → saved call data
+let liveMarketCtx       = {};   // key: symbol → {funding, long_short}
 
 async function loadLiveTrades() {
   document.getElementById('trades-refresh-label').textContent = 'Refreshing…';
@@ -1196,6 +1226,17 @@ async function loadLiveTrades() {
 
     livePositionsCache = posRes.data.positions || [];
     const eq = posRes.data.equity || {};
+
+    // Fetch market context for all open symbols (non-blocking)
+    if (livePositionsCache.length) {
+      const syms = [...new Set(livePositionsCache.map(p => p.symbol))].join(',');
+      api('/api/market/context?symbols=' + syms).then(mr => {
+        if (mr.ok) {
+          liveMarketCtx = mr.data.symbols || {};
+          renderPositionCards(livePositionsCache);  // re-render with context
+        }
+      });
+    }
 
     // Build match map: key = "SYMBOL_direction" → call
     // Only store 'saved' status matches (need confirmation)
@@ -1407,6 +1448,23 @@ function renderPositionCards(positions) {
             ${isCritical ? '<span class="badge" style="background:rgba(239,83,80,.25);color:var(--red);animation:pulse 1.5s infinite">⚠ CRITICAL</span>' : ''}
             ${is48h ? `<span class="chip-48h">⏱ ${Math.floor(p.duration_minutes/1440)}d+ OPEN</span>` : ''}
             ${isLiqNear ? `<span class="chip-liq-warn">⚡ LIQ ${liqDist.toFixed(1)}% AWAY</span>` : ''}
+            ${(() => {
+              const mc = liveMarketCtx[p.symbol] || {};
+              const chips = [];
+              const fr = mc.funding || {};
+              if (fr.ok) {
+                const col = fr.rate > 0 ? 'var(--yellow)' : 'var(--accent3)';
+                const bg  = fr.rate > 0 ? 'rgba(255,179,0,.12)' : 'rgba(38,217,107,.12)';
+                chips.push(`<span class="badge" style="background:${bg};color:${col};font-size:.65rem">F ${fr.rate_pct > 0 ? '+' : ''}${fr.rate_pct}%${fr.high ? ' ⚠' : ''}</span>`);
+              }
+              const ls = mc.long_short || {};
+              if (ls.ok) {
+                const crowded = ls.long_pct > 65 || ls.short_pct > 65;
+                const col = crowded ? 'var(--yellow)' : 'var(--muted)';
+                chips.push(`<span class="badge" style="background:rgba(121,134,203,.1);color:${col};font-size:.65rem">L/S ${ls.long_pct}/${ls.short_pct}</span>`);
+              }
+              return chips.join('');
+            })()}
           </div>
         </div>
         <!-- Stats -->

@@ -16,6 +16,7 @@ import anthropic
 
 from analytics import get_dashboard_kpis, get_deep_stats
 from database  import get_conn
+import market_context
 
 ANTHROPIC_API_KEY = os.environ.get(
     "ANTHROPIC_API_KEY",
@@ -25,7 +26,7 @@ ANTHROPIC_API_KEY = os.environ.get(
 MODEL = "claude-sonnet-4-6"
 
 
-def _build_prompt(kpis: dict, deep: dict) -> str:
+def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "") -> str:
     """Serialize the key stats into a structured prompt for Claude."""
 
     # Pull only the data that's most useful for analysis (skip raw chart arrays)
@@ -55,10 +56,13 @@ def _build_prompt(kpis: dict, deep: dict) -> str:
 
     stats_json = json.dumps(summary, indent=2)
 
+    mkt_block = f"\nCURRENT MARKET CONTEXT:\n{mkt_ctx}\n" if mkt_ctx else ""
+
     return f"""You are a crypto futures trading coach. Analyze this trader's 6-month Bitget USDT-M Futures data and respond with ONLY a valid JSON object — no markdown, no code fences, no explanation outside the JSON.
 
 TRADING STATISTICS:
 {stats_json}
+{mkt_block}
 
 Respond with this exact JSON structure. Keep each text field concise (2-3 sentences max). Include 3-5 items in strengths, weaknesses, recommendations, and symbol_insights:
 
@@ -80,7 +84,9 @@ def analyze(filters: dict = None) -> dict:
     deep = get_deep_stats(filters=filters, conn=conn)
     conn.close()
 
-    prompt = _build_prompt(kpis, deep)
+    ctx     = market_context.get_market_context(["BTCUSDT"])
+    mkt_str = market_context.format_for_prompt(ctx)
+    prompt  = _build_prompt(kpis, deep, mkt_str)
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
