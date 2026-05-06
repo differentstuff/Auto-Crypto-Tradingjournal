@@ -1165,14 +1165,29 @@ async function loadDashboard() {
     if (!lr.ok) return;
     const pos = lr.data.positions || [];
     const eq  = parseFloat(lr.data.equity?.accountEquity || 0);
-    const totalMargin = pos.reduce((s, p) => s + (p.margin_usdt || 0), 0);
-    const riskPct = eq > 0 ? (totalMargin / eq * 100).toFixed(1) : 0;
+
+    // Use SL-based risk when a stop-loss is set, otherwise fall back to margin
+    const totalRisk = pos.reduce((s, p) => {
+      const entry = parseFloat(p.entry_price || 0);
+      const sl    = parseFloat(p.stop_loss  || 0);
+      const size  = parseFloat(p.size_usdt  || 0);
+      if (sl > 0 && entry > 0 && size > 0) {
+        const slRisk = p.direction === 'Long'
+          ? (entry - sl) / entry * size
+          : (sl - entry) / entry * size;
+        return s + Math.max(0, slRisk);
+      }
+      return s + (p.margin_usdt || 0); // no SL set — show margin as worst-case
+    }, 0);
+
+    const riskPct = eq > 0 ? (totalRisk / eq * 100).toFixed(1) : 0;
+    const hasSl   = pos.some(p => parseFloat(p.stop_loss || 0) > 0);
     const el = document.createElement('div');
     el.className = 'kpi-card';
     el.innerHTML = `
       <div class="kpi-label">Open Position Risk</div>
-      <div class="kpi-value neu">${fmtC(totalMargin)} USDT</div>
-      <div class="kpi-sub">${riskPct}% of equity · ${pos.length} open</div>`;
+      <div class="kpi-value ${totalRisk > 0 ? 'neg' : 'neu'}">${fmtC(totalRisk)} USDT</div>
+      <div class="kpi-sub">${riskPct}% of equity · ${pos.length} open${hasSl ? ' · SL-based' : ' · no SL'}</div>`;
     document.getElementById('kpi-grid').appendChild(el);
   }).catch(() => {});
 
