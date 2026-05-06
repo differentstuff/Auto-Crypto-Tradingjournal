@@ -604,6 +604,23 @@ git config --global user.email "your-github-username@users.noreply.github.com"
 
 This persists across all repos on the machine. Without it, every commit leaks the OS username even if a repo-level config was previously set (e.g. after running `git filter-repo`, which reinitialises the repo and clears local config).
 
+### GitHub repository security settings
+
+Configured on the public repo (`anvilfilbert/Auto-Crypto-Tradingjournal`):
+
+| Setting | Value |
+|---------|-------|
+| Merge strategy | Squash merge only (merge commits + rebase disabled) |
+| Delete branch on merge | Enabled |
+| Branch protection | CodeQL must pass before any merge to `main` |
+| Dependabot | Weekly `pip` dependency updates via `.github/dependabot.yml` |
+| Secret scanning | Enabled — alerts on any committed credentials |
+| Wiki / Projects | Disabled |
+
+**Secret scanning incident (resolved):** An old Anthropic API key was found in an early commit blob. The key was already revoked by Anthropic before discovery. Git history had been scrubbed with `git filter-repo`. Alert closed as `revoked`.
+
+**Rule:** never commit credentials. All keys live in `.env` (gitignored, mode 600), loaded via systemd `EnvironmentFile=`.
+
 ### Python Dependencies (`requirements.txt`)
 
 ```
