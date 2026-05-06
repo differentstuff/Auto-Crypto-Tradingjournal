@@ -339,7 +339,10 @@ select:focus,input:focus{border-color:var(--accent)}
       <span class="nav-icon">📒</span><span>Journal</span>
     </div>
     <div class="nav-item" onclick="showPage('deep')" id="nav-deep">
-      <span class="nav-icon">🔬</span><span>Deep Dive</span>
+      <span class="nav-icon">📉</span><span>Deep Dive</span>
+    </div>
+    <div class="nav-item" onclick="showPage('edge')" id="nav-edge">
+      <span class="nav-icon">🔬</span><span>Edge Lab</span>
     </div>
     <div class="nav-item" onclick="showPage('ai')" id="nav-ai">
       <span class="nav-icon">🤖</span><span>AI Advisor</span>
@@ -566,6 +569,15 @@ select:focus,input:focus{border-color:var(--accent)}
           <tbody id="deep-worst-tbody"></tbody>
         </table>
       </div>
+
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- EDGE LAB                                                           -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="page-edge" class="page-view">
+      <div class="page-title">Edge Lab</div>
+      <div class="page-subtitle">Setup analysis, execution quality, pattern detection and R:R tracking.</div>
 
       <div class="section-title">P&amp;L by Setup Type</div>
       <div class="chart-row cols-2">

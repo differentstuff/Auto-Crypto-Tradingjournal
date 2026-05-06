@@ -14,6 +14,7 @@ function showPage(name) {
   if (name === 'dashboard') loadDashboard();
   if (name === 'journal')   { loadSymbols(); journalLoad(1); }
   if (name === 'deep')      loadDeep();
+  if (name === 'edge')      loadEdge();
   if (name === 'import')    loadImportLog();
 }
 
@@ -545,6 +546,16 @@ async function loadDeep() {
       <td class="neg">${fmtC(s.total_pnl)}</td>
     </tr>`).join('');
 
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EDGE LAB
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadEdge() {
+  const res = await api('/api/analytics/deep');
+  if (!res.ok) return;
+  const d = res.data;
+
   // By setup type
   if (d.by_setup && d.by_setup.length) {
     makeChart('bySetupChart', 'bar', {
@@ -563,8 +574,7 @@ async function loadDeep() {
         data: d.by_setup.map(s => s.win_rate),
         backgroundColor: d.by_setup.map(s => s.win_rate >= 50 ? 'rgba(38,217,107,.7)' : 'rgba(239,83,80,.7)'),
       }]
-    }, { indexAxis: 'y', plugins: { legend: { display: false } },
-         scales: { x: { max: 100 } } });
+    }, { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { max: 100 } } });
 
     document.getElementById('deep-setup-tbody').innerHTML = d.by_setup.map(s => `
       <tr>
@@ -577,7 +587,6 @@ async function loadDeep() {
   }
 
   // By execution grade
-  const gradeColors = { A:'var(--accent3)', B:'var(--accent2)', C:'var(--yellow)', D:'var(--red)' };
   if (d.by_grade && d.by_grade.length) {
     document.getElementById('deep-grade-tbody').innerHTML = d.by_grade.map(g => `
       <tr>
@@ -589,7 +598,7 @@ async function loadDeep() {
       </tr>`).join('');
   }
 
-  // Planned vs realized R:R (separate API call)
+  // Planned vs realized R:R
   const rrRes = await api('/api/analytics/rr');
   if (rrRes.ok && rrRes.data.items.length) {
     document.getElementById('deep-rr-tbody').innerHTML = rrRes.data.items.map(r => {
