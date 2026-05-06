@@ -214,7 +214,7 @@ Headers: ACCESS-KEY, ACCESS-SIGN, ACCESS-TIMESTAMP, ACCESS-PASSPHRASE
 *Open positions:* `symbol`, `holdSide`, `openPriceAvg`, `markPrice`, `unrealizedPL`, `marginSize`, `total`, `leverage`, `takeProfit`, `stopLoss`, `liquidationPrice`, `breakEvenPrice`, `achievedProfits`, `totalFee`, `cTime`
 
 **Credentials (stored in bitget_client.py, overridable via env vars):**
-- API Key: `REDACTED_API_KEY` (read-only)
+- API Key: `bg_99c0e8528bf9d7c168c36e75466e1cbd` (read-only)
 - `BITGET_PASSPHRASE` env var or hardcoded fallback
 
 ---
@@ -571,7 +571,7 @@ After=network.target
 Type=simple
 User=fbauer
 WorkingDirectory=/home/fbauer/trading-journal
-Environment=PORT=8082
+EnvironmentFile=/home/fbauer/trading-journal/.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 app.py
 Restart=on-failure
@@ -581,12 +581,13 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+Credentials are loaded via `EnvironmentFile=` from `.env` (gitignored). Copy `.env.example` to `.env` and fill in values before starting the service.
+
 ### Python Dependencies (`requirements.txt`)
 
 ```
-flask>=3.0
-anthropic>=0.25
-requests>=2.31
+flask>=3.1.0
+anthropic>=0.40.0
 ```
 
 ---
@@ -602,31 +603,31 @@ See `docs/USER_GUIDE.md` for usage documentation.
 pip3 install flask anthropic requests
 ```
 
-**2. Clone / copy source files**
+**2. Clone from GitHub**
 ```bash
-# From Mac to Pi
-rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
-  /Users/fbauer/Documents/ClaudeAIData/trading-journal/ \
-  fbauer@192.168.1.21:/home/fbauer/trading-journal/ \
-  --exclude='*.db' --exclude='*.pyc' --exclude='__pycache__'
+git clone https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal.git trading-journal
+cd trading-journal
 ```
 
-**3. Initialize DB and import historical data**
+**3. Configure credentials**
 ```bash
-ssh fbauer@192.168.1.21
-cd /home/fbauer/trading-journal
+cp .env.example .env
+# Edit .env — fill in BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE, ANTHROPIC_API_KEY
+```
+
+**5. Initialize DB**
+```bash
 python3 database.py          # creates trading_journal.db with all tables
-python3 importer.py data/    # imports CSV files from data/
 ```
 
-**4. Test the app manually first**
+**6. Test the app manually first**
 ```bash
 python3 app.py
-# Open http://192.168.1.21:8082 in browser — confirm data loads
+# Open http://<host>:8082 in browser — confirm it loads
 # Ctrl+C to stop
 ```
 
-**5. Install systemd service**
+**7. Install systemd service**
 ```bash
 sudo cp trading-journal.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -708,6 +709,20 @@ On the **Waiting** tab, each pending limit card shows a checkbox in the top-left
 
 **Backend:** `POST /api/limits/bulk-update` with `{ids: [...], call_id: N}` — sets `call_id` on all specified rows in one `UPDATE ... WHERE id IN (...)` statement.
 
+### 4. Analyst Field on Journal Rows (added May 2026)
+
+The `positions` table has an `analyst` column (migrated automatically at startup if missing). The journal table now shows an **Analyst** column (`📡 Name` or `—`).
+
+**Flow:** Click any journal row → "Edit Trade" modal → Analyst input at top → Save → `PUT /api/positions/<id>` with `{analyst: "..."}`. Works on all trades including historical ones.
+
+**Backend:** `PUT /api/positions/<id>` editable fields: `notes, tags, analyst, entry_price, close_price, size_usdt, realized_pnl, total_fees, open_time, close_time, direction`.
+
+**Migration guard** in `app.py` startup:
+```python
+if "analyst" not in cols:
+    conn.execute("ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
+```
+
 ---
 
 ## Quick Reference
@@ -715,10 +730,12 @@ On the **Waiting** tab, each pending limit card shows a checkbox in the top-left
 | Item | Value |
 |------|-------|
 | Live URL | http://192.168.1.21:8082 |
+| GitHub | https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal |
 | Pi address | 192.168.1.21 |
 | Pi user | fbauer |
 | Pi project dir | /home/fbauer/trading-journal/ |
-| Mac source dir | /Users/fbauer/Documents/ClaudeAIData/trading-journal/ |
+| Mac source dir | /Users/fbauer/Documents/ClaudeAIData/Trading-Journal/ |
+| Credentials file | /home/fbauer/trading-journal/.env (gitignored, mode 600) |
 | Database file | trading_journal.db (excluded from git, DO NOT wipe without backup) |
 | Service name | trading-journal |
 | Port | 8082 |
