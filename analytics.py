@@ -9,6 +9,7 @@ filters is a dict with optional keys:
   symbol, direction, date_from, date_to
 """
 
+import re
 import sqlite3
 from database import get_conn
 
@@ -21,17 +22,22 @@ def _build_where(filters):
     params  = []
 
     if filters.get('symbol'):
-        clauses.append("symbol = ?")
-        params.append(filters['symbol'])
+        sym = filters['symbol'].strip().upper()
+        if re.match(r'^[A-Z0-9]+$', sym):
+            clauses.append("symbol = ?")
+            params.append(sym)
     if filters.get('direction'):
-        clauses.append("direction = ?")
-        params.append(filters['direction'])
+        if filters['direction'] in ('Long', 'Short'):
+            clauses.append("direction = ?")
+            params.append(filters['direction'])
     if filters.get('date_from'):
-        clauses.append("close_time >= ?")
-        params.append(filters['date_from'])
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', filters['date_from']):
+            clauses.append("close_time >= ?")
+            params.append(filters['date_from'])
     if filters.get('date_to'):
-        clauses.append("close_time <= ?")
-        params.append(filters['date_to'] + ' 23:59:59')
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', filters['date_to']):
+            clauses.append("close_time <= ?")
+            params.append(filters['date_to'] + ' 23:59:59')
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, params

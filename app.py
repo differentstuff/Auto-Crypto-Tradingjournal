@@ -27,6 +27,7 @@ import shutil
 from datetime import datetime
 
 from flask import Flask, jsonify, request, render_template, send_from_directory
+from werkzeug.utils import secure_filename
 
 from database     import init_db, get_conn
 from importer     import import_folder
@@ -91,7 +92,7 @@ def api_import():
     try:
         if "file" in request.files:
             f = request.files["file"]
-            fname = f.filename or "upload.zip"
+            fname = secure_filename(f.filename) or "upload.zip"
             fpath = os.path.join(tmp_dir, fname)
             f.save(fpath)
             if fname.lower().endswith(".zip"):
@@ -113,7 +114,7 @@ def api_import():
         return _ok(results)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e))
+        return _err("Import failed — check server logs for details")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -302,7 +303,7 @@ def api_dashboard_kpis():
         return _ok(data)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 # ── deep dive ──────────────────────────────────────────────────────────────────
@@ -314,7 +315,7 @@ def api_analytics_deep():
         return _ok(data)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 # ── AI advisor ─────────────────────────────────────────────────────────────────
@@ -327,7 +328,7 @@ def api_ai_analyze():
         return _ok(result)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -369,7 +370,7 @@ def api_sync():
         return _ok(result)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 @app.route("/api/calls/analyze", methods=["POST"])
@@ -405,7 +406,7 @@ def api_calls_analyze():
         return _ok(result)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 @app.route("/api/calls/saved", methods=["GET"])
@@ -477,7 +478,7 @@ def api_calls_check_matches():
     try:
         positions = bitget_client.get_open_positions()
     except Exception as e:
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
     conn  = get_conn()
     calls = [dict(r) for r in conn.execute("""
@@ -856,7 +857,7 @@ def api_limits_analyze(lim_id):
         return _ok(result)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 @app.route("/api/calls/analyst-stats")
@@ -948,7 +949,7 @@ def api_live_positions():
         return _ok({"positions": positions, "equity": equity})
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 @app.route("/api/live/pending-orders")
@@ -963,7 +964,7 @@ def api_live_pending_orders():
         orders = bitget_client.get_pending_orders()
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
     conn = get_conn()
     tracked = [r[0] for r in conn.execute(
@@ -988,7 +989,7 @@ def api_live_analyze():
         return _ok(result)
     except Exception as e:
         traceback.print_exc()
-        return _err(str(e), 500)
+        return _err("Internal server error", 500)
 
 
 @app.route("/api/sync/status")
