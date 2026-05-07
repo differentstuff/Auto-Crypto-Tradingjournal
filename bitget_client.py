@@ -57,12 +57,11 @@ def _get(path: str, params: dict) -> dict:
         with urllib.request.urlopen(req, timeout=15) as r:
             resp = json.loads(r.read())
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        raise BitgetAPIError(f"HTTP {e.code}: {body}")
+        raise BitgetAPIError(f"HTTP {e.code}")
 
     code = resp.get("code", "")
     if code != "00000":
-        raise BitgetAPIError(f"Bitget {code}: {resp.get('msg')}")
+        raise BitgetAPIError(f"Bitget API error {code}")
     return resp.get("data", {})
 
 

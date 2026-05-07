@@ -18,7 +18,9 @@ def api_sync():
     try:
         result = bitget_sync.run_sync()
         if "error" in result:
-            return _err(result["error"])
+            if result.get("error") == "Sync already running":
+                return _err("Sync already running", 409)
+            return _err("Sync failed — check server logs", 500)
         return _ok(result)
     except Exception:
         traceback.print_exc()

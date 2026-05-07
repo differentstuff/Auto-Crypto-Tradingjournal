@@ -16,7 +16,9 @@ def _ok(data):
 
 
 def _err(msg, code=400):
-    return jsonify({"ok": False, "error": msg}), code
+    # Never expose internal details on server errors (CWE-209)
+    safe = msg if code < 500 else "Internal server error"
+    return jsonify({"ok": False, "error": safe}), code
 
 
 def _filters_from_args():

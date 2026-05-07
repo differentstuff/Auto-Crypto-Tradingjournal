@@ -225,7 +225,9 @@ def api_position_grade(pos_id):
     try:
         result = ai_trade_grader.grade_trade(pos_id)
         if "error" in result:
-            return _err(result["error"])
+            if result.get("error") == "Position not found":
+                return _err("Position not found", 404)
+            return _err("Grading failed — check server logs", 500)
         return _ok(result)
     except Exception:
         traceback.print_exc()
