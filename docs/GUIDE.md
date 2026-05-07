@@ -31,7 +31,8 @@ Browser (http://<your-pi-ip>:8082)
     │
     ├── routes/                 ← Flask Blueprints — one file per domain
     │   ├── journal.py          ← positions CRUD, symbols, wallet, import
-    │   ├── analytics.py        ← dashboard KPIs, deep dive, heatmap, patterns, R:R, market
+    │   ├── analytics.py        ← dashboard KPIs, deep dive, heatmap, patterns, R:R, chart routes
+    │   ├── market.py           ← market context, calendar, exchange symbols, mark prices (split v2.3)
     │   ├── calls.py            ← call analyzer, saved calls, outcomes, analyst stats
     │   ├── limits.py           ← pending limit orders
     │   ├── live.py             ← live positions, pending orders, live AI analysis
@@ -39,14 +40,17 @@ Browser (http://<your-pi-ip>:8082)
     │
     ├── importer.py             ← Bitget CSV → SQLite (historical data)
     ├── analytics.py            ← KPI + stats calculations (pure Python)
+    ├── prompt_builder.py       ← Shared context assembler for all AI modules (v2.3)
     ├── ai_advisor.py           ← Full-portfolio Claude analysis
-    ├── ai_live_trade.py        ← Per-trade Claude analysis for open positions
-    ├── ai_call_analyzer.py     ← Analyst call analysis + pending limit analysis
+    ├── ai_live_trade.py        ← Per-trade Claude analysis (uses prompt_builder)
+    ├── ai_call.py              ← Core call analysis logic (split from ai_call_analyzer v2.3)
+    ├── ai_limit.py             ← Pending limit analysis (split from ai_call_analyzer v2.3)
+    ├── ai_call_analyzer.py     ← Re-export shim: from ai_call import …; from ai_limit import …
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
     ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache)
-    ├── chart_context.py        ← OHLCV candles + pandas-ta indicator suite (10-min cache)
+    ├── chart_context.py        ← OHLCV candles + pandas-ta indicators + confluence_score() (10-min cache)
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
@@ -62,7 +66,8 @@ static/js/04-deep-edge.js       ← Deep Dive, Edge Lab, heatmap, pattern detect
 static/js/05-advisor.js         ← AI Advisor
 static/js/06-import.js          ← CSV import + sync page
 static/js/07-calls.js           ← Call Analyzer, saved calls, analyst stats
-static/js/08-live.js            ← Live Trades, position cards, correlation warning
+static/js/08-live.js            ← Live Trades, position cards, correlation warning, KPI rendering
+static/js/08b-live-calls.js     ← Call match banners, confirmMatch, dismissMatch, renderCallTargetsPanel (split v2.3)
 static/js/09-analysis.js        ← Prediction accuracy, postmortem, call sizing
 static/js/10-pending.js         ← Pending limits, Bitget live orders, bulk operations
 static/js/11-sync.js            ← Live Sync page
@@ -326,11 +331,50 @@ Pure Python over SQLite. Two public functions:
 
 ---
 
+## `prompt_builder.py` — Shared Context Assembler (v2.3)
+
+Single source of truth for common prompt sections injected into every AI call. Enforces `MAX_CONTEXT_CHARS = 5600` (~1400 tokens) so no analysis balloon indefinitely.
+
+**Priority order (highest signal density first):**
+1. Market context (pre-fetched string, passed in by caller)
+2. Trader Rulebook (`ai_rulebook.get_rulebook_for_prompt()`)
+3. Calibration (`ai_rulebook.get_calibration_for_prompt()`)
+4. Chart context — compact one-liner per TF (`chart_context.get_chart_context()` + `confluence_score()`)
+5. Similar past trades (`ai_rulebook.get_similar_trades_for_prompt()`)
+
+```python
+ctx_str = prompt_builder.build_context(
+    conn, symbol="BTCUSDT", direction="Long",
+    market_str=mkt_str, timeframes=["4H", "1D"]
+)
+```
+
+All AI modules (`ai_call.py`, `ai_limit.py`, `ai_live_trade.py`) call this instead of assembling context individually.
+
+---
+
+## `chart_context.py` — Indicators + Chart Data
+
+**`format_for_prompt(symbol, indicators, timeframe)`** (v2.3): Compact single-line format per TF (was ~15 lines). Example:
+```
+BTCUSDT 4H: RSI 58(neu) | MACD bull | EMA ↑all | ADX 28↑ | ATR 1.2% | BB 62% | S:64000 R:68000
+```
+
+**`confluence_score(symbol, timeframes)`** (v2.3): Aggregates RSI/MACD/EMA/ADX signals across TFs.
+```python
+{"score": 3, "max": 8, "bullish": 5, "bearish": 2, "label": "Bullish", "details": ["4H: 3↑/1↓", "1D: 2↑/1↓"]}
+```
+Injected by `prompt_builder` as a single CONFLUENCE line: `CONFLUENCE (4H/1D): Bullish (+3/8 — 5 bullish / 2 bearish signals)`.
+
+---
+
 ## `ai_advisor.py` — Portfolio AI Analysis
 
-Sends full 6-month stats (~23k tokens) to Claude, returns structured trading assessment.
+Sends 6-month stats to Claude, returns structured trading assessment.
 
-**Prompt:** Serializes `get_dashboard_kpis()` + `get_deep_stats()` to JSON. Instructs JSON-only response (no markdown). Strips code fences from response before parsing.
+**Stats pruning (`_prune_stats()`, v2.3):** Before serializing to JSON, filters empty arrays, caps `by_symbol` to top-10 by trade count, caps `by_hour` to top-8 most-differentiated hours (≥3 trades each). Cuts prompt size by ~30% on large datasets.
+
+**Prompt:** Serializes `get_dashboard_kpis()` + pruned `get_deep_stats()` to JSON. Instructs JSON-only response (no markdown). Strips code fences from response before parsing.
 
 **Response schema:**
 ```json
@@ -369,37 +413,37 @@ Analyzes a single **open** position with context: live position data + last 30 c
 
 ---
 
-## `ai_call_analyzer.py` — Call Analyzer + Pending Limit Analysis
+## `ai_call_analyzer.py` — Backward-Compatible Re-export Shim (v2.3)
 
-The most complex AI module. Two public functions.
+```python
+from ai_call  import analyze_call
+from ai_limit import analyze_pending_limit
+```
 
-### `analyze_call(call_text, account_equity, image_b64, image_type, market_regime)`
+All routes continue importing from `ai_call_analyzer` unchanged. Logic lives in the split files below.
+
+---
+
+## `ai_call.py` — Call Analysis Core (v2.3)
+
+### `analyze_call(call_text, account_equity, image_b64, image_type, market_regime, open_positions)`
 
 **Price extraction:** Regex patterns for `entry at $X`, `dca: $X`, `sl under $X`, `@$X` etc. Falls back to highest/lowest price in text for entry/SL.
 
 **Position sizing formula:**
 ```
-base_risk_pct = 2.0% (DCA) or 1.0% (no DCA)
-risk_multiplier = 0.25 (account ≤-20% from peak) | 0.5 (≤-10%) | 1.0 (normal)
-risk_pct = base_risk_pct × risk_multiplier
+risk_pct  = 2.0% (DCA) or 1.0% (no DCA)
 risk_amount = equity × risk_pct / 100
 stop_dist = (avg_entry − sl) / avg_entry
-notional = risk_amount / stop_dist
-margin = notional / leverage
+notional  = risk_amount / stop_dist
+margin    = notional / leverage
 ```
 
-**Pattern context injected into prompt:**
-- Worst 3 weekdays by PnL
-- Worst 3 hours (UTC) by PnL
-- Direction performance (Long vs Short)
-- Win/loss hold duration ratio
-- Overall win rate + avg win/loss
+**ATR SL quality check (v2.3):** `_atr_sl_warning()` fetches 1H ATR. If `|entry − sl| < 0.5× ATR` → "inside noise" warning; if `< 1× ATR` → "tight stop" caution. Injected as `⚠ ATR RISK:` block in prompt.
 
-**Scoring rules embedded in prompt:**
-- R:R < 1:1.5 → cap score at 6/10 max
-- Bear regime + Long direction → deduct 1-2 points
-- Account in drawdown → "7/10 call becomes 5-6/10"
-- Pattern violations pre-computed and injected as explicit checklist
+**Portfolio correlation check (v2.3):** `_correlation_warning()` checks `open_positions` for same-sector + same-direction exposure (6 named sectors). Injected as `⚠ PORTFOLIO CORRELATION:` block in prompt.
+
+**Shared context:** Uses `prompt_builder.build_context()` (rulebook + calibration + chart + similar trades) instead of assembling separately.
 
 **Response schema** (Claude returns pure JSON):
 ```json
@@ -431,24 +475,26 @@ margin = notional / leverage
 }
 ```
 
-### `analyze_pending_limit(limit, account_equity, open_positions, other_limits)`
+---
 
-Assesses a pending limit order before it fills. Calculates: stop distance %, risk if SL hit (USDT + % of account), R:R to TP1, total pending exposure vs equity. Sends to Claude with open positions + other pending limits as correlation context.
+## `ai_limit.py` — Pending Limit Analysis (v2.3)
+
+### `analyze_pending_limit(lim, equity, open_positions, other_limits)`
+
+Assesses a pending limit order before it fills. Checks: entry quality vs chart S/R, ATR SL noise check, portfolio correlation, total exposure across all waiting limits. Uses `prompt_builder.build_context()` (no similar-trades section).
 
 **Response schema:**
 ```json
 {
-  "verdict": "Keep | Adjust | Cancel",
-  "confidence": "High | Medium | Low",
-  "setup_score": 7,
-  "sizing_ok": true,
-  "limit_price_assessment": "...",
-  "sl_assessment": "...",
-  "tp_assessment": "...",
-  "correlation_risk": "...",
-  "total_exposure_warning": "...",
+  "entry_quality": "Good / Acceptable / Poor",
+  "entry_reason": "...",
+  "setup_quality": {"score": 7, "label": "Good"},
+  "sl_assessment": "Adequate / Tight / Too Wide / Missing",
+  "tp_assessment": "Good levels / Acceptable / Needs adjustment / Missing",
+  "risk_assessment": "Safe / Manageable / Elevated / Dangerous",
+  "recommendation": "Keep / Adjust entry / Adjust SL / Adjust TP / Cancel",
   "adjustments": ["..."],
-  "risks": ["..."],
+  "key_risks": ["..."],
   "summary": "..."
 }
 ```
@@ -462,7 +508,8 @@ Routes are split across `routes/` — registered in `app.py` at startup. All blu
 | Blueprint | File | Domain |
 |-----------|------|--------|
 | `journal` | `routes/journal.py` | Positions CRUD, import, symbols, wallet history |
-| `analytics` | `routes/analytics.py` | Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data, chart routes |
+| `analytics` | `routes/analytics.py` | Dashboard KPIs, deep dive, heatmap, patterns, R:R, chart routes |
+| `market` | `routes/market.py` | Market context, economic calendar, exchange symbols, mark prices (v2.3) |
 | `calls` | `routes/calls.py` | Call analyzer, saved calls, outcomes, analyst stats |
 | `limits` | `routes/limits.py` | Pending limit orders |
 | `live` | `routes/live.py` | Live Bitget positions, pending orders, per-trade AI |
@@ -528,8 +575,15 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | GET | `/chart` | Serve `templates/chart.html` (detached chart window) |
 | GET | `/api/chart/candles` | OHLCV candles + S/R levels + multi-TF trendlines. Params: `symbol`, `timeframe` (15m/1H/4H/1D), `limit` (default 200). Returns `{candles, levels, trendlines, current_price, symbol, timeframe}` where `trendlines` includes all TFs (1W/1D/4H/1H), each tagged with `timeframe` and `weight` |
 | GET | `/api/chart/indicators` | Technical indicator values. Params: `symbol`, `timeframes` (comma-separated, e.g. `4H,1D`). Returns per-timeframe indicator dict |
-| GET | `/api/exchange/symbols` | Full Bitget USDT-M Futures symbol list (~200+). Sourced from Bitget `/api/v2/mix/market/tickers?productType=USDT-FUTURES`. 1-hour server-side cache. Returns `{ok: true, symbols: ["BTCUSDT", ...]}` |
-| GET | `/api/market/prices` | Current mark prices for a list of symbols. Params: `symbols` (comma-separated). 60-second cache. Returns `{ok: true, data: {"BTCUSDT": 80960.1, ...}}` |
+
+### Market Data (routes/market.py — split v2.3)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/market/context` | Fear & Greed, funding rate, L/S ratio. Params: `symbols` (comma-separated) |
+| GET | `/api/market/calendar` | High-impact economic calendar events |
+| GET | `/api/exchange/symbols` | Full Bitget USDT-M Futures symbol list (~200+). 1-hour server-side cache |
+| GET | `/api/market/prices` | Current mark prices. Params: `symbols` (comma-separated). 60-second cache |
 
 ### Call Analyzer
 
@@ -745,7 +799,7 @@ Detection: `const inModal = !!inp.closest('.modal')` — picks the variant autom
 
 **Live filtering:** `drop._render(q)` filters the merged list, highlights matches with `_hlMatch(str, q)` (wraps matched chars in `<b>`), and renders up to 50 results.
 
-**Cache busting:** script tags use `?v=2.2` query strings (e.g. `<script src="/static/js/01-utils.js?v=2.2">`) — bump the version across all 13 `<script>` tags in `index.html` when deploying JS changes so browsers don't serve stale code.
+**Cache busting:** script tags use `?v=2.3` query strings (e.g. `<script src="/static/js/01-utils.js?v=2.3">`) — bump the version across all 14 `<script>` tags in `index.html` when deploying JS changes so browsers don't serve stale code.
 
 ---
 
