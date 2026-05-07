@@ -1703,12 +1703,29 @@ function renderLiveKpis(positions, eq) {
   const available  = parseFloat(eq.available || 0);
   const critical   = positions.filter(p => p.unrealized_pct < -30).length;
 
+  const totalRisk = positions.reduce((s, p) => {
+    const entry = parseFloat(p.entry_price || 0);
+    const sl    = parseFloat(p.stop_loss  || 0);
+    const size  = parseFloat(p.size_usdt  || 0);
+    if (sl > 0 && entry > 0 && size > 0) {
+      const slRisk = p.direction === 'Long'
+        ? (entry - sl) / entry * size
+        : (sl - entry) / entry * size;
+      return s + Math.max(0, slRisk);
+    }
+    return s + (p.margin_usdt || 0);
+  }, 0);
+  const riskPct = equity > 0 ? (totalRisk / equity * 100).toFixed(1) : 0;
+  const hasSl   = positions.some(p => parseFloat(p.stop_loss || 0) > 0);
+
   document.getElementById('trades-kpi-grid').innerHTML = [
     { label: 'Open Positions', value: positions.length, cls: 'neu', sub: `${critical} critical` },
     { label: 'Total Unrealized P&L', value: (totalUnrl>=0?'+':'')+fmtC(totalUnrl)+' USDT',
       cls: pnlClass(totalUnrl), sub: 'Across all open trades' },
     { label: 'Margin In Use', value: fmtC(totalMargin)+' USDT', cls: 'neu', sub: 'Total collateral locked' },
     { label: 'Account Equity', value: fmtC(equity)+' USDT', cls: 'neu', sub: available.toFixed(2)+' available' },
+    { label: 'Open Position Risk', value: fmtC(totalRisk)+' USDT', cls: totalRisk > 0 ? 'neg' : 'neu',
+      sub: `${riskPct}% of equity${hasSl ? ' · SL-based' : ' · no SL'}` },
   ].map(k => `<div class="kpi-card">
     <div class="kpi-label">${k.label}</div>
     <div class="kpi-value ${k.cls}">${k.value}</div>
