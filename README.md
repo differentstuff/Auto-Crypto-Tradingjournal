@@ -260,6 +260,9 @@ trading-journal.service systemd unit file
 - Exchange symbol list is fetched once at startup with a 1-hour server-side cache; local journal symbols used as immediate fallback while the exchange list loads
 - `GET /api/exchange/symbols` — new endpoint in `routes/analytics.py`, calls Bitget `/api/v2/mix/market/tickers?productType=USDT-FUTURES`
 
+#### Open Position Risk on Live Trades
+- **Open Position Risk** KPI card added to the Live Trades KPI strip — same SL-based calculation as the Dashboard (falls back to margin when no SL is set), showing `% of equity` and `· SL-based` / `· no SL` sub-label
+
 ### v1.9.5 — Self-Learning Trader Rulebook
 - **`ai_rulebook.py`** — new module: Claude analyses your entire trade history and synthesises 5–10 personalised rules (warnings, strengths, habits, calibration notes) backed by real numbers from your data
 - **`trader_rulebook` DB table** — rules are persisted in SQLite and survive restarts; auto-regenerated weekly by the background sync loop

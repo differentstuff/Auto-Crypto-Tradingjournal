@@ -988,16 +988,18 @@ The recent trades table on the Dashboard now has a `<tfoot>` row summing realize
 
 ### 6. Open Position Risk — SL-based calculation (added May 2026)
 
-The **Open Position Risk** KPI on the Dashboard now shows true dollar risk to stop-loss, not margin locked.
+The **Open Position Risk** KPI appears on both the **Dashboard** and the **Live Trades** KPI strip.
 
 **Formula:**
 - Long: `risk = (entry_price − stop_loss) / entry_price × size_usdt`
 - Short: `risk = (stop_loss − entry_price) / entry_price × size_usdt`
 - No SL set: falls back to `margin_usdt` (collateral at risk)
 
-Sub-label shows `· SL-based` or `· no SL` to indicate which mode is active.
+Sub-label shows `· SL-based` or `· no SL` to indicate which mode is active, plus `% of equity`.
 
-**Code:** `templates/index.html`, `loadDashboard()` → async `/api/live/positions` call.
+**Code:**
+- Dashboard: `loadDashboard()` in `static/app.js` → async `/api/live/positions` call, card appended to `#kpi-grid`
+- Live Trades: `renderLiveKpis(positions, eq)` in `static/app.js` — risk computed inline from already-fetched positions data, rendered as the 5th card in `#trades-kpi-grid`
 
 The `positions` table has an `analyst` column (migrated automatically at startup if missing). The journal table now shows an **Analyst** column (`📡 Name` or `—`).
 
