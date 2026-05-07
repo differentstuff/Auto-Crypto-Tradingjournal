@@ -177,8 +177,8 @@ async function _loadExplorerIndicators(sym) {
   if (!tf || !tf.indicators || !tf.indicators.ok) return;
   const ind = tf.indicators;
 
-  const card = (label, value, sub, color = 'var(--accent2)') => `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+  const card = (label, value, sub, color = 'var(--accent2)', tip = '') => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px"${tip ? ` data-tip="${tip}"` : ''}>
       <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">${label}</div>
       <div style="font-size:1.1rem;font-weight:700;color:${color}">${value}</div>
       ${sub ? `<div style="font-size:.75rem;color:var(--muted);margin-top:3px">${sub}</div>` : ''}
@@ -188,37 +188,45 @@ async function _loadExplorerIndicators(sym) {
 
   if (ind.rsi) {
     const c = ind.rsi.value > 70 ? 'var(--red)' : ind.rsi.value < 30 ? 'var(--accent3)' : 'var(--accent2)';
-    html += card('RSI (14)', ind.rsi.value, ind.rsi.signal, c);
+    html += card('RSI (14)', ind.rsi.value, ind.rsi.signal, c,
+      'Relative Strength Index. Above 70 = overbought (potential reversal down). Below 30 = oversold (potential reversal up). 50 is neutral momentum.');
   }
   if (ind.macd) {
     const c = ind.macd.trend === 'bullish' ? 'var(--accent3)' : 'var(--red)';
     const cross = ind.macd.crossover ? ' ← crossover' : ind.macd.crossunder ? ' ← crossunder' : '';
-    html += card('MACD', ind.macd.trend.toUpperCase(), `Histogram ${ind.macd.histogram_trend}${cross}`, c);
+    html += card('MACD', ind.macd.trend.toUpperCase(), `Histogram ${ind.macd.histogram_trend}${cross}`, c,
+      'Moving Average Convergence/Divergence. Bullish when fast EMA > slow EMA. Crossover = fresh bullish signal. Crossunder = fresh bearish signal. Histogram shows momentum strength.');
   }
   if (ind.ema) {
     const bullish = ind.ema.alignment && ind.ema.alignment.startsWith('fully bullish');
     const bearish = ind.ema.alignment && ind.ema.alignment.startsWith('fully bearish');
     const c = bullish ? 'var(--accent3)' : bearish ? 'var(--red)' : 'var(--yellow)';
-    html += card('EMAs', ind.ema.stack || 'Mixed', ind.ema.alignment, c);
+    html += card('EMAs', ind.ema.stack || 'Mixed', ind.ema.alignment, c,
+      'EMA stack alignment (20/50/100/200). Fully bullish = price above all EMAs in ascending order — strong uptrend. Fully bearish = reverse. Mixed = consolidation or transition.');
   }
   if (ind.bollinger) {
     const c = ind.bollinger.position_pct > 80 ? 'var(--red)' : ind.bollinger.position_pct < 20 ? 'var(--accent3)' : 'var(--accent2)';
-    html += card('Bollinger Bands', `${ind.bollinger.position_pct}th %ile`, ind.bollinger.signal, c);
+    html += card('Bollinger Bands', `${ind.bollinger.position_pct}th %ile`, ind.bollinger.signal, c,
+      'Price position within 2-standard-deviation bands. Above 80th percentile = near upper band (extended/overbought). Below 20th = near lower band (compressed/oversold). Middle = mean reversion zone.');
   }
   if (ind.adx) {
     const c = ind.adx.value > 25 ? 'var(--yellow)' : 'var(--muted)';
-    html += card('ADX (14)', ind.adx.value, `${ind.adx.strength}${ind.adx.direction ? ' · ' + ind.adx.direction : ''}`, c);
+    html += card('ADX (14)', ind.adx.value, `${ind.adx.strength}${ind.adx.direction ? ' · ' + ind.adx.direction : ''}`, c,
+      'Average Directional Index — measures trend strength, not direction. Above 25 = trending market (trade with the trend). Below 20 = choppy/ranging (avoid breakout strategies). Direction shows +DI vs -DI bias.');
   }
   if (ind.stoch_rsi) {
     const c = ind.stoch_rsi.k > 80 ? 'var(--red)' : ind.stoch_rsi.k < 20 ? 'var(--accent3)' : 'var(--accent2)';
-    html += card('Stoch RSI', `K ${ind.stoch_rsi.k} / D ${ind.stoch_rsi.d}`, ind.stoch_rsi.signal, c);
+    html += card('Stoch RSI', `K ${ind.stoch_rsi.k} / D ${ind.stoch_rsi.d}`, ind.stoch_rsi.signal, c,
+      'Stochastic RSI — RSI value processed through a stochastic oscillator. More sensitive than plain RSI. K > 80 = overbought. K < 20 = oversold. K crossing D = signal line crossover.');
   }
   if (ind.atr) {
-    html += card('ATR (14)', `${ind.atr.value}`, `${ind.atr.pct}% of price`, 'var(--muted)');
+    html += card('ATR (14)', `${ind.atr.value}`, `${ind.atr.pct}% of price`, 'var(--muted)',
+      'Average True Range — average candle-to-candle volatility. Use it to size your stop-loss: wider ATR requires wider stops to avoid noise. High ATR = volatile, risky entries.');
   }
   if (ind.volume) {
     const c = ind.volume.ratio > 1.5 ? 'var(--yellow)' : ind.volume.ratio < 0.7 ? 'var(--muted)' : 'var(--accent2)';
-    html += card('Volume', `${ind.volume.ratio}× avg`, ind.volume.signal, c);
+    html += card('Volume', `${ind.volume.ratio}× avg`, ind.volume.signal, c,
+      'Current candle volume vs. 20-period average. Above 1.5× = high-volume move (strong trend confirmation). Below 0.7× = low-activity candle (weak conviction, possible fake-out).');
   }
   if (ind.support_resistance && ind.support_resistance.length) {
     const sr = ind.support_resistance;
@@ -227,7 +235,8 @@ async function _loadExplorerIndicators(sym) {
     const lines = [];
     if (sups[0]) lines.push(`S: ${sups[0].price} (${sups[0].touches}×)`);
     if (ress[0]) lines.push(`R: ${ress[0].price} (${ress[0].touches}×)`);
-    html += card('Key S/R', lines[0] || '—', lines[1] || '', 'var(--fg)');
+    html += card('Key S/R', lines[0] || '—', lines[1] || '', 'var(--fg)',
+      'Nearest support and resistance levels detected by price touch count. More touches = stronger level. S = price bounced up from here. R = price rejected down from here.');
   }
 
   el.innerHTML = html;

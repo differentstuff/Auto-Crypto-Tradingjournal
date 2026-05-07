@@ -52,22 +52,32 @@ async function loadDashboard() {
   // KPI cards
   const kpis = [
     { label: 'Total Realized P&L', value: (d.total_pnl >= 0 ? '+' : '') + fmtC(d.total_pnl) + ' USDT',
-      cls: pnlClass(d.total_pnl), sub: `Net after fees` },
-    { label: 'Total Fees', value: fmtC(d.total_fees) + ' USDT', cls: 'neg', sub: 'Paid to exchange' },
+      cls: pnlClass(d.total_pnl), sub: `Net after fees`,
+      tip: 'Sum of all closed trade profits and losses after deducting exchange fees. This is your actual earned money.' },
+    { label: 'Total Fees', value: fmtC(d.total_fees) + ' USDT', cls: 'neg', sub: 'Paid to exchange',
+      tip: 'Total trading fees paid to Bitget across all trades — opening and closing fees combined.' },
     { label: 'Win Rate', value: d.win_rate + '%', cls: d.win_rate >= 50 ? 'pos' : 'neg',
-      sub: `${d.win_trades}W / ${d.loss_trades}L` },
+      sub: `${d.win_trades}W / ${d.loss_trades}L`,
+      tip: 'Percentage of trades that closed in profit. Above 50% = more winners than losers. Profit factor matters too — a 40% win rate can still be profitable with large winners.' },
     { label: 'Profit Factor', value: d.profit_factor ?? '—', cls: d.profit_factor > 1 ? 'pos' : 'neg',
-      sub: 'Gross wins / losses' },
-    { label: 'Best Trade', value: '+' + fmtC(d.best_trade) + ' USDT', cls: 'pos' },
-    { label: 'Worst Trade', value: fmtC(d.worst_trade) + ' USDT', cls: 'neg' },
-    { label: 'Avg Win', value: '+' + fmtC(d.avg_win) + ' USDT', cls: 'pos' },
-    { label: 'Avg Loss', value: fmtC(d.avg_loss) + ' USDT', cls: 'neg' },
+      sub: 'Gross wins / losses',
+      tip: 'Gross profit divided by gross loss. Above 1.5 = strong edge. Above 1.0 = profitable overall. Below 1.0 = losing system.' },
+    { label: 'Best Trade', value: '+' + fmtC(d.best_trade) + ' USDT', cls: 'pos',
+      tip: 'Your single highest-profit closed trade.' },
+    { label: 'Worst Trade', value: fmtC(d.worst_trade) + ' USDT', cls: 'neg',
+      tip: 'Your single biggest losing closed trade.' },
+    { label: 'Avg Win', value: '+' + fmtC(d.avg_win) + ' USDT', cls: 'pos',
+      tip: 'Average profit on winning trades. Compare to Avg Loss — a higher ratio means positive expectancy even with a sub-50% win rate.' },
+    { label: 'Avg Loss', value: fmtC(d.avg_loss) + ' USDT', cls: 'neg',
+      tip: 'Average loss on losing trades. Ideally smaller than Avg Win. If larger, your system needs a high win rate to be profitable.' },
     { label: 'Max Drawdown', value: fmtC(d.max_drawdown) + ' USDT', cls: 'neg',
-      sub: 'Peak-to-trough on PnL curve' },
-    { label: 'Total Trades', value: d.total_trades, cls: 'neu' },
+      sub: 'Peak-to-trough on PnL curve',
+      tip: 'Largest peak-to-trough decline in your cumulative PnL curve. Measures how deep you went underwater before recovering. Key risk metric.' },
+    { label: 'Total Trades', value: d.total_trades, cls: 'neu',
+      tip: 'Total number of closed positions imported into the journal. More trades = more statistical significance for your metrics.' },
   ];
   document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
-    <div class="kpi-card">
+    <div class="kpi-card"${k.tip ? ` data-tip="${k.tip}"` : ''}>
       <div class="kpi-label">${k.label}</div>
       <div class="kpi-value ${k.cls||''}">${k.value}</div>
       ${k.sub ? `<div class="kpi-sub">${k.sub}</div>` : ''}
@@ -93,6 +103,7 @@ async function loadDashboard() {
     const hasSl   = pos.some(p => parseFloat(p.stop_loss || 0) > 0);
     const riskEl  = document.createElement('div');
     riskEl.className = 'kpi-card';
+    riskEl.dataset.tip = 'Maximum loss if all stop-losses hit simultaneously. Calculated as (entry − SL) / entry × position size. Positions without SL use full margin as a conservative estimate.';
     riskEl.innerHTML = `
       <div class="kpi-label">Open Position Risk</div>
       <div class="kpi-value ${totalRisk > 0 ? 'neg' : 'neu'}">${fmtC(totalRisk)} USDT</div>

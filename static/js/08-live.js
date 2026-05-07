@@ -154,14 +154,19 @@ function renderLiveKpis(positions, eq) {
   const hasSl   = positions.some(p => parseFloat(p.stop_loss || 0) > 0);
 
   document.getElementById('trades-kpi-grid').innerHTML = [
-    { label: 'Open Positions', value: positions.length, cls: 'neu', sub: `${critical} critical` },
+    { label: 'Open Positions', value: positions.length, cls: 'neu', sub: `${critical} critical`,
+      tip: `Number of currently open futures positions on Bitget. Critical = unrealized loss > 30% of margin (${critical} position${critical!==1?'s':''} flagged).` },
     { label: 'Total Unrealized P&L', value: (totalUnrl>=0?'+':'')+fmtC(totalUnrl)+' USDT',
-      cls: pnlClass(totalUnrl), sub: 'Across all open trades' },
-    { label: 'Margin In Use', value: fmtC(totalMargin)+' USDT', cls: 'neu', sub: 'Total collateral locked' },
-    { label: 'Account Equity', value: fmtC(equity)+' USDT', cls: 'neu', sub: available.toFixed(2)+' available' },
+      cls: pnlClass(totalUnrl), sub: 'Across all open trades',
+      tip: 'Combined mark-to-market profit or loss across all open positions. Fluctuates with price — not realized until you close.' },
+    { label: 'Margin In Use', value: fmtC(totalMargin)+' USDT', cls: 'neu', sub: 'Total collateral locked',
+      tip: 'Total USDT collateral locked as margin across all open positions. Freed when positions close.' },
+    { label: 'Account Equity', value: fmtC(equity)+' USDT', cls: 'neu', sub: available.toFixed(2)+' available',
+      tip: 'Total account value including unrealized PnL. Available balance = equity minus margin currently in use.' },
     { label: 'Open Position Risk', value: fmtC(totalRisk)+' USDT', cls: totalRisk > 0 ? 'neg' : 'neu',
-      sub: `${riskPct}% of equity${hasSl ? ' · SL-based' : ' · no SL'}` },
-  ].map(k => `<div class="kpi-card">
+      sub: `${riskPct}% of equity${hasSl ? ' · SL-based' : ' · no SL'}`,
+      tip: 'Maximum loss if all stop-losses trigger at once. Calculated as (entry − SL) / entry × size. Positions without SL use full margin as a conservative estimate.' },
+  ].map(k => `<div class="kpi-card"${k.tip ? ` data-tip="${k.tip}"` : ''}>
     <div class="kpi-label">${k.label}</div>
     <div class="kpi-value ${k.cls}">${k.value}</div>
     <div class="kpi-sub">${k.sub||''}</div>

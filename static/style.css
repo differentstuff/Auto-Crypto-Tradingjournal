@@ -37,6 +37,11 @@ main{flex:1;overflow-y:auto;padding:28px;background:var(--bg)}
 .kpi-sub{font-size:.75rem;color:var(--muted);margin-top:4px}
 .pos{color:var(--accent3)}.neg{color:var(--red)}.neu{color:var(--accent2)}
 
+/* ── Tooltip ───────────────────────────────────────────────────────────────── */
+#tip{position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:.78rem;color:var(--text);max-width:260px;line-height:1.55;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+#tip.visible{opacity:1}
+[data-tip]{cursor:default}
+
 /* ── Charts ────────────────────────────────────────────────────────────────── */
 .chart-row{display:grid;gap:16px;margin-bottom:24px}
 .chart-row.cols-2{grid-template-columns:1fr 1fr}

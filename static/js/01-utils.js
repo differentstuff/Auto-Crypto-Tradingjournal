@@ -66,6 +66,28 @@ function _startSrOverlay(wrap, series, levels, liquidations) {
   requestAnimationFrame(draw);
 }
 // ── end chart ────────────────────────────────────────────────────────────────
+
+// ── Tooltip engine ────────────────────────────────────────────────────────────
+const _tip = document.createElement('div');
+_tip.id = 'tip';
+document.body.appendChild(_tip);
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('[data-tip]');
+  if (!el) { _tip.classList.remove('visible'); return; }
+  _tip.textContent = el.dataset.tip;
+  _tip.classList.add('visible');
+});
+document.addEventListener('mouseout', e => {
+  if (e.target.closest('[data-tip]')) _tip.classList.remove('visible');
+});
+document.addEventListener('mousemove', e => {
+  if (!_tip.classList.contains('visible')) return;
+  const x = e.clientX + 14, y = e.clientY + 14;
+  _tip.style.left = (x + _tip.offsetWidth  > window.innerWidth  ? e.clientX - _tip.offsetWidth  - 8 : x) + 'px';
+  _tip.style.top  = (y + _tip.offsetHeight > window.innerHeight ? e.clientY - _tip.offsetHeight - 8 : y) + 'px';
+});
+// ── end tooltip ───────────────────────────────────────────────────────────────
+
 let journalPage = 1;
 let symbolList  = [];
 let _exchangeSymbols = [];  // all USDT-M futures symbols from Bitget
