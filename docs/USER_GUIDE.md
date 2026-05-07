@@ -267,6 +267,8 @@ Click **Analyze My Trading** and wait ~15-20 seconds.
 
 Analyzes trade calls from crypto analysts before you enter. Paste the call text, optionally upload a chart screenshot, and Claude gives you a complete entry briefing.
 
+> **New to the output format?** Click **"ℹ How to read the results"** just below the page title to expand a two-column legend explaining every badge, score tier, warning type, and sizing term in the analysis output.
+
 ### Workflow
 
 **Step 1: Paste the call**

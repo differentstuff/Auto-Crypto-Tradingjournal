@@ -1576,6 +1576,14 @@ Signal accuracy = (TP + TN) / (TP + FP + TN + FN) — measures how well the scor
 
 ---
 
+## v2.2 Patch (2026-05-07, post-release fixes)
+
+### Bug fixes
+- **`market_context.get_market_str()` missing on Pi** — `ai_call.py` and `ai_limit.py` call `market_context.get_market_str()` but an outdated `market_context.py` was deployed. Call Analyzer returned 500. Fixed by redeploying `market_context.py`.
+- **Call Analyzer result legend** — Added collapsible "ℹ How to read the results" panel on the Call Analyzer page explaining every badge, warning, and term in the analysis output (score tiers, R:R, DCA, ATR Risk, Portfolio Correlation, Candle-Close SL, Personal Pattern Warnings, sizing terms).
+
+---
+
 ## v2.2 — Setup Scanner & Hindsight Analysis (2026-05-07)
 
 ### New modules

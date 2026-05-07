@@ -4,6 +4,14 @@
 
 A self-hosted crypto futures trading journal with live Bitget API sync, AI-powered trade call analysis, and deep performance analytics. Runs on a Raspberry Pi (or any Linux box) and is accessible from any browser on your local network.
 
+<p align="center">
+  <img src="docs/images/factsheet-preview.png" alt="Crypto Trading Journal — 2-page fact sheet" width="720">
+</p>
+
+<p align="center">
+  <a href="trading-journal-factsheet.pdf">📄 Download Fact Sheet (PDF)</a>
+</p>
+
 ---
 
 ## Features
@@ -246,6 +254,9 @@ trading-journal.service systemd unit file
 - **Live Sync page** — new Telegram Alerts section shows configured/unconfigured status and a "Send Test Message" button to verify the connection
 - **New API endpoints**: `GET /api/telegram/status`, `POST /api/telegram/test`
 - **Config in `.env`**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `APP_URL`; optional overrides `SCANNER_INTERVAL`, `SCANNER_FIRST_DELAY`, `SCANNER_SCHEDULER=off`
+
+#### Call Analyzer legend
+- **"ℹ How to read the results"** collapsible panel on the Call Analyzer page — explains every element in the analysis output: score tiers (1-10 with colour coding), R:R ratio in plain English, DCA, trade types, entry timing, ATR Risk warning, Portfolio Correlation warning, Candle-Close SL and why Bitget can't automate it, Personal Pattern Warnings (yours, not generic), all position sizing terms, Optimizations vs Risks
 
 #### Bug fixes (from code audit)
 - `settings` table missing from `init_db()` — `ai_rulebook` crashed on fresh installs
