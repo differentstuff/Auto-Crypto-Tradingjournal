@@ -198,12 +198,17 @@ async function loadChart() {
     });
   });
 
-  // Trendlines as diagonal line series
-  (trendlines || []).forEach(tl => {
+  // Trendlines — lower TF first (drawn behind), higher TF last (drawn in front)
+  const TL_ALPHA  = {1:.30, 2:.50, 3:.70, 4:.90};
+  const TL_WIDTH  = {1:1,   2:1.5, 3:2,   4:2.5};
+  [...(trendlines || [])].reverse().forEach(tl => {
     const isUp = tl.type === 'uptrend';
+    const w    = tl.weight || 1;
+    const a    = TL_ALPHA[w] ?? 0.5;
+    const lw   = TL_WIDTH[w] ?? 1;
     const s = _chart.addLineSeries({
-      color: isUp ? 'rgba(38,217,107,.55)' : 'rgba(239,83,80,.55)',
-      lineWidth: 1, lineStyle: 2,
+      color: isUp ? `rgba(38,217,107,${a})` : `rgba(239,83,80,${a})`,
+      lineWidth: lw, lineStyle: 2,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
     });
     s.setData([
@@ -231,12 +236,13 @@ async function loadChart() {
 
   (trendlines || []).forEach(tl => {
     const isUp = tl.type === 'uptrend';
+    const tf   = tl.timeframe ? `<b style="opacity:.75;font-size:.63rem">${tl.timeframe}</b> ` : '';
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:${isUp?'rgba(38,217,107,.07)':'rgba(239,83,80,.07)'};
       color:${isUp?'#26d96b':'#ef5350'};
       border:1px solid ${isUp?'rgba(38,217,107,.18)':'rgba(239,83,80,.18)'}"
       title="${tl.anchor1} → ${tl.anchor2}">
-      ${isUp?'↗ Up':'↘ Down'} TL (${tl.touches}×)
+      ${tf}${isUp?'↗ Up':'↘ Down'} TL (${tl.touches}×)
     </span>`);
   });
 

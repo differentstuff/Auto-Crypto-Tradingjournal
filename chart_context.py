@@ -148,26 +148,39 @@ def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
 
 # ── Trendline detection ────────────────────────────────────────────────────────
 
-def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4) -> list:
+# Timeframes to scan for trendlines, highest → lowest.
+# weight 4=1W (most prominent) → 1=1H (least prominent).
+_TF_TL_CONFIG = [
+    {"tf": "1W", "limit": 100, "weight": 4, "n_swing": 3},
+    {"tf": "1D", "limit": 200, "weight": 3, "n_swing": 5},
+    {"tf": "4H", "limit": 200, "weight": 2, "n_swing": 5},
+    {"tf": "1H", "limit": 200, "weight": 1, "n_swing": 5},
+]
+
+
+def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4,
+                      now_time_sec: float = None) -> list:
     """
     Detect ascending support trendlines (uptrend) and descending resistance
     trendlines (downtrend) via swing-pivot pair validation.
 
-    For each pair of pivots with the correct slope direction, the line is
-    accepted only if no candle body violates it between the two anchor points
-    (within 0.5% tolerance). Lines are then extended to the current candle.
+    Validation uses candle-index slope to check no candle violates the line
+    between the two anchors (0.5% tolerance). The line is then extended to
+    now_time_sec using a real-time slope so it displays correctly across
+    any viewing timeframe.
 
     Returns list of {type, p1_time, p2_time, p1_price, p2_price, touches,
-                     anchor1, anchor2} — up to max_lines total.
+                     anchor1, anchor2} — p2_time is always current time.
     """
     if len(df) < n_swing * 2 + 10:
         return []
 
-    highs = df["high"].values.astype(float)
-    lows  = df["low"].values.astype(float)
-    times = df["timestamp"].values.astype(float)
-    n     = len(df)
-    tol   = 0.005  # 0.5% — crypto needs a bit of breathing room
+    now_sec   = now_time_sec if now_time_sec is not None else time.time()
+    highs     = df["high"].values.astype(float)
+    lows      = df["low"].values.astype(float)
+    times_sec = df["timestamp"].values.astype(float) / 1000.0
+    n         = len(df)
+    tol       = 0.005  # 0.5% tolerance
 
     pivot_h = [i for i in range(n_swing, n - n_swing)
                if highs[i] >= highs[i - n_swing:i + n_swing + 1].max()]
@@ -180,35 +193,39 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4) ->
             for b in range(a + 1, len(pivots)):
                 i1, i2 = pivots[a], pivots[b]
                 p1, p2 = arr[i1], arr[i2]
-                if must_be_above  and p2 <= p1: continue
+                if must_be_above     and p2 <= p1: continue
                 if not must_be_above and p2 >= p1: continue
 
-                slope = (p2 - p1) / (i2 - i1)
+                # Candle-index slope — used only for validation
+                ci_slope = (p2 - p1) / (i2 - i1)
 
-                # Validate: no candle violates the line between i1 and i2
                 valid = True
                 for k in range(i1, i2 + 1):
-                    lv = p1 + slope * (k - i1)
-                    if must_be_above  and arr[k] < lv * (1 - tol): valid = False; break
+                    lv = p1 + ci_slope * (k - i1)
+                    if must_be_above     and arr[k] < lv * (1 - tol): valid = False; break
                     if not must_be_above and arr[k] > lv * (1 + tol): valid = False; break
                 if not valid:
                     continue
 
-                # Count additional touches beyond i2
                 touches = 2
                 for k in range(i2 + 1, n):
-                    lv  = p1 + slope * (k - i1)
+                    lv = p1 + ci_slope * (k - i1)
                     if abs(arr[k] - lv) / max(lv, 1e-9) < 0.004:
                         touches += 1
 
-                end_price = p1 + slope * (n - 1 - i1)
+                # Real-time slope to extend the line to now
+                t1, t2 = times_sec[i1], times_sec[i2]
+                if t2 <= t1:
+                    continue
+                rt_slope  = (p2 - p1) / (t2 - t1)
+                end_price = p1 + rt_slope * (now_sec - t1)
                 if end_price <= 0:
                     continue
 
                 candidates.append({
                     "type":     ltype,
-                    "p1_time":  int(times[i1]     // 1000),
-                    "p2_time":  int(times[n - 1]  // 1000),
+                    "p1_time":  int(t1),
+                    "p2_time":  int(now_sec),
                     "p1_price": round(p1, 8),
                     "p2_price": round(end_price, 8),
                     "touches":  touches,
@@ -223,13 +240,36 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4) ->
             if sig not in seen:
                 seen.append(sig)
                 unique.append(c)
-            if len(unique) >= max_lines // 2:
+            if len(unique) >= max(1, max_lines // 2):
                 break
         return unique
 
     up   = _score(pivot_l, lows,  "uptrend",   True)
     down = _score(pivot_h, highs, "downtrend", False)
     return up + down
+
+
+def detect_all_trendlines(symbol: str) -> list:
+    """
+    Detect trendlines on 1W, 1D, 4H, 1H and return them all tagged with
+    'timeframe' and 'weight' (4=1W → 1=1H). All lines are extended to now
+    so they display correctly regardless of which chart timeframe is active.
+    Sorted highest-TF first.
+    """
+    now_sec = time.time()
+    result  = []
+    for cfg in _TF_TL_CONFIG:
+        df = get_candles(symbol, cfg["tf"], limit=cfg["limit"])
+        if df is None or df.empty or len(df) < cfg["n_swing"] * 2 + 10:
+            continue
+        tls = detect_trendlines(df, n_swing=cfg["n_swing"],
+                                 max_lines=2, now_time_sec=now_sec)
+        for tl in tls:
+            tl["timeframe"] = cfg["tf"]
+            tl["weight"]    = cfg["weight"]
+        result.extend(tls)
+    result.sort(key=lambda x: -x["weight"])
+    return result
 
 
 # ── Indicator computation ──────────────────────────────────────────────────────
@@ -562,7 +602,7 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
         return {"candles": [], "levels": [], "symbol": symbol, "timeframe": timeframe}
 
     levels     = detect_support_resistance(df)
-    trendlines = detect_trendlines(df)
+    trendlines = detect_all_trendlines(symbol)  # 1W+1D+4H+1H, extended to now
 
     candles = [
         {
