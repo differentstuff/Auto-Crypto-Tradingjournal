@@ -9,7 +9,7 @@ showPage = function(name) {
     document.getElementById('page-' + name).classList.add('active');
     document.getElementById('nav-' + name).classList.add('active');
     currentPage = name;
-    if (name === 'live')    pollSyncStatus();
+    if (name === 'live')    { pollSyncStatus(); loadTelegramStatus(); }
     if (name === 'calls')   { loadCallEquity(); loadSavedCalls(); loadAnalystStats(); loadPredictionAccuracy(); }
     if (name === 'pending') { loadBitgetOrders(); loadPendingLimits('waiting'); }
     if (name === 'charts')  { _initExplorerTfBtns(); }

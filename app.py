@@ -6,6 +6,7 @@ from database import init_db, get_conn
 from importer import import_folder
 
 import bitget_sync
+import scanner_scheduler
 
 from routes.journal   import bp as journal_bp
 from routes.analytics import bp as analytics_bp
@@ -57,6 +58,7 @@ if __name__ == "__main__":
     conn.close()
 
     bitget_sync.start_background_sync()
+    scanner_scheduler.start()
 
     port = int(os.environ.get("PORT", 8082))
     print(f"[App] Trading Journal running on http://0.0.0.0:{port}")

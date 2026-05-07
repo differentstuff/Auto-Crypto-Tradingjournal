@@ -7,6 +7,8 @@ from helpers import _ok, _err
 import ai_advisor
 import ai_rulebook
 import bitget_sync
+import telegram_notify
+import scanner_scheduler
 
 bp = Blueprint("sync", __name__)
 
@@ -64,3 +66,24 @@ def api_rulebook_update():
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
+
+
+@bp.route("/api/telegram/status")
+def api_telegram_status():
+    """GET /api/telegram/status — check whether Telegram alerts are configured."""
+    return _ok({
+        "configured": telegram_notify.is_configured(),
+        "interval_min": scanner_scheduler.INTERVAL // 60,
+        "first_delay_min": scanner_scheduler.FIRST_DELAY // 60,
+    })
+
+
+@bp.route("/api/telegram/test", methods=["POST"])
+def api_telegram_test():
+    """POST /api/telegram/test — send a test message to verify configuration."""
+    if not telegram_notify.is_configured():
+        return _err("Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env")
+    ok = telegram_notify.send_test_message()
+    if ok:
+        return _ok({"message": "Test message sent — check your Telegram"})
+    return _err("Failed to send test message — check your token and chat ID", 500)

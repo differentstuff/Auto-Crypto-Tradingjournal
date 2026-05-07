@@ -1,6 +1,6 @@
 
 // ══════════════════════════════════════════════════════════════════════════════
-// LIVE SYNC
+// LIVE SYNC + TELEGRAM ALERTS
 // ══════════════════════════════════════════════════════════════════════════════
 let syncPolling = null;
 
@@ -82,4 +82,34 @@ async function triggerSync(fromLivePage = false) {
     document.getElementById('btn-sync').disabled = false;
     pollSyncStatus();
   }
+}
+
+async function loadTelegramStatus() {
+  const res = await api('/api/telegram/status');
+  if (!res.ok) return;
+  const d = res.data;
+  const line = document.getElementById('telegram-status-line');
+  const btn  = document.getElementById('btn-telegram-test');
+  if (!line) return;
+
+  if (d.configured) {
+    line.innerHTML = `<span style="color:var(--accent3)">✅ Telegram configured</span> — `
+      + `Scanner runs every <strong>${d.interval_min} min</strong>, `
+      + `first scan in <strong>${d.first_delay_min} min</strong> after startup`;
+    if (btn) btn.style.display = '';
+  } else {
+    line.innerHTML = `<span style="color:var(--muted)">⚠ Telegram not configured</span> — `
+      + `add <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> to <code>.env</code>`;
+    if (btn) btn.style.display = 'none';
+  }
+}
+
+async function sendTelegramTest() {
+  const btn = document.getElementById('btn-telegram-test');
+  const res_el = document.getElementById('telegram-test-result');
+  if (btn) btn.disabled = true;
+  if (res_el) res_el.textContent = 'Sending…';
+  const res = await api('/api/telegram/test', 'POST');
+  if (res_el) res_el.textContent = res.ok ? '✅ Sent — check your Telegram' : '❌ ' + (res.error || 'failed');
+  if (btn) btn.disabled = false;
 }
