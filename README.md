@@ -44,6 +44,16 @@ A self-hosted crypto futures trading journal with live Bitget API sync, AI-power
 - Real-time open positions with unrealised P&L, duration, margin details
 - Per-position AI analysis: trade quality, invalidation level, suggested actions
 - Pending orders panel (entry limits and exit TP/SL orders)
+- **📊 Chart button** on every position — opens a detached, resizable chart window
+
+### Chart Explorer
+- New dedicated module: type any symbol to draw a candlestick chart with full TA
+- **S/R detection**: swing-pivot clustering shows horizontal grey zones — heavier-tested levels are visibly darker
+- **Trendline detection**: ascending support lines and descending resistance lines drawn as dashed diagonals
+- **Liquidation levels**: yellow dashed lines showing where open positions get liquidated (auto-detected from live positions)
+- **Technical indicator panel**: RSI, MACD, EMA stack, Bollinger Bands, ADX, Stoch RSI, ATR, Volume — shown as metric cards below the chart
+- **Pop Out button**: open any chart as a separate resizable window
+- Timeframe switcher: 15m / 1H / 4H / 1D
 
 ### Auto-Sync
 - Background sync every 5 minutes from Bitget API
@@ -60,7 +70,9 @@ A self-hosted crypto futures trading journal with live Bitget API sync, AI-power
 | Backend | Python 3 / Flask 3.1 |
 | Database | SQLite (via Python `sqlite3`) |
 | Frontend | Vanilla JS SPA (single `index.html`, no build step) |
-| Charts | Chart.js |
+| Dashboard charts | Chart.js |
+| Candlestick charts | LightweightCharts v4.1.3 (TradingView) |
+| Technical analysis | pandas-ta |
 | AI | Anthropic Claude API (`claude-sonnet-4-6` / vision) |
 | Exchange API | Bitget REST API v2 |
 | Process manager | systemd |
@@ -154,7 +166,7 @@ helpers.py              Shared API helpers (_ok, _err, _filters_from_args)
 database.py             Schema init, migrations, get_conn(), db_conn()
 routes/
   journal.py            Positions CRUD, import, symbols, wallet history
-  analytics.py          Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data, indicators
+  analytics.py          Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data, indicators, chart
   calls.py              Call analyzer, saved calls, outcomes, analyst stats
   limits.py             Pending limit orders
   live.py               Live Bitget positions and per-trade AI
@@ -170,10 +182,11 @@ ai_trade_grader.py      Execution grading via Claude
 ai_pattern_detector.py  Statistical pattern detection via Claude
 ai_rulebook.py          Self-learning personalised rulebook (synthesised by Claude from trade history)
 market_context.py       Fear & Greed, funding rate, L/S ratio, BTC dominance
-chart_context.py        OHLCV candle fetch + full TA indicator suite (pandas-ta)
+chart_context.py        OHLCV candle fetch, S/R detection, trendline detection, full TA indicator suite (pandas-ta)
 templates/index.html    Single-page frontend HTML (~910 lines, no inline CSS)
+templates/chart.html    Detached chart window (LightweightCharts, S/R boxes, trendlines, liquidation levels)
 static/style.css        All dark-theme CSS
-static/app.js           All frontend JavaScript (~2700 lines)
+static/app.js           All frontend JavaScript (~3000 lines)
 docs/GUIDE.md           Developer reference (routes, schema, JS globals)
 docs/USER_GUIDE.md      End-user feature guide
 docs/RATING_CRITERIA.md Full reference for all AI scoring and grading criteria
@@ -192,6 +205,42 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.0 — Interactive Charts & S/R Intelligence
+
+#### Detached Chart Window
+- **`📊 Chart` button** on every live position card — opens a resizable, detached chart window (`window.open`) instead of a cramped in-page modal
+- Chart window is reused per symbol — clicking the same coin a second time focuses the existing window rather than opening a new one
+- Timeframe switcher (15m / 1H / 4H / 1D) inside the chart window — reload in place without reopening
+
+#### S/R Detection
+- **Swing-pivot clustering** (`detect_support_resistance()` in `chart_context.py`) — identifies local highs/lows, clusters nearby pivots, and counts touches per level
+- **Grey box rendering**: S/R levels are drawn as horizontal filled rectangles on a `<canvas>` overlay — opacity scales with touch count (lighter = fewer touches, darker = more tested)
+- **Right-axis labels**: each level shows type (`S`/`R`) and touch count directly on the price axis
+- S/R summary injected into all AI prompts (live position analysis, call analyzer) via `format_for_prompt()`
+
+#### Trendline Detection
+- **`detect_trendlines()`** in `chart_context.py` — finds ascending support lines and descending resistance lines using swing-pivot pairs; validates each pair (no candle violates the line within 0.5% tolerance)
+- Up to 2 uptrend + 2 downtrend lines per chart
+- Trendlines drawn as dashed diagonal lines: green for uptrend, red for downtrend
+- Legend shows direction, touch count, and anchor price range
+
+#### Liquidation Levels
+- **Yellow dashed lines** on every chart showing where each open position would be liquidated
+- Auto-populated from live positions data; passed to the chart window as URL params
+- Labels show direction (Long/Short) and exact liquidation price
+
+#### Chart Explorer (new nav module)
+- **Dedicated page** — type any symbol, pick a timeframe, click Draw to render a full candlestick chart
+- All S/R, trendlines, and liquidation overlays from live positions apply automatically
+- **Indicator panel** below the chart: RSI, MACD signal, EMA stack alignment, Bollinger %B, ADX, Stoch RSI, ATR, Volume ratio — shown as metric cards with colour-coded values
+- **Pop Out** button opens the current chart as a detached resizable window
+- Symbol autocomplete populated from your full trade history
+
+#### Canvas Overlay Architecture
+- S/R boxes and liquidation lines rendered on an absolutely-positioned `<canvas>` on top of LightweightCharts — stays in sync with pan/zoom via `requestAnimationFrame` loop
+- Loop auto-stops when the canvas is removed from the DOM (chart destroyed / TF switch)
+- Price-scale area (right ~65px) deliberately left uncovered so axis labels remain readable
 
 ### v1.9.5 — Self-Learning Trader Rulebook
 - **`ai_rulebook.py`** — new module: Claude analyses your entire trade history and synthesises 5–10 personalised rules (warnings, strengths, habits, calibration notes) backed by real numbers from your data

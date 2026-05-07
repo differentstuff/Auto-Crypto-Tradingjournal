@@ -52,8 +52,9 @@ Browser (http://<your-pi-ip>:8082)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
 templates/index.html            ← Frontend: HTML structure only (~910 lines)
+templates/chart.html            ← Detached chart window (LightweightCharts, S/R boxes, trendlines, liquidation levels)
 static/style.css                ← All dark-theme CSS (extracted from index.html)
-static/app.js                   ← All frontend JavaScript (~2700 lines)
+static/app.js                   ← All frontend JavaScript (~3000 lines)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
 docs/USER_GUIDE.md              ← User-facing manual
@@ -72,7 +73,9 @@ requirements.txt                ← Python dependencies
 | Web framework | Flask 3.1.3 | Simple, no boilerplate |
 | Database | SQLite 3 (WAL mode) | Zero config, single file, built-in |
 | Frontend | Pure HTML/CSS/JavaScript | No build step, SPA with page-view switching |
-| Charts | Chart.js 4.4.0 (CDN) | One script tag, great defaults |
+| Dashboard charts | Chart.js 4.4.0 (CDN) | One script tag, great defaults |
+| Candlestick charts | LightweightCharts v4.1.3 (CDN) | TradingView library, interactive OHLCV charts |
+| Technical analysis | pandas-ta | Indicator suite computed server-side |
 | AI | Anthropic claude-sonnet-4-6 | Best reasoning/vision model available |
 | Exchange API | Bitget REST v2 | Read-only HMAC-SHA256 auth |
 | Process manager | systemd | Auto-start on boot, auto-restart on crash |
@@ -446,7 +449,7 @@ Routes are split across `routes/` — registered in `app.py` at startup. All blu
 | Blueprint | File | Domain |
 |-----------|------|--------|
 | `journal` | `routes/journal.py` | Positions CRUD, import, symbols, wallet history |
-| `analytics` | `routes/analytics.py` | Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data |
+| `analytics` | `routes/analytics.py` | Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data, chart routes |
 | `calls` | `routes/calls.py` | Call analyzer, saved calls, outcomes, analyst stats |
 | `limits` | `routes/limits.py` | Pending limit orders |
 | `live` | `routes/live.py` | Live Bitget positions, pending orders, per-trade AI |
@@ -505,6 +508,14 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | GET | `/api/rulebook` | Fetch current rules from DB |
 | POST | `/api/rulebook/update` | Regenerate rules via Claude + persist to DB |
 
+### Chart
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/chart` | Serve `templates/chart.html` (detached chart window) |
+| GET | `/api/chart/candles` | OHLCV candles + S/R levels + trendlines. Params: `symbol`, `timeframe` (15m/1H/4H/1D), `limit` (default 200). Returns `{candles, levels, trendlines, current_price, symbol, timeframe}` |
+| GET | `/api/chart/indicators` | Technical indicator values. Params: `symbol`, `timeframes` (comma-separated, e.g. `4H,1D`). Returns per-timeframe indicator dict |
+
 ### Call Analyzer
 
 | Method | Path | Description |
@@ -547,16 +558,17 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 
 ## Frontend
 
-Split across three files:
+Split across four files:
 - `templates/index.html` — HTML structure only (~910 lines), no inline CSS
+- `templates/chart.html` — standalone detached chart window (self-contained, no shared CSS/JS)
 - `static/style.css` — all dark-theme CSS (~195 lines), loaded via `<link>`
-- `static/app.js` — all JavaScript (~2700 lines), loaded via `<script src="/static/app.js">`
+- `static/app.js` — all JavaScript (~3000 lines), loaded via `<script src="/static/app.js">`
 
 Structure:
 ```
 <link rel="stylesheet" href="/static/style.css">
 <body>
-  <nav>   Sidebar: 9 navigation items
+  <nav>   Sidebar: 10 navigation items (includes Chart Explorer)
   sync-bar    Live sync status + Sync Now button
   <main>
     #page-dashboard    KPI cards + 4 charts + target tracker + streak
@@ -568,6 +580,7 @@ Structure:
     #page-import       Drag-drop CSV upload
     #page-live         Bitget sync status + account details
     #page-pending      Pending limit orders + risk summary
+    #page-charts       Chart Explorer — symbol input, TF buttons, LightweightCharts canvas, indicator panel
   Modals:
     #trade-modal       Add/edit manual trade
     #notes-modal       Edit trade — analyst, notes, tags
@@ -583,11 +596,13 @@ Structure:
 showPage(name) → hide all .page-view → show #page-<name> → mark nav active → call load function
 ```
 
-Special pages handled by `showPage()` override: `['live', 'trades', 'calls', 'pending']`
+Special pages handled by `showPage()` override: `['live', 'trades', 'calls', 'pending', 'charts']`
+
+When `charts` activates: `_initExplorerTfBtns()` + `_fillExplorerSymbols()` are called to populate TF buttons and autocomplete datalist from `symbolList`.
 
 **Key JS globals:**
 - `currentPage` — active page name
-- `livePositionsCache` — last fetched open positions
+- `livePositionsCache` — last fetched open positions (also used by Chart Explorer for liquidation levels)
 - `liveAnalysisCache` — AI results keyed by `"SYMBOL_direction"` (survives auto-refresh)
 - `liveOpenPanels` — Set of card indices with open AI panels
 - `liveCallMatches` — matched calls keyed by `"SYMBOL_direction"`
@@ -597,8 +612,41 @@ Special pages handled by `showPage()` override: `['live', 'trades', 'calls', 'pe
 - `selectedLimitIds` — Set of pending limit IDs selected for bulk operations
 - `_bitgetOrdersCache` — last fetched live Bitget orders (for match modal pre-fill)
 - `_matchOrderData` — current order/limit being tracked in match modal
+- `_explorerChart` — current LightweightCharts instance in Chart Explorer (null when no chart drawn)
+- `_explorerTf` — active timeframe in Chart Explorer (default `'4H'`)
 
 **Auto-refresh:** Live Trades auto-refreshes every 30s via `liveTradesInterval`. AI analysis results and open panels are preserved across refreshes using the cache globals.
+
+### Chart Window (`openChart()`)
+
+```javascript
+function openChart(symbol, tf = '4H') {
+  // read liquidation prices from livePositionsCache for this symbol
+  const liqs = (livePositionsCache || [])
+    .filter(p => p.symbol === symbol && p.liquidation_price)
+    .map(p => ({ price: parseFloat(p.liquidation_price), label: p.direction }));
+  let url = `/chart?symbol=${encodeURIComponent(symbol)}&timeframe=${tf}`;
+  if (liqs.length) url += '&liqs=' + encodeURIComponent(JSON.stringify(liqs));
+  window.open(url, `chart_${symbol}`, 'width=1060,height=680,resizable=yes,...');
+}
+```
+
+Named windows (`chart_${symbol}`) reuse the same browser window on repeat calls, preventing clutter.
+
+### Canvas Overlay (`_startSrOverlay()`)
+
+Shared helper used by both Chart Explorer and `chart.html`:
+
+```javascript
+function _startSrOverlay(wrap, series, levels, liquidations) {
+  // Creates an absolutely-positioned <canvas> over the LightweightCharts container
+  // RAF loop: redraws on every frame → stays in sync with pan/zoom
+  // Auto-stops when canvas is removed from DOM (document.contains check)
+  // Draws: grey boxes for S/R (opacity = min(0.07+(touches-1)*0.035, 0.42))
+  //        yellow dashed lines for liquidation levels with bold labels
+  // Right ~65px left uncovered to keep price-scale labels readable
+}
+```
 
 **Color scheme:**
 ```css
@@ -611,6 +659,71 @@ Special pages handled by `showPage()` override: `['live', 'trades', 'calls', 'pe
 --red:     #ef5350   loss / danger
 --yellow:  #ffb300   warning / medium risk
 ```
+
+---
+
+## `chart_context.py` — Candle Data, S/R & Trendlines
+
+Fetches OHLCV candles from Bitget (no extra API key — reuses existing Bitget auth) and computes a full technical analysis suite server-side via `pandas-ta`. Results are cached in memory for 10 minutes per `(symbol, timeframe)`.
+
+### `detect_support_resistance(df, n_swing=5, tolerance_pct=0.003, max_levels=8)`
+
+Swing-pivot S/R detection:
+1. Identifies local highs (high > all neighbours within `n_swing` candles) and local lows
+2. Clusters pivots within `tolerance_pct` (0.3%) of each other
+3. Counts touches per cluster, sorts by touch count descending, keeps top `max_levels`
+4. Returns `[{price, type ('support'|'resistance'), strength, touches}, ...]`
+
+### `detect_trendlines(df, n_swing=5, max_lines=4)`
+
+Ascending support / descending resistance line detection:
+1. Finds the same swing pivots as S/R detection
+2. For each pair of pivots of the same type, computes the implied slope
+3. Validates: no candle between the two anchors may violate the line by more than 0.5%
+4. Extends each valid line to the current candle
+5. Deduplicates by anchor price (keeps best by touch count), returns up to 2 uptrend + 2 downtrend lines
+6. Returns `[{type ('uptrend'|'downtrend'), p1_time, p1_price, p2_time, p2_price, touches, anchor1, anchor2}, ...]` — timestamps in Unix seconds for LightweightCharts
+
+### `get_candles_for_chart(symbol, tf, limit=200)`
+
+Returns the combined payload for the chart route:
+```python
+{
+  "candles":       [{time, open, high, low, close}, ...],  # Unix seconds, floats
+  "levels":        [{price, type, strength, touches}, ...],
+  "trendlines":    [{type, p1_time, p1_price, p2_time, p2_price, touches, anchor1, anchor2}, ...],
+  "current_price": float,
+  "symbol":        str,
+  "timeframe":     str,
+}
+```
+
+### `compute_indicators(symbol, timeframe)`
+
+Per-timeframe indicator dict (cached 10 min):
+
+| Key | Description |
+|-----|-------------|
+| `rsi` | RSI(14) |
+| `macd_signal` | MACD signal line |
+| `ema_20`, `ema_50`, `ema_200` | Exponential moving averages |
+| `ema_stack` | `"bullish"` / `"bearish"` / `"mixed"` (20 > 50 > 200 vs reverse) |
+| `bb_pct` | Bollinger Band percentile position (0 = lower band, 1 = upper) |
+| `stoch_rsi_k`, `stoch_rsi_d` | Stochastic RSI |
+| `adx` | Average Directional Index(14) |
+| `adx_direction` | `"+DI"` / `"-DI"` (trend direction) |
+| `atr_pct` | ATR(14) as % of current price |
+| `volume_ratio` | Last volume / 20-period average volume |
+| `last_candles` | Last 3 candle descriptions (`"bullish"` / `"bearish"` / `"doji"`) |
+| `support_resistance` | S/R levels list (same as `detect_support_resistance`) |
+| `trendlines` | Trendline list (same as `detect_trendlines`) |
+
+### `format_for_prompt(symbol, timeframes=['4H','1D'])`
+
+Formats indicator data as a compact text block for injection into Claude prompts. Includes:
+- Nearest S/R levels with distance % from current price
+- Active trendlines (direction, anchor range)
+- Key indicator values (RSI, EMA stack, ADX, BB position)
 
 ---
 
