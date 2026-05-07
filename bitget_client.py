@@ -319,6 +319,16 @@ def get_pending_orders() -> list:
     return {"entry": entry_orders, "exit": exit_orders}
 
 
+def get_exchange_symbols() -> list:
+    """
+    Return sorted list of all USDT-M futures symbol strings available on Bitget.
+    Uses the public tickers endpoint (auth headers accepted but not required).
+    """
+    data = _get("/api/v2/mix/market/tickers", {"productType": "USDT-FUTURES"})
+    rows = data if isinstance(data, list) else []
+    return sorted({r["symbol"] for r in rows if r.get("symbol")})
+
+
 def test_connection() -> dict:
     """Quick auth check — returns account equity dict or raises."""
     return get_account_equity()

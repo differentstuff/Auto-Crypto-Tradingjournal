@@ -1,3 +1,4 @@
+import time
 import traceback
 
 from flask import Blueprint, request, render_template
@@ -8,6 +9,10 @@ from analytics import get_dashboard_kpis, get_deep_stats, get_rr_analysis, get_h
 import ai_pattern_detector
 import market_context
 import chart_context
+import bitget_client
+
+_exchange_symbols_cache: list = []
+_exchange_symbols_ts: float = 0
 
 bp = Blueprint("analytics", __name__)
 
@@ -83,6 +88,20 @@ def api_market_context():
 def api_market_calendar():
     try:
         return _ok(market_context.get_economic_calendar())
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/exchange/symbols")
+def api_exchange_symbols():
+    """GET /api/exchange/symbols — all USDT-M futures symbols on Bitget (1-hour cache)."""
+    global _exchange_symbols_cache, _exchange_symbols_ts
+    try:
+        if not _exchange_symbols_cache or (time.time() - _exchange_symbols_ts) > 3600:
+            _exchange_symbols_cache = bitget_client.get_exchange_symbols()
+            _exchange_symbols_ts = time.time()
+        return _ok(_exchange_symbols_cache)
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

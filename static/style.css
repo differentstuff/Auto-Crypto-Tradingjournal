@@ -307,6 +307,17 @@ select:focus,input:focus{border-color:var(--accent)}
 .pending-verdict{background:var(--bg3);border-radius:8px;padding:12px 14px;margin:0 18px 14px;font-size:.82rem;line-height:1.5}
 .pending-risk-banner{background:rgba(255,179,0,.07);border:1px solid rgba(255,179,0,.25);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:.82rem;color:var(--yellow)}
 
+/* ── Symbol Picker Dropdown ─────────────────────────────────────────────────── */
+.sym-drop{display:none;position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);
+  border-radius:8px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.6);
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.sym-drop.open{display:block}
+.sym-opt{padding:7px 14px;cursor:pointer;font-size:.85rem;color:var(--fg);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;transition:background .1s}
+.sym-opt:hover,.sym-opt.hi{background:var(--bg3);color:var(--accent2)}
+.sym-opt b{color:var(--accent2);font-weight:700;font-style:normal}
+.sym-no-match{padding:10px 14px;color:var(--muted);font-size:.8rem}
+
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
 @media(max-width:900px){
   nav{width:60px}.nav-item span,.nav-logo span,.nav-logo{display:none}

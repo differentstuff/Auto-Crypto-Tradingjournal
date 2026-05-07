@@ -68,6 +68,86 @@ function _startSrOverlay(wrap, series, levels, liquidations) {
 // ── end chart ────────────────────────────────────────────────────────────────
 let journalPage = 1;
 let symbolList  = [];
+let _exchangeSymbols = [];  // all USDT-M futures symbols from Bitget
+
+// ── Symbol Picker ─────────────────────────────────────────────────────────────
+function _hlMatch(str, q) {
+  if (!q) return str;
+  const i = str.toUpperCase().indexOf(q.toUpperCase());
+  if (i < 0) return str;
+  return str.slice(0, i) + '<b>' + str.slice(i, i + q.length) + '</b>' + str.slice(i + q.length);
+}
+
+function _attachSymbolPicker(inputId) {
+  const inp = document.getElementById(inputId);
+  if (!inp || inp._symPicker) return;
+  inp._symPicker = true;
+  // Remove native datalist binding if present
+  inp.removeAttribute('list');
+
+  const drop = document.createElement('div');
+  drop.className = 'sym-drop';
+  document.body.appendChild(drop);
+
+  function _pos() {
+    const r = inp.getBoundingClientRect();
+    drop.style.top   = (r.bottom + 4) + 'px';
+    drop.style.left  = r.left + 'px';
+    drop.style.width = Math.max(r.width, 220) + 'px';
+  }
+
+  function _list() {
+    return _exchangeSymbols.length ? _exchangeSymbols : symbolList;
+  }
+
+  function _render(q) {
+    const ul  = q.length < 1
+      ? _list().slice(0, 80)
+      : _list().filter(s => s.toUpperCase().includes(q.toUpperCase())).slice(0, 100);
+    drop.innerHTML = ul.length
+      ? ul.map(s => `<div class="sym-opt" data-v="${s}">${_hlMatch(s, q)}</div>`).join('')
+      : '<div class="sym-no-match">No matches</div>';
+    drop.querySelectorAll('.sym-opt').forEach(el =>
+      el.addEventListener('mousedown', e => {
+        e.preventDefault();
+        inp.value = el.dataset.v;
+        drop.classList.remove('open');
+        inp.dispatchEvent(new Event('change'));
+      })
+    );
+  }
+
+  inp.addEventListener('focus', () => { _pos(); _render(inp.value); drop.classList.add('open'); });
+  inp.addEventListener('input', () => { _pos(); _render(inp.value); drop.classList.add('open'); });
+  inp.addEventListener('blur',  () => setTimeout(() => drop.classList.remove('open'), 160));
+
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { drop.classList.remove('open'); return; }
+    const opts = [...drop.querySelectorAll('.sym-opt')];
+    const cur  = drop.querySelector('.sym-opt.hi');
+    let idx    = cur ? opts.indexOf(cur) : -1;
+    if (e.key === 'ArrowDown')     { idx = Math.min(idx + 1, opts.length - 1); }
+    else if (e.key === 'ArrowUp')  { idx = Math.max(idx - 1, 0); }
+    else if (e.key === 'Enter' && cur) {
+      inp.value = cur.dataset.v;
+      drop.classList.remove('open');
+      inp.dispatchEvent(new Event('change'));
+      e.preventDefault(); e.stopPropagation(); return;
+    } else return;
+    opts.forEach(o => o.classList.remove('hi'));
+    opts[idx]?.classList.add('hi');
+    opts[idx]?.scrollIntoView({ block: 'nearest' });
+    e.preventDefault();
+  });
+}
+
+async function _loadExchangeSymbols() {
+  const r = await api('/api/exchange/symbols');
+  if (r.ok && r.data.length) {
+    _exchangeSymbols = r.data;
+    // Re-render open dropdowns with the full list if the user already opened one
+  }
+}
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
 function showPage(name) {
@@ -2822,12 +2902,6 @@ function _initExplorerTfBtns() {
   ).join('');
 }
 
-function _fillExplorerSymbols() {
-  const dl = document.getElementById('explorer-symbols-list');
-  if (dl && symbolList.length) {
-    dl.innerHTML = symbolList.map(s => `<option value="${s}">`).join('');
-  }
-}
 
 function setExplorerTf(tf) {
   _explorerTf = tf;
@@ -3044,7 +3118,7 @@ showPage = function(name) {
     if (name === 'live')    pollSyncStatus();
     if (name === 'calls')   { loadCallEquity(); loadSavedCalls(); loadAnalystStats(); loadPredictionAccuracy(); }
     if (name === 'pending') { loadBitgetOrders(); loadPendingLimits('waiting'); }
-    if (name === 'charts')  { _initExplorerTfBtns(); _fillExplorerSymbols(); }
+    if (name === 'charts')  { _initExplorerTfBtns(); }
     if (name === 'trades') {
       loadLiveTrades();
       // Auto-refresh every 30s while on this page
@@ -3065,3 +3139,6 @@ loadDashboard();
 // Poll sync status every 30s so the sync bar stays current
 pollSyncStatus();
 syncPolling = setInterval(pollSyncStatus, 30000);
+// Attach searchable symbol pickers and load full exchange symbol list
+['m-symbol', 'lm-symbol', 'explorer-symbol'].forEach(_attachSymbolPicker);
+_loadExchangeSymbols();
