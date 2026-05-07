@@ -3144,6 +3144,7 @@ loadDashboard();
 // Poll sync status every 30s so the sync bar stays current
 pollSyncStatus();
 syncPolling = setInterval(pollSyncStatus, 30000);
-// Attach searchable symbol pickers and load full exchange symbol list
+// Attach searchable symbol pickers, then load symbols so pickers have data
 ['m-symbol', 'lm-symbol', 'explorer-symbol'].forEach(_attachSymbolPicker);
-_loadExchangeSymbols();
+loadSymbols();          // trade-history symbols → fast fallback in picker
+_loadExchangeSymbols(); // full exchange list → replaces fallback when ready
