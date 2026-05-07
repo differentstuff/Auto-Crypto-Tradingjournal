@@ -45,11 +45,18 @@ let tf     = params.get('timeframe') || '4H';
 const TFS  = ['15m','1H','4H','1D'];
 let _chart = null;
 
-// Liquidation levels passed via URL: liqs=[{price,label},...]
+// Liquidation levels: liqs=[{price,label},...]
 let _liquidations = [];
 try {
   const raw = params.get('liqs');
   if (raw) _liquidations = JSON.parse(decodeURIComponent(raw));
+} catch(e) {}
+
+// Open position trade levels: trades=[{dir,entry,sl,tp1,tp2},...]
+let _trades = [];
+try {
+  const raw = params.get('trades');
+  if (raw) _trades = JSON.parse(decodeURIComponent(raw));
 } catch(e) {}
 
 document.title  = symbol + ' — Chart';
@@ -198,6 +205,34 @@ async function loadChart() {
     });
   });
 
+  // Entry / SL / TP lines for open positions
+  (_trades || []).forEach(t => {
+    if (t.entry) series.createPriceLine({
+      price: t.entry, lineWidth: 2, lineStyle: 0,
+      color: 'rgba(79,195,247,0.85)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(79,195,247,0.25)',
+      title: t.dir + ' ENTRY',
+    });
+    if (t.sl) series.createPriceLine({
+      price: t.sl, lineWidth: 1.5, lineStyle: 2,
+      color: 'rgba(239,83,80,0.85)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(239,83,80,0.25)',
+      title: t.dir + ' SL',
+    });
+    if (t.tp1) series.createPriceLine({
+      price: t.tp1, lineWidth: 1.5, lineStyle: 2,
+      color: 'rgba(38,217,107,0.85)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(38,217,107,0.2)',
+      title: t.dir + ' TP1',
+    });
+    if (t.tp2) series.createPriceLine({
+      price: t.tp2, lineWidth: 1, lineStyle: 2,
+      color: 'rgba(38,217,107,0.6)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(38,217,107,0.15)',
+      title: t.dir + ' TP2',
+    });
+  });
+
   // Trendlines — lower TF first (drawn behind), higher TF last (drawn in front)
   const TL_ALPHA  = {1:.30, 2:.50, 3:.70, 4:.90};
   const TL_WIDTH  = {1:1,   2:1.5, 3:2,   4:2.5};
@@ -225,6 +260,39 @@ async function loadChart() {
   // ── Legend ──────────────────────────────────────────────────────────────────
   const leg   = document.getElementById('sr-legend');
   const chips = [];
+
+  // Trade level chips (entry / SL / TP)
+  (_trades || []).forEach(t => {
+    function distChip(price) {
+      if (!price || !current_price) return '';
+      const d = ((price - current_price) / current_price * 100);
+      return ` · ${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
+    }
+    if (t.entry) chips.push(
+      `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+        background:rgba(79,195,247,.12);color:rgba(79,195,247,.95);
+        border:1px solid rgba(79,195,247,.25)">
+        ▶ ${t.dir} ENTRY  ${t.entry}
+      </span>`);
+    if (t.tp1) chips.push(
+      `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+        background:rgba(38,217,107,.1);color:rgba(38,217,107,.95);
+        border:1px solid rgba(38,217,107,.22)">
+        ✦ ${t.dir} TP1  ${t.tp1}${distChip(t.tp1)}
+      </span>`);
+    if (t.tp2) chips.push(
+      `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+        background:rgba(38,217,107,.07);color:rgba(38,217,107,.75);
+        border:1px solid rgba(38,217,107,.15)">
+        ✦ ${t.dir} TP2  ${t.tp2}${distChip(t.tp2)}
+      </span>`);
+    if (t.sl) chips.push(
+      `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+        background:rgba(239,83,80,.1);color:rgba(239,83,80,.95);
+        border:1px solid rgba(239,83,80,.22)">
+        ✕ ${t.dir} SL  ${t.sl}${distChip(t.sl)}
+      </span>`);
+  });
 
   (_liquidations || []).forEach(liq => {
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
