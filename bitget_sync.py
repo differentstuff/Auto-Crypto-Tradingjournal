@@ -20,6 +20,7 @@ from database import get_conn
 
 SYNC_INTERVAL_SECONDS  = 5 * 60    # auto-sync every 5 minutes
 STARTUP_LOOKBACK_DAYS  = 2         # orders/bills catch-up window on first sync after (re)start
+RULEBOOK_INTERVAL_DAYS = 7         # regenerate trader rulebook weekly
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -470,6 +471,28 @@ def start_background_sync():
     if _bg_thread and _bg_thread.is_alive():
         return
 
+    def _maybe_update_rulebook():
+        """Regenerate the trader rulebook if it's been more than RULEBOOK_INTERVAL_DAYS."""
+        try:
+            import ai_rulebook
+            conn = get_conn()
+            row  = conn.execute(
+                "SELECT value FROM settings WHERE key='rulebook_updated_at'"
+            ).fetchone()
+            conn.close()
+            if row:
+                from datetime import timezone as tz
+                last = datetime.strptime(row[0], "%Y-%m-%d %H:%M UTC").replace(tzinfo=tz.utc)
+                age_days = (datetime.now(tz.utc) - last).days
+                if age_days < RULEBOOK_INTERVAL_DAYS:
+                    return
+            print("[Sync] Updating trader rulebook...", flush=True)
+            result = ai_rulebook.update_rulebook()
+            if "error" not in result:
+                print(f"[Sync] Rulebook updated — {result.get('count', len(result.get('rules', [])))} rules", flush=True)
+        except Exception as e:
+            print(f"[Sync] Rulebook update skipped: {e}", flush=True)
+
     def loop():
         time.sleep(10)
         while True:
@@ -477,6 +500,7 @@ def start_background_sync():
             _sync_status["next_run"] = datetime.fromtimestamp(next_time).strftime("%Y-%m-%d %H:%M:%S")
             try:
                 run_sync()
+                _maybe_update_rulebook()
             except Exception as e:
                 print(f"[Sync] Background error: {e}", flush=True)
             wait = max(0, next_time - time.time())

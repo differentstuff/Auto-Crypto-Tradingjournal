@@ -25,6 +25,8 @@ import os
 import re
 import anthropic
 from database import get_conn
+import chart_context
+import ai_rulebook
 
 ANTHROPIC_API_KEY = os.environ.get(
     "ANTHROPIC_API_KEY",
@@ -106,17 +108,25 @@ def _calc_sizing(account_equity: float, entry: float, sl: float,
 
 
 def _build_prompt(call_text: str, sizing: dict, history: dict,
-                  has_image: bool) -> str:
+                  has_image: bool, market_regime: str = None,
+                  chart_ctx: str = "", rulebook: str = "",
+                  calibration: str = "", similar_trades: str = "") -> str:
     chart_note = (
         "A TradingView chart image is attached — analyse it carefully: "
         "identify the timeframe, key levels, chart pattern, support/resistance zones, "
         "the analyst's projected path, and any relevant price levels visible."
     ) if has_image else "No chart image was provided."
 
+    regime_block   = f"\nMARKET REGIME / CONTEXT:\n{market_regime}\n" if market_regime else ""
+    ta_block       = f"\n{chart_ctx}\n" if chart_ctx else ""
+    rulebook_block = f"\n{rulebook}\n" if rulebook else ""
+    calib_block    = f"\n{calibration}\n" if calibration else ""
+    similar_block  = f"\n{similar_trades}\n" if similar_trades else ""
+
     return f"""You are an expert crypto futures trading analyst. A trade call from a crypto analyst has been submitted for analysis.
 
 {chart_note}
-
+{regime_block}{ta_block}{rulebook_block}{calib_block}{similar_block}
 TRADE CALL TEXT:
 {call_text}
 
@@ -168,7 +178,8 @@ Rules:
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def analyze_call(call_text: str, account_equity: float,
-                 image_b64: str = None, image_type: str = "image/png") -> dict:
+                 image_b64: str = None, image_type: str = "image/png",
+                 market_regime: str = None) -> dict:
     """
     Analyze a trade call. Returns structured dict ready for JSON serialization.
 
@@ -236,13 +247,20 @@ def analyze_call(call_text: str, account_equity: float,
             "risk_amount_usdt": round(account_equity * (0.02 if has_dca else 0.01), 2),
         }
 
-    # ── Symbol history ─────────────────────────────────────────────────────
-    conn    = get_conn()
-    history = _symbol_history(symbol, conn)
+    # ── Symbol history + rulebook + similar trades ─────────────────────────
+    conn        = get_conn()
+    history     = _symbol_history(symbol, conn)
+    rulebook    = ai_rulebook.get_rulebook_for_prompt(conn)
+    calibration = ai_rulebook.get_calibration_for_prompt(conn)
+    similar     = ai_rulebook.get_similar_trades_for_prompt(symbol, setup_type or "", direction, conn)
     conn.close()
 
     # ── Build prompt + call Claude ─────────────────────────────────────────
-    prompt  = _build_prompt(call_text, sizing, history, has_image=bool(image_b64))
+    chart_str = chart_context.format_multi_tf_for_prompt(symbol, ["4H", "1D"])
+    prompt = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
+                            market_regime=market_regime, chart_ctx=chart_str,
+                            rulebook=rulebook, calibration=calibration,
+                            similar_trades=similar)
     client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
     content = []

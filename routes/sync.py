@@ -5,6 +5,7 @@ from flask import Blueprint, request
 from database import db_conn
 from helpers import _ok, _err
 import ai_advisor
+import ai_rulebook
 import bitget_sync
 
 bp = Blueprint("sync", __name__)
@@ -40,6 +41,26 @@ def api_ai_analyze():
     try:
         filters = request.get_json(force=True) if request.content_length else {}
         return _ok(ai_advisor.analyze(filters=filters or {}))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/rulebook")
+def api_rulebook_get():
+    try:
+        with db_conn() as conn:
+            return _ok(ai_rulebook.get_rulebook(conn))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/rulebook/update", methods=["POST"])
+def api_rulebook_update():
+    try:
+        with db_conn() as conn:
+            return _ok(ai_rulebook.update_rulebook(conn))
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

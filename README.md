@@ -154,7 +154,7 @@ helpers.py              Shared API helpers (_ok, _err, _filters_from_args)
 database.py             Schema init, migrations, get_conn(), db_conn()
 routes/
   journal.py            Positions CRUD, import, symbols, wallet history
-  analytics.py          Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data
+  analytics.py          Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data, indicators
   calls.py              Call analyzer, saved calls, outcomes, analyst stats
   limits.py             Pending limit orders
   live.py               Live Bitget positions and per-trade AI
@@ -169,11 +169,13 @@ ai_live_trade.py        Per-trade AI on the live positions view
 ai_trade_grader.py      Execution grading via Claude
 ai_pattern_detector.py  Statistical pattern detection via Claude
 market_context.py       Fear & Greed, funding rate, L/S ratio, BTC dominance
+chart_context.py        OHLCV candle fetch + full TA indicator suite (pandas-ta)
 templates/index.html    Single-page frontend HTML (~910 lines, no inline CSS)
 static/style.css        All dark-theme CSS
 static/app.js           All frontend JavaScript (~2700 lines)
 docs/GUIDE.md           Developer reference (routes, schema, JS globals)
 docs/USER_GUIDE.md      End-user feature guide
+docs/RATING_CRITERIA.md Full reference for all AI scoring and grading criteria
 .env.example            Environment variable template
 trading-journal.service systemd unit file
 ```
@@ -189,6 +191,17 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v1.9 — Technical Analysis Integration
+- **`chart_context.py`** — new module: pulls OHLCV candles from Bitget and computes a full indicator suite via `pandas-ta` (no extra API key needed — uses existing Bitget auth)
+- **Indicators computed per symbol × timeframe**: RSI(14), MACD(12,26,9), EMA 20/50/200 + stack alignment, Bollinger Bands(20,2) with percentile position, Stochastic RSI(14), ADX(14) with +DI/−DI direction, ATR(14) as % of price, volume vs 20-period average, last 3 candle descriptions (bullish/bearish/doji)
+- **Auto-injected into Live Position AI** (4H + 1D) — Claude now references indicators when recommending Hold / Adjust SL / Close Now
+- **Auto-injected into Call Analyzer** (4H + 1D) — Claude cross-references the call with live technicals before scoring
+- **10-minute in-memory cache** per (symbol, timeframe) — no repeated Bitget calls within a session
+- **New API endpoint** `GET /api/chart/indicators?symbol=BTCUSDT&timeframes=4H,1D`
+- **`docs/RATING_CRITERIA.md`** — complete reference documenting every AI scoring and grading criterion used across all six systems
+- **Bug fix**: `analyze_call()` missing `market_regime` parameter caused 500 error on every call analysis request
+- `pandas` and `pandas-ta` added to `requirements.txt`
 
 ### v1.8 — Architecture Refactor
 - **Flask Blueprints** — `app.py` reduced from 1158 to 52 lines; all routes split into `routes/` by domain: `journal`, `analytics`, `calls`, `limits`, `live`, `sync`

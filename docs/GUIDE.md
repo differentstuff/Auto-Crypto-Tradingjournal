@@ -45,6 +45,7 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache)
+    ├── chart_context.py        ← OHLCV candles + pandas-ta indicator suite (10-min cache)
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
@@ -55,6 +56,7 @@ static/app.js                   ← All frontend JavaScript (~2700 lines)
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
 docs/USER_GUIDE.md              ← User-facing manual
+docs/RATING_CRITERIA.md         ← All AI scoring/grading criteria documented
 trading-journal.service         ← systemd service file
 requirements.txt                ← Python dependencies
 ```
@@ -1049,6 +1051,42 @@ Returns:
 
 ---
 
+## `chart_context.py` — Technical Indicators
+
+Fetches OHLCV candles from Bitget (`/api/v2/mix/market/candles`) and computes a full indicator suite using `pandas-ta`. Results are cached per `(symbol, timeframe)` for 10 minutes.
+
+#### Indicators computed
+
+| Indicator | Parameters | Signal thresholds |
+|-----------|-----------|------------------|
+| RSI | 14 | >70 overbought · <30 oversold |
+| MACD | 12/26/9 | bullish/bearish crossover detected |
+| EMA | 20, 50, 200 | stack alignment (bullish/bearish/mixed) |
+| Bollinger Bands | 20, 2σ | price percentile position (0–100) |
+| Stochastic RSI | K=14, D=3 | K>80 overbought · K<20 oversold |
+| ADX | 14 | >25 strong trend · 20-25 trending · <20 ranging |
+| ATR | 14 | expressed as % of price (SL sizing hint) |
+| Volume | 20-period avg | >1.5× high · <0.7× low |
+| Candle pattern | last 3 | bullish/bearish/doji + body % |
+
+#### API
+
+`GET /api/chart/indicators?symbol=BTCUSDT&timeframes=4H,1D`
+
+Returns per-timeframe indicator dict plus `prompt_text` — a pre-formatted text block ready for Claude.
+
+#### How Claude uses it
+
+Both `ai_live_trade.py` and `ai_call_analyzer.py` automatically call `chart_context.format_multi_tf_for_prompt(symbol, ["4H", "1D"])` and append the result to every prompt. Claude uses indicators to:
+- Judge momentum alignment with the trade direction
+- Identify overbought/oversold conditions at entry
+- Cross-reference call setups against current technicals
+- Contextualise SL recommendations using ATR
+
+See `docs/RATING_CRITERIA.md` for the full documented thresholds used per indicator.
+
+---
+
 ## Quick Reference
 
 | Item | Value |
@@ -1086,6 +1124,10 @@ SQLite DB
   ├── analyzed_calls ──► Call Analyzer / Analyst Stats / Prediction Accuracy
   ├── pending_limits ──► Pending Orders / Risk Summary
   └── settings ──► sync state, account balance
+
+Bitget Candles API (unauthenticated market data)
+  └── chart_context.py ──► pandas-ta indicators ──► ai_live_trade + ai_call_analyzer
+        └── 10-min cache per (symbol, timeframe)
 
 Claude API (claude-sonnet-4-6)
   ├── ai_advisor.py ──► Portfolio analysis (~$0.02/call)

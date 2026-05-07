@@ -7,6 +7,7 @@ from helpers import _ok, _err, _filters_from_args
 from analytics import get_dashboard_kpis, get_deep_stats, get_rr_analysis, get_heatmap_data
 import ai_pattern_detector
 import market_context
+import chart_context
 
 bp = Blueprint("analytics", __name__)
 
@@ -77,6 +78,25 @@ def api_market_context():
 def api_market_calendar():
     try:
         return _ok(market_context.get_economic_calendar())
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/chart/indicators")
+def api_chart_indicators():
+    """
+    GET /api/chart/indicators?symbol=BTCUSDT&timeframes=4H,1D
+    Returns computed indicator suite for a symbol + timeframe(s).
+    """
+    try:
+        symbol = request.args.get("symbol", "").strip().upper()
+        if not symbol:
+            return _err("symbol is required")
+        tf_raw     = request.args.get("timeframes", "4H,1D")
+        timeframes = [t.strip() for t in tf_raw.split(",") if t.strip()]
+        ctx = chart_context.get_chart_context(symbol, timeframes)
+        return _ok(ctx)
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
