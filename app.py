@@ -14,6 +14,7 @@ from routes.calls     import bp as calls_bp
 from routes.limits    import bp as limits_bp
 from routes.live      import bp as live_bp
 from routes.sync      import bp as sync_bp
+from routes.scanner   import bp as scanner_bp
 
 # ── app setup ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ app.register_blueprint(calls_bp)
 app.register_blueprint(limits_bp)
 app.register_blueprint(live_bp)
 app.register_blueprint(sync_bp)
+app.register_blueprint(scanner_bp)
 
 
 @app.route("/")

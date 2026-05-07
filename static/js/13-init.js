@@ -2,7 +2,7 @@
 // showPage extension for live pages
 const _origShowPage = showPage;
 showPage = function(name) {
-  const extras = ['live', 'trades', 'calls', 'pending', 'charts'];
+  const extras = ['live', 'trades', 'calls', 'pending', 'charts', 'scanner'];
   if (extras.includes(name)) {
     document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -13,6 +13,7 @@ showPage = function(name) {
     if (name === 'calls')   { loadCallEquity(); loadSavedCalls(); loadAnalystStats(); loadPredictionAccuracy(); }
     if (name === 'pending') { loadBitgetOrders(); loadPendingLimits('waiting'); }
     if (name === 'charts')  { _initExplorerTfBtns(); }
+    if (name === 'scanner') { loadScanner(); }
     if (name === 'trades') {
       loadLiveTrades();
       // Auto-refresh every 30s while on this page
