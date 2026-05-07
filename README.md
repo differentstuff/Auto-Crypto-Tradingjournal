@@ -162,11 +162,12 @@ The service uses `EnvironmentFile=` to load `.env` and restarts automatically on
 
 ```
 app.py                  Flask startup + blueprint registration (~50 lines)
-helpers.py              Shared API helpers (_ok, _err, _filters_from_args)
+helpers.py              Shared helpers: _ok, _err, _filters_from_args, strip_fence
 database.py             Schema init, migrations, get_conn(), db_conn()
 routes/
   journal.py            Positions CRUD, import, symbols, wallet history
-  analytics.py          Dashboard KPIs, deep dive, heatmap, patterns, R:R, market data, indicators, chart
+  analytics.py          Dashboard KPIs, deep dive, heatmap, patterns, R:R, chart routes
+  market.py             Market context, calendar, exchange symbols, mark prices
   calls.py              Call analyzer, saved calls, outcomes, analyst stats
   limits.py             Pending limit orders
   live.py               Live Bitget positions and per-trade AI
@@ -175,18 +176,22 @@ bitget_client.py        Bitget REST API v2 client (read-only)
 bitget_sync.py          Background sync logic
 importer.py             Bitget CSV import parser
 analytics.py            Dashboard KPIs and deep dive stats
-ai_advisor.py           AI analysis for open positions
-ai_call_analyzer.py     AI trade call parser and scorer
+prompt_builder.py       Shared context assembler for all AI modules (budget-capped)
+trade_utils.py          Shared trading utilities: sector map, ATR SL check
+ai_advisor.py           Full-portfolio AI analysis
+ai_call.py              Trade call analysis core (price extraction, sizing, ATR/correlation checks)
+ai_limit.py             Pending limit analysis
+ai_call_analyzer.py     Re-export shim (backward compat: from ai_call import …; from ai_limit import …)
 ai_live_trade.py        Per-trade AI on the live positions view
 ai_trade_grader.py      Execution grading via Claude
 ai_pattern_detector.py  Statistical pattern detection via Claude
 ai_rulebook.py          Self-learning personalised rulebook (synthesised by Claude from trade history)
-market_context.py       Fear & Greed, funding rate, L/S ratio, BTC dominance
-chart_context.py        OHLCV candle fetch, S/R detection, trendline detection, full TA indicator suite (pandas-ta)
+market_context.py       Fear & Greed, funding rate, L/S ratio + get_market_str() helper
+chart_context.py        OHLCV candle fetch, S/R, trendlines, indicators (pandas-ta), confluence_score()
 templates/index.html    Single-page frontend HTML (~910 lines, no inline CSS)
-templates/chart.html    Detached chart window (LightweightCharts, S/R boxes, trendlines, liquidation levels)
+templates/chart.html    Detached chart window (LightweightCharts, S/R boxes, trendlines, trade levels)
 static/style.css        All dark-theme CSS
-static/app.js           All frontend JavaScript (~3000 lines)
+static/js/              Frontend split into 14 topic files (01-utils through 13-init + 08b-live-calls)
 docs/GUIDE.md           Developer reference (routes, schema, JS globals)
 docs/USER_GUIDE.md      End-user feature guide
 docs/RATING_CRITERIA.md Full reference for all AI scoring and grading criteria
@@ -205,6 +210,52 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.1 — AI Accuracy, Performance & Code Quality
+
+#### AI Accuracy
+- **Multi-TF confluence scoring** — `confluence_score()` in `chart_context.py` aggregates RSI/MACD/EMA/ADX direction signals across timeframes; injected as a single CONFLUENCE line in every AI prompt
+- **ATR-aware SL check** — call analyzer and limit analyzer warn when the stop-loss distance is smaller than the 1H ATR noise floor (< 0.5× ATR = "inside noise"; < 1× ATR = "tight stop")
+- **Portfolio correlation check** — call analyzer detects same-sector/same-direction concentration across open positions (6 named sectors: BTC, ETH/L2, SOL/L1, Meme, DeFi, AI/Infra)
+- **Richer score calibration** — `get_calibration_for_prompt()` now shows entry rate per score tier alongside TP1/SL outcome rates and an actionable verdict (→ ENTER / → SKIP)
+- **Shared prompt builder** — `prompt_builder.py` assembles rulebook + calibration + chart context + similar trades into a budget-capped context block (5 600 chars ≈ 1 400 tokens), used by all four AI modules
+- **Stats pruning** — `ai_advisor.py` strips empty arrays, caps `by_symbol` to top 10, caps `by_hour` to the 8 most-differentiated hours before serialising to the prompt (~30% size reduction)
+- **Compact chart format** — `format_for_prompt()` rewritten from ~15 lines per TF to one dense line (e.g. `BTCUSDT 4H: RSI 58(neu) | MACD bull | EMA ↑all | ADX 28↑ | ATR 1.2%`)
+
+#### Performance
+- **No double indicator computation** — `confluence_score()` now accepts a pre-computed `ctx` dict; `prompt_builder` passes the already-fetched result, avoiding a second round of `pandas-ta` per timeframe per request
+- **Parallel ATR + market context** — `ai_call.py` and `ai_limit.py` fetch the 1H ATR chart and market context (fear/greed + funding) concurrently via `ThreadPoolExecutor`
+- **`detect_all_trendlines()`** runs all 4 TF fetches (1W/1D/4H/1H) concurrently — ~4× faster chart loads
+- **`get_chart_context()`** parallelises multi-TF indicator computation the same way
+- **Thread-safe caches** — `chart_context.py` and `routes/market.py` price cache both protected by `threading.Lock`
+
+#### New AI modules
+- **`ai_call.py`** — call analysis core split from `ai_call_analyzer.py`; fixes a `setup_type` NameError bug from the original
+- **`ai_limit.py`** — pending limit analysis, previously missing and causing 500 errors
+- **`ai_call_analyzer.py`** — converted to a 3-line re-export shim for backward compatibility
+- **`trade_utils.py`** — shared `SECTORS` dict and `atr_sl_warning()` extracted from duplicated private copies; sectors synced with JS (MOGUSDT, POPCATUSDT, COMPUSDT added)
+- **`helpers.strip_fence()`** — single canonical markdown-fence stripper replaces 5 duplicated inline blocks; fixes a buggy variant in `ai_advisor.py` and a weaker one in `ai_rulebook.py`
+
+#### New route: `routes/market.py`
+- Market context, economic calendar, exchange symbols, and mark prices split out of `routes/analytics.py` into their own Blueprint
+
+#### UX & Charts
+- **Multi-TF trendlines** — `detect_all_trendlines()` fetches 1W/1D/4H/1H; visual weight system (heavier/more opaque = higher timeframe); real-time slope extension using price-per-second so weekly lines display correctly on 15m charts
+- **Live trade chart levels** — `openChart()` passes entry, SL, TP1, TP2 as URL params; `chart.html` renders each as a `createPriceLine()` with colour coding and legend chips showing % distance from mark
+- **Searchable symbol picker** — live-filter dropdown on every coin input (Chart Explorer, Add Trade, Log Manual Trade); two-variant architecture (absolute vs fixed) handles modal `overflow:hidden` clipping
+- **Cross-page awareness** — open position cards show `⏳ N limit(s)` chip when waiting limits exist; clicking navigates to Pending Orders
+- **Proximity alerts** — limits within 5% of current mark price show `📍 X.X% from limit` badge (red/yellow/blue thresholds)
+- **Chart Explorer title overlay** — coin name and active timeframe shown as a top-left overlay; updates on every draw/TF switch
+- **Mouseover tooltips** — all Dashboard KPIs, Live Trades KPIs, and Chart Explorer indicator cards have `data-tip` explanations
+- **JavaScript split** — `static/app.js` split into 14 focused files under `static/js/`
+- **Dashboard parallel fetch** — `loadDashboard()` fires KPI + market context + live positions in a single `Promise.all`
+
+#### Bug fixes
+- `setup_type` NameError in original `ai_call_analyzer.py` — variable referenced before assignment
+- `analyze_pending_limit()` function was missing — route called it but it was never implemented
+- DB connection leak in three AI modules — `get_conn()` without context manager leaked write-lock on any exception
+
+---
 
 ### v2.0 — Interactive Charts & S/R Intelligence
 
@@ -242,67 +293,9 @@ trading-journal.service systemd unit file
 - Loop auto-stops when the canvas is removed from the DOM (chart destroyed / TF switch)
 - Price-scale area (right ~65px) deliberately left uncovered so axis labels remain readable
 
-### v2.1 — Multi-Timeframe Trendlines & Searchable Symbol Picker
+---
 
-#### Multi-Timeframe Trendlines
-- **`detect_all_trendlines(symbol)`** in `chart_context.py` — fetches 1W, 1D, 4H, and 1H candles, detects trendlines on each timeframe, and returns them all in one list regardless of which TF you're viewing
-- **Visual weight system** — higher timeframe lines are heavier and more opaque: 1W=weight 4 (opacity 0.90, width 2.5px), 1D=3 (0.70, 2px), 4H=2 (0.50, 1.5px), 1H=1 (0.30, 1px)
-- **Rendering order** — lower TF lines drawn first (behind), higher TF last (in front), so weekly/daily structure is never obscured by noise
-- **Real-time slope extension** — trendlines are extended to current time using price-per-second slope so they display correctly on any viewing timeframe (weekly line looks right on a 15m chart)
-- **Legend chips** show the source timeframe label (`1W`, `1D`, etc.) next to direction and touch count
-- Trendline payload now includes `timeframe` and `weight` fields; both `chart.html` and chart explorer respect them
-
-#### Searchable Symbol Picker
-- **Dropdown with live search** on every coin input in the app: Chart Explorer, Add Trade modal, Log Manual Trade modal
-- Populated from the full Bitget USDT-M Futures symbol list (~200+ pairs) via `GET /api/exchange/symbols`
-- **Instant filter** as you type — partial match anywhere in the symbol name, matches highlighted in bold
-- **Two-variant architecture** to handle modal clipping: non-modal inputs use `position:absolute` inside a `.sym-wrap` wrapper; modal inputs use `position:fixed` appended to `<body>` to escape `overflow-y:auto` clipping
-- Exchange symbol list is fetched once at startup with a 1-hour server-side cache; local journal symbols used as immediate fallback while the exchange list loads
-- `GET /api/exchange/symbols` — new endpoint in `routes/analytics.py`, calls Bitget `/api/v2/mix/market/tickers?productType=USDT-FUTURES`
-
-#### Open Position Risk on Live Trades
-- **Open Position Risk** KPI card added to the Live Trades KPI strip — same SL-based calculation as the Dashboard (falls back to margin when no SL is set), showing `% of equity` and `· SL-based` / `· no SL` sub-label
-
-### v2.2 — Performance, Cross-Page Awareness & UX Polish
-
-#### Backend Parallelism
-- **`detect_all_trendlines()`** now runs all 4 TF fetches (1W/1D/4H/1H) concurrently via `ThreadPoolExecutor` — ~4× faster chart loads
-- **`get_chart_context()`** parallelises multi-TF indicator computation the same way
-- **Thread-safe cache** — `_cache` dict in `chart_context.py` now protected by a `threading.Lock`
-- **`GET /api/market/prices`** — new endpoint returning `{symbol: mark_price}` for a list of symbols (60-second cache), used for proximity alerts
-
-#### Dashboard Parallel Fetch
-- `loadDashboard()` now fires KPI, market context, and live positions requests in a single `Promise.all` — eliminates two sequential round-trips on load
-
-#### Cross-Page Awareness on Live Trades
-- Each open position card now shows a **`⏳ N limit(s)` chip** when waiting limits exist for the same symbol — clicking it navigates directly to Pending Orders
-- Waiting limits fetched in the same `Promise.all` as positions, zero extra latency
-
-#### Proximity Alerts on Pending Orders
-- After loading waiting limits, the app fetches current mark prices for those symbols via `/api/market/prices`
-- Each limit card shows a **`📍 X.X% from limit`** badge when price is within 5% of the limit level — colour coded: red (<1%), yellow (<3%), blue (<5%)
-
-#### Chart Explorer Title Overlay
-- Coin name and active timeframe are now shown as a persistent overlay in the top-left corner of every Chart Explorer chart
-- Updates on every Draw / timeframe switch; clears cleanly when the chart is destroyed
-
-#### JavaScript Module Split
-- `static/app.js` (3 200 lines) split into **13 focused topic files** under `static/js/` — easier navigation and editing without any functional change
-- Files: `01-utils`, `02-dashboard`, `03-journal`, `04-deep-edge`, `05-advisor`, `06-import`, `07-calls`, `08-live`, `09-analysis`, `10-pending`, `11-sync`, `12-explorer`, `13-init`
-- `bitget_client.py`: added `get_mark_prices(symbols)` for proximity alert price lookups
-
-### v1.9.5 — Self-Learning Trader Rulebook
-- **`ai_rulebook.py`** — new module: Claude analyses your entire trade history and synthesises 5–10 personalised rules (warnings, strengths, habits, calibration notes) backed by real numbers from your data
-- **`trader_rulebook` DB table** — rules are persisted in SQLite and survive restarts; auto-regenerated weekly by the background sync loop
-- **Rulebook injected into every AI prompt** — live position analysis, call analyzer, and AI advisor all receive your personalised rulebook as context so Claude can reference your known patterns
-- **Calibration data injected** — call score accuracy stats (TP1/SL rates per score tier) are included so Claude knows how reliable past scores have been
-- **Similar trades injected** — 3 most recent closed trades on the same symbol + setup + direction are shown to Claude for context
-- **Edge Lab UI** — new "Trader Rulebook" section with Generate/Update button; rules displayed as colour-coded cards (red = warning, green = strength, yellow = habit, blue = calibration) with confidence level and trade count
-- **Bug fix**: `update_rulebook` now returns DB data with consistent `rule_type` field instead of raw Claude JSON (`type` field), fixing JS crash on generate
-- **Bug fix**: `max_tokens` raised from 1200 → 2048 in rulebook generation, fixing JSON truncation with large trade datasets
-- **New API endpoints**: `GET /api/rulebook`, `POST /api/rulebook/update`
-
-### v1.9 — Technical Analysis Integration
+### v1.9 — Technical Analysis & AI Foundation
 - **`chart_context.py`** — new module: pulls OHLCV candles from Bitget and computes a full indicator suite via `pandas-ta` (no extra API key needed — uses existing Bitget auth)
 - **Indicators computed per symbol × timeframe**: RSI(14), MACD(12,26,9), EMA 20/50/200 + stack alignment, Bollinger Bands(20,2) with percentile position, Stochastic RSI(14), ADX(14) with +DI/−DI direction, ATR(14) as % of price, volume vs 20-period average, last 3 candle descriptions (bullish/bearish/doji)
 - **Auto-injected into Live Position AI** (4H + 1D) — Claude now references indicators when recommending Hold / Adjust SL / Close Now
@@ -312,6 +305,11 @@ trading-journal.service systemd unit file
 - **`docs/RATING_CRITERIA.md`** — complete reference documenting every AI scoring and grading criterion used across all six systems
 - **Bug fix**: `analyze_call()` missing `market_regime` parameter caused 500 error on every call analysis request
 - `pandas` and `pandas-ta` added to `requirements.txt`
+- **`ai_rulebook.py`** — new module: Claude analyses your entire trade history and synthesises 5–10 personalised rules (warnings, strengths, habits, calibration notes) backed by real numbers from your data
+- **`trader_rulebook` DB table** — rules persisted in SQLite; auto-regenerated weekly by the background sync loop
+- **Rulebook + calibration data + similar trades** injected into every AI prompt (live position analysis, call analyzer, AI advisor)
+- **Edge Lab UI** — "Trader Rulebook" section with Generate/Update button; rules displayed as colour-coded cards with confidence level and trade count
+- **New API endpoints**: `GET /api/rulebook`, `POST /api/rulebook/update`
 
 ### v1.8 — Architecture Refactor
 - **Flask Blueprints** — `app.py` reduced from 1158 to 52 lines; all routes split into `routes/` by domain: `journal`, `analytics`, `calls`, `limits`, `live`, `sync`
@@ -326,40 +324,29 @@ trading-journal.service systemd unit file
 - **Trade Heatmap** — 7×24 grid in Deep Dive showing win rate by open hour (UTC) and close day. Color-coded: green ≥65% · blue 50–64% · yellow 40–49% · red <40%. Cells need ≥3 trades to activate.
 - **BTC Dominance** — added to Dashboard Market Pulse strip via CoinGecko free API. Rising dominance shown in red (bad for alts), falling in green.
 
-### v1.6 — Live Market Context
+### v1.6 — Market Intelligence & Strategy
 - **Fear & Greed Index** — live 0-100 sentiment score from alternative.me shown in a Market Pulse strip on the Dashboard
 - **Bitget Funding Rate** — per-symbol, shown as chip on every Live Positions card; injected into per-position Claude analysis
 - **Bitget Long/Short Ratio** — retail positioning per symbol on Live Positions cards; injected into analysis
 - All three sources feed Claude's trade grading, per-position analysis, and full AI Advisor
 - New module `market_context.py` with 5-minute in-memory cache; new `GET /api/market/context?symbols=` endpoint
+- **Analyst Leaderboard** — Edge Score (0-100) ranks analysts by composite metric: 50% trade win rate + 30% call outcome win rate + 20% TP1 hit rate. Color-coded rows, medal rankings, TP1 hit rate and conversion rate columns.
+- **Correlation Detector** — groups open positions by sector (Bitcoin / ETH+L2 / SOL+L1 / Meme / DeFi / AI+Infra); two-tier severity: yellow (2 positions same sector/direction), red (3+)
+- **AI Pattern Detector** — Claude analyses full trade history by setup type, session, weekday, direction, duration, grade; returns warnings, insights, and strengths
 
-### v1.5.5 — Edge Lab & UX Polish
-- **Deep Dive split into two pages**: Deep Dive (charts + stats) and Edge Lab (setup analysis, grade breakdown, pattern detector, R:R tracking)
-- **Analyst Leaderboard**: Edge Score (0-100) composite metric replaces raw table — ranks analysts by trade win rate, call outcome win rate, and TP1 hit rate. Medal rankings, color-coded rows, conversion rate column.
-- **Correlation Detector enhanced**: sector-aware grouping (Bitcoin / ETH+L2 / SOL+L1 / Meme / DeFi / AI+Infra), two severity tiers (yellow = 2 positions, red = 3+)
-- **AI Pattern Detector**: Claude analyses full trade history by setup, session, weekday, direction, duration, grade — returns warnings, insights, and strengths as cards
-- **Setup Type filter in Journal**: filter by specific setup or ⚪ Untagged to quickly find and tag historical trades
-- **Setup Type in Add Trade modal**: captured at creation time for manual trades
+### v1.5 — Trading Precision & Edge Lab
+- **AI Execution Grading** — click ⚡ Grade on any trade; Claude assigns A/B/C/D with a written explanation based on entry quality, exit discipline, and realized R:R
+- **Setup Type Tagging** — label trades as Breakout, Pullback, Trend Continuation, Range Fade, Reversal, News/Event, or Other; Deep Dive shows P&L and win rate broken down by setup type
+- **Planned vs Realized R:R** — link a trade to an analyst call; Deep Dive computes and displays planned R:R vs what was actually achieved
+- **Edge Lab** — Deep Dive split into two pages; Edge Lab adds setup analysis, grade breakdown, pattern detector, R:R tracking
+- **Setup Type filter in Journal** — filter by specific setup or ⚪ Untagged; setup captured in Add Trade modal for manual trades
+- New backend module `ai_trade_grader.py`; new API routes `POST /api/positions/<id>/grade` and `GET /api/analytics/rr`
 
-### v1.6 — Strategy & Pattern Intelligence
-- **Analyst Leaderboard** — Edge Score (0-100) ranks analysts by composite metric: 50% trade win rate + 30% call outcome win rate + 20% TP1 hit rate. Color-coded rows, medal rankings, TP1 hit rate and call-to-trade conversion rate columns added.
-- **Correlation Detector (enhanced)** — Now groups open positions by sector (Bitcoin / ETH+L2 / SOL+L1 / Meme / DeFi / AI+Infra). Two-tier severity: yellow (2 positions same sector/direction), red (3+). Triggered from Live Positions panel.
-- **AI Pattern Detector** — New button in Deep Dive. Claude analyses full trade history by setup type, session, weekday, direction, duration, and grade. Returns up to 6 findings: warnings (edge leaks), insights (notable patterns), and strengths (what's working). Needs 20+ trades and 5+ per category.
-
-### v1.5 — Trading Precision Features
-- **AI Execution Grading** — click ⚡ Grade on any trade; Claude assigns A/B/C/D with a written explanation based on entry quality, exit discipline, and realized R:R. Richer analysis when trade is linked to an analyst call.
-- **Setup Type Tagging** — label trades as Breakout, Pullback, Trend Continuation, Range Fade, Reversal, News/Event, or Other. Deep Dive shows P&L and win rate broken down by setup type.
-- **Planned vs Realized R:R** — link a trade to an analyst call (via Call ID in the edit modal); Deep Dive computes and displays planned R:R vs what was actually achieved.
-- Deep Dive gains three new sections: Execution Grade Analysis, P&L by Setup Type, Planned vs Realized R:R.
-- New backend module `ai_trade_grader.py`; new API routes `POST /api/positions/<id>/grade` and `GET /api/analytics/rr`.
-
-### v1.4.1 — Security Fix
-- Incomplete string escaping fixed in `static/app.js` — backslashes now escaped before single quotes in analyst name interpolation (CWE-116)
-
-### v1.4 — Code Quality & Security Completion
+### v1.4 — Code Quality & Security
 - `SECURITY.md` added — lightweight vulnerability reporting policy via GitHub private advisories
 - CodeQL workflow added (`.github/workflows/codeql.yml`) — analysis now actually runs on push, PR, and weekly; branch protection is fully operational
 - Frontend JS extracted from `templates/index.html` into `static/app.js` — `index.html` reduced from 3348 to 1078 lines
+- Security fix: incomplete string escaping in `static/app.js` — backslashes now escaped before single quotes in analyst name interpolation (CWE-116)
 
 ### v1.3 — Repository Hardening
 - Branch protection on `main` — CodeQL must pass before merge

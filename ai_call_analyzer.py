@@ -1,5 +1,5 @@
 """
-ai_call_analyzer.py — Backward-compatible re-export shim (v2.3).
+ai_call_analyzer.py — Backward-compatible re-export shim (v2.1).
 
 Logic has been split into:
   ai_call.py  → analyze_call()

@@ -1,5 +1,5 @@
 """
-ai_limit.py — AI analysis for pending limit orders (split from ai_call_analyzer.py v2.3).
+ai_limit.py — AI analysis for pending limit orders (split from ai_call_analyzer.py v2.1).
 
 Evaluates a pending limit order: entry quality vs chart levels, SL sizing vs ATR,
 portfolio correlation risk, and overall recommendation (Keep / Adjust / Cancel).

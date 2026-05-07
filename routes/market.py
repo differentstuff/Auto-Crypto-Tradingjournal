@@ -1,5 +1,5 @@
 """
-routes/market.py — Market data Blueprint (split from routes/analytics.py v2.3).
+routes/market.py — Market data Blueprint (split from routes/analytics.py v2.1).
 
 Handles: /api/market/context, /api/market/calendar,
          /api/exchange/symbols, /api/market/prices

@@ -1,6 +1,6 @@
 
 // ══════════════════════════════════════════════════════════════════════════════
-// LIVE TRADES — Call Match + Targets Panel (split from 08-live.js v2.3)
+// LIVE TRADES — Call Match + Targets Panel (split from 08-live.js v2.1)
 // ══════════════════════════════════════════════════════════════════════════════
 
 function renderMatchBanners(pendingMatches, positions) {

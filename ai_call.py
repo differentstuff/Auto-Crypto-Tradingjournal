@@ -1,5 +1,5 @@
 """
-ai_call.py — Analyst trade call analysis (split from ai_call_analyzer.py v2.3).
+ai_call.py — Analyst trade call analysis (split from ai_call_analyzer.py v2.1).
 
 New vs v2.2:
   - Uses prompt_builder for shared context (rulebook, calibration, chart, similar trades)
