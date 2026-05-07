@@ -41,21 +41,41 @@ CACHE_TTL = 1800  # 30 min between scans
 # ── Watchlist ──────────────────────────────────────────────────────────────────
 
 DEFAULT_WATCHLIST = [
-    # Major
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    # L1 alts
-    "ADAUSDT", "AVAXUSDT", "DOTUSDT", "ATOMUSDT", "NEARUSDT",
+    # BTC / ETH
+    "BTCUSDT", "ETHUSDT",
+    # Major L1s
+    "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT",
+    "DOTUSDT", "ATOMUSDT", "NEARUSDT", "TRXUSDT", "XLMUSDT",
+    "TONUSDT", "FTMUSDT", "ALGOUSDT", "EGLDUSDT",
+    # Mid-cap L1s
     "SUIUSDT", "APTUSDT", "INJUSDT", "SEIUSDT", "ICPUSDT",
+    "STXUSDT", "TIAUSDT", "HBARUSDT", "KASUSDT", "MINAUSDT",
     # L2 / ETH ecosystem
-    "MATICUSDT", "ARBUSDT", "OPUSDT", "STRKUSDT",
+    "MATICUSDT", "ARBUSDT", "OPUSDT", "STRKUSDT", "LDOUSDT",
+    "ZKUSDT", "METISUSDT", "ENSUSDT",
     # DeFi
-    "UNIUSDT", "AAVEUSDT", "LINKUSDT", "CRVUSDT",
+    "UNIUSDT", "AAVEUSDT", "LINKUSDT", "CRVUSDT", "MKRUSDT",
+    "SNXUSDT", "COMPUSDT", "DYDXUSDT", "CAKEUSDT", "GMXUSDT",
+    "PENDLEUSDT", "JUPUSDT", "SUSHIUSDT", "RUNEUSDT",
     # AI / Infra
     "FETUSDT", "RENDERUSDT", "WLDUSDT", "TAOUSDT", "GRTUSDT",
+    "AGIXUSDT", "OCEANUSDT", "ARKMUSDT", "ACTUSDT",
     # Meme
-    "DOGEUSDT", "PEPEUSDT", "WIFUSDT", "BONKUSDT", "BOMEUSDT", "FLOKIUSDT",
+    "DOGEUSDT", "SHIBUSDT", "PEPEUSDT", "WIFUSDT", "BONKUSDT",
+    "BOMEUSDT", "FLOKIUSDT", "MOGUSDT", "POPCATUSDT", "MEWUSDT",
+    "TURBOUSDT",
+    # BTC ecosystem
+    "ORDIUSDT", "SATSUSDT",
+    # Gaming / Metaverse
+    "SANDUSDT", "AXSUSDT", "GALAUSDT", "IMXUSDT", "MANAUSDT",
+    "APEUSDT", "YGGUSDT",
+    # Solana ecosystem
+    "JITOUSDT", "WUSDT", "PYTHUSDT", "RAYUSDT",
     # Other liquid
-    "LTCUSDT", "BCHUSDT", "FILUSDT", "SANDUSDT", "AXSUSDT",
+    "LTCUSDT", "BCHUSDT", "FILUSDT", "QNTUSDT", "VETUSDT",
+    "OKBUSDT", "ONDOUSDT", "ZECUSDT", "ONEUSDT", "ROSAUSDT",
+    "CELOUSDT", "THETAUSDT", "NEOUSDT", "ONTUSDT", "IOTAUSDT",
+    "WOOUSDT", "KLAYUSDT", "GMTUSDT",
 ]
 
 # ── Scan state ─────────────────────────────────────────────────────────────────
@@ -215,33 +235,41 @@ SCORING SCALE:
 10 — Perfect: textbook chart pattern, volume confirmation, ideal entry timing, R:R ≥ 4:1
 
 REQUIREMENTS for any score ≥ 6:
-- A specific entry zone (a structural level — S/R, EMA, trendline — not random)
-- A stop loss placed beyond the nearest structural level and ≥ 1× ATR from entry
-- At least one take-profit level at the next significant resistance/support
-- A clear one-sentence rationale for EACH of the three levels above
+- A specific entry zone anchored to a named structural level (S/R, EMA, trendline) with exact prices
+- A stop loss beyond the nearest structural level and ≥ 1× ATR from entry — state the level and ATR distance explicitly
+- At least two take-profit levels at significant resistance/support — state exactly what each targets
+- Detailed rationale for EVERY level: name the S/R zone, reference the indicator value, explain WHY
 
-If the setup scores below 6 (no valid entry, stop would be inside noise, no logical TP):
+RATIONALE DEPTH REQUIRED:
+  entry_rationale: "Price is pulling back to the 4H EMA50 ($X) which coincides with the 1D support zone at $Y (5 touches). RSI has cooled to 48 from 68 — reset without breaking structure."
+  sl_rationale: "Below the 1D support at $Z and the swing low at $W. Distance of $D = 1.8× 4H ATR ($A), placing the stop clearly outside noise."
+  tp1_rationale: "Previous 4H resistance at $R1, high-volume rejection on [date]. R:R 1:2.3 from midpoint entry."
+  tp2_rationale: "Weekly resistance cluster and the 1.618 Fibonacci extension from last major swing. R:R 1:4.1."
+
+If the setup scores below 6 (no valid entry level, SL inside ATR noise, or no logical TP):
 {{"setup_score": 0, "reason": "one sentence why this doesn't qualify"}}
 
 Otherwise respond with this exact structure:
-{{"setup_score": 8, "setup_label": "Strong",
+{{
+  "setup_score": 8, "setup_label": "Strong",
   "direction": "{direction}",
-  "entry_zone": {{"low": 0.0, "high": 0.0,
-    "rationale": "Why exactly this zone — reference the structural level"}},
+  "why_this_score": "2-3 sentences explaining specifically what earns this score and what would need to be different for a 9 or a 7",
+  "entry_zone": {{"low": 0.0, "high": 0.0, "rationale": "Name the level, give the price, explain WHY this is the entry zone"}},
   "sl_price": 0.0,
-  "sl_rationale": "What structural level this is beyond and ATR distance",
+  "sl_rationale": "Name the structural level, state ATR distance (e.g. 1.6× 4H ATR), explain the invalidation logic",
   "tp1_price": 0.0,
-  "tp1_rationale": "What resistance/support this targets",
+  "tp1_rationale": "Name the resistance/target, explain why price is likely to stall or reverse there",
   "tp2_price": 0.0,
-  "tp2_rationale": "What resistance/support this targets",
+  "tp2_rationale": "Name the higher target, explain the structural or Fibonacci significance",
   "rr_ratio": "1:X.X",
-  "chart_pattern": "Bull Flag / Break-and-Retest / W-bottom / etc. — or null",
-  "key_conditions": ["most important signal 1", "signal 2", "signal 3"],
-  "risks": ["main risk 1", "risk 2"],
+  "chart_pattern": "Specific pattern name — or null if none",
+  "key_conditions": ["Specific signal with values, e.g. RSI 47 reset from 71", "MACD bull crossover on 4H", "EMA stack 20>50>200 bullish"],
+  "risks": ["Specific risk with context", "Second risk"],
   "urgency": "Now|1-4h|Today|1-3 days",
   "timeframe": "4H",
-  "confluence_summary": "One sentence describing the overall technical picture",
-  "summary": "2-3 sentence honest assessment referencing actual numbers"}}
+  "confluence_summary": "One sentence: the 2-3 most important aligned signals that create conviction",
+  "summary": "2-3 sentence overall assessment referencing actual price numbers from the technical picture"
+}}
 
 Respond with ONLY valid JSON — no markdown, no code fences."""
 
@@ -251,7 +279,7 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str):
         prompt  = _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str)
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
-            model=MODEL, max_tokens=1024,
+            model=MODEL, max_tokens=1400,
             messages=[{"role": "user", "content": prompt}]
         )
         result = json.loads(strip_fence(message.content[0].text.strip()))

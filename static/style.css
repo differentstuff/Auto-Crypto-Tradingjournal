@@ -404,3 +404,9 @@ select:focus,input:focus{border-color:var(--accent)}
 .scan-dp-risks{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .scan-dp-risk{background:rgba(255,179,0,.08);color:var(--yellow);
   font-size:.73rem;padding:3px 8px;border-radius:4px}
+
+/* Scanner detail panel additions */
+.scan-dp-score-reason{background:rgba(108,99,255,.07);border:1px solid rgba(108,99,255,.2);
+  border-radius:6px;padding:10px 12px;margin-bottom:10px}
+.scan-dp-confluence{font-size:.8rem;color:var(--accent2);font-style:italic;
+  margin-bottom:8px;padding:0 2px}

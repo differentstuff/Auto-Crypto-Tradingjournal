@@ -222,13 +222,24 @@ function buildDetailPanel(s, i) {
     s.summary || '',
   ].filter(Boolean).join('\n');
 
+  const scoreColor = s.setup_score>=9?'var(--accent3)':s.setup_score>=7?'var(--yellow)':'var(--muted)';
+  const setupData  = JSON.stringify(s);
+
   return `<div class="scan-detail-panel">
     <div class="scan-dp-header">
       <span style="font-weight:700;font-size:.95rem">${sym.replace('USDT','')}USDT
         <span style="color:${isLong?'var(--accent3)':'var(--red)'}">${s.direction}</span> —
-        <span style="color:${s.setup_score>=9?'var(--accent3)':s.setup_score>=7?'var(--yellow)':'var(--muted)'}">${s.setup_score}/10 ${scoreLabel}</span>
+        <span style="color:${scoreColor}">${s.setup_score}/10 ${scoreLabel}</span>
       </span>
     </div>
+
+    ${s.why_this_score ? `
+      <div class="scan-dp-score-reason">
+        <span style="font-size:.7rem;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:.04em">Why ${s.setup_score}/10</span>
+        <div style="margin-top:4px;font-size:.8rem;color:var(--text);line-height:1.55">${s.why_this_score}</div>
+      </div>` : ''}
+
+    ${s.confluence_summary ? `<div class="scan-dp-confluence">${s.confluence_summary}</div>` : ''}
 
     ${s.summary ? `<div class="scan-dp-summary">${s.summary}</div>` : ''}
 
@@ -246,11 +257,12 @@ function buildDetailPanel(s, i) {
     ${conditions ? `<div class="scan-dp-conds">${conditions}</div>` : ''}
     ${risks      ? `<div class="scan-dp-risks">${risks}</div>`      : ''}
 
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-      <button class="btn btn-secondary btn-sm" onclick="openChart('${sym}','4H');event.stopPropagation()">📊 Chart</button>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-primary btn-sm"
+        onclick="openScannerChart('${sym}',${setupData});event.stopPropagation()">📊 Chart with Levels</button>
       <button class="btn btn-secondary btn-sm"
         onclick="_sendToCallAnalyzer(${JSON.stringify(prefill)});event.stopPropagation()">📋 Analyze</button>
-      <span style="font-size:.68rem;color:var(--border);align-self:center">
+      <span style="font-size:.68rem;color:var(--border)">
         ${s._input_tokens||0} in / ${s._output_tokens||0} out tokens
       </span>
     </div>
@@ -278,6 +290,34 @@ function toggleScanDetail(i) {
     // Scroll into view if needed
     row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+}
+
+// ── Chart with entry/SL/TP levels ────────────────────────────────────────────
+
+function openScannerChart(sym, setup, evt) {
+  if (evt) evt.stopPropagation();
+  const ent = setup.entry_zone || {};
+  const entLow  = parseFloat(ent.low  || 0);
+  const entHigh = parseFloat(ent.high || 0);
+  // Use midpoint of entry zone as the "entry" price line
+  const entryPrice = (entLow && entHigh) ? (entLow + entHigh) / 2
+                   : (entLow || entHigh);
+
+  const trades = [];
+  if (entryPrice) {
+    trades.push({
+      dir:   setup.direction || 'Long',
+      entry: entryPrice,
+      sl:    setup.sl_price  ? parseFloat(setup.sl_price)  : null,
+      tp1:   setup.tp1_price ? parseFloat(setup.tp1_price) : null,
+      tp2:   setup.tp2_price ? parseFloat(setup.tp2_price) : null,
+    });
+  }
+
+  let url = `/chart?symbol=${encodeURIComponent(sym)}&timeframe=${setup.timeframe||'4H'}`;
+  if (trades.length) url += '&trades=' + encodeURIComponent(JSON.stringify(trades));
+  window.open(url, 'chart_' + sym,
+    'width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
