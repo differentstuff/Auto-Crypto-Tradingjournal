@@ -44,6 +44,7 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_call_analyzer.py     ← Analyst call analysis + pending limit analysis
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
+    ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
     ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache)
     ├── chart_context.py        ← OHLCV candles + pandas-ta indicator suite (10-min cache)
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
@@ -189,6 +190,20 @@ One row per analyst call the user analyzed and chose to save.
 | created_at | TEXT | |
 
 ### `import_log` — Audit trail of all CSV imports
+
+### `trader_rulebook` — Personalised AI-generated rules
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | auto |
+| rule_type | TEXT | `warning`, `strength`, `habit`, `calibration` |
+| title | TEXT | ≤7 words |
+| rule | TEXT | 1–2 sentences with specific numbers from trade data |
+| confidence | TEXT | `high`, `medium`, `low` |
+| data_points | INTEGER | number of trades behind this rule |
+| generated_at | TEXT | UTC datetime of last generation |
+
+Cleared and fully regenerated on each `POST /api/rulebook/update`. Auto-updated weekly by `bitget_sync.py`.
 
 ---
 
@@ -435,7 +450,7 @@ Routes are split across `routes/` — registered in `app.py` at startup. All blu
 | `calls` | `routes/calls.py` | Call analyzer, saved calls, outcomes, analyst stats |
 | `limits` | `routes/limits.py` | Pending limit orders |
 | `live` | `routes/live.py` | Live Bitget positions, pending orders, per-trade AI |
-| `sync` | `routes/sync.py` | Sync trigger, sync status, AI advisor |
+| `sync` | `routes/sync.py` | Sync trigger, sync status, AI advisor, rulebook |
 
 ## API Reference
 
@@ -482,6 +497,13 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/ai/analyze` | Full portfolio Claude analysis |
+
+### Trader Rulebook
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/rulebook` | Fetch current rules from DB |
+| POST | `/api/rulebook/update` | Regenerate rules via Claude + persist to DB |
 
 ### Call Analyzer
 
@@ -1087,6 +1109,44 @@ See `docs/RATING_CRITERIA.md` for the full documented thresholds used per indica
 
 ---
 
+## `ai_rulebook.py` — Self-Learning Trader Rulebook
+
+Analyses the full trade history in SQLite and asks Claude to synthesise 5–10 personalised rules. Rules are stored in `trader_rulebook` and injected as context into every subsequent AI prompt.
+
+#### Rule types
+
+| Type | Colour | Meaning |
+|------|--------|---------|
+| `warning` | Red | A losing pattern the trader must stop |
+| `strength` | Green | A winning pattern to exploit more |
+| `habit` | Yellow | An execution discipline note (positive or negative) |
+| `calibration` | Blue | How accurate the AI score assignments have been |
+
+#### Functions
+
+| Function | Description |
+|----------|-------------|
+| `update_rulebook(conn)` | Collect stats → ask Claude → clear + insert `trader_rulebook` → return DB result |
+| `get_rulebook(conn)` | Return `{rules, count, updated_at}` from DB |
+| `get_rulebook_for_prompt(conn)` | Short text block (warnings first) for injection into Claude prompts |
+| `get_calibration_data(conn)` | Group `analyzed_calls` by score tier, compute TP1/SL rates |
+| `get_calibration_for_prompt(conn)` | Formatted calibration text for prompt injection |
+| `get_similar_trades(symbol, setup, direction, conn)` | Last 3 closed trades matching symbol+setup+direction (falls back to symbol-only if <3 matches) |
+| `get_similar_trades_for_prompt(...)` | Formatted similar-trades block with W/L summary |
+
+#### Prompt injection (all AI modules)
+
+Every call to `ai_live_trade.analyze_position()`, `ai_call_analyzer.analyze_call()`, and `ai_advisor.analyze()` automatically injects:
+1. **Rulebook** — personalised rules with specific P&L numbers
+2. **Calibration** — historical score accuracy so Claude can recalibrate confidence
+3. **Similar trades** — recent context for the exact symbol + setup + direction
+
+#### Auto-update schedule
+
+`bitget_sync.py` calls `_maybe_update_rulebook()` after each background sync. If `rulebook_updated_at` is older than `RULEBOOK_INTERVAL_DAYS` (7), a full regeneration runs automatically.
+
+---
+
 ## Quick Reference
 
 | Item | Value |
@@ -1123,18 +1183,23 @@ SQLite DB
   ├── wallet_snapshots ──► equity curve + drawdown calculation
   ├── analyzed_calls ──► Call Analyzer / Analyst Stats / Prediction Accuracy
   ├── pending_limits ──► Pending Orders / Risk Summary
-  └── settings ──► sync state, account balance
+  ├── trader_rulebook ──► ai_rulebook.py ──► injected into ALL AI prompts
+  └── settings ──► sync state, account balance, rulebook_updated_at
 
 Bitget Candles API (unauthenticated market data)
   └── chart_context.py ──► pandas-ta indicators ──► ai_live_trade + ai_call_analyzer
         └── 10-min cache per (symbol, timeframe)
 
+ai_rulebook.py (SQLite trade history → Claude → trader_rulebook)
+  └── rules + calibration + similar trades ──► injected into all 3 AI modules below
+
 Claude API (claude-sonnet-4-6)
   ├── ai_advisor.py ──► Portfolio analysis (~$0.02/call)
   ├── ai_live_trade.py ──► Per-trade analysis (~$0.003/call)
-  └── ai_call_analyzer.py
-        ├── analyze_call() ──► Call analysis with vision (~$0.02/call)
-        └── analyze_pending_limit() ──► Limit order analysis (~$0.005/call)
+  ├── ai_call_analyzer.py
+  │     ├── analyze_call() ──► Call analysis with vision (~$0.02/call)
+  │     └── analyze_pending_limit() ──► Limit order analysis (~$0.005/call)
+  └── ai_rulebook.py ──► Rulebook generation (~$0.01/run, weekly)
 ```
 
 ---

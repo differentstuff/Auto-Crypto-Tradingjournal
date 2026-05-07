@@ -168,6 +168,7 @@ ai_call_analyzer.py     AI trade call parser and scorer
 ai_live_trade.py        Per-trade AI on the live positions view
 ai_trade_grader.py      Execution grading via Claude
 ai_pattern_detector.py  Statistical pattern detection via Claude
+ai_rulebook.py          Self-learning personalised rulebook (synthesised by Claude from trade history)
 market_context.py       Fear & Greed, funding rate, L/S ratio, BTC dominance
 chart_context.py        OHLCV candle fetch + full TA indicator suite (pandas-ta)
 templates/index.html    Single-page frontend HTML (~910 lines, no inline CSS)
@@ -191,6 +192,17 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v1.9.5 — Self-Learning Trader Rulebook
+- **`ai_rulebook.py`** — new module: Claude analyses your entire trade history and synthesises 5–10 personalised rules (warnings, strengths, habits, calibration notes) backed by real numbers from your data
+- **`trader_rulebook` DB table** — rules are persisted in SQLite and survive restarts; auto-regenerated weekly by the background sync loop
+- **Rulebook injected into every AI prompt** — live position analysis, call analyzer, and AI advisor all receive your personalised rulebook as context so Claude can reference your known patterns
+- **Calibration data injected** — call score accuracy stats (TP1/SL rates per score tier) are included so Claude knows how reliable past scores have been
+- **Similar trades injected** — 3 most recent closed trades on the same symbol + setup + direction are shown to Claude for context
+- **Edge Lab UI** — new "Trader Rulebook" section with Generate/Update button; rules displayed as colour-coded cards (red = warning, green = strength, yellow = habit, blue = calibration) with confidence level and trade count
+- **Bug fix**: `update_rulebook` now returns DB data with consistent `rule_type` field instead of raw Claude JSON (`type` field), fixing JS crash on generate
+- **Bug fix**: `max_tokens` raised from 1200 → 2048 in rulebook generation, fixing JSON truncation with large trade datasets
+- **New API endpoints**: `GET /api/rulebook`, `POST /api/rulebook/update`
 
 ### v1.9 — Technical Analysis Integration
 - **`chart_context.py`** — new module: pulls OHLCV candles from Bitget and computes a full indicator suite via `pandas-ta` (no extra API key needed — uses existing Bitget auth)
