@@ -209,6 +209,21 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+    # ── trader_rulebook ────────────────────────────────────────────────────────
+    # Personalised rules synthesised by Claude from trade history.
+    # Cleared and regenerated on each rulebook update.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trader_rulebook (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_type    TEXT NOT NULL,   -- 'warning', 'strength', 'habit', 'calibration'
+            title        TEXT NOT NULL,
+            rule         TEXT NOT NULL,
+            confidence   TEXT DEFAULT 'medium',
+            data_points  INTEGER DEFAULT 0,
+            generated_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     # ── import_log ─────────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS import_log (
