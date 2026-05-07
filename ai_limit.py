@@ -18,7 +18,7 @@ import prompt_builder
 import trade_utils
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-haiku-4-5-20251001"   # Haiku sufficient for limit order assessment
 
 
 def _correlation_warning(symbol: str, direction: str, open_positions: list,
@@ -57,6 +57,7 @@ def _build_prompt(lim: dict, equity: float, context_str: str = "",
     lim_info = {k: lim.get(k) for k in
                 ["symbol", "direction", "limit_price", "size_usdt", "leverage",
                  "sl_price", "tp1_price", "tp2_price", "analyst", "notes"]}
+    lim_info = {k: v for k, v in lim_info.items() if v is not None}
 
     risk_pct = None
     entry = float(lim.get("limit_price") or 0)
@@ -75,7 +76,7 @@ def _build_prompt(lim: dict, equity: float, context_str: str = "",
     return f"""You are a crypto futures trading advisor. Evaluate this PENDING LIMIT ORDER — it has not yet been triggered.
 
 LIMIT ORDER DETAILS:
-{json.dumps(lim_info, indent=2)}
+{json.dumps(lim_info)}
 
 Account equity: {equity:.2f} USDT
 {other_note}Estimated risk if triggered: {f'{risk_pct}% of equity' if risk_pct else 'unknown (no SL set)'}
@@ -144,7 +145,7 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
     prompt = _build_prompt(lim, equity, ctx_str, atr_warn, corr_warn, total_other)
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
-        model=MODEL, max_tokens=1024,
+        model=MODEL, max_tokens=768,
         messages=[{"role": "user", "content": prompt}]
     )
 

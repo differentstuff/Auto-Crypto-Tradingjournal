@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import anthropic
 
 from database import db_conn
-from helpers import strip_fence
+from helpers import strip_fence, build_cached_messages
 import market_context
 import prompt_builder
 import trade_utils
@@ -122,22 +122,21 @@ def _correlation_warning(symbol: str, direction: str, open_positions: list) -> s
 # ── Prompt builder ─────────────────────────────────────────────────────────────
 
 def _build_prompt(call_text: str, sizing: dict, history: dict,
-                  has_image: bool, context_str: str = "",
-                  atr_warning: str = "", corr_warning: str = "") -> str:
+                  has_image: bool, atr_warning: str = "", corr_warning: str = "") -> str:
+    """Build the variable part of the call analysis prompt (context passed separately for caching)."""
     chart_note = (
         "A TradingView chart image is attached — analyse it carefully: "
         "identify the timeframe, key levels, chart pattern, support/resistance zones, "
         "the analyst's projected path, and any relevant price levels visible."
     ) if has_image else "No chart image was provided."
 
-    ctx_block  = f"\n{context_str}\n" if context_str else ""
     atr_block  = f"\n⚠ ATR RISK: {atr_warning}\n" if atr_warning else ""
     corr_block = f"\n⚠ PORTFOLIO CORRELATION: {corr_warning}\n" if corr_warning else ""
 
     return f"""You are an expert crypto futures trading analyst. A trade call from a crypto analyst has been submitted for analysis.
 
 {chart_note}
-{ctx_block}{atr_block}{corr_block}
+{atr_block}{corr_block}
 TRADE CALL TEXT:
 {call_text}
 
@@ -158,17 +157,7 @@ Analyze the call and respond with ONLY a valid JSON object (no markdown, no code
   "setup_quality": {{"score": 1-10, "label": "Poor|Weak|Moderate|Good|Strong|Excellent"}},
   "chart_analysis": "What you see in the chart: pattern, key levels, breakout zone, target zone, context. Be specific about price levels visible. 3-4 sentences.",
   "risk_reward": {{"ratio": "1:X.X", "entry": 0.0, "sl": 0.0, "tp1": 0.0, "tp2": 0.0}},
-  "bitget_settings": {{
-    "symbol": "XYZUSDT",
-    "direction": "Long / Buy",
-    "margin_mode": "Cross",
-    "leverage": "10x",
-    "order_1": {{"type": "Market", "notional_usdt": 0, "note": ""}},
-    "order_2": {{"type": "Limit", "price": "0.0", "notional_usdt": 0, "note": "DCA"}},
-    "stop_loss": {{"price": "0.0", "type": "Price SL or Candle Close SL (manual)", "bitget_instruction": "Exact instruction for setting this in Bitget"}},
-    "take_profit_1": {{"price": "0.0", "note": ""}},
-    "take_profit_2": {{"price": "0.0", "note": ""}}
-  }},
+  "bitget_settings": {{"symbol":"XYZUSDT","direction":"Long / Buy","margin_mode":"Cross","leverage":"10x","order_1":{{"type":"Market","notional_usdt":0,"note":""}},"order_2":{{"type":"Limit","price":"0.0","notional_usdt":0,"note":"DCA"}},"stop_loss":{{"price":"0.0","type":"Price SL or Candle Close SL (manual)","bitget_instruction":"exact Bitget instruction"}},"take_profit_1":{{"price":"0.0","note":""}},"take_profit_2":{{"price":"0.0","note":""}}}},
   "entry_timing": "Immediate / Wait for retest / Set limit order — with reasoning",
   "optimizations": ["Specific improvement 1", "Specific improvement 2", "Specific improvement 3"],
   "risks": ["Risk 1", "Risk 2", "Risk 3"],
@@ -279,21 +268,13 @@ def analyze_call(call_text: str, account_equity: float,
             timeframes = ["4H", "1D"],
         )
 
-    prompt  = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
-                             context_str=ctx_str, atr_warning=atr_warn, corr_warning=corr_warn)
-    client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    content = []
-    if image_b64:
-        content.append({
-            "type":   "image",
-            "source": {"type": "base64", "media_type": image_type, "data": image_b64},
-        })
-    content.append({"type": "text", "text": prompt})
-
-    message = client.messages.create(
+    prompt   = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
+                              atr_warning=atr_warn, corr_warning=corr_warn)
+    messages = build_cached_messages(ctx_str, prompt, image_b64, image_type)
+    client   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message  = client.messages.create(
         model=MODEL, max_tokens=2048,
-        messages=[{"role": "user", "content": content}]
+        messages=messages,
     )
 
     raw = strip_fence(message.content[0].text.strip())

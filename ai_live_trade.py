@@ -21,7 +21,7 @@ import market_context
 import prompt_builder
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-haiku-4-5-20251001"   # Haiku sufficient for routine position assessment
 
 
 def _get_symbol_history(symbol: str, conn) -> dict:
@@ -53,9 +53,18 @@ def _get_symbol_history(symbol: str, conn) -> dict:
     }
 
 
+_POS_FIELDS = [
+    "symbol", "direction", "leverage", "margin_mode", "size_usdt",
+    "entry_price", "mark_price", "unrealized_pnl", "unrealized_pct",
+    "take_profit", "stop_loss", "liquidation_price", "break_even_price",
+    "duration_minutes", "achieved_profits", "total_fee",
+]
+
+
 def _build_prompt(position: dict, history: dict, context_str: str = "") -> str:
-    pos_json  = json.dumps(position, indent=2)
-    hist_json = json.dumps(history, indent=2)
+    pos_slim  = {k: v for k, v in position.items() if k in _POS_FIELDS and v not in (None, "")}
+    pos_json  = json.dumps(pos_slim)
+    hist_json = json.dumps(history)
     ctx_block = f"\n{context_str}\n" if context_str else ""
 
     return f"""You are a professional crypto futures trading advisor. Analyze this OPEN position and give a specific, honest, actionable recommendation. The trader needs clear guidance — not generic advice.
@@ -108,7 +117,7 @@ def analyze_position(position: dict) -> dict:
     client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
         model=MODEL,
-        max_tokens=1024,
+        max_tokens=768,
         messages=[{"role": "user", "content": prompt}]
     )
 

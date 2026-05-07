@@ -38,7 +38,7 @@ import chart_context
 import ai_rulebook
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-haiku-4-5-20251001"   # Haiku sufficient for retroactive scoring
 ENTER_THRESHOLD = 7   # score ≥ this = ENTER recommendation
 
 # ── Batch scan state ───────────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ def _analyze_one(trade: dict, rulebook_str: str) -> dict | None:
         prompt  = _build_prompt(trade, ctx, conf, hist, rulebook_str)
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
-            model=MODEL, max_tokens=700,
+            model=MODEL, max_tokens=512,
             messages=[{"role": "user", "content": prompt}]
         )
         result = json.loads(strip_fence(message.content[0].text.strip()))

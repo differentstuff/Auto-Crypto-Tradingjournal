@@ -28,15 +28,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import anthropic
 
 from database import db_conn
-from helpers import strip_fence
+from helpers import strip_fence, build_cached_messages
 import chart_context
 import market_context
 import ai_rulebook
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL     = "claude-sonnet-4-6"
-MIN_SCORE = 6
-CACHE_TTL = 1800  # 30 min between scans
+MODEL      = "claude-sonnet-4-6"          # full detail pass
+FAST_MODEL = "claude-haiku-4-5-20251001"  # quick score pass
+MIN_SCORE  = 6
+FULL_DETAIL_TOP_N = 12   # max symbols that get the expensive full-detail prompt
+CACHE_TTL  = 1800  # 30 min between scans
 
 # ── Watchlist ──────────────────────────────────────────────────────────────────
 
@@ -297,13 +299,72 @@ Otherwise respond with this exact structure:
 Respond with ONLY valid JSON — no markdown, no code fences."""
 
 
+def _build_shared_prefix(mkt_str: str, rulebook_str: str) -> str:
+    """Shared context block — identical for all finalists in a scan, so it caches across parallel calls."""
+    mkt_block = f"MARKET CONTEXT:\n{mkt_str}\n\n" if mkt_str else ""
+    rb_block  = f"TRADER RULEBOOK:\n{rulebook_str}\n\n" if rulebook_str else ""
+    return (
+        f"{mkt_block}{rb_block}"
+        "SCORING SCALE:\n"
+        "6=Moderate, 7=Good(R:R≥2:1), 8=Strong(≥3 signals,R:R≥2.5:1), "
+        "9=Excellent(multi-TF+no conflicts), 10=Perfect(textbook+volume+R:R≥4:1)\n"
+        "Score <6 if: no structural entry, SL inside ATR noise, or R:R below 1.5:1."
+    )
+
+
+def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
+                 shared_prefix: str) -> dict | None:
+    """
+    Pass 1 — cheap Haiku call returning only a score (0-10) and confirmed direction.
+    Returns None if score < MIN_SCORE or on any error.
+    """
+    pt_4h = ctx.get("4H", {}).get("prompt_text", "")
+    pt_1d = ctx.get("1D", {}).get("prompt_text", "")
+    conf_line = f"{conf['label']} ({conf['bullish']}↑/{conf['bearish']}↓)"
+
+    inds_4h = ctx.get("4H", {}).get("indicators", {})
+    sr = inds_4h.get("support_resistance", [])
+    sr_compact = "  ".join(
+        f"{'S' if l['type']=='support' else 'R'}:{l['price']:.6g}({l.get('touches',1)}t)"
+        for l in sorted(sr, key=lambda x: -x.get("touches", 1))[:4]
+    ) or "none"
+
+    variable = (
+        f"Score this {direction.upper()} setup for {symbol} — return score 0-10.\n\n"
+        f"{pt_4h}\n{pt_1d}\n"
+        f"Confluence: {conf_line}\nS/R: {sr_compact}\n\n"
+        f'If score < {MIN_SCORE}: {{"score":0}}\n'
+        f'If score >= {MIN_SCORE}: {{"score":7,"direction":"{direction}"}}\n'
+        "Respond with ONLY valid JSON — no extras."
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model=FAST_MODEL, max_tokens=50,
+            messages=[{"role": "user", "content": [
+                {"type": "text", "text": shared_prefix},
+                {"type": "text", "text": variable},
+            ]}]
+        )
+        r = json.loads(strip_fence(msg.content[0].text.strip()))
+        if r.get("score", 0) < MIN_SCORE:
+            return None
+        return {"score": r["score"], "direction": r.get("direction", direction),
+                "_input_tokens": msg.usage.input_tokens, "_output_tokens": msg.usage.output_tokens}
+    except Exception:
+        return None
+
+
 def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str):
     try:
-        prompt  = _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str)
+        # Split prompt into cacheable shared prefix + variable symbol part
+        shared = _build_shared_prefix(mkt_str, rulebook_str)
+        prompt  = _build_prompt(symbol, ctx, conf, direction, "", history, rulebook_str)
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
-            model=MODEL, max_tokens=1400,
-            messages=[{"role": "user", "content": prompt}]
+            model=MODEL, max_tokens=1200,
+            messages=build_cached_messages(shared, prompt),
         )
         result = json.loads(strip_fence(message.content[0].text.strip()))
         if result.get("setup_score", 0) < MIN_SCORE:
@@ -366,7 +427,26 @@ def _scan_thread(symbols: list):
             rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
             histories = {s: _symbol_history(s, conn) for s, _, _, _ in finalists}
 
-        # Stage 3 — AI scoring in parallel
+        # Stage 3a — Quick score all finalists with Haiku (cheap pass)
+        # Shared prefix is identical for all → prompt cache hits after first call
+        shared_prefix = _build_shared_prefix(mkt_str, rulebook_str)
+        quick_results = []
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            fq = {
+                ex.submit(_quick_score, sym, ctx, conf, dir_, shared_prefix): (sym, ctx, conf, dir_)
+                for sym, ctx, conf, dir_ in finalists
+            }
+            for f in as_completed(fq):
+                sym, ctx, conf, dir_ = fq[f]
+                r = f.result()
+                if r is not None:
+                    quick_results.append((sym, ctx, conf, dir_, r["score"]))
+
+        # Sort by quick score, take top N for expensive full-detail pass
+        quick_results.sort(key=lambda x: -x[4])
+        top_finalists = quick_results[:FULL_DETAIL_TOP_N]
+
+        # Stage 3b — Full detail with Sonnet on top-N only
         setups = []
         with ThreadPoolExecutor(max_workers=5) as ex:
             fs = {
@@ -374,7 +454,7 @@ def _scan_thread(symbols: list):
                     _ai_score, sym, ctx, conf, direction,
                     mkt_str, histories.get(sym, {"trades": 0}), rulebook_str
                 ): sym
-                for sym, ctx, conf, direction in finalists
+                for sym, ctx, conf, direction, _ in top_finalists
             }
             for f in as_completed(fs):
                 result = f.result()

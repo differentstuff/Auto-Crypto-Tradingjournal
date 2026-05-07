@@ -71,7 +71,7 @@ def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "") -> str:
         "worst_symbols": pruned.get("worst_symbols", []),
     }
 
-    stats_json = json.dumps(summary, indent=2)
+    stats_json = json.dumps(summary)
 
     mkt_block = f"\nCURRENT MARKET CONTEXT:\n{mkt_ctx}\n" if mkt_ctx else ""
 
@@ -108,7 +108,7 @@ def analyze(filters: dict = None) -> dict:
 
     message = client.messages.create(
         model=MODEL,
-        max_tokens=8096,
+        max_tokens=2500,
         messages=[{"role": "user", "content": prompt}]
     )
 
