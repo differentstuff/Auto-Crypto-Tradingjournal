@@ -168,17 +168,17 @@ If SKIP:
 
 # ── Core per-trade analysis ────────────────────────────────────────────────────
 
-def _analyze_one(trade: dict, conn) -> dict | None:
-    """Analyze one trade retroactively. Returns result dict or None on failure."""
+def _analyze_one(trade: dict, rulebook_str: str) -> dict | None:
+    """Analyze one trade retroactively. Opens its own DB connection."""
     try:
         end_ms = _to_ms(trade["open_time"])
         ctx    = chart_context.get_historical_context(trade["symbol"], ["4H", "1D"], end_ms)
         conf   = chart_context.confluence_score(trade["symbol"], ["4H", "1D"], ctx=ctx)
-        hist   = _symbol_history_before(trade["symbol"], trade["open_time"], conn)
 
-        rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
-        prompt       = _build_prompt(trade, ctx, conf, hist, rulebook_str)
+        with db_conn() as conn:
+            hist = _symbol_history_before(trade["symbol"], trade["open_time"], conn)
 
+        prompt  = _build_prompt(trade, ctx, conf, hist, rulebook_str)
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
             model=MODEL, max_tokens=700,
@@ -295,23 +295,22 @@ def _batch_thread(n: int):
                 ORDER BY close_time DESC
                 LIMIT ?
             """, (n,)).fetchall()]
+            rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
 
         _update(total=len(trades))
 
-        # Process in parallel (5 concurrent to avoid Bitget rate-limiting)
         done = 0
         with ThreadPoolExecutor(max_workers=5) as ex:
-            fs = {}
-            for trade in trades:
-                with db_conn() as conn:
-                    f = ex.submit(_analyze_one, trade, conn)
-                fs[f] = trade
+            fs = {ex.submit(_analyze_one, trade, rulebook_str): trade for trade in trades}
 
             for f in as_completed(fs):
-                trade  = fs[f]
-                result = f.result()
-                done  += 1
+                trade = fs[f]
+                done += 1
                 _update(progress=done)
+                try:
+                    result = f.result()
+                except Exception:
+                    continue
 
                 if result is None:
                     continue
