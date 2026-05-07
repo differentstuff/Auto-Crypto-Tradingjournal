@@ -575,14 +575,15 @@ def get_chart_context(symbol: str, timeframes: list = None) -> dict:
     return result
 
 
-def confluence_score(symbol: str, timeframes: list = None) -> dict:
+def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> dict:
     """
     Aggregate RSI/MACD/EMA/ADX direction signals across timeframes.
     Returns {score, max, bullish, bearish, label, details}.
-    Used by prompt_builder to add a single confluence line to every AI prompt.
+    Pass ctx to reuse an already-computed get_chart_context() result.
     """
     tfs = timeframes or ["4H", "1D"]
-    ctx = get_chart_context(symbol, tfs)
+    if ctx is None:
+        ctx = get_chart_context(symbol, tfs)
 
     total_bull = 0
     total_bear = 0

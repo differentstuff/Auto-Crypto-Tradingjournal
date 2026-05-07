@@ -12,13 +12,15 @@ New vs v2.2:
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import anthropic
 
-from database import get_conn
-import chart_context
+from database import db_conn
+from helpers import strip_fence
 import market_context
 import prompt_builder
+import trade_utils
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL    = "claude-sonnet-4-6"
@@ -87,40 +89,7 @@ def _calc_sizing(account_equity: float, entry: float, sl: float,
     return result
 
 
-# ── ATR SL quality check (item 3) ─────────────────────────────────────────────
-
-def _atr_sl_warning(symbol: str, entry: float, sl: float) -> str:
-    """Returns a warning if the SL is within noise range on 1H ATR."""
-    try:
-        ctx  = chart_context.get_chart_context(symbol, ["1H"])
-        inds = ctx.get("1H", {}).get("indicators", {})
-        atr  = inds.get("atr", {})
-        if not atr or not atr.get("value"):
-            return ""
-        atr_val = atr["value"]
-        sl_dist = abs(entry - sl)
-        if sl_dist < atr_val * 0.5:
-            return (f"SL distance {sl_dist:.4f} < 0.5× 1H ATR ({atr_val:.4f}) — "
-                    "stop is inside noise, very high chance of premature trigger")
-        if sl_dist < atr_val:
-            return (f"SL distance {sl_dist:.4f} < 1× 1H ATR ({atr_val:.4f}) — "
-                    "tight stop, moderate noise risk")
-    except Exception:
-        pass
-    return ""
-
-
-# ── Portfolio correlation check (item 2) ──────────────────────────────────────
-
-_SECTORS = {
-    "BTC":      ["BTCUSDT", "WBTCUSDT"],
-    "ETH/L2":   ["ETHUSDT", "ARBUSDT", "OPUSDT", "MATICUSDT", "STRKUSDT", "ZKUSDT", "SCROLLUSDT"],
-    "SOL/L1":   ["SOLUSDT", "AVAXUSDT", "SUIUSDT", "APTUSDT", "NEARUSDT", "SEIUSDT", "INJUSDT"],
-    "Meme":     ["DOGEUSDT", "SHIBUSDT", "PEPEUSDT", "BOMEUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT"],
-    "DeFi":     ["UNIUSDT", "AAVEUSDT", "CRVUSDT", "MKRUSDT", "SNXUSDT", "DYDXUSDT"],
-    "AI/Infra": ["FETUSDT", "RENDERUSDT", "WLDUSDT", "TAOUSDT", "AGIXUSDT", "GRTUSDT"],
-}
-
+# ── Portfolio correlation check ────────────────────────────────────────────────
 
 def _correlation_warning(symbol: str, direction: str, open_positions: list) -> str:
     """Returns a warning string if this trade adds directional concentration risk."""
@@ -130,7 +99,7 @@ def _correlation_warning(symbol: str, direction: str, open_positions: list) -> s
     if not sym.endswith("USDT"):
         sym += "USDT"
     warnings = []
-    for sector, symbols in _SECTORS.items():
+    for sector, symbols in trade_utils.SECTORS.items():
         if sym in symbols:
             same = [p for p in open_positions
                     if p.get("symbol") in symbols and p.get("direction") == direction
@@ -230,7 +199,7 @@ def analyze_call(call_text: str, account_equity: float,
     image_b64:      Optional base64-encoded chart image
     image_type:     MIME type of the image
     market_regime:  Optional pre-fetched market context string
-    open_positions: Open position list for correlation check (item 2)
+    open_positions: Open position list for correlation check
     """
     text_lower = call_text.lower()
     setup_type = None  # resolved by Claude; None avoids NameError on similar-trades lookup
@@ -279,30 +248,35 @@ def analyze_call(call_text: str, account_equity: float,
             "risk_amount_usdt": round(account_equity * (0.02 if has_dca else 0.01), 2),
         }
 
-    # ATR + correlation warnings
-    atr_warn  = _atr_sl_warning(symbol, entry_price, sl_price) if entry_price and sl_price else ""
     corr_warn = _correlation_warning(symbol, direction, open_positions or [])
 
-    # Fresh market context if not provided
-    mkt_str = market_regime or ""
-    if not mkt_str:
-        try:
-            mkt_ctx = market_context.get_market_context([symbol])
-            mkt_str = market_context.format_for_prompt(mkt_ctx)
-        except Exception:
-            pass
+    # ATR check and market context are independent — fetch in parallel
+    mkt_str  = market_regime or ""
+    atr_warn = ""
+    need_atr = bool(entry_price and sl_price)
+    need_mkt = not mkt_str
 
-    conn    = get_conn()
-    history = _symbol_history(symbol, conn)
-    ctx_str = prompt_builder.build_context(
-        conn       = conn,
-        symbol     = symbol,
-        direction  = direction,
-        setup_type = setup_type,
-        market_str = mkt_str,
-        timeframes = ["4H", "1D"],
-    )
-    conn.close()
+    if need_atr and need_mkt:
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_atr = ex.submit(trade_utils.atr_sl_warning, symbol, entry_price, sl_price)
+            f_mkt = ex.submit(market_context.get_market_str, [symbol])
+        atr_warn = f_atr.result()
+        mkt_str  = f_mkt.result()
+    elif need_atr:
+        atr_warn = trade_utils.atr_sl_warning(symbol, entry_price, sl_price)
+    elif need_mkt:
+        mkt_str = market_context.get_market_str([symbol])
+
+    with db_conn() as conn:
+        history = _symbol_history(symbol, conn)
+        ctx_str = prompt_builder.build_context(
+            conn       = conn,
+            symbol     = symbol,
+            direction  = direction,
+            setup_type = setup_type,
+            market_str = mkt_str,
+            timeframes = ["4H", "1D"],
+        )
 
     prompt  = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
                              context_str=ctx_str, atr_warning=atr_warn, corr_warning=corr_warn)
@@ -321,12 +295,7 @@ def analyze_call(call_text: str, account_equity: float,
         messages=[{"role": "user", "content": content}]
     )
 
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        lines = raw.split("\n")[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    raw = strip_fence(message.content[0].text.strip())
 
     try:
         result = json.loads(raw)

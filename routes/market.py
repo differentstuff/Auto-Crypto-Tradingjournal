@@ -5,6 +5,7 @@ Handles: /api/market/context, /api/market/calendar,
          /api/exchange/symbols, /api/market/prices
 """
 
+import threading
 import time
 import traceback
 
@@ -18,6 +19,7 @@ _exchange_symbols_cache: list = []
 _exchange_symbols_ts: float = 0
 _prices_cache: dict = {}
 _prices_ts: float = 0
+_prices_lock = threading.Lock()
 
 bp = Blueprint("market", __name__)
 
@@ -69,13 +71,15 @@ def api_market_prices():
             return _err("symbols param required")
         symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
         now = time.time()
-        if (now - _prices_ts) > 60:
-            _prices_cache = {}
-            _prices_ts = now
-        missing = [s for s in symbols if s not in _prices_cache]
-        if missing:
-            _prices_cache.update(bitget_client.get_mark_prices(missing))
-        return _ok({s: _prices_cache.get(s) for s in symbols})
+        with _prices_lock:
+            if (now - _prices_ts) > 60:
+                _prices_cache.clear()
+                _prices_ts = now
+            missing = [s for s in symbols if s not in _prices_cache]
+            if missing:
+                _prices_cache.update(bitget_client.get_mark_prices(missing))
+            result = {s: _prices_cache.get(s) for s in symbols}
+        return _ok(result)
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

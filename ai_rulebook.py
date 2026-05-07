@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 import anthropic
 from database import get_conn
+from helpers  import strip_fence
 
 MODEL        = "claude-sonnet-4-6"
 MIN_TRADES   = 15
@@ -339,12 +340,7 @@ def _ask_claude(stats: dict, total: int) -> list:
         model=MODEL, max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = resp.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    raw = strip_fence(resp.content[0].text.strip())
     return json.loads(raw)
 
 

@@ -26,7 +26,7 @@ Browser (http://<your-pi-ip>:8082)
          │
          ▼
     Flask (app.py)              ← ~50 lines: blueprint registration + startup
-    ├── helpers.py              ← Shared _ok(), _err(), _filters_from_args()
+    ├── helpers.py              ← Shared _ok(), _err(), _filters_from_args(), strip_fence()
     ├── database.py             ← SQLite schema, get_conn(), db_conn() context manager
     │
     ├── routes/                 ← Flask Blueprints — one file per domain
@@ -46,10 +46,11 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_call.py              ← Core call analysis logic (split from ai_call_analyzer v2.3)
     ├── ai_limit.py             ← Pending limit analysis (split from ai_call_analyzer v2.3)
     ├── ai_call_analyzer.py     ← Re-export shim: from ai_call import …; from ai_limit import …
+    ├── trade_utils.py          ← Shared trading utilities: SECTORS dict, atr_sl_warning() (v2.4)
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
-    ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache)
+    ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache) + get_market_str()
     ├── chart_context.py        ← OHLCV candles + pandas-ta indicators + confluence_score() (10-min cache)
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
@@ -360,7 +361,7 @@ All AI modules (`ai_call.py`, `ai_limit.py`, `ai_live_trade.py`) call this inste
 BTCUSDT 4H: RSI 58(neu) | MACD bull | EMA ↑all | ADX 28↑ | ATR 1.2% | BB 62% | S:64000 R:68000
 ```
 
-**`confluence_score(symbol, timeframes)`** (v2.3): Aggregates RSI/MACD/EMA/ADX signals across TFs.
+**`confluence_score(symbol, timeframes, ctx=None)`** (v2.3): Aggregates RSI/MACD/EMA/ADX signals across TFs. Pass `ctx` to reuse an already-computed `get_chart_context()` result (avoids double indicator computation — v2.4).
 ```python
 {"score": 3, "max": 8, "bullish": 5, "bearish": 2, "label": "Bullish", "details": ["4H: 3↑/1↓", "1D: 2↑/1↓"]}
 ```
@@ -1427,6 +1428,30 @@ Every call to `ai_live_trade.analyze_position()`, `ai_call_analyzer.analyze_call
 #### Auto-update schedule
 
 `bitget_sync.py` calls `_maybe_update_rulebook()` after each background sync. If `rulebook_updated_at` is older than `RULEBOOK_INTERVAL_DAYS` (7), a full regeneration runs automatically.
+
+---
+
+## v2.4 Code Quality Refactor (2026-05-07)
+
+### Bug fixes
+- **DB connection leak** — `ai_call.py`, `ai_limit.py`, `ai_live_trade.py` called `get_conn()` without a context manager; any exception between open and close leaked a WAL write-lock. All three now use `with db_conn() as conn:`.
+- **Buggy fence-stripping in `ai_advisor.py`** — had a no-op conditional that always executed both branches; fixed by replacing with shared `strip_fence()`.
+- **Weaker fence-stripping in `ai_rulebook.py`** — used `split("```")[1]` which would corrupt output if content contained backticks; replaced with shared `strip_fence()`.
+
+### Shared utilities extracted
+- **`helpers.strip_fence(raw)`** — canonical markdown-fence stripping for all 5 AI modules; eliminates 4 duplicated inline blocks.
+- **`trade_utils.py`** (new) — `SECTORS` dict (6 named crypto sectors) and `atr_sl_warning()` function extracted from `ai_call.py` and `ai_limit.py`. Both files previously had identical private copies.
+- **`market_context.get_market_str(symbols, fallback="")`** (new) — encapsulates the `get_market_context()` + `format_for_prompt()` + try/except pattern repeated in every AI module.
+- **`SECTORS` synced with JS** — Python sectors now match `08-live.js` SECTORS (added `MOGUSDT`, `POPCATUSDT` to Meme; `COMPUSDT` to DeFi).
+
+### Performance
+- **No double indicator computation** — `confluence_score()` now accepts `ctx=None`; `prompt_builder` passes the already-fetched `get_chart_context()` result, avoiding a second round of pandas-ta per TF per request.
+- **Parallel ATR + market context** — `ai_call.py` and `ai_limit.py` now fetch the 1H ATR (chart_context) and market context (fear/greed + funding) concurrently via `ThreadPoolExecutor(max_workers=2)` when both are needed.
+- **Thread-safe price cache** — `routes/market.py` `_prices_cache` now protected by `threading.Lock()`; uses `.clear()` instead of reassignment to prevent torn writes under gunicorn multi-threading.
+
+### JS cleanup
+- **`renderMarketBadges(symbol)`** — extracted from an IIFE inside a template literal in `08-live.js`; now a named function.
+- **Correlation warning loop** — 4-branch copy-paste for long/short×2/3+ replaced with a single `for` loop over `[['LONG', longs], ['SHORT', shorts]]`.
 
 ---
 

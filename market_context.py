@@ -31,6 +31,14 @@ def _cached(key: str, fn, ttl: int = CACHE_TTL):
     return result
 
 
+def get_market_str(symbols: list, fallback: str = "") -> str:
+    """Fetch market context and format it as a prompt string. Returns fallback on error."""
+    try:
+        return format_for_prompt(get_market_context(symbols))
+    except Exception:
+        return fallback
+
+
 # ── Fear & Greed ───────────────────────────────────────────────────────────────
 
 def get_fear_greed() -> dict:

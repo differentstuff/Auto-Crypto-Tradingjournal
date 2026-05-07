@@ -1,6 +1,16 @@
 from flask import jsonify, request
 
 
+def strip_fence(raw: str) -> str:
+    """Strip markdown code fences (```json ... ```) from Claude responses."""
+    if raw.startswith("```"):
+        lines = raw.split("\n")[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+    return raw
+
+
 def _ok(data):
     return jsonify({"ok": True, "data": data})
 

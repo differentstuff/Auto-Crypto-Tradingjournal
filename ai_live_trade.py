@@ -15,19 +15,16 @@ Response is structured JSON, rendered as a card in the Live Trades module.
 import json
 import os
 import anthropic
-from database import get_conn
+from database import db_conn
+from helpers import strip_fence
 import market_context
 import prompt_builder
 
-ANTHROPIC_API_KEY = os.environ.get(
-    "ANTHROPIC_API_KEY",
-    ""
-)
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = "claude-sonnet-4-6"
 
 
 def _get_symbol_history(symbol: str, conn) -> dict:
-    """Pull the trader's historical closed-trade stats for this symbol from the DB."""
     rows = conn.execute("""
         SELECT realized_pnl, duration_minutes, entry_price, close_price,
                direction, open_time, close_time
@@ -40,19 +37,19 @@ def _get_symbol_history(symbol: str, conn) -> dict:
     if not rows:
         return {"trades": 0}
 
-    pnls     = [r[0] for r in rows if r[0] is not None]
-    wins     = [p for p in pnls if p > 0]
-    losses   = [p for p in pnls if p < 0]
-    durations= [r[1] for r in rows if r[1] is not None]
+    pnls      = [r[0] for r in rows if r[0] is not None]
+    wins      = [p for p in pnls if p > 0]
+    losses    = [p for p in pnls if p < 0]
+    durations = [r[1] for r in rows if r[1] is not None]
 
     return {
-        "trades":       len(rows),
-        "win_rate_pct": round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
-        "total_pnl":    round(sum(pnls), 2),
-        "avg_win":      round(sum(wins) / len(wins), 2) if wins else 0,
-        "avg_loss":     round(sum(losses) / len(losses), 2) if losses else 0,
+        "trades":         len(rows),
+        "win_rate_pct":   round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
+        "total_pnl":      round(sum(pnls), 2),
+        "avg_win":        round(sum(wins) / len(wins), 2) if wins else 0,
+        "avg_loss":       round(sum(losses) / len(losses), 2) if losses else 0,
         "avg_duration_h": round(sum(durations) / len(durations) / 60, 1) if durations else 0,
-        "recent_pnls":  [round(p, 2) for p in pnls[:10]],
+        "recent_pnls":    [round(p, 2) for p in pnls[:10]],
     }
 
 
@@ -95,22 +92,19 @@ def analyze_position(position: dict) -> dict:
     position: dict from bitget_client.get_open_positions()
     Returns structured dict with recommendation.
     """
-    conn    = get_conn()
-    history = _get_symbol_history(position["symbol"], conn)
+    mkt_str = market_context.get_market_str([position["symbol"]])
 
-    ctx     = market_context.get_market_context([position["symbol"]])
-    mkt_str = market_context.format_for_prompt(ctx)
-    ctx_str = prompt_builder.build_context(
-        conn       = conn,
-        symbol     = position["symbol"],
-        market_str = mkt_str,
-        timeframes = ["4H", "1D"],
-        include_similar = False,
-    )
-    conn.close()
+    with db_conn() as conn:
+        history = _get_symbol_history(position["symbol"], conn)
+        ctx_str = prompt_builder.build_context(
+            conn            = conn,
+            symbol          = position["symbol"],
+            market_str      = mkt_str,
+            timeframes      = ["4H", "1D"],
+            include_similar = False,
+        )
 
-    prompt = _build_prompt(position, history, ctx_str)
-
+    prompt  = _build_prompt(position, history, ctx_str)
     client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
         model=MODEL,
@@ -118,14 +112,7 @@ def analyze_position(position: dict) -> dict:
         messages=[{"role": "user", "content": prompt}]
     )
 
-    raw = message.content[0].text.strip()
-
-    # Strip markdown code fences if present
-    if raw.startswith("```"):
-        lines = raw.split("\n")[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    raw = strip_fence(message.content[0].text.strip())
 
     try:
         result = json.loads(raw)

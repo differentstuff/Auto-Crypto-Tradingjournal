@@ -7,45 +7,18 @@ portfolio correlation risk, and overall recommendation (Keep / Adjust / Cancel).
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import anthropic
 
-from database import get_conn
-import chart_context
+from database import db_conn
+from helpers import strip_fence
 import market_context
 import prompt_builder
+import trade_utils
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = "claude-sonnet-4-6"
-
-_SECTORS = {
-    "BTC":      ["BTCUSDT", "WBTCUSDT"],
-    "ETH/L2":   ["ETHUSDT", "ARBUSDT", "OPUSDT", "MATICUSDT", "STRKUSDT", "ZKUSDT", "SCROLLUSDT"],
-    "SOL/L1":   ["SOLUSDT", "AVAXUSDT", "SUIUSDT", "APTUSDT", "NEARUSDT", "SEIUSDT", "INJUSDT"],
-    "Meme":     ["DOGEUSDT", "SHIBUSDT", "PEPEUSDT", "BOMEUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT"],
-    "DeFi":     ["UNIUSDT", "AAVEUSDT", "CRVUSDT", "MKRUSDT", "SNXUSDT", "DYDXUSDT"],
-    "AI/Infra": ["FETUSDT", "RENDERUSDT", "WLDUSDT", "TAOUSDT", "AGIXUSDT", "GRTUSDT"],
-}
-
-
-def _atr_sl_warning(symbol: str, entry: float, sl: float) -> str:
-    try:
-        ctx  = chart_context.get_chart_context(symbol, ["1H"])
-        inds = ctx.get("1H", {}).get("indicators", {})
-        atr  = inds.get("atr", {})
-        if not atr or not atr.get("value"):
-            return ""
-        atr_val = atr["value"]
-        sl_dist = abs(entry - sl)
-        if sl_dist < atr_val * 0.5:
-            return (f"SL distance {sl_dist:.4f} < 0.5× 1H ATR ({atr_val:.4f}) — "
-                    "inside noise range, high chance of premature trigger")
-        if sl_dist < atr_val:
-            return (f"SL distance {sl_dist:.4f} < 1× 1H ATR ({atr_val:.4f}) — "
-                    "tight stop, moderate noise risk")
-    except Exception:
-        pass
-    return ""
 
 
 def _correlation_warning(symbol: str, direction: str, open_positions: list,
@@ -59,7 +32,7 @@ def _correlation_warning(symbol: str, direction: str, open_positions: list,
         {"symbol": l["symbol"], "direction": l["direction"]} for l in (other_limits or [])
     ]
     warnings = []
-    for sector, symbols in _SECTORS.items():
+    for sector, symbols in trade_utils.SECTORS.items():
         if sym in symbols:
             same = [p for p in all_pos
                     if p.get("symbol") in symbols and p.get("direction") == direction
@@ -144,27 +117,29 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
     entry     = float(lim.get("limit_price") or 0)
     sl        = float(lim.get("sl_price") or 0)
 
-    atr_warn    = _atr_sl_warning(symbol, entry, sl) if entry and sl else ""
     total_other = sum(float(l.get("size_usdt") or 0) for l in (other_limits or []))
     corr_warn   = _correlation_warning(symbol, direction, open_positions, other_limits)
 
-    mkt_str = ""
-    try:
-        mkt_ctx = market_context.get_market_context([symbol])
-        mkt_str = market_context.format_for_prompt(mkt_ctx)
-    except Exception:
-        pass
+    # ATR check and market context are independent — fetch in parallel
+    if entry and sl:
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_atr = ex.submit(trade_utils.atr_sl_warning, symbol, entry, sl)
+            f_mkt = ex.submit(market_context.get_market_str, [symbol])
+        atr_warn = f_atr.result()
+        mkt_str  = f_mkt.result()
+    else:
+        atr_warn = ""
+        mkt_str  = market_context.get_market_str([symbol])
 
-    conn    = get_conn()
-    ctx_str = prompt_builder.build_context(
-        conn            = conn,
-        symbol          = symbol,
-        direction       = direction,
-        market_str      = mkt_str,
-        timeframes      = ["4H", "1D"],
-        include_similar = False,
-    )
-    conn.close()
+    with db_conn() as conn:
+        ctx_str = prompt_builder.build_context(
+            conn            = conn,
+            symbol          = symbol,
+            direction       = direction,
+            market_str      = mkt_str,
+            timeframes      = ["4H", "1D"],
+            include_similar = False,
+        )
 
     prompt = _build_prompt(lim, equity, ctx_str, atr_warn, corr_warn, total_other)
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -173,12 +148,7 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        lines = raw.split("\n")[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    raw = strip_fence(message.content[0].text.strip())
 
     try:
         result = json.loads(raw)

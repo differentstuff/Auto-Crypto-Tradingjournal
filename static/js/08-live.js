@@ -131,6 +131,24 @@ function renderLiveKpis(positions, eq) {
 
 // renderCallTargetsPanel → 08b-live-calls.js
 
+function renderMarketBadges(symbol) {
+  const mc = liveMarketCtx[symbol] || {};
+  const chips = [];
+  const fr = mc.funding || {};
+  if (fr.ok) {
+    const col = fr.rate > 0 ? 'var(--yellow)' : 'var(--accent3)';
+    const bg  = fr.rate > 0 ? 'rgba(255,179,0,.12)' : 'rgba(38,217,107,.12)';
+    chips.push(`<span class="badge" style="background:${bg};color:${col};font-size:.65rem">F ${fr.rate_pct > 0 ? '+' : ''}${fr.rate_pct}%${fr.high ? ' ⚠' : ''}</span>`);
+  }
+  const ls = mc.long_short || {};
+  if (ls.ok) {
+    const crowded = ls.long_pct > 65 || ls.short_pct > 65;
+    const col = crowded ? 'var(--yellow)' : 'var(--muted)';
+    chips.push(`<span class="badge" style="background:rgba(121,134,203,.1);color:${col};font-size:.65rem">L/S ${ls.long_pct}/${ls.short_pct}</span>`);
+  }
+  return chips.join('');
+}
+
 function renderPositionCards(positions, waitingLimits) {
   const container = document.getElementById('trades-container');
   if (!positions.length) {
@@ -185,23 +203,7 @@ function renderPositionCards(positions, waitingLimits) {
             ${is48h ? `<span class="chip-48h">⏱ ${Math.floor(p.duration_minutes/1440)}d+ OPEN</span>` : ''}
             ${isLiqNear ? `<span class="chip-liq-warn">⚡ LIQ ${liqDist.toFixed(1)}% AWAY</span>` : ''}
             ${relLimits.length ? `<span class="badge" style="background:rgba(79,195,247,.12);color:var(--accent2);font-size:.65rem;cursor:pointer" onclick="event.stopPropagation();showPage('pending')" title="${relLimits.map(l=>`${l.direction} @ ${l.limit_price}`).join(', ')}">⏳ ${relLimits.length} limit${relLimits.length>1?'s':''}</span>` : ''}
-            ${(() => {
-              const mc = liveMarketCtx[p.symbol] || {};
-              const chips = [];
-              const fr = mc.funding || {};
-              if (fr.ok) {
-                const col = fr.rate > 0 ? 'var(--yellow)' : 'var(--accent3)';
-                const bg  = fr.rate > 0 ? 'rgba(255,179,0,.12)' : 'rgba(38,217,107,.12)';
-                chips.push(`<span class="badge" style="background:${bg};color:${col};font-size:.65rem">F ${fr.rate_pct > 0 ? '+' : ''}${fr.rate_pct}%${fr.high ? ' ⚠' : ''}</span>`);
-              }
-              const ls = mc.long_short || {};
-              if (ls.ok) {
-                const crowded = ls.long_pct > 65 || ls.short_pct > 65;
-                const col = crowded ? 'var(--yellow)' : 'var(--muted)';
-                chips.push(`<span class="badge" style="background:rgba(121,134,203,.1);color:${col};font-size:.65rem">L/S ${ls.long_pct}/${ls.short_pct}</span>`);
-              }
-              return chips.join('');
-            })()}
+            ${renderMarketBadges(p.symbol)}
           </div>
         </div>
         <!-- Stats -->
@@ -407,22 +409,18 @@ function renderCorrelationWarning(positions) {
     }
   }
 
-  // Directional overload: 3+ positions all same direction across any sectors
+  // Directional overload: 2+ positions same direction across any sectors
   const longs  = positions.filter(p => p.direction === 'Long');
-  const shorts  = positions.filter(p => p.direction === 'Short');
-  if (longs.length >= 3) {
-    const m = longs.reduce((s,p) => s + (p.margin_usdt || 0), 0);
-    warnings.push({ severity: 2, text: `🔴 ${longs.length} simultaneous LONG positions — one BTC dump hits all of them (${fmtC(m)} USDT margin)` });
-  } else if (longs.length === 2) {
-    const m = longs.reduce((s,p) => s + (p.margin_usdt || 0), 0);
-    warnings.push({ severity: 1, text: `🟡 2 simultaneous LONG positions (${fmtC(m)} USDT margin) — correlated downside risk` });
-  }
-  if (shorts.length >= 3) {
-    const m = shorts.reduce((s,p) => s + (p.margin_usdt || 0), 0);
-    warnings.push({ severity: 2, text: `🔴 ${shorts.length} simultaneous SHORT positions (${fmtC(m)} USDT margin) — correlated upside risk` });
-  } else if (shorts.length === 2) {
-    const m = shorts.reduce((s,p) => s + (p.margin_usdt || 0), 0);
-    warnings.push({ severity: 1, text: `🟡 2 simultaneous SHORT positions (${fmtC(m)} USDT margin) — correlated upside risk` });
+  const shorts = positions.filter(p => p.direction === 'Short');
+  for (const [dir, group] of [['LONG', longs], ['SHORT', shorts]]) {
+    if (group.length < 2) continue;
+    const m      = group.reduce((s, p) => s + (p.margin_usdt || 0), 0);
+    const severe = group.length >= 3;
+    const risk   = dir === 'LONG' ? 'downside' : 'upside';
+    const note   = (dir === 'LONG' && severe)
+      ? `${group.length} simultaneous LONG positions — one BTC dump hits all of them (${fmtC(m)} USDT margin)`
+      : `${group.length} simultaneous ${dir} positions (${fmtC(m)} USDT margin) — correlated ${risk} risk`;
+    warnings.push({ severity: severe ? 2 : 1, text: `${severe ? '🔴' : '🟡'} ${note}` });
   }
 
   // Deduplicate and sort by severity

@@ -80,8 +80,7 @@ def build_context(
                     pt = pt[:remaining - 200] + "…"
                 lines.append(pt)
                 remaining -= len(pt)
-        # Append confluence summary
-        conf = chart_context.confluence_score(symbol, tfs)
+        conf = chart_context.confluence_score(symbol, tfs, ctx=ctx)
         if conf:
             conf_line = (
                 f"CONFLUENCE ({'/'.join(tfs)}): {conf['label']} "

@@ -16,6 +16,7 @@ import anthropic
 
 from analytics import get_dashboard_kpis, get_deep_stats
 from database  import get_conn
+from helpers   import strip_fence
 import market_context
 
 ANTHROPIC_API_KEY = os.environ.get(
@@ -112,23 +113,12 @@ def analyze(filters: dict = None) -> dict:
         messages=[{"role": "user", "content": prompt}]
     )
 
-    raw = message.content[0].text.strip()
+    # Claude sometimes wraps output in markdown fences even when asked not to
+    raw = strip_fence(message.content[0].text.strip())
 
-    # Claude sometimes wraps output in markdown code fences (```json ... ```)
-    # even when asked not to — strip them before parsing.
-    if raw.startswith("```"):
-        lines = raw.split("\n")
-        # drop first line (```json or ```) and last line (```)
-        lines = lines[1:] if lines[-1].strip() == "```" else lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
-
-    # Parse the JSON response
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
-        # Last-resort fallback: show raw text in the overall_status card
         result = {
             "overall_status": raw,
             "score":          {"value": 0, "label": "N/A"},
