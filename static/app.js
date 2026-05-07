@@ -223,12 +223,17 @@ function makeChart(id, type, data, extraOpts={}) {
 // DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadDashboard() {
-  const res = await api('/api/dashboard/kpis');
+  // Fetch KPIs, market context, and live positions in parallel
+  const [res, mr, lr] = await Promise.all([
+    api('/api/dashboard/kpis'),
+    api('/api/market/context?symbols=BTCUSDT'),
+    api('/api/live/positions'),
+  ]);
   if (!res.ok) return;
   const d = res.data;
 
-  // Market Pulse (non-blocking, loads in parallel)
-  api('/api/market/context?symbols=BTCUSDT').then(mr => {
+  // Market Pulse
+  ;(mr => {
     const el = document.getElementById('market-pulse');
     if (!mr.ok || !el) return;
     const fg  = mr.data.fear_greed || {};
@@ -260,7 +265,7 @@ async function loadDashboard() {
       el.innerHTML = parts.join('<span style="color:var(--border)">|</span>');
       el.style.display = 'flex';
     }
-  });
+  })(mr);
 
   document.getElementById('dash-subtitle').textContent =
     `${d.total_trades} closed positions · Win rate ${d.win_rate}% · Profit factor ${d.profit_factor ?? '—'}`;
@@ -289,13 +294,10 @@ async function loadDashboard() {
       ${k.sub ? `<div class="kpi-sub">${k.sub}</div>` : ''}
     </div>`).join('');
 
-  // Open position risk (async — non-blocking)
-  api('/api/live/positions').then(lr => {
-    if (!lr.ok) return;
+  // Open position risk — already fetched in parallel above
+  if (lr.ok) {
     const pos = lr.data.positions || [];
     const eq  = parseFloat(lr.data.equity?.accountEquity || 0);
-
-    // Use SL-based risk when a stop-loss is set, otherwise fall back to margin
     const totalRisk = pos.reduce((s, p) => {
       const entry = parseFloat(p.entry_price || 0);
       const sl    = parseFloat(p.stop_loss  || 0);
@@ -306,19 +308,18 @@ async function loadDashboard() {
           : (sl - entry) / entry * size;
         return s + Math.max(0, slRisk);
       }
-      return s + (p.margin_usdt || 0); // no SL set — show margin as worst-case
+      return s + (p.margin_usdt || 0);
     }, 0);
-
     const riskPct = eq > 0 ? (totalRisk / eq * 100).toFixed(1) : 0;
     const hasSl   = pos.some(p => parseFloat(p.stop_loss || 0) > 0);
-    const el = document.createElement('div');
-    el.className = 'kpi-card';
-    el.innerHTML = `
+    const riskEl  = document.createElement('div');
+    riskEl.className = 'kpi-card';
+    riskEl.innerHTML = `
       <div class="kpi-label">Open Position Risk</div>
       <div class="kpi-value ${totalRisk > 0 ? 'neg' : 'neu'}">${fmtC(totalRisk)} USDT</div>
       <div class="kpi-sub">${riskPct}% of equity · ${pos.length} open${hasSl ? ' · SL-based' : ' · no SL'}</div>`;
-    document.getElementById('kpi-grid').appendChild(el);
-  }).catch(() => {});
+    document.getElementById('kpi-grid').appendChild(riskEl);
+  }
 
   // Streak display
   const streakEl = document.getElementById('dash-streak-display');
@@ -1579,10 +1580,11 @@ let liveMarketCtx       = {};   // key: symbol → {funding, long_short}
 async function loadLiveTrades() {
   document.getElementById('trades-refresh-label').textContent = 'Refreshing…';
   try {
-    // Fetch positions and match checks in parallel
-    const [posRes, matchRes] = await Promise.all([
+    // Fetch positions, matches, and waiting limits in parallel
+    const [posRes, matchRes, limRes] = await Promise.all([
       api('/api/live/positions'),
       api('/api/calls/check-matches'),
+      api('/api/limits?status=waiting'),
     ]);
     if (!posRes.ok) throw new Error(posRes.error);
 
@@ -1611,7 +1613,7 @@ async function loadLiveTrades() {
       api('/api/market/context?symbols=' + syms).then(mr => {
         if (mr.ok) {
           liveMarketCtx = mr.data.symbols || {};
-          renderPositionCards(livePositionsCache);  // re-render with context
+          renderPositionCards(livePositionsCache, waitingLimits);  // re-render with context
         }
       });
     }
@@ -1637,10 +1639,11 @@ async function loadLiveTrades() {
 
     liveCallMatches = { ...confirmedMatches };
 
+    const waitingLimits = limRes.ok ? (limRes.data || []) : [];
     renderLiveKpis(livePositionsCache, eq);
     renderMatchBanners(pendingMatches, livePositionsCache);
     renderCorrelationWarning(livePositionsCache);
-    renderPositionCards(livePositionsCache);
+    renderPositionCards(livePositionsCache, waitingLimits);
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
   } catch(e) {
@@ -1791,7 +1794,7 @@ function renderCallTargetsPanel(call, pos) {
     </div>`;
 }
 
-function renderPositionCards(positions) {
+function renderPositionCards(positions, waitingLimits) {
   const container = document.getElementById('trades-container');
   if (!positions.length) {
     container.innerHTML = `<div class="no-positions">
@@ -1821,6 +1824,7 @@ function renderPositionCards(positions) {
     const noTp       = !p.take_profit;
     const dur        = p.duration_minutes != null ? durFmt(p.duration_minutes) : '—';
     const hadAnalysis = liveAnalysisCache[key];
+    const relLimits  = (waitingLimits || []).filter(l => l.symbol === p.symbol);
     const is48h      = p.duration_minutes != null && p.duration_minutes > 2880;
     const liqDist    = (() => {
       const mark = parseFloat(p.mark_price || 0);
@@ -1843,6 +1847,7 @@ function renderPositionCards(positions) {
             ${isCritical ? '<span class="badge" style="background:rgba(239,83,80,.25);color:var(--red);animation:pulse 1.5s infinite">⚠ CRITICAL</span>' : ''}
             ${is48h ? `<span class="chip-48h">⏱ ${Math.floor(p.duration_minutes/1440)}d+ OPEN</span>` : ''}
             ${isLiqNear ? `<span class="chip-liq-warn">⚡ LIQ ${liqDist.toFixed(1)}% AWAY</span>` : ''}
+            ${relLimits.length ? `<span class="badge" style="background:rgba(79,195,247,.12);color:var(--accent2);font-size:.65rem;cursor:pointer" onclick="event.stopPropagation();showPage('pending')" title="${relLimits.map(l=>`${l.direction} @ ${l.limit_price}`).join(', ')}">⏳ ${relLimits.length} limit${relLimits.length>1?'s':''}</span>` : ''}
             ${(() => {
               const mc = liveMarketCtx[p.symbol] || {};
               const chips = [];
@@ -2584,6 +2589,25 @@ async function loadPendingLimits(status) {
     return;
   }
   list.innerHTML = res.data.map(renderPendingLimitCard).join('');
+
+  // Proximity check for waiting limits — fetch current prices and annotate cards
+  if (currentLimitStatus === 'waiting' && res.data.length) {
+    const symbols = [...new Set(res.data.map(l => l.symbol).filter(Boolean))];
+    api('/api/market/prices?symbols=' + symbols.join(',')).then(pr => {
+      if (!pr.ok) return;
+      res.data.forEach(lim => {
+        const mark = pr.data[lim.symbol];
+        if (!mark || !lim.limit_price) return;
+        const dist = Math.abs((lim.limit_price - mark) / mark * 100);
+        if (dist > 5) return;
+        const el = document.getElementById('prox-' + lim.id);
+        if (!el) return;
+        const col = dist < 1 ? 'var(--red)' : dist < 3 ? 'var(--yellow)' : 'var(--accent2)';
+        el.innerHTML = `<span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,.06);color:${col}">📍 ${dist.toFixed(1)}% from limit</span>`;
+        el.style.display = '';
+      });
+    });
+  }
 }
 
 async function loadPendingRiskSummary() {
@@ -2650,6 +2674,7 @@ function renderPendingLimitCard(lim) {
       ${lim.bitget_order_id ? `<span style="font-size:.65rem;background:rgba(79,195,247,.12);color:var(--accent2);padding:2px 8px;border-radius:20px;font-weight:700">⚡ Bitget</span>` : ''}
       ${lim.call_id ? `<span style="font-size:.65rem;background:rgba(108,99,255,.12);color:var(--accent);padding:2px 8px;border-radius:20px;font-weight:700">📡 Linked Call #${lim.call_id}</span>` : ''}
       ${lim.analyst ? `<span style="font-size:.75rem;color:var(--muted)">${escHtml(lim.analyst)}</span>` : ''}
+      <span id="prox-${lim.id}" style="display:none"></span>
       <div style="display:flex;gap:16px;align-items:center;margin-left:auto;flex-wrap:wrap">
         ${lim.limit_price ? `<div class="pos-stat"><div class="pos-stat-label">Limit</div><div class="pos-stat-val" style="color:var(--accent2)">${lim.limit_price}</div></div>` : ''}
         ${lim.sl_price    ? `<div class="pos-stat"><div class="pos-stat-label">SL</div><div class="pos-stat-val" style="color:var(--red)">${lim.sl_price}</div></div>` : ''}

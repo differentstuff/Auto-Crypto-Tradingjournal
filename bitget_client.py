@@ -329,6 +329,26 @@ def get_exchange_symbols() -> list:
     return sorted({r["symbol"] for r in rows if r.get("symbol")})
 
 
+def get_mark_prices(symbols: list) -> dict:
+    """
+    Return {symbol: float(mark_price)} for the requested symbols.
+    Falls back to lastPr when markPrice is absent.
+    """
+    target = {s.upper() for s in symbols}
+    data   = _get("/api/v2/mix/market/tickers", {"productType": "USDT-FUTURES"})
+    rows   = data if isinstance(data, list) else []
+    result = {}
+    for r in rows:
+        sym = r.get("symbol", "")
+        if sym in target:
+            raw = r.get("markPrice") or r.get("lastPr") or r.get("last")
+            try:
+                result[sym] = float(raw)
+            except (TypeError, ValueError):
+                pass
+    return result
+
+
 def test_connection() -> dict:
     """Quick auth check — returns account equity dict or raises."""
     return get_account_equity()

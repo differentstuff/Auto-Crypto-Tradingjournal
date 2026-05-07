@@ -13,6 +13,8 @@ import bitget_client
 
 _exchange_symbols_cache: list = []
 _exchange_symbols_ts: float = 0
+_prices_cache: dict = {}
+_prices_ts: float = 0
 
 bp = Blueprint("analytics", __name__)
 
@@ -102,6 +104,28 @@ def api_exchange_symbols():
             _exchange_symbols_cache = bitget_client.get_exchange_symbols()
             _exchange_symbols_ts = time.time()
         return _ok(_exchange_symbols_cache)
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/market/prices")
+def api_market_prices():
+    """GET /api/market/prices?symbols=BTCUSDT,ETHUSDT — mark prices, 60-second cache."""
+    global _prices_cache, _prices_ts
+    try:
+        symbols_raw = request.args.get("symbols", "").strip()
+        if not symbols_raw:
+            return _err("symbols param required")
+        symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
+        now = time.time()
+        if (now - _prices_ts) > 60:
+            _prices_cache = {}
+            _prices_ts = now
+        missing = [s for s in symbols if s not in _prices_cache]
+        if missing:
+            _prices_cache.update(bitget_client.get_mark_prices(missing))
+        return _ok({s: _prices_cache.get(s) for s in symbols})
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

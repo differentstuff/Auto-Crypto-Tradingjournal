@@ -15,7 +15,9 @@ Timeframe granularity strings (Bitget):
   '1m' '3m' '5m' '15m' '30m' '1H' '2H' '4H' '6H' '12H' '1D' '3D' '1W'
 """
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import pandas as pd
@@ -26,17 +28,20 @@ import bitget_client
 # ── Cache ──────────────────────────────────────────────────────────────────────
 
 _cache: dict = {}
-CACHE_TTL = 600  # 10 minutes
+_cache_lock  = threading.Lock()
+CACHE_TTL    = 600  # 10 minutes
 
 
 def _cached(key: str, fn, ttl: int = CACHE_TTL):
     now = time.time()
-    if key in _cache:
-        ts, data = _cache[key]
-        if now - ts < ttl:
-            return data
+    with _cache_lock:
+        if key in _cache:
+            ts, data = _cache[key]
+            if now - ts < ttl:
+                return data
     result = fn()
-    _cache[key] = (now, result)
+    with _cache_lock:
+        _cache[key] = (now, result)
     return result
 
 
@@ -251,23 +256,26 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4,
 
 def detect_all_trendlines(symbol: str) -> list:
     """
-    Detect trendlines on 1W, 1D, 4H, 1H and return them all tagged with
-    'timeframe' and 'weight' (4=1W → 1=1H). All lines are extended to now
-    so they display correctly regardless of which chart timeframe is active.
-    Sorted highest-TF first.
+    Detect trendlines on 1W, 1D, 4H, 1H in parallel and return them all tagged
+    with 'timeframe' and 'weight' (4=1W → 1=1H). Sorted highest-TF first.
     """
     now_sec = time.time()
-    result  = []
-    for cfg in _TF_TL_CONFIG:
+
+    def _fetch_tf(cfg):
         df = get_candles(symbol, cfg["tf"], limit=cfg["limit"])
         if df is None or df.empty or len(df) < cfg["n_swing"] * 2 + 10:
-            continue
+            return []
         tls = detect_trendlines(df, n_swing=cfg["n_swing"],
                                  max_lines=2, now_time_sec=now_sec)
         for tl in tls:
             tl["timeframe"] = cfg["tf"]
             tl["weight"]    = cfg["weight"]
-        result.extend(tls)
+        return tls
+
+    result = []
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for tls in ex.map(_fetch_tf, _TF_TL_CONFIG):
+            result.extend(tls)
     result.sort(key=lambda x: -x["weight"])
     return result
 
@@ -565,21 +573,22 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
 
 def get_chart_context(symbol: str, timeframes: list = None) -> dict:
     """
-    Fetch candles and compute indicators for one or more timeframes.
+    Fetch candles and compute indicators for one or more timeframes in parallel.
     Returns: {timeframe: {indicators, prompt_text}, ...}
     """
     if timeframes is None:
         timeframes = ["4H", "1D"]
 
-    result = {}
-    for tf in timeframes:
+    def _compute(tf):
         limit = 200 if tf in ("1H", "4H") else 100
         df    = get_candles(symbol, tf, limit)
         inds  = compute_indicators(df)
-        result[tf] = {
-            "indicators":  inds,
-            "prompt_text": format_for_prompt(symbol, inds, tf),
-        }
+        return tf, {"indicators": inds, "prompt_text": format_for_prompt(symbol, inds, tf)}
+
+    result = {}
+    with ThreadPoolExecutor(max_workers=len(timeframes)) as ex:
+        for tf, data in ex.map(_compute, timeframes):
+            result[tf] = data
     return result
 
 
