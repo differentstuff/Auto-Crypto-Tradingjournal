@@ -1,0 +1,199 @@
+"""
+ai_limit.py — AI analysis for pending limit orders (split from ai_call_analyzer.py v2.3).
+
+Evaluates a pending limit order: entry quality vs chart levels, SL sizing vs ATR,
+portfolio correlation risk, and overall recommendation (Keep / Adjust / Cancel).
+"""
+
+import json
+import os
+
+import anthropic
+
+from database import get_conn
+import chart_context
+import market_context
+import prompt_builder
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+MODEL = "claude-sonnet-4-6"
+
+_SECTORS = {
+    "BTC":      ["BTCUSDT", "WBTCUSDT"],
+    "ETH/L2":   ["ETHUSDT", "ARBUSDT", "OPUSDT", "MATICUSDT", "STRKUSDT", "ZKUSDT", "SCROLLUSDT"],
+    "SOL/L1":   ["SOLUSDT", "AVAXUSDT", "SUIUSDT", "APTUSDT", "NEARUSDT", "SEIUSDT", "INJUSDT"],
+    "Meme":     ["DOGEUSDT", "SHIBUSDT", "PEPEUSDT", "BOMEUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT"],
+    "DeFi":     ["UNIUSDT", "AAVEUSDT", "CRVUSDT", "MKRUSDT", "SNXUSDT", "DYDXUSDT"],
+    "AI/Infra": ["FETUSDT", "RENDERUSDT", "WLDUSDT", "TAOUSDT", "AGIXUSDT", "GRTUSDT"],
+}
+
+
+def _atr_sl_warning(symbol: str, entry: float, sl: float) -> str:
+    try:
+        ctx  = chart_context.get_chart_context(symbol, ["1H"])
+        inds = ctx.get("1H", {}).get("indicators", {})
+        atr  = inds.get("atr", {})
+        if not atr or not atr.get("value"):
+            return ""
+        atr_val = atr["value"]
+        sl_dist = abs(entry - sl)
+        if sl_dist < atr_val * 0.5:
+            return (f"SL distance {sl_dist:.4f} < 0.5× 1H ATR ({atr_val:.4f}) — "
+                    "inside noise range, high chance of premature trigger")
+        if sl_dist < atr_val:
+            return (f"SL distance {sl_dist:.4f} < 1× 1H ATR ({atr_val:.4f}) — "
+                    "tight stop, moderate noise risk")
+    except Exception:
+        pass
+    return ""
+
+
+def _correlation_warning(symbol: str, direction: str, open_positions: list,
+                          other_limits: list) -> str:
+    if not open_positions and not other_limits:
+        return ""
+    sym = symbol.upper()
+    if not sym.endswith("USDT"):
+        sym += "USDT"
+    all_pos = list(open_positions or []) + [
+        {"symbol": l["symbol"], "direction": l["direction"]} for l in (other_limits or [])
+    ]
+    warnings = []
+    for sector, symbols in _SECTORS.items():
+        if sym in symbols:
+            same = [p for p in all_pos
+                    if p.get("symbol") in symbols and p.get("direction") == direction
+                    and p.get("symbol") != sym]
+            if same:
+                warnings.append(
+                    f"Adds {direction} in {sector} alongside "
+                    f"{', '.join(p['symbol'] for p in same[:3])}"
+                )
+            break
+    same_dir = [p for p in all_pos if p.get("direction") == direction]
+    if len(same_dir) >= 2:
+        warnings.append(
+            f"{len(same_dir)} other {direction} positions/limits — correlated risk"
+        )
+    return " | ".join(warnings)
+
+
+def _build_prompt(lim: dict, equity: float, context_str: str = "",
+                  atr_warning: str = "", corr_warning: str = "",
+                  total_other_notional: float = 0) -> str:
+    lim_info = {k: lim.get(k) for k in
+                ["symbol", "direction", "limit_price", "size_usdt", "leverage",
+                 "sl_price", "tp1_price", "tp2_price", "analyst", "notes"]}
+
+    risk_pct = None
+    entry = float(lim.get("limit_price") or 0)
+    sl    = float(lim.get("sl_price") or 0)
+    size  = float(lim.get("size_usdt") or 0)
+    if entry > 0 and sl > 0 and size > 0 and entry != sl:
+        risk_amt = abs(entry - sl) / entry * size
+        risk_pct = round(risk_amt / equity * 100, 2) if equity else None
+
+    ctx_block  = f"\n{context_str}\n" if context_str else ""
+    atr_block  = f"\n⚠ ATR RISK: {atr_warning}\n" if atr_warning else ""
+    corr_block = f"\n⚠ PORTFOLIO CORRELATION: {corr_warning}\n" if corr_warning else ""
+    other_note = (f"Other pending limits total: {total_other_notional:.0f} USDT notional\n"
+                  if total_other_notional > 0 else "")
+
+    return f"""You are a crypto futures trading advisor. Evaluate this PENDING LIMIT ORDER — it has not yet been triggered.
+
+LIMIT ORDER DETAILS:
+{json.dumps(lim_info, indent=2)}
+
+Account equity: {equity:.2f} USDT
+{other_note}Estimated risk if triggered: {f'{risk_pct}% of equity' if risk_pct else 'unknown (no SL set)'}
+{ctx_block}{atr_block}{corr_block}
+Assess this pending limit and respond with ONLY valid JSON (no markdown, no code fences):
+
+{{
+  "entry_quality": "Good / Acceptable / Poor",
+  "entry_reason": "1-2 sentences: is the limit price at a logical level (support/S&R/pullback)?",
+  "setup_quality": {{"score": 1-10, "label": "Poor|Weak|Moderate|Good|Strong|Excellent"}},
+  "sl_assessment": "Adequate / Tight / Too Wide / Missing",
+  "tp_assessment": "Good levels / Acceptable / Needs adjustment / Missing",
+  "risk_assessment": "Safe / Manageable / Elevated / Dangerous",
+  "recommendation": "Keep / Adjust entry / Adjust SL / Adjust TP / Cancel",
+  "adjustments": ["Specific adjustment 1", "Specific adjustment 2"],
+  "key_risks": ["risk 1", "risk 2"],
+  "summary": "2-3 sentence overall assessment of this pending limit"
+}}
+
+Rules:
+- Entry quality: is the limit price at a support/resistance/pullback level that makes technical sense?
+- If SL is missing, flag as dangerous and recommend Cancel or at minimum setting one
+- If no TP is set, suggest a take-profit level based on chart resistance
+- Be direct — if this looks like a poor setup, say so"""
+
+
+def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
+                           other_limits: list) -> dict:
+    """
+    Analyze a pending limit order.
+
+    lim:            pending_limits row as dict
+    equity:         account equity in USDT
+    open_positions: current open positions from Bitget API
+    other_limits:   other waiting limit rows (for correlation + exposure calc)
+    """
+    symbol    = (lim.get("symbol") or "UNKNOWN").upper()
+    direction = lim.get("direction", "Long")
+    entry     = float(lim.get("limit_price") or 0)
+    sl        = float(lim.get("sl_price") or 0)
+
+    atr_warn    = _atr_sl_warning(symbol, entry, sl) if entry and sl else ""
+    total_other = sum(float(l.get("size_usdt") or 0) for l in (other_limits or []))
+    corr_warn   = _correlation_warning(symbol, direction, open_positions, other_limits)
+
+    mkt_str = ""
+    try:
+        mkt_ctx = market_context.get_market_context([symbol])
+        mkt_str = market_context.format_for_prompt(mkt_ctx)
+    except Exception:
+        pass
+
+    conn    = get_conn()
+    ctx_str = prompt_builder.build_context(
+        conn            = conn,
+        symbol          = symbol,
+        direction       = direction,
+        market_str      = mkt_str,
+        timeframes      = ["4H", "1D"],
+        include_similar = False,
+    )
+    conn.close()
+
+    prompt = _build_prompt(lim, equity, ctx_str, atr_warn, corr_warn, total_other)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model=MODEL, max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    raw = message.content[0].text.strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        result = {
+            "entry_quality":  "Unknown",
+            "setup_quality":  {"score": 0, "label": "Parse Error"},
+            "recommendation": "Review manually",
+            "summary":        raw[:300],
+            "key_risks":      [],
+            "adjustments":    [],
+        }
+
+    result["_atr_warning"]   = atr_warn
+    result["_corr_warning"]  = corr_warn
+    result["_input_tokens"]  = message.usage.input_tokens
+    result["_output_tokens"] = message.usage.output_tokens
+    return result

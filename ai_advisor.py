@@ -26,8 +26,24 @@ ANTHROPIC_API_KEY = os.environ.get(
 MODEL = "claude-sonnet-4-6"
 
 
+def _prune_stats(deep: dict) -> dict:
+    """
+    Strip empty arrays and low-signal data before feeding to Claude.
+    Caps by_symbol to top 10 and by_hour to top 8 most-differentiated hours.
+    """
+    out = {k: v for k, v in deep.items() if not (isinstance(v, list) and not v)}
+    if "by_symbol" in out and isinstance(out["by_symbol"], list):
+        out["by_symbol"] = sorted(out["by_symbol"], key=lambda x: -x.get("trade_count", 0))[:10]
+    if "by_hour" in out and isinstance(out["by_hour"], list):
+        filtered = [h for h in out["by_hour"] if h.get("n", 0) >= 3]
+        out["by_hour"] = sorted(filtered, key=lambda x: -abs(x.get("win_rate", 50) - 50))[:8]
+    return out
+
+
 def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "") -> str:
     """Serialize the key stats into a structured prompt for Claude."""
+
+    pruned = _prune_stats(deep)
 
     # Pull only the data that's most useful for analysis (skip raw chart arrays)
     summary = {
@@ -43,15 +59,15 @@ def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "") -> str:
             "profit_factor":    kpis["profit_factor"],
             "max_drawdown_usdt": kpis["max_drawdown"],
         },
-        "by_symbol":    deep["by_symbol"],
-        "by_month":     deep["by_month"],
-        "by_weekday":   deep["by_weekday"],
-        "by_hour":      deep["by_hour"],
-        "by_direction": deep["by_direction"],
-        "duration_buckets": deep["duration_buckets"],
-        "streaks":      deep["streaks"],
-        "fee_analysis": deep["fee_analysis"],
-        "worst_symbols": deep["worst_symbols"],
+        "by_symbol":    pruned.get("by_symbol", []),
+        "by_month":     pruned.get("by_month", []),
+        "by_weekday":   pruned.get("by_weekday", []),
+        "by_hour":      pruned.get("by_hour", []),
+        "by_direction": pruned.get("by_direction", []),
+        "duration_buckets": pruned.get("duration_buckets", []),
+        "streaks":      pruned.get("streaks", {}),
+        "fee_analysis": pruned.get("fee_analysis", {}),
+        "worst_symbols": pruned.get("worst_symbols", []),
     }
 
     stats_json = json.dumps(summary, indent=2)

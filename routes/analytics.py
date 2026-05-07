@@ -1,4 +1,3 @@
-import time
 import traceback
 
 from flask import Blueprint, request, render_template
@@ -7,14 +6,7 @@ from database import db_conn
 from helpers import _ok, _err, _filters_from_args
 from analytics import get_dashboard_kpis, get_deep_stats, get_rr_analysis, get_heatmap_data
 import ai_pattern_detector
-import market_context
 import chart_context
-import bitget_client
-
-_exchange_symbols_cache: list = []
-_exchange_symbols_ts: float = 0
-_prices_cache: dict = {}
-_prices_ts: float = 0
 
 bp = Blueprint("analytics", __name__)
 
@@ -70,62 +62,6 @@ def api_analytics_rr():
         with db_conn() as conn:
             data = get_rr_analysis(conn=conn)
         return _ok({"items": data})
-    except Exception:
-        traceback.print_exc()
-        return _err("Internal server error", 500)
-
-
-@bp.route("/api/market/context")
-def api_market_context():
-    try:
-        symbols_raw = request.args.get("symbols", "")
-        symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()] if symbols_raw else []
-        return _ok(market_context.get_market_context(symbols or None))
-    except Exception:
-        traceback.print_exc()
-        return _err("Internal server error", 500)
-
-
-@bp.route("/api/market/calendar")
-def api_market_calendar():
-    try:
-        return _ok(market_context.get_economic_calendar())
-    except Exception:
-        traceback.print_exc()
-        return _err("Internal server error", 500)
-
-
-@bp.route("/api/exchange/symbols")
-def api_exchange_symbols():
-    """GET /api/exchange/symbols — all USDT-M futures symbols on Bitget (1-hour cache)."""
-    global _exchange_symbols_cache, _exchange_symbols_ts
-    try:
-        if not _exchange_symbols_cache or (time.time() - _exchange_symbols_ts) > 3600:
-            _exchange_symbols_cache = bitget_client.get_exchange_symbols()
-            _exchange_symbols_ts = time.time()
-        return _ok(_exchange_symbols_cache)
-    except Exception:
-        traceback.print_exc()
-        return _err("Internal server error", 500)
-
-
-@bp.route("/api/market/prices")
-def api_market_prices():
-    """GET /api/market/prices?symbols=BTCUSDT,ETHUSDT — mark prices, 60-second cache."""
-    global _prices_cache, _prices_ts
-    try:
-        symbols_raw = request.args.get("symbols", "").strip()
-        if not symbols_raw:
-            return _err("symbols param required")
-        symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
-        now = time.time()
-        if (now - _prices_ts) > 60:
-            _prices_cache = {}
-            _prices_ts = now
-        missing = [s for s in symbols if s not in _prices_cache]
-        if missing:
-            _prices_cache.update(bitget_client.get_mark_prices(missing))
-        return _ok({s: _prices_cache.get(s) for s in symbols})
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

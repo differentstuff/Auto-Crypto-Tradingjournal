@@ -496,77 +496,60 @@ def compute_indicators(df: pd.DataFrame) -> dict:
 
 def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
     """
-    Convert indicator dict to a concise, Claude-readable text block.
+    Convert indicator dict to a compact single-line summary for Claude prompts.
+    ~80 chars vs the old ~15 lines — significant token saving at no accuracy cost.
     """
     if not indicators.get("ok"):
         return ""
 
-    lines = [f"TECHNICAL INDICATORS — {symbol} {timeframe} ({indicators['candles_used']} candles):"]
+    parts = []
 
     if "rsi" in indicators:
         r = indicators["rsi"]
-        lines.append(f"  RSI(14): {r['value']} — {r['signal']}")
+        sig = "OB" if r["value"] > 70 else ("OS" if r["value"] < 30 else "neu")
+        parts.append(f"RSI {r['value']}({sig})")
 
     if "macd" in indicators:
         m = indicators["macd"]
-        cross = " ← BULLISH CROSSOVER" if m["crossover"] else (" ← BEARISH CROSSOVER" if m["crossunder"] else "")
-        lines.append(f"  MACD: {m['trend']}, histogram {m['histogram_trend']}{cross}")
+        cross = "↑XO" if m.get("crossover") else ("↓XO" if m.get("crossunder") else "")
+        parts.append(f"MACD {m['trend'][:4]}{cross}")
 
     if "ema" in indicators:
-        e = indicators["ema"]
-        lines.append(f"  EMAs: {e.get('alignment', '')}")
-        if "stack" in e:
-            lines.append(f"  EMA stack: {e['stack']}")
-
-    if "bollinger" in indicators:
-        b = indicators["bollinger"]
-        lines.append(f"  Bollinger Bands: price at {b['position_pct']}th percentile — {b['signal']}")
-
-    if "stoch_rsi" in indicators:
-        s = indicators["stoch_rsi"]
-        lines.append(f"  Stoch RSI: K={s['k']} D={s['d']} — {s['signal']}")
+        e  = indicators["ema"]
+        al = e.get("alignment", "")
+        sk = e.get("stack", "")
+        if "fully bullish" in al:
+            parts.append("EMA ↑all")
+        elif "fully bearish" in al:
+            parts.append("EMA ↓all")
+        elif "bullish" in sk:
+            parts.append("EMA ↑stk")
+        elif "bearish" in sk:
+            parts.append("EMA ↓stk")
+        else:
+            parts.append("EMA mix")
 
     if "adx" in indicators:
-        a = indicators["adx"]
-        direction = f", {a['direction']}" if "direction" in a else ""
-        lines.append(f"  ADX(14): {a['value']} — {a['strength']}{direction}")
+        a   = indicators["adx"]
+        ds  = "↑" if "bullish" in a.get("direction", "") else ("↓" if "bearish" in a.get("direction", "") else "")
+        parts.append(f"ADX {a['value']}{ds}")
 
     if "atr" in indicators:
-        a = indicators["atr"]
-        lines.append(f"  ATR(14): {a['value']} ({a['pct']}% of price) — {a['comment']}")
+        parts.append(f"ATR {indicators['atr']['pct']}%")
 
-    if "volume" in indicators:
-        lines.append(f"  Volume: {indicators['volume']['signal']}")
-
-    if "recent_candles" in indicators:
-        lines.append(f"  Last 3 candles: {' → '.join(indicators['recent_candles'])}")
+    if "bollinger" in indicators:
+        parts.append(f"BB {indicators['bollinger']['position_pct']}%")
 
     if "support_resistance" in indicators:
         sr   = indicators["support_resistance"]
-        sups = sorted([l for l in sr if l["type"] == "support"],    key=lambda x: -x["price"])
-        ress = sorted([l for l in sr if l["type"] == "resistance"],  key=lambda x:  x["price"])
+        sups = sorted([l for l in sr if l["type"] == "support"],   key=lambda x: -x["price"])
+        ress = sorted([l for l in sr if l["type"] == "resistance"], key=lambda x:  x["price"])
         if sups:
-            lines.append(f"  Nearest support:    {sups[0]['price']} ({sups[0]['touches']} touches)")
+            parts.append(f"S:{sups[0]['price']}")
         if ress:
-            lines.append(f"  Nearest resistance: {ress[0]['price']} ({ress[0]['touches']} touches)")
-        extra = ([f"S:{l['price']}" for l in sups[1:2]] +
-                 [f"R:{l['price']}" for l in ress[1:2]])
-        if extra:
-            lines.append(f"  Other levels: {', '.join(extra)}")
+            parts.append(f"R:{ress[0]['price']}")
 
-    if "trendlines" in indicators:
-        tls  = indicators["trendlines"]
-        up   = [t for t in tls if t["type"] == "uptrend"]
-        down = [t for t in tls if t["type"] == "downtrend"]
-        parts = []
-        if up:
-            parts.append(f"uptrend support {up[0]['anchor1']}→{up[0]['anchor2']} ({up[0]['touches']} touches)")
-        if down:
-            parts.append(f"downtrend resistance {down[0]['anchor1']}→{down[0]['anchor2']} ({down[0]['touches']} touches)")
-        if parts:
-            lines.append(f"  Trendlines: {', '.join(parts)}")
-
-    return "\n".join(lines)
+    return (f"{symbol} {timeframe}: " + " | ".join(parts)) if parts else ""
 
 
 # ── Main entry point ───────────────────────────────────────────────────────────
@@ -590,6 +573,74 @@ def get_chart_context(symbol: str, timeframes: list = None) -> dict:
         for tf, data in ex.map(_compute, timeframes):
             result[tf] = data
     return result
+
+
+def confluence_score(symbol: str, timeframes: list = None) -> dict:
+    """
+    Aggregate RSI/MACD/EMA/ADX direction signals across timeframes.
+    Returns {score, max, bullish, bearish, label, details}.
+    Used by prompt_builder to add a single confluence line to every AI prompt.
+    """
+    tfs = timeframes or ["4H", "1D"]
+    ctx = get_chart_context(symbol, tfs)
+
+    total_bull = 0
+    total_bear = 0
+    details    = []
+
+    for tf in tfs:
+        inds = ctx.get(tf, {}).get("indicators", {})
+        if not inds.get("ok"):
+            continue
+
+        bull = bear = 0
+
+        rsi = inds.get("rsi", {})
+        rsi_val = rsi.get("value", 50)
+        if rsi_val > 55:   bull += 1
+        elif rsi_val < 45: bear += 1
+
+        macd = inds.get("macd", {})
+        if macd.get("trend") == "bullish":   bull += 1
+        elif macd.get("trend") == "bearish": bear += 1
+
+        ema = inds.get("ema", {})
+        al  = ema.get("alignment", "")
+        sk  = ema.get("stack", "")
+        if "fully bullish" in al or "bullish" in sk:  bull += 1
+        elif "fully bearish" in al or "bearish" in sk: bear += 1
+
+        adx = inds.get("adx", {})
+        if "bullish" in adx.get("direction", ""):  bull += 1
+        elif "bearish" in adx.get("direction", ""): bear += 1
+
+        total_bull += bull
+        total_bear += bear
+        details.append(f"{tf}: {bull}↑/{bear}↓")
+
+    score   = total_bull - total_bear
+    max_val = len(tfs) * 4  # 4 signals per TF
+    pct     = score / max_val if max_val else 0
+
+    if pct >= 0.50:
+        label = "Strong Bullish"
+    elif pct >= 0.15:
+        label = "Bullish"
+    elif pct <= -0.50:
+        label = "Strong Bearish"
+    elif pct <= -0.15:
+        label = "Bearish"
+    else:
+        label = "Neutral"
+
+    return {
+        "score":   score,
+        "max":     max_val,
+        "bullish": total_bull,
+        "bearish": total_bear,
+        "label":   label,
+        "details": details,
+    }
 
 
 def format_multi_tf_for_prompt(symbol: str, timeframes: list = None) -> str:

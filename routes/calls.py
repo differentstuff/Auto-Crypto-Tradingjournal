@@ -21,10 +21,11 @@ def api_calls_analyze():
             return _err("call_text is required")
 
         try:
-            eq_data = bitget_client.get_account_equity()
-            equity  = float(eq_data.get("accountEquity") or eq_data.get("available") or 1000)
+            eq_data        = bitget_client.get_account_equity()
+            equity         = float(eq_data.get("accountEquity") or eq_data.get("available") or 1000)
+            open_positions = bitget_client.get_open_positions()
         except Exception:
-            equity = 1000.0
+            equity, open_positions = 1000.0, []
 
         result = ai_call_analyzer.analyze_call(
             call_text      = call_text,
@@ -32,6 +33,7 @@ def api_calls_analyze():
             image_b64      = body.get("image_b64"),
             image_type     = body.get("image_type", "image/png"),
             market_regime  = (body.get("market_regime") or "").strip() or None,
+            open_positions = open_positions,
         )
         return _ok(result)
     except Exception:

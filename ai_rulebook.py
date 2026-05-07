@@ -54,19 +54,50 @@ def get_calibration_data(conn) -> list:
 
 
 def get_calibration_for_prompt(conn=None) -> str:
-    """Formatted calibration block for Claude prompts."""
+    """
+    Enhanced calibration block: includes entry rate per tier + actionable verdict.
+    Uses all analyzed calls (not just those with outcomes) for entry rate accuracy.
+    """
     own_conn = conn is None
     if own_conn:
         conn = get_conn()
     try:
-        rows = get_calibration_data(conn)
+        rows = conn.execute("""
+            SELECT
+                CASE
+                    WHEN setup_score >= 8 THEN 'high (8-10)'
+                    WHEN setup_score >= 6 THEN 'good (6-7)'
+                    WHEN setup_score >= 4 THEN 'moderate (4-5)'
+                    ELSE 'weak (1-3)'
+                END AS tier,
+                MIN(setup_score) AS min_score,
+                COUNT(*) AS n,
+                SUM(CASE WHEN status IN ('matched','closed') THEN 1 ELSE 0 END) AS entered,
+                ROUND(100.0 * SUM(CASE WHEN hit_tp1=1 AND outcome IS NOT NULL THEN 1 ELSE 0 END)
+                    / NULLIF(SUM(CASE WHEN outcome IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS tp1_rate,
+                ROUND(100.0 * SUM(CASE WHEN hit_sl=1 AND outcome IS NOT NULL THEN 1 ELSE 0 END)
+                    / NULLIF(SUM(CASE WHEN outcome IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS sl_rate,
+                ROUND(AVG(CASE WHEN outcome IS NOT NULL THEN outcome_pnl END), 2) AS avg_pnl
+            FROM analyzed_calls
+            WHERE setup_score IS NOT NULL
+            GROUP BY tier
+            ORDER BY min_score DESC
+        """).fetchall()
         if not rows:
             return ""
-        lines = ["YOUR SETUP SCORE CALIBRATION (actual outcomes for past calls):"]
+        lines = ["YOUR SETUP SCORE CALIBRATION (entry rate + actual outcomes):"]
         for r in rows:
+            r = dict(r)
+            entry_rate = round(r["entered"] / r["n"] * 100, 0) if r["n"] else 0
+            verdict = ""
+            if r["tp1_rate"] is not None:
+                if r["tp1_rate"] >= 60:
+                    verdict = " → ENTER"
+                elif r["tp1_rate"] <= 30:
+                    verdict = " → SKIP"
             lines.append(
-                f"  Score {r['tier']}: {r['n']} calls — "
-                f"TP1 hit {r['tp1_rate']}%, SL hit {r['sl_rate']}%, avg P&L {r['avg_pnl']} USDT"
+                f"  Score {r['tier']}: {r['n']} analyzed, {entry_rate:.0f}% entered — "
+                f"TP1 {r['tp1_rate']}%, SL {r['sl_rate']}%, avg P&L {r['avg_pnl']} USDT{verdict}"
             )
         return "\n".join(lines)
     finally:

@@ -9,6 +9,7 @@ import bitget_sync
 
 from routes.journal   import bp as journal_bp
 from routes.analytics import bp as analytics_bp
+from routes.market    import bp as market_bp
 from routes.calls     import bp as calls_bp
 from routes.limits    import bp as limits_bp
 from routes.live      import bp as live_bp
@@ -25,6 +26,7 @@ app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB upload limit
 
 app.register_blueprint(journal_bp)
 app.register_blueprint(analytics_bp)
+app.register_blueprint(market_bp)
 app.register_blueprint(calls_bp)
 app.register_blueprint(limits_bp)
 app.register_blueprint(live_bp)

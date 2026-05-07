@@ -17,8 +17,7 @@ import os
 import anthropic
 from database import get_conn
 import market_context
-import chart_context
-import ai_rulebook
+import prompt_builder
 
 ANTHROPIC_API_KEY = os.environ.get(
     "ANTHROPIC_API_KEY",
@@ -57,14 +56,10 @@ def _get_symbol_history(symbol: str, conn) -> dict:
     }
 
 
-def _build_prompt(position: dict, history: dict, mkt_ctx: str = "",
-                  chart_ctx: str = "", rulebook: str = "") -> str:
+def _build_prompt(position: dict, history: dict, context_str: str = "") -> str:
     pos_json  = json.dumps(position, indent=2)
     hist_json = json.dumps(history, indent=2)
-
-    mkt_block      = f"\nCURRENT MARKET CONTEXT:\n{mkt_ctx}\n" if mkt_ctx else ""
-    chart_block    = f"\n{chart_ctx}\n" if chart_ctx else ""
-    rulebook_block = f"\n{rulebook}\n" if rulebook else ""
+    ctx_block = f"\n{context_str}\n" if context_str else ""
 
     return f"""You are a professional crypto futures trading advisor. Analyze this OPEN position and give a specific, honest, actionable recommendation. The trader needs clear guidance — not generic advice.
 
@@ -73,7 +68,7 @@ OPEN POSITION:
 
 TRADER'S HISTORY ON {position['symbol']} (last {history.get('trades', 0)} closed trades):
 {hist_json}
-{mkt_block}{chart_block}{rulebook_block}
+{ctx_block}
 Key context:
 - unrealized_pct is the current unrealized P/L as % of margin used
 - take_profit / stop_loss: empty string means NO order is set
@@ -100,15 +95,21 @@ def analyze_position(position: dict) -> dict:
     position: dict from bitget_client.get_open_positions()
     Returns structured dict with recommendation.
     """
-    conn        = get_conn()
-    history     = _get_symbol_history(position["symbol"], conn)
-    rulebook    = ai_rulebook.get_rulebook_for_prompt(conn)
+    conn    = get_conn()
+    history = _get_symbol_history(position["symbol"], conn)
+
+    ctx     = market_context.get_market_context([position["symbol"]])
+    mkt_str = market_context.format_for_prompt(ctx)
+    ctx_str = prompt_builder.build_context(
+        conn       = conn,
+        symbol     = position["symbol"],
+        market_str = mkt_str,
+        timeframes = ["4H", "1D"],
+        include_similar = False,
+    )
     conn.close()
 
-    ctx       = market_context.get_market_context([position["symbol"]])
-    mkt_str   = market_context.format_for_prompt(ctx)
-    chart_str = chart_context.format_multi_tf_for_prompt(position["symbol"], ["4H", "1D"])
-    prompt    = _build_prompt(position, history, mkt_str, chart_str, rulebook)
+    prompt = _build_prompt(position, history, ctx_str)
 
     client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
