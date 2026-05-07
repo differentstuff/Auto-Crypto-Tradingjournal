@@ -348,3 +348,25 @@ select:focus,input:focus{border-color:var(--accent)}
 .scan-lvl-val{font-weight:600}
 .scan-lvl-note{color:var(--muted);font-size:.72rem;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
+
+/* ── Hindsight Analysis ───────────────────────────────────────────────────── */
+.hindsight-comparison{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:20px;margin-bottom:16px}
+.hc-col{display:flex;flex-direction:column;gap:8px}
+.hc-col-header{font-size:.72rem;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.04em;margin-bottom:4px;border-bottom:1px solid var(--border);padding-bottom:4px}
+.hc-kpi{font-size:1.3rem;font-weight:700;color:var(--text)}
+.hc-kpi.pos{color:var(--accent3)}
+.hc-kpi.neg{color:var(--red)}
+.hc-kpi.neu{color:var(--yellow)}
+.hc-kpi-lbl{font-size:.68rem;color:var(--muted);font-weight:400;margin-top:1px}
+.hindsight-insight{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);
+  border-radius:6px;padding:10px 14px;font-size:.8rem;color:var(--text);line-height:1.6;
+  margin-top:12px}
+.hindsight-table{display:flex;flex-direction:column;gap:0}
+.hindsight-row{display:grid;grid-template-columns:100px 80px 90px 56px 60px 90px 70px 50px;
+  align-items:center;gap:4px;padding:7px 12px;border-bottom:1px solid var(--border);
+  font-size:.8rem}
+.hindsight-hdr{color:var(--muted);font-size:.72rem;background:var(--bg3);
+  border-radius:6px 6px 0 0;font-weight:600}
+.hindsight-row:hover{background:var(--bg3)}

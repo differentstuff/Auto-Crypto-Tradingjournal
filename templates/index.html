@@ -369,6 +369,9 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="nav-item" onclick="showPage('scanner')" id="nav-scanner">
       <span class="nav-icon">⭐</span><span>Setup Scanner</span>
     </div>
+    <div class="nav-item" onclick="showPage('hindsight')" id="nav-hindsight">
+      <span class="nav-icon">🔮</span><span>Hindsight</span>
+    </div>
   </nav>
 
   <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
@@ -992,6 +995,18 @@ select:focus,input:focus{border-color:var(--accent)}
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- 11. HINDSIGHT ANALYSIS                                             -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="page-hindsight" class="page-view">
+      <div class="page-title">Hindsight Analysis</div>
+      <div class="page-subtitle">Retroactively scores your last trades using historical chart data — shows what would have been recommended before entry and how your P&L compares</div>
+
+      <div id="hindsight-status" style="margin-bottom:20px"></div>
+      <div id="hindsight-summary"></div>
+      <div id="hindsight-table"></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
     <!-- 10. SETUP SCANNER                                                  -->
     <!-- ══════════════════════════════════════════════════════════════════ -->
     <div id="page-scanner" class="page-view">
@@ -1305,6 +1320,7 @@ select:focus,input:focus{border-color:var(--accent)}
 <script src="/static/js/12-explorer.js?v=2.1"></script>
 <script src="/static/js/13-init.js?v=2.1"></script>
 <script src="/static/js/14-scanner.js?v=2.1"></script>
+<script src="/static/js/15-hindsight.js?v=2.1"></script>
 
 </body>
 </html>

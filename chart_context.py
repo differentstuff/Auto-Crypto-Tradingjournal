@@ -554,6 +554,54 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
+def get_candles_at_time(symbol: str, timeframe: str, end_time_ms: int,
+                        limit: int = 200) -> pd.DataFrame:
+    """
+    Fetch historical candles ending at end_time_ms (Unix ms). NOT cached —
+    each call returns the snapshot visible at that specific point in time.
+    """
+    sym = symbol.upper()
+    if not sym.endswith("USDT"):
+        sym += "USDT"
+    try:
+        raw = bitget_client._get("/api/v2/mix/market/candles", {
+            "symbol":      sym,
+            "productType": "USDT-FUTURES",
+            "granularity": timeframe,
+            "limit":       str(limit),
+            "endTime":     str(end_time_ms),
+        })
+        if not raw or not isinstance(raw, list):
+            return pd.DataFrame()
+        df = pd.DataFrame(raw, columns=[
+            "timestamp", "open", "high", "low", "close", "volume", "quote_volume"
+        ])
+        for col in ["open", "high", "low", "close", "volume", "quote_volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["timestamp"] = pd.to_numeric(df["timestamp"])
+        return df.sort_values("timestamp").reset_index(drop=True)
+    except Exception:
+        return pd.DataFrame()
+
+
+def get_historical_context(symbol: str, timeframes: list, end_time_ms: int) -> dict:
+    """
+    Like get_chart_context() but reconstructed at a specific historical timestamp.
+    Not cached — used for hindsight analysis only.
+    """
+    def _compute(tf):
+        limit = 200 if tf in ("1H", "4H") else 100
+        df    = get_candles_at_time(symbol, tf, end_time_ms, limit)
+        inds  = compute_indicators(df)
+        return tf, {"indicators": inds, "prompt_text": format_for_prompt(symbol, inds, tf)}
+
+    result = {}
+    with ThreadPoolExecutor(max_workers=len(timeframes)) as ex:
+        for tf, data in ex.map(_compute, timeframes):
+            result[tf] = data
+    return result
+
+
 def get_chart_context(symbol: str, timeframes: list = None) -> dict:
     """
     Fetch candles and compute indicators for one or more timeframes in parallel.

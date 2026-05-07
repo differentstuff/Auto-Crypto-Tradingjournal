@@ -224,6 +224,42 @@ def init_db():
         )
     """)
 
+    # ── trade_hindsight ────────────────────────────────────────────────────────
+    # Retroactive AI analysis: what would Claude have recommended before each trade?
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trade_hindsight (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            position_id      INTEGER UNIQUE REFERENCES positions(id),
+            analyzed_at      TEXT DEFAULT (datetime('now')),
+
+            -- Recommendation (blind — Claude didn't know the actual outcome)
+            setup_score      INTEGER,
+            setup_label      TEXT,
+            would_enter      INTEGER,  -- 1=ENTER, 0=SKIP
+            rec_direction    TEXT,     -- Long/Short Claude recommended
+            direction_match  INTEGER,  -- 1 if rec matches actual direction
+            rec_entry_low    REAL,
+            rec_entry_high   REAL,
+            rec_sl           REAL,
+            rec_tp1          REAL,
+            rec_tp2          REAL,
+            rec_rr           TEXT,
+            key_conditions   TEXT,     -- JSON array
+            risks            TEXT,     -- JSON array
+            skip_reason      TEXT,
+
+            -- Comparison
+            actual_pnl       REAL,
+            hypothetical_pnl REAL,     -- P&L if recommendation had been followed
+            verdict          TEXT,     -- TP|TN|FP|FN|NEUTRAL (signal accuracy category)
+
+            -- Raw
+            analysis_json    TEXT,
+            input_tokens     INTEGER,
+            output_tokens    INTEGER
+        )
+    """)
+
     # ── import_log ─────────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS import_log (
