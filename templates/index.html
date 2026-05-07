@@ -766,6 +766,89 @@ select:focus,input:focus{border-color:var(--accent)}
       <div class="page-title">Trade Call Analyzer</div>
       <div class="page-subtitle">Paste an analyst's trade call, attach the chart, get exact Bitget entry settings. Risk: 1% (no DCA) · 2% (with DCA).</div>
 
+      <!-- Legend toggle -->
+      <div style="margin-bottom:16px">
+        <button class="btn btn-secondary btn-sm" onclick="toggleCallLegend()" id="btn-call-legend">
+          ℹ How to read the results
+        </button>
+      </div>
+
+      <div id="call-legend" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:20px;font-size:.8rem;line-height:1.6">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+          <!-- Column 1 -->
+          <div>
+            <div class="legend-section-title">Setup Score (badge top-right)</div>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+              <tr><td style="padding:2px 8px 2px 0;color:var(--red);font-weight:700">1–2</td><td style="color:var(--muted)">Poor — avoid, high risk of loss</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--red);font-weight:700">3–4</td><td style="color:var(--muted)">Weak — significant flaws in structure</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--yellow);font-weight:700">5–6</td><td style="color:var(--muted)">Moderate — tradeable but not ideal</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--yellow);font-weight:700">7–8</td><td style="color:var(--muted)">Good / Strong — clear plan, solid R:R</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--accent3);font-weight:700">9–10</td><td style="color:var(--muted)">Excellent — high conviction, take this</td></tr>
+            </table>
+
+            <div class="legend-section-title">R:R Ratio</div>
+            <p style="color:var(--muted);margin-bottom:14px"><strong style="color:var(--text)">R:R 1:2.5</strong> means: for every $1 you risk (entry → SL), you stand to gain $2.50 (entry → TP1). Minimum recommended: 2:1. Below 1.5:1 is not worth the risk.</p>
+
+            <div class="legend-section-title">DCA (Dollar-Cost Average)</div>
+            <p style="color:var(--muted);margin-bottom:14px">Entering in <strong style="color:var(--text)">two tranches</strong> at different prices to get a lower average entry. First entry at the current level, second (DCA) entry lower if price dips. Risk is 2% with DCA vs 1% for a single entry.</p>
+
+            <div class="legend-section-title">Trade Types</div>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+              <tr><td style="padding:2px 8px 2px 0;color:var(--accent2);font-weight:600;white-space:nowrap">Breakout</td><td style="color:var(--muted)">Entry above resistance / below support</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--accent2);font-weight:600;white-space:nowrap">Trend Follow</td><td style="color:var(--muted)">Pullback entry in the direction of trend</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--accent2);font-weight:600;white-space:nowrap">Range</td><td style="color:var(--muted)">Buy at range bottom / sell at range top</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--accent2);font-weight:600;white-space:nowrap">Reversal</td><td style="color:var(--muted)">Counter-trend — betting on direction change</td></tr>
+            </table>
+
+            <div class="legend-section-title">Entry Timing</div>
+            <table style="width:100%;border-collapse:collapse">
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Immediate</td><td style="color:var(--muted)">Use a market order right now</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Wait for retest</td><td style="color:var(--muted)">Set a limit order at the key level</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Set limit order</td><td style="color:var(--muted)">Enter only at the specified price, not at market</td></tr>
+            </table>
+          </div>
+
+          <!-- Column 2 -->
+          <div>
+            <div class="legend-section-title">⚠ Warnings Explained</div>
+
+            <div style="margin-bottom:10px">
+              <span style="color:var(--yellow);font-weight:700">⚠ ATR Risk</span>
+              <p style="color:var(--muted);margin-top:2px">ATR = Average True Range — the typical candle-to-candle price movement. If your SL is <strong style="color:var(--text)">inside the ATR noise</strong> (&lt; 1× ATR from entry), normal price fluctuation may stop you out before the trade has a chance to work. Move the SL further away or skip the trade.</p>
+            </div>
+
+            <div style="margin-bottom:10px">
+              <span style="color:var(--yellow);font-weight:700">⚠ Portfolio Correlation</span>
+              <p style="color:var(--muted);margin-top:2px">You already have open positions in the <strong style="color:var(--text)">same sector and same direction</strong>. If BTC dumps or the sector rotates, all those positions move against you at the same time. Consider reducing size or waiting for one to close first.</p>
+            </div>
+
+            <div style="margin-bottom:10px">
+              <span style="color:var(--yellow);font-weight:700">⚠ Candle-Close Stop Loss</span>
+              <p style="color:var(--muted);margin-top:2px">This SL only triggers when a <strong style="color:var(--text)">full candle closes</strong> below/above the level — not on a wick touch. It's more forgiving of noise, but <strong style="color:var(--text)">Bitget cannot automate this</strong>. You must watch the chart and close manually when the candle closes through the level.</p>
+            </div>
+
+            <div style="margin-bottom:14px">
+              <span style="color:var(--red);font-weight:700">⚠ Personal Pattern Warnings</span>
+              <p style="color:var(--muted);margin-top:2px">These are based on <strong style="color:var(--text)">your own trade history</strong> — recurring situations where you specifically tend to lose. Not generic advice. If it says "Friday trades lose" that means YOUR Fridays, not the market in general.</p>
+            </div>
+
+            <div class="legend-section-title">Position Sizing Terms</div>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Total Notional</td><td style="color:var(--muted)">Full position size in USDT (margin × leverage)</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Margin Needed</td><td style="color:var(--muted)">Collateral locked by Bitget = notional ÷ leverage</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Stop Distance %</td><td style="color:var(--muted)">% between average entry and SL price</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Risk Amount</td><td style="color:var(--muted)">Max loss if SL is hit = equity × risk %</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:var(--text);font-weight:600;white-space:nowrap">Entry 1 / DCA</td><td style="color:var(--muted)">Split between first entry and DCA order</td></tr>
+            </table>
+
+            <div class="legend-section-title">Optimizations vs Risks</div>
+            <p style="color:var(--muted)"><strong style="color:var(--accent2)">💡 Optimizations</strong> — specific changes that would improve this trade (better entry level, tighter SL, different TP placement).<br>
+            <strong style="color:var(--yellow)">⚠ Risks</strong> — events or conditions that could invalidate the setup or cause a loss before TP is reached.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Time-of-day / drawdown warning -->
       <div id="call-time-warning" class="time-warning" style="display:none"></div>
 

@@ -423,3 +423,12 @@ async function closeCall(id) {
   await api('/api/calls/' + id + '/close', 'POST');
   loadSavedCalls();
 }
+
+function toggleCallLegend() {
+  const panel = document.getElementById('call-legend');
+  const btn   = document.getElementById('btn-call-legend');
+  if (!panel || !btn) return;
+  const open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : '';
+  btn.textContent = open ? 'ℹ How to read the results' : '✕ Close legend';
+}
