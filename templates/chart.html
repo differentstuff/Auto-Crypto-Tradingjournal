@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chart</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--bg2:#1a1d2e;--bg3:#22263a;
+  --accent:#6c63ff;--accent2:#4fc3f7;--accent3:#26d96b;
+  --red:#ef5350;--muted:#7986cb;--border:#2d3250;--fg:#e8eaf6;
+}
+body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-serif;
+     height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;justify-content:space-between;
+       padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);
+       flex-shrink:0;gap:12px;flex-wrap:wrap}
+#chart-title{font-weight:700;font-size:1rem;letter-spacing:.02em}
+#tf-btns{display:flex;gap:6px}
+.tf-btn{padding:4px 13px;border-radius:5px;font-size:.75rem;cursor:pointer;
+        border:1px solid var(--border);background:var(--bg3);color:var(--muted);transition:.15s}
+.tf-btn:hover:not(.active){background:var(--bg);color:var(--fg)}
+.tf-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+#chart-wrap{flex:1;min-height:0;position:relative}
+#sr-legend{padding:7px 14px;background:var(--bg2);border-top:1px solid var(--border);
+           display:flex;gap:6px;flex-wrap:wrap;min-height:34px;align-items:center;flex-shrink:0}
+#status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+        color:var(--muted);font-size:.85rem;pointer-events:none}
+</style>
+</head>
+<body>
+<header>
+  <span id="chart-title">Loading…</span>
+  <div id="tf-btns"></div>
+</header>
+<div id="chart-wrap"><div id="status">Loading chart…</div></div>
+<div id="sr-legend"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+let symbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
+let tf     = params.get('timeframe') || '4H';
+const TFS  = ['15m','1H','4H','1D'];
+let _chart = null;
+
+document.title   = symbol + ' — Chart';
+document.getElementById('chart-title').textContent = symbol;
+
+function renderTfBtns() {
+  document.getElementById('tf-btns').innerHTML = TFS.map(t =>
+    `<button class="tf-btn${t===tf?' active':''}" onclick="switchTf('${t}')">${t}</button>`
+  ).join('');
+}
+
+async function switchTf(newTf) {
+  tf = newTf;
+  renderTfBtns();
+  await loadChart();
+}
+
+async function loadChart() {
+  const wrap = document.getElementById('chart-wrap');
+  document.getElementById('status').textContent = 'Loading…';
+  document.getElementById('status').style.display = 'flex';
+  document.getElementById('sr-legend').innerHTML  = '';
+  if (_chart) { _chart.remove(); _chart = null; }
+
+  let json;
+  try {
+    const res = await fetch(`/api/chart/candles?symbol=${symbol}&timeframe=${tf}&limit=200`);
+    json = await res.json();
+  } catch(e) {
+    document.getElementById('status').textContent = 'Network error — is the server running?';
+    return;
+  }
+
+  if (!json.ok) {
+    document.getElementById('status').textContent = 'Error: ' + json.error;
+    return;
+  }
+
+  const { candles, levels, current_price } = json.data;
+  if (!candles || !candles.length) {
+    document.getElementById('status').textContent = 'No candle data available for ' + symbol;
+    return;
+  }
+
+  document.getElementById('status').style.display = 'none';
+
+  _chart = LightweightCharts.createChart(wrap, {
+    width:  wrap.clientWidth,
+    height: wrap.clientHeight,
+    layout: {
+      background: { type: 'solid', color: '#0f1117' },
+      textColor:  '#7986cb',
+    },
+    grid: {
+      vertLines: { color: 'rgba(255,255,255,.04)' },
+      horzLines: { color: 'rgba(255,255,255,.04)' },
+    },
+    crosshair:       { mode: 1 },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,.1)' },
+    timeScale:       { borderColor: 'rgba(255,255,255,.1)', timeVisible: true, secondsVisible: false },
+  });
+
+  const series = _chart.addCandlestickSeries({
+    upColor:         '#26d96b', downColor:       '#ef5350',
+    borderUpColor:   '#26d96b', borderDownColor: '#ef5350',
+    wickUpColor:     '#26d96b', wickDownColor:   '#ef5350',
+  });
+  series.setData(candles);
+
+  (levels || []).forEach(lvl => {
+    const isS = lvl.type === 'support';
+    series.createPriceLine({
+      price:            lvl.price,
+      color:            isS ? 'rgba(38,217,107,.8)' : 'rgba(239,83,80,.8)',
+      lineWidth:        1,
+      lineStyle:        2,
+      axisLabelVisible: true,
+      title:            `${isS ? 'S' : 'R'} ${lvl.touches}×`,
+    });
+  });
+
+  _chart.timeScale().fitContent();
+
+  const leg = document.getElementById('sr-legend');
+  if (!levels || !levels.length) {
+    leg.innerHTML = '<span style="color:var(--muted);font-size:.74rem">No S/R levels detected in this range</span>';
+  } else {
+    leg.innerHTML = [...levels].reverse().map(lvl => {
+      const isS   = lvl.type === 'support';
+      const dist  = current_price ? ((lvl.price - current_price) / current_price * 100).toFixed(1) : null;
+      const dtxt  = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
+      return `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+               background:${isS ? 'rgba(38,217,107,.1)' : 'rgba(239,83,80,.1)'};
+               color:${isS ? '#26d96b' : '#ef5350'}">
+        ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
+      </span>`;
+    }).join('');
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (_chart) {
+    const wrap = document.getElementById('chart-wrap');
+    _chart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
+  }
+});
+
+renderTfBtns();
+loadChart();
+</script>
+</body>
+</html>

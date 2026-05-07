@@ -1234,19 +1234,5 @@ select:focus,input:focus{border-color:var(--accent)}
 
 <script src="/static/app.js"></script>
 
-<!-- S/R Chart Modal -->
-<div id="chart-modal" onclick="if(event.target===this)closeChart()">
-  <div class="chart-modal-box">
-    <div class="chart-modal-header">
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-        <span id="chart-modal-title" style="font-weight:700;font-size:1.05rem"></span>
-        <div class="chart-modal-tf" id="chart-tf-btns"></div>
-      </div>
-      <button class="btn" onclick="closeChart()" style="padding:4px 12px;font-size:.8rem">✕ Close</button>
-    </div>
-    <div id="chart-container" style="height:420px;border-radius:8px;overflow:hidden;background:var(--bg)"></div>
-    <div id="chart-sr-legend" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;min-height:22px"></div>
-  </div>
-</div>
 </body>
 </html>

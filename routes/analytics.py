@@ -1,6 +1,6 @@
 import traceback
 
-from flask import Blueprint, request
+from flask import Blueprint, request, render_template
 
 from database import db_conn
 from helpers import _ok, _err, _filters_from_args
@@ -10,6 +10,11 @@ import market_context
 import chart_context
 
 bp = Blueprint("analytics", __name__)
+
+
+@bp.route("/chart")
+def chart_page():
+    return render_template("chart.html")
 
 
 @bp.route("/api/dashboard/kpis")

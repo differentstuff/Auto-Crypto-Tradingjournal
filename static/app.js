@@ -2,124 +2,13 @@
 const charts = {};
 let currentPage = 'dashboard';
 
-// ── S/R Chart Modal ─────────────────────────────────────────────────────────
-let _chartInstance  = null;
-let _chartSymbol    = null;
-let _chartTf        = '4H';
-const _CHART_TFS    = ['15m', '1H', '4H', '1D'];
-
-async function openChart(symbol, tf = '4H') {
-  _chartSymbol = symbol;
-  _chartTf     = tf;
-  const modal  = document.getElementById('chart-modal');
-  modal.style.display = 'flex';
-  document.getElementById('chart-modal-title').textContent = symbol;
-  _renderChartTfBtns(tf);
-  await _loadChartData(symbol, tf);
+// ── S/R Chart — opens as a detached, resizable window ───────────────────────
+function openChart(symbol, tf = '4H') {
+  const url = `/chart?symbol=${encodeURIComponent(symbol)}&timeframe=${tf}`;
+  window.open(url, `chart_${symbol}`,
+    'width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');
 }
-
-function closeChart() {
-  document.getElementById('chart-modal').style.display = 'none';
-  if (_chartInstance) { _chartInstance.remove(); _chartInstance = null; }
-}
-
-function _renderChartTfBtns(activeTf) {
-  document.getElementById('chart-tf-btns').innerHTML = _CHART_TFS.map(tf =>
-    `<button class="chart-tf-btn${tf === activeTf ? ' active' : ''}" onclick="switchChartTf('${tf}')">${tf}</button>`
-  ).join('');
-}
-
-async function switchChartTf(tf) {
-  _chartTf = tf;
-  _renderChartTfBtns(tf);
-  await _loadChartData(_chartSymbol, tf);
-}
-
-async function _loadChartData(symbol, tf) {
-  const container = document.getElementById('chart-container');
-  if (_chartInstance) { _chartInstance.remove(); _chartInstance = null; }
-  container.innerHTML = '<div style="color:var(--muted);font-size:.85rem;text-align:center;padding-top:180px">Loading…</div>';
-  document.getElementById('chart-sr-legend').innerHTML = '';
-
-  const res = await api(`/api/chart/candles?symbol=${symbol}&timeframe=${tf}&limit=200`);
-  if (!res.ok) {
-    container.innerHTML = `<div style="color:var(--red);padding:20px">Failed to load chart data</div>`;
-    return;
-  }
-
-  const { candles, levels, current_price } = res.data;
-  if (!candles || !candles.length) {
-    container.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No candle data available</div>';
-    return;
-  }
-
-  container.innerHTML = '';
-
-  _chartInstance = LightweightCharts.createChart(container, {
-    width:  container.clientWidth,
-    height: 420,
-    layout: {
-      background: { type: 'solid', color: '#0f1117' },
-      textColor:  '#7986cb',
-    },
-    grid: {
-      vertLines: { color: 'rgba(255,255,255,.04)' },
-      horzLines: { color: 'rgba(255,255,255,.04)' },
-    },
-    crosshair:       { mode: 1 },
-    rightPriceScale: { borderColor: 'rgba(255,255,255,.1)' },
-    timeScale:       { borderColor: 'rgba(255,255,255,.1)', timeVisible: true, secondsVisible: false },
-  });
-
-  const series = _chartInstance.addCandlestickSeries({
-    upColor:         '#26d96b',
-    downColor:       '#ef5350',
-    borderUpColor:   '#26d96b',
-    borderDownColor: '#ef5350',
-    wickUpColor:     '#26d96b',
-    wickDownColor:   '#ef5350',
-  });
-  series.setData(candles);
-
-  (levels || []).forEach(lvl => {
-    const isS = lvl.type === 'support';
-    series.createPriceLine({
-      price:            lvl.price,
-      color:            isS ? 'rgba(38,217,107,.75)' : 'rgba(239,83,80,.75)',
-      lineWidth:        1,
-      lineStyle:        2,
-      axisLabelVisible: true,
-      title:            `${isS ? 'S' : 'R'} ${lvl.touches}×`,
-    });
-  });
-
-  _chartInstance.timeScale().fitContent();
-
-  window.addEventListener('resize', () => {
-    if (_chartInstance) _chartInstance.applyOptions({ width: container.clientWidth });
-  });
-
-  _renderChartSrLegend(levels || [], current_price);
-}
-
-function _renderChartSrLegend(levels, currentPrice) {
-  const el = document.getElementById('chart-sr-legend');
-  if (!levels.length) {
-    el.innerHTML = '<span style="color:var(--muted);font-size:.74rem">No S/R levels detected in this range</span>';
-    return;
-  }
-  el.innerHTML = [...levels].reverse().map(lvl => {
-    const isS  = lvl.type === 'support';
-    const dist = currentPrice ? ((lvl.price - currentPrice) / currentPrice * 100).toFixed(1) : null;
-    const distTxt = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
-    return `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-             background:${isS ? 'rgba(38,217,107,.1)' : 'rgba(239,83,80,.1)'};
-             color:${isS ? 'var(--accent3)' : 'var(--red)'}">
-      ${isS ? '▲ S' : '▼ R'} ${lvl.price}${distTxt} (${lvl.touches}×)
-    </span>`;
-  }).join('');
-}
-// ── end chart modal ──────────────────────────────────────────────────────────
+// ── end chart ────────────────────────────────────────────────────────────────
 let journalPage = 1;
 let symbolList  = [];
 
