@@ -390,6 +390,20 @@ Each card shows: Symbol, Direction + Leverage, Size, Entry, Mark Price, Unrealiz
 
 Click the card header to expand → shows Break Even price, Liquidation price, Margin, Fees, Achieved profits.
 
+### Chart Button
+
+Click **📊 Chart** on any position card to open a full candlestick chart for that symbol. The chart automatically draws your live trade levels as horizontal lines:
+
+| Line | Style | Colour |
+|------|-------|--------|
+| Entry price | Solid | Blue |
+| Stop Loss | Dashed | Red |
+| TP1 | Dashed | Green |
+| TP2 | Dashed | Green (dimmer) — only shown if a linked analyst call has a second target |
+| Liquidation | Dashed | Yellow |
+
+Each level also shows a legend chip at the bottom of the chart with the exact price and % distance from the current mark price — so you can see at a glance how far away each target is.
+
 ### AI Analysis Per Position
 
 Click **🤖 AI Analysis** on any position card. Claude analyzes that specific trade using:

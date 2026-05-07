@@ -651,17 +651,53 @@ KPI tooltips:
 
 ```javascript
 function openChart(symbol, tf = '4H') {
-  // read liquidation prices from livePositionsCache for this symbol
+  // Liquidation levels from livePositionsCache
   const liqs = (livePositionsCache || [])
     .filter(p => p.symbol === symbol && p.liquidation_price)
     .map(p => ({ price: parseFloat(p.liquidation_price), label: p.direction }));
+
+  // Entry / SL / TP levels — position data + tp2 from linked call if available
+  const trades = (livePositionsCache || [])
+    .filter(p => p.symbol === symbol)
+    .map(p => {
+      const key  = p.symbol + '_' + p.direction;
+      const call = typeof liveCallMatches !== 'undefined' ? (liveCallMatches[key] || null) : null;
+      return {
+        dir:   p.direction,
+        entry: parseFloat(p.entry_price)  || null,
+        sl:    parseFloat(p.stop_loss)    || null,
+        tp1:   parseFloat(p.take_profit)  || (call ? parseFloat(call.tp1_price) || null : null),
+        tp2:   call ? parseFloat(call.tp2_price) || null : null,
+      };
+    })
+    .filter(t => t.entry);
+
   let url = `/chart?symbol=${encodeURIComponent(symbol)}&timeframe=${tf}`;
-  if (liqs.length) url += '&liqs=' + encodeURIComponent(JSON.stringify(liqs));
+  if (liqs.length)   url += '&liqs='   + encodeURIComponent(JSON.stringify(liqs));
+  if (trades.length) url += '&trades=' + encodeURIComponent(JSON.stringify(trades));
+
   window.open(url, `chart_${symbol}`, 'width=1060,height=680,resizable=yes,...');
 }
 ```
 
 Named windows (`chart_${symbol}`) reuse the same browser window on repeat calls, preventing clutter.
+
+**URL params accepted by `chart.html`:**
+
+| Param | Format | Purpose |
+|-------|--------|---------|
+| `symbol` | `BTCUSDT` | Symbol to chart |
+| `timeframe` | `15m\|1H\|4H\|1D` | Initial timeframe |
+| `liqs` | `[{price, label}]` JSON | Liquidation level lines (yellow dashed, canvas overlay) |
+| `trades` | `[{dir, entry, sl, tp1, tp2}]` JSON | Entry/SL/TP price lines (LightweightCharts `createPriceLine()`) |
+
+**Trade level rendering in `chart.html`:**
+- `entry` → solid blue line (`rgba(79,195,247,0.85)`), 2px, label `"[dir] ENTRY"` on right axis
+- `sl` → dashed red line (`rgba(239,83,80,0.85)`), 1.5px, label `"[dir] SL"`
+- `tp1` → dashed green line (`rgba(38,217,107,0.85)`), 1.5px, label `"[dir] TP1"`
+- `tp2` → dashed green line (`rgba(38,217,107,0.6)`), 1px, label `"[dir] TP2"` (only when linked call has a second target)
+
+Legend chips: entry/TP/SL each get a coloured chip at the bottom of the chart window showing the price and % distance from current mark price.
 
 ### Canvas Overlay (`_startSrOverlay()`)
 
