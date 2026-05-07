@@ -186,15 +186,18 @@ ai_live_trade.py        Per-trade AI on the live positions view
 ai_trade_grader.py      Execution grading via Claude
 ai_pattern_detector.py  Statistical pattern detection via Claude
 ai_rulebook.py          Self-learning personalised rulebook (synthesised by Claude from trade history)
+ai_scanner.py           Proactive setup scanner — 3-stage pipeline, 100-symbol watchlist, 6-10/10 scoring
+ai_hindsight.py         Retroactive trade analysis — historical candles, blind scoring, P&L comparison
 market_context.py       Fear & Greed, funding rate, L/S ratio + get_market_str() helper
-chart_context.py        OHLCV candle fetch, S/R, trendlines, indicators (pandas-ta), confluence_score()
-templates/index.html    Single-page frontend HTML (~910 lines, no inline CSS)
-templates/chart.html    Detached chart window (LightweightCharts, S/R boxes, trendlines, trade levels)
+chart_context.py        OHLCV candle fetch + historical snapshots, S/R, trendlines, indicators (pandas-ta)
+templates/index.html    Single-page frontend HTML (~960 lines, no inline CSS)
+templates/chart.html    Detached chart window (LightweightCharts, S/R, trendlines, entry/SL/TP levels)
 static/style.css        All dark-theme CSS
-static/js/              Frontend split into 14 topic files (01-utils through 13-init + 08b-live-calls)
+static/js/              Frontend split into 16 topic files (01-utils → 13-init + 08b, 14-scanner, 15-hindsight)
 docs/GUIDE.md           Developer reference (routes, schema, JS globals)
 docs/USER_GUIDE.md      End-user feature guide
 docs/RATING_CRITERIA.md Full reference for all AI scoring and grading criteria
+docs/SCORING_GUIDE.md   Per-level scoring rubric — what a 1/10 vs 10/10 setup looks like
 .env.example            Environment variable template
 trading-journal.service systemd unit file
 ```
@@ -210,6 +213,41 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.2 — Setup Scanner, Hindsight Analysis & Scoring Guide
+
+#### Setup Scanner (⭐ new nav page)
+- **Proactive opportunity finder** — scans 100 USDT-M futures symbols for trade setups scored 6-10/10 without waiting for analyst calls
+- **3-stage pipeline**: (1) multi-TF confluence filter — parallel fetch of 4H+1D signals, passes symbols with ≥2 aligned; (2) technical quality gate — rejects choppy ADX, overextended RSI, missing S/R structure; (3) AI scoring — Claude evaluates finalists with full context, returns only 6-10/10 setups
+- **Results table** with columns: score, symbol, direction, confluence summary, chart pattern, entry zone, R:R, urgency
+- **Click any row** to expand a detail panel: entry zone + structural rationale, stop loss + ATR distance explanation, TP1 + TP2 each with target level explanation, "Why X/10" score reasoning block, key conditions and risk badges
+- **Chart with levels** — opens the detached chart window with entry zone, SL, TP1, TP2 pre-drawn as price lines
+- **Results cached 30 min**, Re-scan button for fresh data; 100-symbol watchlist covers BTC/ETH, major L1s, L2s, DeFi, AI, Meme, Gaming, Solana ecosystem
+
+#### Hindsight Analysis (🔮 new nav page)
+- **Retroactive blind scoring** — fetches historical Bitget candles at each trade's exact entry time, reconstructs the technical picture as it was at that moment, and asks Claude to score the setup without knowing the outcome
+- **Full comparison**: actual P&L vs "following recommendations" P&L (skipping trades Claude would have scored below 5)
+- **Signal accuracy** — TP/FP/TN/FN verdicts per trade; accuracy = (TP+TN) / all strong-signal trades
+- **Results stored in `trade_hindsight` DB table** — persistent across sessions; re-run at any time for fresh analysis
+- **Summary view**: 4-column comparison (Actual | Recommendations | Signal Accuracy | Score vs Outcome) with a key insight line showing P&L difference, win-rate change, and savings from skipped low-quality trades
+- **Trade-by-trade table** with score badge, recommendation (ENTER/SKIP), hypothetical P&L, delta, and verdict badge
+
+#### Scoring Guide (`docs/SCORING_GUIDE.md`)
+- New standalone reference document: exact criteria for every score level 1-10
+- Per-score detailed breakdown with real examples for each level
+- Factor grids: confluence, entry quality, SL distance (ATR), R:R benchmarks, RSI at entry, multi-TF alignment
+- Common mistakes table (what specific errors cost how many points)
+- "What separates a 7 from a 9" section
+
+#### Bug fixes (from code audit)
+- `settings` table missing from `init_db()` — `ai_rulebook` crashed on fresh installs
+- Malformed regex in `ai_call._extract_price()` — `{0,20}` quantifier was inside character class (wrong) instead of after it
+- Scanner Stage 2 passed 86/100 symbols to Claude — tightened ADX/RSI thresholds, added 4H signal check, capped at 30
+- `ai_advisor.py` leaked DB connection on exception
+- `ai_limit.py` ThreadPoolExecutor `.result()` calls outside the `with` block
+- Hindsight lookahead bias in history query fixed
+
+---
 
 ### v2.1 — AI Accuracy, Performance & Code Quality
 

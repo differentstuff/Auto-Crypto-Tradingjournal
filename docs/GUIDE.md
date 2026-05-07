@@ -50,8 +50,10 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
+    ├── ai_scanner.py           ← Proactive setup scanner: 3-stage pipeline, 100 symbols, scores 6-10/10
+    ├── ai_hindsight.py         ← Retroactive blind scoring + P&L comparison (historical candles)
     ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache) + get_market_str()
-    ├── chart_context.py        ← OHLCV candles + pandas-ta indicators + confluence_score() (10-min cache)
+    ├── chart_context.py        ← OHLCV candles + historical snapshots + pandas-ta + confluence_score()
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
     ├── bitget_sync.py          ← Background sync thread (every 15 min)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
@@ -74,10 +76,13 @@ static/js/10-pending.js         ← Pending limits, Bitget live orders, bulk ope
 static/js/11-sync.js            ← Live Sync page
 static/js/12-explorer.js        ← Chart Explorer (inline LightweightCharts)
 static/js/13-init.js            ← showPage extension, app startup
+static/js/14-scanner.js         ← Setup Scanner: table, click-to-expand detail, chart with levels
+static/js/15-hindsight.js       ← Hindsight Analysis: progress bar, comparison view, verdict table
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
 docs/USER_GUIDE.md              ← User-facing manual
 docs/RATING_CRITERIA.md         ← All AI scoring/grading criteria documented
+docs/SCORING_GUIDE.md           ← Per-level 1-10 scoring rubric with examples
 trading-journal.service         ← systemd service file
 requirements.txt                ← Python dependencies
 ```
@@ -212,6 +217,26 @@ One row per analyst call the user analyzed and chose to save.
 | created_at | TEXT | |
 
 ### `import_log` — Audit trail of all CSV imports
+
+### `trade_hindsight` — Retroactive AI scoring results
+
+One row per analyzed position. Populated by `ai_hindsight.py`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| position_id | INTEGER UNIQUE FK | Links to positions.id |
+| setup_score | INTEGER | Claude's blind score 1-10 at entry time |
+| would_enter | INTEGER | 1=ENTER, 0=SKIP |
+| rec_direction | TEXT | Direction Claude recommended (may differ from actual) |
+| direction_match | INTEGER | 1 if rec matches actual direction |
+| rec_entry_low/high | REAL | Recommended entry zone |
+| rec_sl / rec_tp1 / rec_tp2 | REAL | Recommended levels |
+| rec_rr | TEXT | Recommended R:R |
+| key_conditions | TEXT | JSON array of aligned signals |
+| actual_pnl | REAL | Actual realized P&L |
+| hypothetical_pnl | REAL | P&L if recommendation had been followed |
+| verdict | TEXT | TP / FP / TN / FN / NEUTRAL (signal accuracy) |
+| analysis_json | TEXT | Full Claude response |
 
 ### `trader_rulebook` — Personalised AI-generated rules
 
@@ -515,6 +540,8 @@ Routes are split across `routes/` — registered in `app.py` at startup. All blu
 | `limits` | `routes/limits.py` | Pending limit orders |
 | `live` | `routes/live.py` | Live Bitget positions, pending orders, per-trade AI |
 | `sync` | `routes/sync.py` | Sync trigger, sync status, AI advisor, rulebook |
+| `scanner` | `routes/scanner.py` | Setup scanner run/status/watchlist |
+| `hindsight` | `routes/hindsight.py` | Retroactive analysis run/status/results/clear |
 
 ## API Reference
 
@@ -624,15 +651,39 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | GET | `/api/live/pending-orders` | Unfilled limit orders from Bitget + `tracked_ids` set |
 | POST | `/api/live/analyze` | Per-trade Claude analysis |
 
+### Setup Scanner (routes/scanner.py)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/scanner/run` | Start background scan (default watchlist, 100 symbols) |
+| POST | `/api/scanner/run?force=1` | Force re-scan even if cache < 30 min old |
+| GET | `/api/scanner/status` | Poll state: `{status, scanned, after_filter, setups, duration_sec}` |
+| GET | `/api/scanner/watchlist` | Return default 100-symbol watchlist |
+
+Scan runs in a background thread. Poll `/status` every 2.5s until `status !== "running"`.
+Results cached for 30 minutes. `setups` is a list of scored setups (6-10/10) with full entry/SL/TP detail.
+
+### Hindsight Analysis (routes/hindsight.py)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/hindsight/run` | Start batch analysis (default: last 50 trades) |
+| POST | `/api/hindsight/run?n=25` | Analyze last N trades |
+| GET | `/api/hindsight/status` | Poll progress: `{status, progress, total}` |
+| GET | `/api/hindsight/results` | Stored results + summary comparison metrics |
+| DELETE | `/api/hindsight/results` | Clear all stored results from DB |
+
+Results are persistent in `trade_hindsight` table. `/results` returns `{rows, summary}` where summary includes actual vs hypothetical P&L, win rates, signal accuracy (TP/FP/TN/FN counts).
+
 ---
 
 ## Frontend
 
 Split across four files:
-- `templates/index.html` — HTML structure only (~910 lines), no inline CSS
+- `templates/index.html` — HTML structure only (~960 lines), no inline CSS
 - `templates/chart.html` — standalone detached chart window (self-contained, no shared CSS/JS)
 - `static/style.css` — all dark-theme CSS (~195 lines), loaded via `<link>`
-- `static/js/` — JavaScript split into 13 topic files (see file listing above). `index.html` loads them all as regular `<script>` tags; all functions remain in global scope so `onclick` attributes work unchanged.
+- `static/js/` — JavaScript split into 16 topic files (01-utils → 13-init + 08b-live-calls + 14-scanner + 15-hindsight). `index.html` loads them all as regular `<script>` tags; all functions remain in global scope so `onclick` attributes work unchanged.
 
 Structure:
 ```
@@ -800,7 +851,7 @@ Detection: `const inModal = !!inp.closest('.modal')` — picks the variant autom
 
 **Live filtering:** `drop._render(q)` filters the merged list, highlights matches with `_hlMatch(str, q)` (wraps matched chars in `<b>`), and renders up to 50 results.
 
-**Cache busting:** script tags use `?v=2.1` query strings (e.g. `<script src="/static/js/01-utils.js?v=2.1">`) — bump the version across all 14 `<script>` tags in `index.html` when deploying JS changes so browsers don't serve stale code.
+**Cache busting:** script tags use `?v=2.1` query strings (e.g. `<script src="/static/js/01-utils.js?v=2.1">`) — bump the version across all 16 `<script>` tags in `index.html` when deploying JS changes so browsers don't serve stale code.
 
 ---
 
@@ -1428,6 +1479,99 @@ Every call to `ai_live_trade.analyze_position()`, `ai_call_analyzer.analyze_call
 #### Auto-update schedule
 
 `bitget_sync.py` calls `_maybe_update_rulebook()` after each background sync. If `rulebook_updated_at` is older than `RULEBOOK_INTERVAL_DAYS` (7), a full regeneration runs automatically.
+
+---
+
+## `ai_scanner.py` — Proactive Setup Scanner
+
+Scans a 100-symbol watchlist and returns scored setups (6-10/10) with specific entry/SL/TP levels. Runs in a background thread; results cached 30 min.
+
+### Three-stage pipeline
+
+**Stage 1 — Confluence filter (parallel, no AI):**
+Fetches 4H+1D candle data for all symbols via `chart_context.get_chart_context()` in parallel (ThreadPoolExecutor max_workers=8). Passes symbols where `bullish ≥ 2` or `bearish ≥ 2` total signals across both timeframes.
+
+**Stage 2 — Technical quality gate (instant, no API calls):**
+- Rejects RSI > 78 (Long) / < 22 (Short) — overextended
+- Rejects ADX < 15 — no trend structure
+- Requires ≥ 2 S/R levels to define entry/SL/TP
+- Requires price within 4× ATR of the nearest S/R level
+- Requires ≥ 2 signals aligned specifically on 4H
+- **Hard cap: 30 finalists** sorted by confluence score (prevents > 30 Claude calls per scan)
+
+**Stage 3 — AI scoring (parallel Claude calls):**
+Each finalist gets a full prompt including: compact 4H+1D technical summary, S/R levels, trendlines, market context (funding, F&G, L/S), trader history on that symbol, and personalised rulebook. Claude scores 1-10 and returns entry zone, SL, TP1, TP2, all with detailed structural rationale. Setups below 6 are discarded.
+
+### Key functions
+
+| Function | Description |
+|----------|-------------|
+| `start_scan(symbols)` | Start background scan; returns False if scan running or cache fresh (< 30 min) |
+| `force_scan(symbols)` | Start regardless of cache TTL; returns False only if running |
+| `get_state()` | Returns `{status, scanned, after_filter, setups, duration_sec, error}` |
+
+### Scoring prompt (abbreviated)
+```
+6 — Moderate: partial alignment, valid entry, weak R:R or limited signals
+7 — Good: clear bias, structural entry, R:R ≥ 2:1
+8 — Strong: ≥3 signals, clean S/R entry, R:R ≥ 2.5:1
+9 — Excellent: multi-TF alignment, no rulebook conflicts, R:R ≥ 3:1
+10 — Perfect: textbook pattern, volume confirmation, R:R ≥ 4:1
+```
+
+---
+
+## `ai_hindsight.py` — Retroactive Trade Analysis
+
+Fetches historical Bitget candles at each trade's entry time and asks Claude to score the setup blind (without knowing the actual outcome). Results stored in `trade_hindsight` table.
+
+### How it works
+
+For each trade:
+1. `_to_ms(open_time)` converts the ISO timestamp to Unix ms
+2. `chart_context.get_historical_context(symbol, ["4H","1D"], end_ms)` fetches candles ending at entry time (bypasses cache, uses Bitget `endTime` param)
+3. Full indicator suite computed on the historical candle snapshot
+4. Claude prompted to score as if seeing the setup live at that moment — actual outcome never revealed
+5. Comparison computed server-side: `hypothetical_pnl` = actual_pnl if would enter same direction (score ≥ 7), else 0
+
+### Signal accuracy verdicts
+
+| Verdict | Meaning |
+|---------|---------|
+| TP | Would enter, direction match, trade profitable |
+| FP | Would enter, direction match, trade lost |
+| TN | Would skip, trade lost (correct) |
+| FN | Would skip, trade was profitable (missed) |
+| NEUTRAL | Score 5-6 — no strong signal either way |
+
+Signal accuracy = (TP + TN) / (TP + FP + TN + FN) — measures how well the scoring predicts real outcomes on your own history.
+
+### Key functions
+
+| Function | Description |
+|----------|-------------|
+| `start_batch(n=50)` | Start background analysis of last N trades |
+| `get_state()` | Returns `{status, progress, total}` |
+| `get_results(limit)` | Returns `{rows, summary}` from `trade_hindsight` table |
+
+---
+
+## v2.2 — Setup Scanner & Hindsight Analysis (2026-05-07)
+
+### New modules
+- **`ai_scanner.py`** — 3-stage proactive scanner (100-symbol watchlist, 6-10/10 scoring, 30-finalist cap)
+- **`ai_hindsight.py`** — Retroactive blind scoring + actual vs recommendation P&L comparison
+- **`chart_context.get_candles_at_time()`** and **`get_historical_context()`** — historical candle snapshots for any past timestamp (used by hindsight)
+- **`routes/scanner.py`** + **`routes/hindsight.py`** — new Blueprints registered in app.py
+- **`static/js/14-scanner.js`** + **`static/js/15-hindsight.js`** — new nav pages
+- **`database.trade_hindsight`** — persistent storage for retroactive analysis results
+- **`docs/SCORING_GUIDE.md`** — complete per-level scoring rubric with examples and factor grids
+
+### Scanner UI
+Table view with score/symbol/direction/confluence/pattern/entry/R:R/urgency columns. Click row → expand accordion panel with detailed rationale for each level. "📊 Chart with Levels" button opens the chart window with entry zone midpoint, SL, TP1, TP2 pre-drawn as price lines.
+
+### Hindsight UI
+Progress bar while analysis runs (2s polling). 4-column comparison summary. Trade-by-trade table with score badge, ENTER/SKIP recommendation, hypothetical P&L delta, and TP/TN/FP/FN verdict badge.
 
 ---
 

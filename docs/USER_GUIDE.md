@@ -7,7 +7,7 @@
 
 ## Overview
 
-The Trading Journal is a personal analytics and AI-assisted decision tool for your Bitget futures trading. It has 11 sections accessible from the left sidebar:
+The Trading Journal is a personal analytics and AI-assisted decision tool for your Bitget futures trading. It has 13 sections accessible from the left sidebar:
 
 | Icon | Section | What it does |
 |------|---------|--------------|
@@ -17,11 +17,13 @@ The Trading Journal is a personal analytics and AI-assisted decision tool for yo
 | 🔭 | Edge Lab | Setup analysis, execution grading, pattern detector, R:R tracking, Trader Rulebook |
 | 🤖 | AI Advisor | Full portfolio analysis by Claude |
 | ⬆️ | Import Data | Upload new Bitget CSV exports |
+| 📊 | Chart Explorer | Interactive candlestick charts for any symbol with S/R, trendlines, and indicators |
 | 📡 | Call Analyzer | Analyze analyst trade calls before entering |
 | ⚡ | Live Trades | Real-time open positions with AI analysis |
 | 🔴 | Live Sync | Bitget connection status and manual sync |
 | ⏳ | Pending Orders | Track limit orders set but not yet triggered |
-| 📈 | Chart Explorer | Interactive candlestick charts for any symbol with S/R, trendlines, and indicators |
+| ⭐ | Setup Scanner | Scan 100 symbols for high-quality setups (6-10/10) with entry/SL/TP recommendations |
+| 🔮 | Hindsight | Retroactively score your past trades to see how recommendations would have changed your P&L |
 
 At the top of every page there is a **status bar** showing the last sync time and your current account equity. The **Sync Now** button triggers an immediate update from Bitget.
 
@@ -632,6 +634,123 @@ This feeds the **Analyst Stats** and **Score Accuracy** tables, making the AI an
 3. Check **P&L by Hour** — are you trading at the wrong time?
 4. Check the **Worst Symbols** table — are you overtrading losing pairs?
 5. Use these insights to inform which analyst calls to skip (e.g., avoid Friday calls if Friday is your worst day)
+
+---
+
+## Setup Scanner
+
+The Setup Scanner proactively searches 100 USDT-M futures symbols for trade setups scored 6-10/10, so you don't have to wait for an analyst call before analyzing an opportunity.
+
+### How it works
+
+1. Click **🔍 Scan Now** — the scanner runs in the background (~1-3 minutes)
+2. A progress line shows how many symbols have been evaluated
+3. Results appear as a table when the scan completes
+4. Click any row to see the full entry/SL/TP breakdown
+
+### Understanding the table
+
+Each row in the results table shows:
+
+| Column | Meaning |
+|--------|---------|
+| Score | 6-10/10 — higher = more aligned signals and better structure |
+| Symbol | Coin being analyzed (USDT perpetual) |
+| Dir | LONG or SHORT |
+| Confluence | Key aligned signals at a glance |
+| Pattern | Chart pattern name if identifiable (Bull Flag, Break-and-Retest, etc.) |
+| Entry Zone | Price range where the entry makes structural sense |
+| R:R | Risk:Reward ratio to TP1 |
+| Urgency | Now / 1-4h / Today / 1-3 days |
+
+### Expanded detail panel
+
+Click any row to expand the detail panel:
+
+- **Why X/10** — exactly what earns the score and what would make it higher or lower
+- **Entry Zone** — price range with structural rationale (which S/R level, EMA, trendline)
+- **Stop Loss** — exact price, the structural reason for that level, and ATR distance
+- **Take Profit 1 & 2** — target levels with explanation of what resistance/support they represent
+- **Key Conditions** — the 3-4 most important aligned signals (e.g. "RSI 47 reset from 71")
+- **Risks** — what could invalidate the setup
+- **📊 Chart with Levels** — opens a chart with entry, SL, TP1, TP2 drawn as price lines
+
+### Score meanings
+
+| Score | What it means |
+|-------|--------------|
+| 6 | Acceptable — tradeable but limited conviction |
+| 7 | Good — clear directional bias, structural setup, R:R ≥ 2:1 |
+| 8 | Strong — multiple aligned signals, clean structure, R:R ≥ 2.5:1 |
+| 9 | Excellent — near-ideal conditions, multi-TF alignment, R:R ≥ 3:1 |
+| 10 | Perfect — textbook, all conditions optimal simultaneously (rare) |
+
+See `docs/SCORING_GUIDE.md` for the complete per-level breakdown.
+
+### Tips
+
+- Scans cache for 30 minutes. Use **🔄 Re-scan** to force a fresh run.
+- If no results appear: market conditions may be choppy with no clean structural entries. Check again after the next major candle close.
+- The **📋 Analyze** button pre-fills the Call Analyzer with the setup details so you can run a deeper analysis with a chart image.
+- Scanner results are not saved — they reflect the current market snapshot only.
+
+---
+
+## Hindsight Analysis
+
+The Hindsight module retroactively scores your past trades using the same criteria as the Setup Scanner. It reconstructs the technical picture at your exact entry time and asks Claude what it would have recommended — without knowing what actually happened.
+
+### Why this is useful
+
+After running Hindsight, you can see:
+- Were your actual trades the ones Claude would have recommended entering?
+- Did you take trades that clearly should have been skipped?
+- How would your P&L have changed if you filtered by score ≥ 7?
+
+### Running the analysis
+
+1. Click **🔮 Analyze Last 50 Trades**
+2. Wait for the progress bar to complete (1-3 minutes for 50 trades)
+3. Results are saved to the database — they persist across page reloads
+4. Use the **25 trades** or **100 trades** buttons for smaller or larger batches
+
+### Reading the comparison
+
+The summary shows four columns:
+
+| Column | Shows |
+|--------|-------|
+| Actual | Your real win rate and total P&L |
+| Following Recommendations | Win rate and P&L if you had skipped trades scored below 5 |
+| Signal Accuracy | TP/TN/FP/FN counts — how well the scoring predicts real outcomes |
+| Score vs Outcome | Average score of winners vs losers |
+
+The **key insight line** tells you the practical impact: "By skipping 12 low-conviction setups you would have saved $450."
+
+### Trade table columns
+
+| Column | Meaning |
+|--------|---------|
+| Score | What Claude would have scored the setup at entry |
+| Rec | ENTER (score ≥ 7, same direction) or SKIP (score < 5 or conflict) |
+| Hyp. P&L | The P&L you would have received following the recommendation |
+| Δ | Difference between hypothetical and actual |
+| Verdict | TP (entered, won) / TN (skipped, would have lost) / FP (entered, lost) / FN (skipped, would have won) |
+
+### Verdicts explained
+
+- **TP (True Positive)** — Claude said enter, trade was profitable. Correct call.
+- **TN (True Negative)** — Claude said skip, trade would have been a loss. Correct skip.
+- **FP (False Positive)** — Claude said enter, but trade lost. Overconfident.
+- **FN (False Negative)** — Claude said skip, but trade was actually profitable. Missed winner.
+- **NEUTRAL** — Score 5-6, no strong signal either way.
+
+High accuracy means the setup scoring system genuinely predicts your outcomes. If FP > TN, the model is overconfident on your setup types.
+
+### Notes
+
+- Historical market context (funding rates, Fear & Greed at entry time) is not available — scoring is technicals-only for hindsight analysis
+- Results are stored permanently; click the trash / clear option to reset and re-run
 
 ---
 
