@@ -242,6 +242,24 @@ trading-journal.service systemd unit file
 - Loop auto-stops when the canvas is removed from the DOM (chart destroyed / TF switch)
 - Price-scale area (right ~65px) deliberately left uncovered so axis labels remain readable
 
+### v2.1 — Multi-Timeframe Trendlines & Searchable Symbol Picker
+
+#### Multi-Timeframe Trendlines
+- **`detect_all_trendlines(symbol)`** in `chart_context.py` — fetches 1W, 1D, 4H, and 1H candles, detects trendlines on each timeframe, and returns them all in one list regardless of which TF you're viewing
+- **Visual weight system** — higher timeframe lines are heavier and more opaque: 1W=weight 4 (opacity 0.90, width 2.5px), 1D=3 (0.70, 2px), 4H=2 (0.50, 1.5px), 1H=1 (0.30, 1px)
+- **Rendering order** — lower TF lines drawn first (behind), higher TF last (in front), so weekly/daily structure is never obscured by noise
+- **Real-time slope extension** — trendlines are extended to current time using price-per-second slope so they display correctly on any viewing timeframe (weekly line looks right on a 15m chart)
+- **Legend chips** show the source timeframe label (`1W`, `1D`, etc.) next to direction and touch count
+- Trendline payload now includes `timeframe` and `weight` fields; both `chart.html` and chart explorer respect them
+
+#### Searchable Symbol Picker
+- **Dropdown with live search** on every coin input in the app: Chart Explorer, Add Trade modal, Log Manual Trade modal
+- Populated from the full Bitget USDT-M Futures symbol list (~200+ pairs) via `GET /api/exchange/symbols`
+- **Instant filter** as you type — partial match anywhere in the symbol name, matches highlighted in bold
+- **Two-variant architecture** to handle modal clipping: non-modal inputs use `position:absolute` inside a `.sym-wrap` wrapper; modal inputs use `position:fixed` appended to `<body>` to escape `overflow-y:auto` clipping
+- Exchange symbol list is fetched once at startup with a 1-hour server-side cache; local journal symbols used as immediate fallback while the exchange list loads
+- `GET /api/exchange/symbols` — new endpoint in `routes/analytics.py`, calls Bitget `/api/v2/mix/market/tickers?productType=USDT-FUTURES`
+
 ### v1.9.5 — Self-Learning Trader Rulebook
 - **`ai_rulebook.py`** — new module: Claude analyses your entire trade history and synthesises 5–10 personalised rules (warnings, strengths, habits, calibration notes) backed by real numbers from your data
 - **`trader_rulebook` DB table** — rules are persisted in SQLite and survive restarts; auto-regenerated weekly by the background sync loop

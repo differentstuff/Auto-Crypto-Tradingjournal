@@ -513,8 +513,9 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/chart` | Serve `templates/chart.html` (detached chart window) |
-| GET | `/api/chart/candles` | OHLCV candles + S/R levels + trendlines. Params: `symbol`, `timeframe` (15m/1H/4H/1D), `limit` (default 200). Returns `{candles, levels, trendlines, current_price, symbol, timeframe}` |
+| GET | `/api/chart/candles` | OHLCV candles + S/R levels + multi-TF trendlines. Params: `symbol`, `timeframe` (15m/1H/4H/1D), `limit` (default 200). Returns `{candles, levels, trendlines, current_price, symbol, timeframe}` where `trendlines` includes all TFs (1W/1D/4H/1H), each tagged with `timeframe` and `weight` |
 | GET | `/api/chart/indicators` | Technical indicator values. Params: `symbol`, `timeframes` (comma-separated, e.g. `4H,1D`). Returns per-timeframe indicator dict |
+| GET | `/api/exchange/symbols` | Full Bitget USDT-M Futures symbol list (~200+). Sourced from Bitget `/api/v2/mix/market/tickers?productType=USDT-FUTURES`. 1-hour server-side cache. Returns `{ok: true, symbols: ["BTCUSDT", ...]}` |
 
 ### Call Analyzer
 
@@ -598,7 +599,7 @@ showPage(name) → hide all .page-view → show #page-<name> → mark nav active
 
 Special pages handled by `showPage()` override: `['live', 'trades', 'calls', 'pending', 'charts']`
 
-When `charts` activates: `_initExplorerTfBtns()` + `_fillExplorerSymbols()` are called to populate TF buttons and autocomplete datalist from `symbolList`.
+When `charts` activates: `_initExplorerTfBtns()` is called to populate TF buttons. Symbol input uses the searchable picker (see Symbol Picker section below) — no separate datalist is needed.
 
 **Key JS globals:**
 - `currentPage` — active page name
@@ -660,6 +661,27 @@ function _startSrOverlay(wrap, series, levels, liquidations) {
 --yellow:  #ffb300   warning / medium risk
 ```
 
+### Symbol Picker (`_attachSymbolPicker(inputId)`)
+
+Searchable dropdown attached to every coin-name input: `#explorer-symbol` (Chart Explorer), `#m-symbol` (Add Trade modal), `#lm-symbol` (Log Manual Trade modal).
+
+**Two variants** are needed because `.modal { overflow-y:auto }` clips absolutely-positioned children:
+
+| Context | CSS class | Positioning | Parent |
+|---------|-----------|-------------|--------|
+| Non-modal inputs | `.sym-drop-abs` | `position:absolute; top:calc(100%+3px)` | `.sym-wrap` wrapper (`position:relative`) |
+| Modal inputs | `.sym-drop-fixed` | `position:fixed` with `getBoundingClientRect()` coords | `document.body` |
+
+Detection: `const inModal = !!inp.closest('.modal')` — picks the variant automatically.
+
+**Data sources (two-tier):**
+1. `symbolList` (journal symbols, available immediately) — used as fallback on first render
+2. `_exchangeSymbols` (full Bitget list, ~200+) — loaded async via `_loadExchangeSymbols()` → `GET /api/exchange/symbols` at startup; open dropdowns refresh automatically when it arrives
+
+**Live filtering:** `drop._render(q)` filters the merged list, highlights matches with `_hlMatch(str, q)` (wraps matched chars in `<b>`), and renders up to 50 results.
+
+**Cache busting:** script tag uses `<script src="/static/app.js?v=2.1">` — bump the version query string when deploying JS changes so browsers don't serve stale code.
+
 ---
 
 ## `chart_context.py` — Candle Data, S/R & Trendlines
@@ -674,15 +696,41 @@ Swing-pivot S/R detection:
 3. Counts touches per cluster, sorts by touch count descending, keeps top `max_levels`
 4. Returns `[{price, type ('support'|'resistance'), strength, touches}, ...]`
 
-### `detect_trendlines(df, n_swing=5, max_lines=4)`
+### `detect_trendlines(df, n_swing=5, max_lines=4, now_time_sec=None)`
 
-Ascending support / descending resistance line detection:
+Ascending support / descending resistance line detection for a single timeframe:
 1. Finds the same swing pivots as S/R detection
-2. For each pair of pivots of the same type, computes the implied slope
+2. For each pair of pivots of the same type, computes the implied slope (candle-index based, for validation)
 3. Validates: no candle between the two anchors may violate the line by more than 0.5%
-4. Extends each valid line to the current candle
+4. Extends each valid line to `now_time_sec` using real-time slope (price/second) so the endpoint displays correctly on any viewing TF
 5. Deduplicates by anchor price (keeps best by touch count), returns up to 2 uptrend + 2 downtrend lines
-6. Returns `[{type ('uptrend'|'downtrend'), p1_time, p1_price, p2_time, p2_price, touches, anchor1, anchor2}, ...]` — timestamps in Unix seconds for LightweightCharts
+6. Returns `[{type, p1_time, p1_price, p2_time, p2_price, touches, anchor1, anchor2}, ...]` — timestamps in Unix seconds
+
+### `detect_all_trendlines(symbol)`
+
+Runs trendline detection across four timeframes and returns them all in one sorted list:
+
+```python
+_TF_TL_CONFIG = [
+    {"tf": "1W", "limit": 104, "weight": 4, "n_swing": 3},
+    {"tf": "1D", "limit": 200, "weight": 3, "n_swing": 4},
+    {"tf": "4H", "limit": 200, "weight": 2, "n_swing": 5},
+    {"tf": "1H", "limit": 200, "weight": 1, "n_swing": 5},
+]
+```
+
+Each trendline dict is tagged with `timeframe` (e.g. `"1W"`) and `weight` (4=1W → 1=1H). The combined list is sorted by `weight` descending (weekly first). `get_candles_for_chart()` calls this instead of the single-TF `detect_trendlines()`.
+
+**Visual weight system** in `chart.html` and chart explorer:
+
+| Weight | TF | Opacity | Line width |
+|--------|----|---------|-----------|
+| 4 | 1W | 0.90 | 2.5px |
+| 3 | 1D | 0.70 | 2px |
+| 2 | 4H | 0.50 | 1.5px |
+| 1 | 1H | 0.30 | 1px |
+
+Rendering order: lower-weight lines first (drawn behind), higher-weight last (drawn in front). Weekly/daily structure is never obscured by lower-TF noise.
 
 ### `get_candles_for_chart(symbol, tf, limit=200)`
 
@@ -691,7 +739,8 @@ Returns the combined payload for the chart route:
 {
   "candles":       [{time, open, high, low, close}, ...],  # Unix seconds, floats
   "levels":        [{price, type, strength, touches}, ...],
-  "trendlines":    [{type, p1_time, p1_price, p2_time, p2_price, touches, anchor1, anchor2}, ...],
+  "trendlines":    [{type, p1_time, p1_price, p2_time, p2_price, touches, anchor1, anchor2,
+                     timeframe, weight}, ...],  # all TFs, sorted weight desc
   "current_price": float,
   "symbol":        str,
   "timeframe":     str,
