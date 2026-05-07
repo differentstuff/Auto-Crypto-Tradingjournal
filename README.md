@@ -239,6 +239,14 @@ trading-journal.service systemd unit file
 - Common mistakes table (what specific errors cost how many points)
 - "What separates a 7 from a 9" section
 
+#### Telegram Alerts + Scheduled Scanner
+- **Automatic 30-minute scans** — `scanner_scheduler.py` starts a background daemon thread at app startup, fires `force_scan()` every 30 minutes (first scan 5 min after boot)
+- **Telegram notifications** — `telegram_notify.py` sends an HTML-formatted alert when any 6+/10 setup is found; includes symbol, direction, score, entry/SL/TP, R:R, urgency, and a deep-link back to the journal
+- **No external dependencies** — uses only `urllib.request` (stdlib)
+- **Live Sync page** — new Telegram Alerts section shows configured/unconfigured status and a "Send Test Message" button to verify the connection
+- **New API endpoints**: `GET /api/telegram/status`, `POST /api/telegram/test`
+- **Config in `.env`**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `APP_URL`; optional overrides `SCANNER_INTERVAL`, `SCANNER_FIRST_DELAY`, `SCANNER_SCHEDULER=off`
+
 #### Bug fixes (from code audit)
 - `settings` table missing from `init_db()` — `ai_rulebook` crashed on fresh installs
 - Malformed regex in `ai_call._extract_price()` — `{0,20}` quantifier was inside character class (wrong) instead of after it

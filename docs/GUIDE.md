@@ -52,6 +52,8 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
     ├── ai_scanner.py           ← Proactive setup scanner: 3-stage pipeline, 100 symbols, scores 6-10/10
     ├── ai_hindsight.py         ← Retroactive blind scoring + P&L comparison (historical candles)
+    ├── scanner_scheduler.py    ← Background daemon: force_scan() every 30 min + Telegram alert on findings
+    ├── telegram_notify.py      ← Telegram Bot API client (stdlib only); send_setup_alert(), send_test_message()
     ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache) + get_market_str()
     ├── chart_context.py        ← OHLCV candles + historical snapshots + pandas-ta + confluence_score()
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
@@ -674,6 +676,24 @@ Results cached for 30 minutes. `setups` is a list of scored setups (6-10/10) wit
 | DELETE | `/api/hindsight/results` | Clear all stored results from DB |
 
 Results are persistent in `trade_hindsight` table. `/results` returns `{rows, summary}` where summary includes actual vs hypothetical P&L, win rates, signal accuracy (TP/FP/TN/FN counts).
+
+### Telegram Alerts (routes/sync.py)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/telegram/status` | `{configured, interval_min, first_delay_min}` |
+| POST | `/api/telegram/test` | Send a test message to verify configuration |
+
+Configuration in `.env`:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Yes | Token from @BotFather |
+| `TELEGRAM_CHAT_ID` | Yes | Numeric chat ID (get from @userinfobot) |
+| `APP_URL` | No | Deep-link URL in alerts (default: `http://192.168.1.21:8082`) |
+| `SCANNER_INTERVAL` | No | Seconds between scans (default: 1800 = 30 min) |
+| `SCANNER_FIRST_DELAY` | No | Seconds before first scan after startup (default: 300 = 5 min) |
+| `SCANNER_SCHEDULER` | No | Set to `off` to disable the scheduler entirely |
 
 ---
 
@@ -1572,6 +1592,11 @@ Table view with score/symbol/direction/confluence/pattern/entry/R:R/urgency colu
 
 ### Hindsight UI
 Progress bar while analysis runs (2s polling). 4-column comparison summary. Trade-by-trade table with score badge, ENTER/SKIP recommendation, hypothetical P&L delta, and TP/TN/FP/FN verdict badge.
+
+### Telegram Alerts
+`scanner_scheduler.py` starts a daemon thread at app startup. Every 30 minutes it calls `ai_scanner.force_scan()`, waits up to 7 minutes for completion, and calls `telegram_notify.send_setup_alert(setups)` if any setups were found. Only activates when `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set in `.env`.
+
+The **Live Sync page** shows a Telegram Alerts section with configured/unconfigured status and a test button.
 
 ---
 

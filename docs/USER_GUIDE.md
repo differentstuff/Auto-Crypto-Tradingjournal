@@ -592,6 +592,31 @@ Shows the Bitget API connection status and lets you trigger a manual sync.
 
 Shows current Account Equity and Available Balance (fetched from Bitget API).
 
+### Telegram Alerts
+
+The bottom of the Live Sync page shows the Telegram alert status. When configured, the Setup Scanner runs automatically every 30 minutes and sends you a Telegram message whenever a 6+/10 setup is found — no need to manually check the app.
+
+**Setup (one-time):**
+
+1. Open Telegram → search **@BotFather** → send `/newbot` → follow the prompts → copy the token
+2. Search **@userinfobot** on Telegram → it replies with your numeric chat ID
+3. SSH into the Pi and add to `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=your_token
+   TELEGRAM_CHAT_ID=your_chat_id
+   ```
+4. `sudo systemctl restart trading-journal`
+5. Come back to this page — you'll see ✅ configured and a **📲 Send Test Message** button
+
+**What the alerts look like:**
+- Symbol, direction, score/10, entry zone, SL, TP1, R:R
+- Chart pattern name if identifiable
+- Urgency (Now / 1-4h / Today / 1-3 days)
+- Brief summary from Claude
+- Link back to the journal
+
+If no setups are found in a scan cycle, no message is sent — alerts are signal-only, not noise.
+
 ---
 
 ## Common Workflows
