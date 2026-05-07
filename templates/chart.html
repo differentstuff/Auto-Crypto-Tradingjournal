@@ -27,7 +27,7 @@ header{display:flex;align-items:center;justify-content:space-between;
 #sr-legend{padding:7px 14px;background:var(--bg2);border-top:1px solid var(--border);
            display:flex;gap:6px;flex-wrap:wrap;min-height:34px;align-items:center;flex-shrink:0}
 #status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-        color:var(--muted);font-size:.85rem;pointer-events:none}
+        color:var(--muted);font-size:.85rem;pointer-events:none;z-index:10}
 </style>
 </head>
 <body>
@@ -45,9 +45,79 @@ let tf     = params.get('timeframe') || '4H';
 const TFS  = ['15m','1H','4H','1D'];
 let _chart = null;
 
-document.title   = symbol + ' — Chart';
+// Liquidation levels passed via URL: liqs=[{price,label},...]
+let _liquidations = [];
+try {
+  const raw = params.get('liqs');
+  if (raw) _liquidations = JSON.parse(decodeURIComponent(raw));
+} catch(e) {}
+
+document.title  = symbol + ' — Chart';
 document.getElementById('chart-title').textContent = symbol;
 
+// ── Canvas overlay: S/R boxes + liquidation dashed lines ──────────────────────
+function _startOverlay(wrap, series, levels, liquidations) {
+  // Remove any previous overlay canvas
+  const old = wrap.querySelector('.sr-canvas');
+  if (old) old.remove();
+
+  const cv = document.createElement('canvas');
+  cv.className  = 'sr-canvas';
+  cv.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:3';
+  wrap.appendChild(cv);
+
+  function draw() {
+    // Stop loop if canvas was removed (chart destroyed)
+    if (!document.contains(cv)) return;
+
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    // Price scale is ~65px wide on the right — leave it uncovered
+    const chartW = w - 65;
+
+    // ── S/R grey boxes (darker = more touches) ────────────────────────────────
+    (levels || []).forEach(lvl => {
+      const hw = lvl.price * 0.003;               // half-width of zone (0.3%)
+      const yT = series.priceToCoordinate(lvl.price + hw);
+      const yB = series.priceToCoordinate(lvl.price - hw);
+      if (yT === null || yB === null) return;
+      // Alpha: min 0.07 (1 touch) → max 0.42 (many touches)
+      const a   = Math.min(0.07 + (lvl.touches - 1) * 0.035, 0.42).toFixed(3);
+      ctx.fillStyle = `rgba(180,183,210,${a})`;
+      const top = Math.min(yT, yB);
+      const ht  = Math.max(Math.abs(yB - yT), 3);
+      ctx.fillRect(0, top, chartW, ht);
+    });
+
+    // ── Liquidation levels (yellow dashed) ────────────────────────────────────
+    (liquidations || []).forEach(liq => {
+      if (!liq.price) return;
+      const y = series.priceToCoordinate(parseFloat(liq.price));
+      if (y === null) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,213,60,0.9)';
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([7, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(chartW, y);
+      ctx.stroke();
+      ctx.restore();
+      // Label on left side
+      ctx.fillStyle = 'rgba(255,213,60,0.92)';
+      ctx.font      = 'bold 11px "Segoe UI",sans-serif';
+      ctx.fillText(`${liq.label} LIQ  ${liq.price}`, 8, y - 5);
+    });
+
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+}
+
+// ── TF buttons ────────────────────────────────────────────────────────────────
 function renderTfBtns() {
   document.getElementById('tf-btns').innerHTML = TFS.map(t =>
     `<button class="tf-btn${t===tf?' active':''}" onclick="switchTf('${t}')">${t}</button>`
@@ -60,30 +130,31 @@ async function switchTf(newTf) {
   await loadChart();
 }
 
+// ── Main chart loader ─────────────────────────────────────────────────────────
 async function loadChart() {
   const wrap = document.getElementById('chart-wrap');
   document.getElementById('status').textContent = 'Loading…';
   document.getElementById('status').style.display = 'flex';
   document.getElementById('sr-legend').innerHTML  = '';
   if (_chart) { _chart.remove(); _chart = null; }
+  // Remove old overlay canvas now (new one created after chart builds)
+  const old = wrap.querySelector('.sr-canvas');
+  if (old) old.remove();
 
   let json;
   try {
-    const res = await fetch(`/api/chart/candles?symbol=${symbol}&timeframe=${tf}&limit=200`);
-    json = await res.json();
+    const r = await fetch(`/api/chart/candles?symbol=${symbol}&timeframe=${tf}&limit=200`);
+    json = await r.json();
   } catch(e) {
-    document.getElementById('status').textContent = 'Network error — is the server running?';
+    document.getElementById('status').textContent = 'Network error';
     return;
   }
 
-  if (!json.ok) {
-    document.getElementById('status').textContent = 'Error: ' + json.error;
-    return;
-  }
+  if (!json.ok) { document.getElementById('status').textContent = 'Error: ' + json.error; return; }
 
   const { candles, levels, trendlines, current_price } = json.data;
   if (!candles || !candles.length) {
-    document.getElementById('status').textContent = 'No candle data available for ' + symbol;
+    document.getElementById('status').textContent = 'No candle data for ' + symbol;
     return;
   }
 
@@ -92,50 +163,50 @@ async function loadChart() {
   _chart = LightweightCharts.createChart(wrap, {
     width:  wrap.clientWidth,
     height: wrap.clientHeight,
-    layout: {
-      background: { type: 'solid', color: '#0f1117' },
-      textColor:  '#7986cb',
-    },
-    grid: {
-      vertLines: { color: 'rgba(255,255,255,.04)' },
-      horzLines: { color: 'rgba(255,255,255,.04)' },
-    },
+    layout: { background: { type: 'solid', color: '#0f1117' }, textColor: '#7986cb' },
+    grid:   { vertLines: { color: 'rgba(255,255,255,.04)' }, horzLines: { color: 'rgba(255,255,255,.04)' } },
     crosshair:       { mode: 1 },
     rightPriceScale: { borderColor: 'rgba(255,255,255,.1)' },
     timeScale:       { borderColor: 'rgba(255,255,255,.1)', timeVisible: true, secondsVisible: false },
   });
 
   const series = _chart.addCandlestickSeries({
-    upColor:         '#26d96b', downColor:       '#ef5350',
-    borderUpColor:   '#26d96b', borderDownColor: '#ef5350',
-    wickUpColor:     '#26d96b', wickDownColor:   '#ef5350',
+    upColor: '#26d96b', downColor: '#ef5350',
+    borderUpColor: '#26d96b', borderDownColor: '#ef5350',
+    wickUpColor: '#26d96b', wickDownColor: '#ef5350',
   });
   series.setData(candles);
 
+  // Axis labels for S/R (invisible line, just for the right-axis price label)
   (levels || []).forEach(lvl => {
     const isS = lvl.type === 'support';
     series.createPriceLine({
-      price:            lvl.price,
-      color:            isS ? 'rgba(38,217,107,.8)' : 'rgba(239,83,80,.8)',
-      lineWidth:        1,
-      lineStyle:        2,
+      price: lvl.price, lineWidth: 1, lineStyle: 0,
+      color: 'rgba(180,183,210,0.25)',
       axisLabelVisible: true,
-      title:            `${isS ? 'S' : 'R'} ${lvl.touches}×`,
+      title: `${isS ? 'S' : 'R'} ${lvl.touches}×`,
     });
   });
 
-  // Draw trendlines
+  // Axis labels for liquidation levels
+  (_liquidations || []).forEach(liq => {
+    series.createPriceLine({
+      price: parseFloat(liq.price), lineWidth: 1, lineStyle: 0,
+      color: 'rgba(255,213,60,0)',
+      axisLabelVisible: true,
+      title: `${liq.label} LIQ`,
+    });
+  });
+
+  // Trendlines as diagonal line series
   (trendlines || []).forEach(tl => {
     const isUp = tl.type === 'uptrend';
-    const tls = _chart.addLineSeries({
-      color:                   isUp ? 'rgba(38,217,107,.6)' : 'rgba(239,83,80,.6)',
-      lineWidth:               1,
-      lineStyle:               2,
-      priceLineVisible:        false,
-      lastValueVisible:        false,
-      crosshairMarkerVisible:  false,
+    const s = _chart.addLineSeries({
+      color: isUp ? 'rgba(38,217,107,.55)' : 'rgba(239,83,80,.55)',
+      lineWidth: 1, lineStyle: 2,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
     });
-    tls.setData([
+    s.setData([
       { time: tl.p1_time, value: tl.p1_price },
       { time: tl.p2_time, value: tl.p2_price },
     ]);
@@ -143,34 +214,41 @@ async function loadChart() {
 
   _chart.timeScale().fitContent();
 
-  // Legend — S/R levels + trendline summary
-  const leg = document.getElementById('sr-legend');
+  // Start canvas overlay (S/R boxes + liquidation lines)
+  _startOverlay(wrap, series, levels, _liquidations);
+
+  // ── Legend ──────────────────────────────────────────────────────────────────
+  const leg   = document.getElementById('sr-legend');
   const chips = [];
 
-  if (trendlines && trendlines.length) {
-    trendlines.forEach(tl => {
-      const isUp = tl.type === 'uptrend';
-      chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-                   background:${isUp ? 'rgba(38,217,107,.08)' : 'rgba(239,83,80,.08)'};
-                   color:${isUp ? '#26d96b' : '#ef5350'};border:1px solid ${isUp ? 'rgba(38,217,107,.2)' : 'rgba(239,83,80,.2)'}"
-                  title="${tl.anchor1} → ${tl.anchor2}">
-        ${isUp ? '↗ Up' : '↘ Down'} TL (${tl.touches}×)
-      </span>`);
-    });
-  }
+  (_liquidations || []).forEach(liq => {
+    chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+      background:rgba(255,213,60,.1);color:rgba(255,213,60,.95);
+      border:1px solid rgba(255,213,60,.2)">
+      ⚡ ${liq.label} LIQ  ${liq.price}
+    </span>`);
+  });
 
-  if (levels && levels.length) {
-    [...levels].reverse().forEach(lvl => {
-      const isS  = lvl.type === 'support';
-      const dist = current_price ? ((lvl.price - current_price) / current_price * 100).toFixed(1) : null;
-      const dtxt = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
-      chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-                   background:${isS ? 'rgba(38,217,107,.1)' : 'rgba(239,83,80,.1)'};
-                   color:${isS ? '#26d96b' : '#ef5350'}">
-        ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
-      </span>`);
-    });
-  }
+  (trendlines || []).forEach(tl => {
+    const isUp = tl.type === 'uptrend';
+    chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+      background:${isUp?'rgba(38,217,107,.07)':'rgba(239,83,80,.07)'};
+      color:${isUp?'#26d96b':'#ef5350'};
+      border:1px solid ${isUp?'rgba(38,217,107,.18)':'rgba(239,83,80,.18)'}"
+      title="${tl.anchor1} → ${tl.anchor2}">
+      ${isUp?'↗ Up':'↘ Down'} TL (${tl.touches}×)
+    </span>`);
+  });
+
+  [...(levels||[])].reverse().forEach(lvl => {
+    const isS  = lvl.type === 'support';
+    const dist = current_price ? ((lvl.price-current_price)/current_price*100).toFixed(1) : null;
+    const dtxt = dist !== null ? ` · ${dist>0?'+':''}${dist}%` : '';
+    chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+      background:rgba(180,183,210,0.08);color:${isS?'#c8cade':'#a0a8cc'}">
+      ${isS?'▲ S':'▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
+    </span>`);
+  });
 
   leg.innerHTML = chips.length
     ? chips.join('')

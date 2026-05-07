@@ -4,9 +4,66 @@ let currentPage = 'dashboard';
 
 // ── S/R Chart — opens as a detached, resizable window ───────────────────────
 function openChart(symbol, tf = '4H') {
-  const url = `/chart?symbol=${encodeURIComponent(symbol)}&timeframe=${tf}`;
+  // Attach any open-position liquidation levels so the popup can draw them
+  const liqs = (livePositionsCache || [])
+    .filter(p => p.symbol === symbol && p.liquidation_price)
+    .map(p => ({ price: parseFloat(p.liquidation_price), label: p.direction }));
+
+  let url = `/chart?symbol=${encodeURIComponent(symbol)}&timeframe=${tf}`;
+  if (liqs.length) url += '&liqs=' + encodeURIComponent(JSON.stringify(liqs));
+
   window.open(url, `chart_${symbol}`,
     'width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');
+}
+
+// ── Canvas overlay: S/R grey boxes + liquidation dashed lines ────────────────
+// Shared by Chart Explorer (inline) and any future inline charts.
+function _startSrOverlay(wrap, series, levels, liquidations) {
+  const old = wrap.querySelector('.sr-canvas');
+  if (old) old.remove();
+
+  const cv = document.createElement('canvas');
+  cv.className = 'sr-canvas';
+  cv.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:3';
+  wrap.appendChild(cv);
+
+  function draw() {
+    if (!document.contains(cv)) return;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    const cw = w - 65; // leave price-axis column uncovered
+
+    (levels || []).forEach(lvl => {
+      const hw = lvl.price * 0.003;
+      const yT = series.priceToCoordinate(lvl.price + hw);
+      const yB = series.priceToCoordinate(lvl.price - hw);
+      if (yT === null || yB === null) return;
+      const a   = Math.min(0.07 + (lvl.touches - 1) * 0.035, 0.42).toFixed(3);
+      ctx.fillStyle = `rgba(180,183,210,${a})`;
+      const top = Math.min(yT, yB);
+      ctx.fillRect(0, top, cw, Math.max(Math.abs(yB - yT), 3));
+    });
+
+    (liquidations || []).forEach(liq => {
+      if (!liq.price) return;
+      const y = series.priceToCoordinate(parseFloat(liq.price));
+      if (y === null) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,213,60,0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([7, 4]);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,213,60,0.92)';
+      ctx.font = 'bold 11px "Segoe UI",sans-serif';
+      ctx.fillText(`${liq.label} LIQ  ${liq.price}`, 8, y - 5);
+    });
+
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
 }
 // ── end chart ────────────────────────────────────────────────────────────────
 let journalPage = 1;
@@ -2826,12 +2883,12 @@ async function drawExplorerChart() {
   });
   cs.setData(candles);
 
-  // S/R horizontal lines
+  // Axis labels for S/R (ghost line — just for right-axis price label)
   (levels || []).forEach(lvl => {
     const isS = lvl.type === 'support';
     cs.createPriceLine({
-      price: lvl.price, lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
-      color: isS ? 'rgba(38,217,107,.75)' : 'rgba(239,83,80,.75)',
+      price: lvl.price, lineWidth: 1, lineStyle: 0,
+      color: 'rgba(180,183,210,0.2)', axisLabelVisible: true,
       title: `${isS ? 'S' : 'R'} ${lvl.touches}×`,
     });
   });
@@ -2840,7 +2897,7 @@ async function drawExplorerChart() {
   (trendlines || []).forEach(tl => {
     const isUp = tl.type === 'uptrend';
     const tls  = _explorerChart.addLineSeries({
-      color: isUp ? 'rgba(38,217,107,.6)' : 'rgba(239,83,80,.6)',
+      color: isUp ? 'rgba(38,217,107,.55)' : 'rgba(239,83,80,.55)',
       lineWidth: 1, lineStyle: 2,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
     });
@@ -2852,14 +2909,38 @@ async function drawExplorerChart() {
 
   _explorerChart.timeScale().fitContent();
 
+  // Liquidation levels from any open position on this symbol
+  const liqs = (livePositionsCache || [])
+    .filter(p => p.symbol === sym && p.liquidation_price)
+    .map(p => ({ price: parseFloat(p.liquidation_price), label: p.direction }));
+
+  // Axis labels for liquidations
+  liqs.forEach(liq => {
+    cs.createPriceLine({
+      price: liq.price, lineWidth: 1, lineStyle: 0,
+      color: 'rgba(255,213,60,0)', axisLabelVisible: true,
+      title: `${liq.label} LIQ`,
+    });
+  });
+
+  // Start canvas overlay (S/R grey boxes + liquidation dashed lines)
+  _startSrOverlay(wrap, cs, levels, liqs);
+
   // Legend chips
   const chips = [];
+  liqs.forEach(liq => {
+    chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+      background:rgba(255,213,60,.1);color:rgba(255,213,60,.95);
+      border:1px solid rgba(255,213,60,.2)">
+      ⚡ ${liq.label} LIQ  ${liq.price}
+    </span>`);
+  });
   (trendlines || []).forEach(tl => {
     const isUp = tl.type === 'uptrend';
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-      background:${isUp ? 'rgba(38,217,107,.08)' : 'rgba(239,83,80,.08)'};
+      background:${isUp ? 'rgba(38,217,107,.07)' : 'rgba(239,83,80,.07)'};
       color:${isUp ? 'var(--accent3)' : 'var(--red)'};
-      border:1px solid ${isUp ? 'rgba(38,217,107,.2)' : 'rgba(239,83,80,.2)'}">
+      border:1px solid ${isUp ? 'rgba(38,217,107,.18)' : 'rgba(239,83,80,.18)'}">
       ${isUp ? '↗ Up' : '↘ Down'} TL (${tl.touches}×)
     </span>`);
   });
@@ -2868,8 +2949,7 @@ async function drawExplorerChart() {
     const dist = current_price ? ((lvl.price - current_price) / current_price * 100).toFixed(1) : null;
     const dtxt = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-      background:${isS ? 'rgba(38,217,107,.1)' : 'rgba(239,83,80,.1)'};
-      color:${isS ? 'var(--accent3)' : 'var(--red)'}">
+      background:rgba(180,183,210,.08);color:${isS ? '#c8cade' : '#a0a8cc'}">
       ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
     </span>`);
   });
