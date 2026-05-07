@@ -7,19 +7,21 @@
 
 ## Overview
 
-The Trading Journal is a personal analytics and AI-assisted decision tool for your Bitget futures trading. It has 9 sections accessible from the left sidebar:
+The Trading Journal is a personal analytics and AI-assisted decision tool for your Bitget futures trading. It has 11 sections accessible from the left sidebar:
 
 | Icon | Section | What it does |
 |------|---------|--------------|
 | 🏠 | Dashboard | Overview KPIs, P&L curve, wallet balance, recent trades |
 | 📒 | Journal | Full trade history with search, filters, notes |
 | 🔬 | Deep Dive | Detailed pattern analysis (by symbol, day, hour, direction) |
+| 🔭 | Edge Lab | Setup analysis, execution grading, pattern detector, R:R tracking, Trader Rulebook |
 | 🤖 | AI Advisor | Full portfolio analysis by Claude |
 | ⬆️ | Import Data | Upload new Bitget CSV exports |
 | 📡 | Call Analyzer | Analyze analyst trade calls before entering |
 | ⚡ | Live Trades | Real-time open positions with AI analysis |
 | 🔴 | Live Sync | Bitget connection status and manual sync |
 | ⏳ | Pending Orders | Track limit orders set but not yet triggered |
+| 📈 | Chart Explorer | Interactive candlestick charts for any symbol with S/R, trendlines, and indicators |
 
 At the top of every page there is a **status bar** showing the last sync time and your current account equity. The **Sync Now** button triggers an immediate update from Bitget.
 
@@ -31,7 +33,7 @@ The main overview of your trading performance. Data updates automatically whenev
 
 ### KPI Cards
 
-The 10 cards at the top show your key numbers across all time (or filtered by the date range you set):
+The 11 cards at the top show your key numbers across all time (or filtered by the date range you set):
 
 - **Total P&L** — sum of all realized_pnl (net of fees)
 - **Total Fees** — total trading fees paid
@@ -41,6 +43,9 @@ The 10 cards at the top show your key numbers across all time (or filtered by th
 - **Avg Win / Avg Loss** — average size of winning vs losing trades
 - **Max Drawdown** — largest peak-to-trough drop on the cumulative PnL curve
 - **Total Trades** — count of closed positions
+- **Open Position Risk** — maximum loss if all your stop-losses trigger simultaneously, shown as USDT and % of equity. Uses SL-based calculation when stops are set; falls back to full margin otherwise.
+
+**Tip:** Hover any KPI card to see a plain-language explanation of the metric, what good/bad values look like, and how it is calculated.
 
 ### Monthly Target Tracker
 
@@ -131,6 +136,108 @@ Complete breakdown for every symbol you've ever traded:
 ### Worst Symbols Table
 
 Bottom 5 symbols by total realized PnL — your biggest loss leaders.
+
+---
+
+## Edge Lab
+
+Advanced self-coaching tools that go beyond raw pattern stats — this is where you identify your actual trading edge (or lack of one).
+
+### Setup Type Analysis
+
+Once you start tagging trades with a **Setup Type** (Breakout / Pullback / Trend Continuation / Range Fade / Reversal / News-Event / Other), this section shows:
+- Total P&L per setup type (bar chart)
+- Win rate per setup type (bar chart)
+- Summary table: trade count, win rate, total P&L, avg P&L per setup
+
+To tag a trade: click any row in the Journal → Edit Trade → select Setup Type → Save.
+
+### Execution Grade Analysis
+
+After using the **⚡ Grade** button on journal rows to get Claude's execution grade (A/B/C/D), this table shows:
+- Win rate per grade
+- Average P&L per grade
+
+If A-grade execution beats C-grade significantly, you know discipline pays off. If the grades are similar, entry quality may not be the bottleneck.
+
+### AI Pattern Detector
+
+Click **🔍 Detect Patterns** to run a full statistical analysis of your trade history through Claude. The AI looks for patterns in: setup types, weekdays, trading sessions (Asia/London/NY), direction, duration, and execution grade.
+
+Output: up to 6 findings, each with a title, specific finding, recommendation, and confidence level.
+
+Requires at least 20 total trades to produce meaningful results.
+
+### Planned vs Realized R:R
+
+Shows trades linked to analyst calls (via Call ID in the Journal). For each, compares:
+- **Planned R:R** — from the saved analyst call (TP1 vs SL distance)
+- **Realized R:R** — where you actually closed vs the planned entry and SL
+
+Green = achieved ≥ 1R. Red = achieved < 1R. Reveals whether you're taking profit too early or letting losers run.
+
+### Trader Rulebook
+
+Click **🔄 Regenerate Rulebook** to ask Claude to synthesise 5–10 personalised rules from your full trade history. The rules are stored and automatically injected into every future AI analysis.
+
+Rule types:
+- **Warning (red)** — a losing pattern you must stop
+- **Strength (green)** — a winning pattern to exploit more
+- **Habit (yellow)** — an execution discipline note
+- **Calibration (blue)** — how accurate the AI scores have been for you
+
+The rulebook regenerates automatically once per week in the background. You can force it any time.
+
+---
+
+## Chart Explorer
+
+Interactive candlestick charts for any symbol without leaving the app.
+
+### Loading a Chart
+
+1. Type a coin name in the symbol box (e.g. `BTC` or `BTCUSDT`) — a dropdown of all ~200+ Bitget USDT-M symbols appears as you type
+2. Select the timeframe: **15m / 1H / 4H / 1D**
+3. Click **Draw Chart** (or press Enter)
+
+The chart title shows the full symbol + active timeframe as an overlay in the top-left corner.
+
+### What's Shown
+
+- **Candlesticks** — OHLCV from Bitget market data
+- **Support/Resistance zones** — grey shaded boxes at key price levels, opacity proportional to touch count
+- **Multi-timeframe trendlines** — uptrend (green) and downtrend (red) lines from 4 timeframes simultaneously:
+  - Weekly = thickest, most opaque (weight 4)
+  - Daily (weight 3)
+  - 4H (weight 2)
+  - 1H = thinnest, most transparent (weight 1)
+- **Liquidation levels** (if you have an open position on that symbol) — yellow dashed lines
+
+### Legend
+
+Below the chart: chips for each trendline (with timeframe label and touch count) and each S/R level (with distance % from current price).
+
+### Indicator Panel
+
+Below the legend: 9 indicator cards for the selected timeframe:
+
+| Card | What it shows |
+|------|--------------|
+| RSI (14) | Value + overbought/oversold signal |
+| MACD | Bullish/bearish + crossover detection |
+| EMAs | Stack alignment (fully bullish / mixed / fully bearish) |
+| Bollinger Bands | Price percentile within the bands |
+| ADX (14) | Trend strength + direction (+DI/-DI) |
+| Stoch RSI | K/D values + overbought/oversold signal |
+| ATR (14) | Volatility in price units + % of price |
+| Volume | Ratio vs 20-period average + signal |
+| Key S/R | Nearest support and resistance levels |
+
+**Hover any indicator card** to see a tooltip explaining the metric, thresholds, and how to act on the value.
+
+### Pop-out Chart
+
+Click **🔗 Pop Out** to open the same chart in a dedicated window (resizable, stays on top while you work).
 
 ---
 
@@ -259,10 +366,14 @@ Real-time open positions from Bitget. Auto-refreshes every 30 seconds.
 
 ### Summary KPIs
 
-- Open Positions count
-- Total Unrealized P&L
-- Margin In Use
-- Account Equity
+Five cards at the top of the page:
+- **Open Positions** — count of open trades (hover for tooltip explaining the "critical" threshold)
+- **Total Unrealized P&L** — combined mark-to-market PnL across all open positions
+- **Margin In Use** — total collateral locked as margin
+- **Account Equity** — total account value including unrealized PnL, with available balance shown below
+- **Open Position Risk** — maximum loss if all stop-losses trigger at once (SL-based calculation)
+
+**Tip:** Hover any KPI card for a tooltip explanation of what the value means and how it is calculated.
 
 ### Position Cards
 
@@ -273,6 +384,7 @@ One card per open trade. Color-coded:
 - **NO SL** badge = no stop loss set (high risk warning)
 - **48H+** chip = position open more than 48 hours
 - **LIQ NEAR** chip = current price within 15% of liquidation price
+- **⏳ N limit(s)** chip = you have N pending limit orders for this same symbol (click to jump to Pending Orders)
 
 Each card shows: Symbol, Direction + Leverage, Size, Entry, Mark Price, Unrealized PnL%, TP/SL prices, time open.
 
@@ -356,6 +468,7 @@ Each card shows:
 - Size in USDT + Leverage
 - Computed metrics: stop distance %, risk if SL hit (USDT), R:R to TP1
 - Notes + date added
+- **📍 X.X% from limit** proximity badge (Waiting tab only) — appears automatically when the current mark price is within 5% of your limit price. Red = <1% away, yellow = <3%, blue = <5%. This tells you limits that may fill soon.
 
 ### Actions
 

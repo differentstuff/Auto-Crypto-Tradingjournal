@@ -55,7 +55,7 @@ templates/index.html            ← Frontend: HTML structure only (~910 lines)
 templates/chart.html            ← Detached chart window (LightweightCharts, S/R boxes, trendlines, liquidation levels)
 static/style.css                ← All dark-theme CSS (extracted from index.html)
 static/app.js                   ← Legacy entry point (kept for cache compat); JS now split into static/js/
-static/js/01-utils.js           ← Globals, openChart, S/R overlay, symbol picker, nav, helpers, makeChart
+static/js/01-utils.js           ← Globals, openChart, S/R overlay, symbol picker, nav, helpers, makeChart, tooltip engine
 static/js/02-dashboard.js       ← Dashboard KPIs, charts, streak
 static/js/03-journal.js         ← Journal table, add/edit modals
 static/js/04-deep-edge.js       ← Deep Dive, Edge Lab, heatmap, pattern detector, rulebook
@@ -640,6 +640,13 @@ When `charts` activates: `_initExplorerTfBtns()` is called to populate TF button
 
 **Chart Explorer title overlay:** `drawExplorerChart()` injects a `.explorer-chart-title` `<div>` absolutely positioned top-left inside `#explorer-chart-wrap`, showing the symbol name and active timeframe pill. Rebuilt on every draw; removed on chart destroy.
 
+**Mouseover tooltip engine (`01-utils.js`):** A floating `#tip` div is created once at startup and appended to `<body>`. Three document-level event listeners handle show/hide/position: `mouseover` shows the tip for the nearest ancestor with `data-tip="..."`, `mouseout` hides it, `mousemove` repositions it cursor+14px with viewport-edge clamping (flips side when the tip would overflow). CSS: `#tip { position:fixed; z-index:9999; opacity:0; transition:opacity .15s }` + `#tip.visible { opacity:1 }`. Any element can opt in by adding `data-tip="explanation text"`.
+
+KPI tooltips:
+- **Dashboard KPIs** (`02-dashboard.js`): all 11 KPI cards (including the dynamic Open Position Risk card) have `data-tip` attributes explaining the metric, how to interpret good/bad values, and any formula notes.
+- **Live Trades KPIs** (`08-live.js`): all 5 KPI cards in `renderLiveKpis()` have `data-tip` including the Open Position Risk card.
+- **Chart Explorer indicators** (`12-explorer.js`): `card(label, value, sub, color, tip)` helper accepts an optional 5th arg; all 9 indicator cards (RSI, MACD, EMA, Bollinger, ADX, Stoch RSI, ATR, Volume, Key S/R) have tooltip text explaining signal thresholds and how to act on the value.
+
 ### Chart Window (`openChart()`)
 
 ```javascript
@@ -702,7 +709,7 @@ Detection: `const inModal = !!inp.closest('.modal')` — picks the variant autom
 
 **Live filtering:** `drop._render(q)` filters the merged list, highlights matches with `_hlMatch(str, q)` (wraps matched chars in `<b>`), and renders up to 50 results.
 
-**Cache busting:** script tag uses `<script src="/static/app.js?v=2.1">` — bump the version query string when deploying JS changes so browsers don't serve stale code.
+**Cache busting:** script tags use `?v=2.2` query strings (e.g. `<script src="/static/js/01-utils.js?v=2.2">`) — bump the version across all 13 `<script>` tags in `index.html` when deploying JS changes so browsers don't serve stale code.
 
 ---
 
@@ -1020,8 +1027,8 @@ The **Open Position Risk** KPI appears on both the **Dashboard** and the **Live 
 Sub-label shows `· SL-based` or `· no SL` to indicate which mode is active, plus `% of equity`.
 
 **Code:**
-- Dashboard: `loadDashboard()` in `static/app.js` → async `/api/live/positions` call, card appended to `#kpi-grid`
-- Live Trades: `renderLiveKpis(positions, eq)` in `static/app.js` — risk computed inline from already-fetched positions data, rendered as the 5th card in `#trades-kpi-grid`
+- Dashboard: `loadDashboard()` in `static/js/02-dashboard.js` — positions fetched in the opening `Promise.all`, risk card appended to `#kpi-grid` after the main 10 KPI cards
+- Live Trades: `renderLiveKpis(positions, eq)` in `static/js/08-live.js` — risk computed inline from already-fetched positions data, rendered as the 5th card in `#trades-kpi-grid`
 
 The `positions` table has an `analyst` column (migrated automatically at startup if missing). The journal table now shows an **Analyst** column (`📡 Name` or `—`).
 
@@ -1127,7 +1134,7 @@ Sorted by edge_score descending. Rows color-coded: green ≥ 65, red < 45.
 
 #### 10c. Correlation Detector (sector-aware)
 
-`renderCorrelationWarning()` in `app.js` groups open positions by sector:
+`renderCorrelationWarning()` in `static/js/08-live.js` groups open positions by sector:
 
 `Bitcoin` · `ETH/L2` · `SOL/L1` · `Meme` · `DeFi` · `AI/Infra`
 
@@ -1170,7 +1177,7 @@ leverage     = size_usdt / equity
 
 Leverage color: green ≤7x · yellow ≤15x · red >15x.
 
-**Code:** `calcSizing()` in `static/app.js`. `_szEquity` global holds current equity. `renderCallResult()` auto-fills inputs after analysis.
+**Code:** `calcSizing()` in `static/js/07-calls.js`. `_szEquity` global holds current equity. `renderCallResult()` auto-fills inputs after analysis.
 
 #### 12b. Economic Calendar
 
@@ -1190,7 +1197,7 @@ Leverage color: green ≤7x · yellow ≤15x · red >15x.
 
 **API:** `GET /api/analytics/heatmap` → list of `{weekday, hour, trade_count, total_pnl, win_rate}`
 
-**Frontend:** `renderHeatmap(rows)` in `static/app.js` — builds an HTML table (7 cols × 24 rows). Cells require ≥3 trades. Opacity scales with trade count (more trades = more opaque). Hover shows count + WR + P&L.
+**Frontend:** `renderHeatmap(rows)` in `static/js/04-deep-edge.js` — builds an HTML table (7 cols × 24 rows). Cells require ≥3 trades. Opacity scales with trade count (more trades = more opaque). Hover shows count + WR + P&L.
 
 Color key: green ≥65% WR · blue 50–64% · yellow 40–49% · red <40%
 
