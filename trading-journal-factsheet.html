@@ -7,6 +7,8 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
+  @page { size: A4 portrait; margin: 0; }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
@@ -20,13 +22,14 @@
   /* ── PAGE LAYOUT ─────────────────────────────────────────── */
   .page {
     width: 210mm;
-    min-height: 297mm;
-    padding: 14mm 14mm 12mm;
+    height: 297mm;
+    padding: 10mm 12mm 8mm;
     page-break-after: always;
+    break-after: page;
     position: relative;
     overflow: hidden;
   }
-  .page:last-child { page-break-after: avoid; }
+  .page:last-child { page-break-after: avoid; break-after: avoid; }
 
   /* ── COLORS ──────────────────────────────────────────────── */
   :root {
@@ -47,8 +50,8 @@
   .header {
     background: linear-gradient(135deg, #0f1117 0%, #1a1d2e 50%, #1e2235 100%);
     border-radius: 10px;
-    padding: 20px 24px 18px;
-    margin-bottom: 14px;
+    padding: 14px 20px 13px;
+    margin-bottom: 10px;
     position: relative;
     overflow: hidden;
   }
@@ -82,7 +85,7 @@
     font-weight: 500;
   }
   .app-title {
-    font-size: 22pt;
+    font-size: 19pt;
     font-weight: 800;
     color: #fff;
     letter-spacing: -0.02em;
@@ -134,7 +137,7 @@
     border-radius: 8px;
     border: 1px solid #2a2d3e;
     overflow: hidden;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
   .mock-topbar {
     background: #1a1d2e;
@@ -177,7 +180,7 @@
     border: 1px solid #2a2d3e;
     border-radius: 6px;
     padding: 8px 10px;
-    height: 62px;
+    height: 48px;
     position: relative;
     overflow: hidden;
     margin-bottom: 8px;
@@ -204,8 +207,8 @@
   .muted { color: #6b7280; }
 
   /* ── TWO COLUMN LAYOUT ───────────────────────────────────── */
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
 
   /* ── FEATURE CARDS ───────────────────────────────────────── */
   .feat-card {
@@ -213,7 +216,7 @@
     border: 1px solid #e5e7f0;
     border-left: 3px solid #6c63ff;
     border-radius: 7px;
-    padding: 10px 11px;
+    padding: 7px 9px;
   }
   .feat-icon { font-size: 14pt; margin-bottom: 5px; display: block; }
   .feat-title { font-size: 8.5pt; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
@@ -347,8 +350,8 @@
   .page2-header {
     background: linear-gradient(135deg, #0f1117 0%, #1a1d2e 100%);
     border-radius: 10px;
-    padding: 14px 20px;
-    margin-bottom: 14px;
+    padding: 11px 18px;
+    margin-bottom: 10px;
     display: flex; align-items: center; justify-content: space-between;
   }
   .p2-title { font-size: 14pt; font-weight: 800; color: #fff; }
@@ -371,8 +374,8 @@
     background: #f8f9ff;
     border: 1px solid #e5e7f0;
     border-radius: 8px;
-    padding: 10px 14px;
-    margin-bottom: 14px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
   }
   .pipe-step {
     flex: 1; text-align: center;
@@ -397,7 +400,7 @@
     background: linear-gradient(135deg, rgba(108,99,255,0.08) 0%, rgba(79,195,247,0.06) 100%);
     border: 1px solid rgba(108,99,255,0.2);
     border-radius: 8px;
-    padding: 10px 14px;
+    padding: 8px 12px;
     display: flex; align-items: center; gap: 12px;
     margin-top: 12px;
   }
@@ -409,7 +412,7 @@
   /* ── FOOTER ──────────────────────────────────────────────── */
   .footer {
     position: absolute;
-    bottom: 8mm; left: 14mm; right: 14mm;
+    bottom: 6mm; left: 14mm; right: 14mm;
     display: flex; align-items: center; justify-content: space-between;
     font-size: 6.5pt; color: #9ca3af;
     border-top: 1px solid #e5e7f0;
