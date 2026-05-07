@@ -146,7 +146,7 @@ Powers the wallet equity curve chart. Key columns: `date`, `symbol`, `type`, `am
 
 ### `settings` — Key/value store
 
-Used by `bitget_sync.py` to persist: `last_sync_ms`, `account_equity`, `available_balance`.
+Key/value pairs. Created by `init_db()` (not just bitget_sync). Used for: `last_sync_ms`, `account_equity`, `available_balance` (bitget_sync), `rulebook_updated_at` (ai_rulebook).
 
 ### `analyzed_calls` — Saved call analyses
 
@@ -1431,9 +1431,17 @@ Every call to `ai_live_trade.analyze_position()`, `ai_call_analyzer.analyze_call
 
 ---
 
-## v2.1 Changes (2026-05-07)
+## v2.1 Patch (2026-05-07, post-release fixes)
 
-### Bug fixes
+### Critical bug fixes
+- **Missing `settings` table** — `ai_rulebook.py` read/wrote a `settings` table that was only created by `bitget_sync._ensure_settings_table()` — not in `init_db()`. Rulebook updates failed with `OperationalError: no such table: settings` on a fresh install before the first sync. Added to `database.init_db()`.
+- **Malformed regex in `ai_call._extract_price()`** — `[^$\d{{0,20}}]` in an f-string rendered as `[^$\d{0,20}]`. Inside a character class `[...]`, `{0,20}` is literal characters, not a quantifier. Fixed to `[^$\d]{0,20}` by moving the quantifier outside the class.
+- **Scanner Stage 2 too permissive** — 86 of 99 symbols passed the quality gate, causing 86 parallel Claude calls and multi-minute scans. Fixed by: raising ADX threshold 10→15, RSI overextend 82/18→78/22, tightening S/R proximity 6×ATR→4×ATR, adding a 4H-specific signal check (≥2 aligned on 4H), and capping finalists at 30 (sorted by confluence score).
+- **`ai_advisor.py` using `get_conn()` + manual `conn.close()`** — leaked connection on exception. Now uses `with db_conn() as conn:`.
+- **`ai_limit.py` ThreadPoolExecutor** — `.result()` calls were outside the `with` block; moved inside to ensure correct exception propagation.
+- **Hindsight lookahead bias** — `_symbol_history_before()` filtered by `close_time < before_iso` only; a concurrent overlapping trade's data could leak. Now also filters `open_time < before_iso`.
+
+### v2.1 original release fixes
 - **DB connection leak** — `ai_call.py`, `ai_limit.py`, `ai_live_trade.py` called `get_conn()` without a context manager; any exception between open and close leaked a WAL write-lock. All three now use `with db_conn() as conn:`.
 - **Buggy fence-stripping in `ai_advisor.py`** — had a no-op conditional that always executed both branches; fixed by replacing with shared `strip_fence()`.
 - **Weaker fence-stripping in `ai_rulebook.py`** — used `split("```")[1]` which would corrupt output if content contained backticks; replaced with shared `strip_fence()`.

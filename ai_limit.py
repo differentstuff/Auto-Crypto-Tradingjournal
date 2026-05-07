@@ -125,8 +125,8 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
         with ThreadPoolExecutor(max_workers=2) as ex:
             f_atr = ex.submit(trade_utils.atr_sl_warning, symbol, entry, sl)
             f_mkt = ex.submit(market_context.get_market_str, [symbol])
-        atr_warn = f_atr.result()
-        mkt_str  = f_mkt.result()
+            atr_warn = f_atr.result()
+            mkt_str  = f_mkt.result()
     else:
         atr_warn = ""
         mkt_str  = market_context.get_market_str([symbol])

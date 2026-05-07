@@ -15,7 +15,7 @@ import os
 import anthropic
 
 from analytics import get_dashboard_kpis, get_deep_stats
-from database  import get_conn
+from database  import db_conn
 from helpers   import strip_fence
 import market_context
 
@@ -96,10 +96,9 @@ def analyze(filters: dict = None) -> dict:
     if filters is None:
         filters = {}
 
-    conn = get_conn()
-    kpis = get_dashboard_kpis(filters=filters, conn=conn)
-    deep = get_deep_stats(filters=filters, conn=conn)
-    conn.close()
+    with db_conn() as conn:
+        kpis = get_dashboard_kpis(filters=filters, conn=conn)
+        deep = get_deep_stats(filters=filters, conn=conn)
 
     ctx     = market_context.get_market_context(["BTCUSDT"])
     mkt_str = market_context.format_for_prompt(ctx)

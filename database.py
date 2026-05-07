@@ -260,6 +260,17 @@ def init_db():
         )
     """)
 
+    # ── settings ──────────────────────────────────────────────────────────────
+    # Key-value store: last sync time, account equity, rulebook timestamps.
+    # Also created by bitget_sync._ensure_settings_table() but must exist here
+    # so ai_rulebook works even if a sync has never run.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+
     # ── import_log ─────────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS import_log (

@@ -75,12 +75,14 @@ def _to_ms(iso_str: str) -> int:
 
 
 def _symbol_history_before(symbol: str, before_iso: str, conn) -> dict:
-    """Closed-trade stats on this symbol BEFORE the given date (no lookahead)."""
+    """Closed-trade stats on this symbol BEFORE the given date (no lookahead).
+    Both open_time and close_time must be before the entry date to prevent
+    any data from overlapping trades leaking into the analysis."""
     rows = conn.execute("""
         SELECT realized_pnl FROM positions
-        WHERE symbol = ? AND close_time < ?
+        WHERE symbol = ? AND open_time < ? AND close_time < ?
         ORDER BY close_time DESC LIMIT 20
-    """, (symbol, before_iso)).fetchall()
+    """, (symbol, before_iso, before_iso)).fetchall()
     if not rows:
         return {"trades": 0}
     pnls = [r[0] for r in rows if r[0] is not None]

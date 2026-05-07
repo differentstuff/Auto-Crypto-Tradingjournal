@@ -214,9 +214,10 @@ def analyze_call(call_text: str, account_equity: float,
 
     def _extract_price(keywords, text):
         for kw in keywords:
-            m = re.search(rf'{kw}[^$\d{{0,20}}]*\$(\d{{2,}}\.\d+)', text, re.IGNORECASE)
+            # [^$\d]{0,20} — up to 20 non-price chars before the $ sign
+            m = re.search(rf'{kw}[^$\d]{{0,20}}\$(\d{{2,}}\.\d+)', text, re.IGNORECASE)
             if m: return float(m.group(1))
-            m = re.search(rf'{kw}[^\d{{0,20}}]*(\d{{2,}}\.\d+)', text, re.IGNORECASE)
+            m = re.search(rf'{kw}[^\d]{{0,20}}(\d{{2,}}\.\d+)', text, re.IGNORECASE)
             if m: return float(m.group(1))
         return None
 

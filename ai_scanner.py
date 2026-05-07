@@ -134,7 +134,11 @@ def _stage1(symbols: list) -> list:
 # ── Stage 2: technical quality gate ────────────────────────────────────────────
 
 def _stage2(candidates: list) -> list:
-    """Quick checks — no AI, no network calls. Returns filtered list."""
+    """
+    Technical quality gate — no AI, no network calls.
+    Filters to symbols with a genuine structural entry opportunity.
+    Caps output at 30 to control Claude API cost.
+    """
     out = []
     for symbol, ctx, conf, direction in candidates:
         inds = ctx.get("4H", {}).get("indicators", {})
@@ -145,33 +149,52 @@ def _stage2(candidates: list) -> list:
         adx_val = (inds.get("adx", {}) or {}).get("value", 0)
         sr      = inds.get("support_resistance", [])
         ema     = inds.get("ema", {}) or {}
+        macd    = inds.get("macd", {}) or {}
+        adx_d   = inds.get("adx",  {}) or {}
         price   = ema.get("current_price")
         atr_val = (inds.get("atr", {}) or {}).get("value", 0)
 
-        # Reject: severely overextended (leave some room for momentum entries)
-        if direction == "Long"  and rsi_val > 82:
+        # Reject: RSI already deeply overextended in signal direction
+        if direction == "Long"  and rsi_val > 78:
             continue
-        if direction == "Short" and rsi_val < 18:
+        if direction == "Short" and rsi_val < 22:
             continue
 
-        # Reject: completely flat / zero volatility
-        if adx_val < 10:
+        # Reject: no trend structure (choppy / flat)
+        if adx_val < 15:
             continue
 
         # Reject: no S/R structure to define entry/SL/TP
         if len(sr) < 2:
             continue
 
-        # Reject: if we have price + ATR, skip if price is so far from all
-        # S/R levels that a structural entry is implausible
+        # Reject: price too far from any actionable S/R level
         if price and atr_val and sr:
             distances = [abs(l["price"] - price) for l in sr]
-            min_dist  = min(distances)
-            if min_dist > atr_val * 6:   # more than 6 ATR from nearest level
+            if min(distances) > atr_val * 4:
                 continue
 
+        # Require at least 2 aligned signals specifically on 4H
+        bull_4h = bear_4h = 0
+        if rsi_val > 55:   bull_4h += 1
+        elif rsi_val < 45: bear_4h += 1
+        if macd.get("trend") == "bullish":   bull_4h += 1
+        elif macd.get("trend") == "bearish": bear_4h += 1
+        if "bullish" in ema.get("alignment", ""):   bull_4h += 1
+        elif "bearish" in ema.get("alignment", ""): bear_4h += 1
+        if "bullish" in adx_d.get("direction", ""):   bull_4h += 1
+        elif "bearish" in adx_d.get("direction", ""): bear_4h += 1
+
+        if direction == "Long"  and bull_4h < 2:
+            continue
+        if direction == "Short" and bear_4h < 2:
+            continue
+
         out.append((symbol, ctx, conf, direction))
-    return out
+
+    # Cap to avoid excessive Claude API calls; sort by total confluence first
+    out.sort(key=lambda x: -x[2].get("score", 0))
+    return out[:30]
 
 
 # ── Stage 3: AI scoring ─────────────────────────────────────────────────────────
