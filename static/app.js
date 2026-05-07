@@ -82,17 +82,33 @@ function _attachSymbolPicker(inputId) {
   const inp = document.getElementById(inputId);
   if (!inp || inp._symPicker) return;
   inp._symPicker = true;
-  // Remove native datalist binding if present
   inp.removeAttribute('list');
+  inp.setAttribute('autocomplete', 'off');
+
+  // Inputs inside a .modal need position:fixed to escape overflow-y:auto clipping.
+  // Everything else (Chart Explorer etc.) uses a wrapper + position:absolute.
+  const inModal = !!inp.closest('.modal');
 
   const drop = document.createElement('div');
-  drop.className = 'sym-drop';
-  document.body.appendChild(drop);
+  drop.className = 'sym-drop' + (inModal ? ' sym-drop-fixed' : ' sym-drop-abs');
 
+  if (inModal) {
+    document.body.appendChild(drop);
+  } else {
+    // Wrap the input so the dropdown can be positioned absolute relative to it
+    const wrap = document.createElement('div');
+    wrap.className = 'sym-wrap';
+    inp.parentElement.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    wrap.appendChild(drop);
+  }
+
+  // For fixed-position dropdowns: recompute position on each open
   function _pos() {
+    if (!inModal) return;
     const r = inp.getBoundingClientRect();
-    drop.style.top   = (r.bottom + 4) + 'px';
-    drop.style.left  = r.left + 'px';
+    drop.style.top   = (r.bottom + 3) + 'px';
+    drop.style.left  = r.left         + 'px';
     drop.style.width = Math.max(r.width, 220) + 'px';
   }
 
@@ -101,12 +117,13 @@ function _attachSymbolPicker(inputId) {
   }
 
   function _render(q) {
-    const ul  = q.length < 1
-      ? _list().slice(0, 80)
-      : _list().filter(s => s.toUpperCase().includes(q.toUpperCase())).slice(0, 100);
-    drop.innerHTML = ul.length
-      ? ul.map(s => `<div class="sym-opt" data-v="${s}">${_hlMatch(s, q)}</div>`).join('')
-      : '<div class="sym-no-match">No matches</div>';
+    const src = _list();
+    const hits = src.length < 1 ? [] :
+      (q.length < 1 ? src.slice(0, 80)
+                    : src.filter(s => s.toUpperCase().includes(q.toUpperCase())).slice(0, 100));
+    drop.innerHTML = hits.length
+      ? hits.map(s => `<div class="sym-opt" data-v="${s}">${_hlMatch(s, q)}</div>`).join('')
+      : `<div class="sym-no-match">${src.length ? 'No matches' : 'Loading…'}</div>`;
     drop.querySelectorAll('.sym-opt').forEach(el =>
       el.addEventListener('mousedown', e => {
         e.preventDefault();
@@ -116,18 +133,20 @@ function _attachSymbolPicker(inputId) {
       })
     );
   }
+  // Store render + input refs so _loadExchangeSymbols can update open dropdowns
+  drop._render = _render;
+  drop._inp    = inp;
 
   inp.addEventListener('focus', () => { _pos(); _render(inp.value); drop.classList.add('open'); });
   inp.addEventListener('input', () => { _pos(); _render(inp.value); drop.classList.add('open'); });
   inp.addEventListener('blur',  () => setTimeout(() => drop.classList.remove('open'), 160));
-
   inp.addEventListener('keydown', e => {
     if (e.key === 'Escape') { drop.classList.remove('open'); return; }
     const opts = [...drop.querySelectorAll('.sym-opt')];
     const cur  = drop.querySelector('.sym-opt.hi');
     let idx    = cur ? opts.indexOf(cur) : -1;
-    if (e.key === 'ArrowDown')     { idx = Math.min(idx + 1, opts.length - 1); }
-    else if (e.key === 'ArrowUp')  { idx = Math.max(idx - 1, 0); }
+    if (e.key === 'ArrowDown')    idx = Math.min(idx + 1, opts.length - 1);
+    else if (e.key === 'ArrowUp') idx = Math.max(idx - 1, 0);
     else if (e.key === 'Enter' && cur) {
       inp.value = cur.dataset.v;
       drop.classList.remove('open');
@@ -145,7 +164,10 @@ async function _loadExchangeSymbols() {
   const r = await api('/api/exchange/symbols');
   if (r.ok && r.data.length) {
     _exchangeSymbols = r.data;
-    // Re-render open dropdowns with the full list if the user already opened one
+    // Refresh any currently open picker so it shows the full list
+    document.querySelectorAll('.sym-drop.open').forEach(d => {
+      if (d._render && d._inp) d._render(d._inp.value);
+    });
   }
 }
 
