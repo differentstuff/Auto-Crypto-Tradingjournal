@@ -225,7 +225,7 @@ function buildDetailPanel(s, i) {
   return `<div class="scan-detail-panel">
     <div class="scan-dp-header">
       <span style="font-weight:700;font-size:.95rem">${sym.replace('USDT','')}USDT
-        <span style="color:${isLong?'var(--accent3)':'var(--red)';}">${s.direction}</span> —
+        <span style="color:${isLong?'var(--accent3)':'var(--red)'}">${s.direction}</span> —
         <span style="color:${s.setup_score>=9?'var(--accent3)':s.setup_score>=7?'var(--yellow)':'var(--muted)'}">${s.setup_score}/10 ${scoreLabel}</span>
       </span>
     </div>
