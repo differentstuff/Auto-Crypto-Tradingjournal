@@ -54,7 +54,20 @@ Browser (http://<your-pi-ip>:8082)
 templates/index.html            ← Frontend: HTML structure only (~910 lines)
 templates/chart.html            ← Detached chart window (LightweightCharts, S/R boxes, trendlines, liquidation levels)
 static/style.css                ← All dark-theme CSS (extracted from index.html)
-static/app.js                   ← All frontend JavaScript (~3000 lines)
+static/app.js                   ← Legacy entry point (kept for cache compat); JS now split into static/js/
+static/js/01-utils.js           ← Globals, openChart, S/R overlay, symbol picker, nav, helpers, makeChart
+static/js/02-dashboard.js       ← Dashboard KPIs, charts, streak
+static/js/03-journal.js         ← Journal table, add/edit modals
+static/js/04-deep-edge.js       ← Deep Dive, Edge Lab, heatmap, pattern detector, rulebook
+static/js/05-advisor.js         ← AI Advisor
+static/js/06-import.js          ← CSV import + sync page
+static/js/07-calls.js           ← Call Analyzer, saved calls, analyst stats
+static/js/08-live.js            ← Live Trades, position cards, correlation warning
+static/js/09-analysis.js        ← Prediction accuracy, postmortem, call sizing
+static/js/10-pending.js         ← Pending limits, Bitget live orders, bulk operations
+static/js/11-sync.js            ← Live Sync page
+static/js/12-explorer.js        ← Chart Explorer (inline LightweightCharts)
+static/js/13-init.js            ← showPage extension, app startup
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)
 docs/USER_GUIDE.md              ← User-facing manual
@@ -516,6 +529,7 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | GET | `/api/chart/candles` | OHLCV candles + S/R levels + multi-TF trendlines. Params: `symbol`, `timeframe` (15m/1H/4H/1D), `limit` (default 200). Returns `{candles, levels, trendlines, current_price, symbol, timeframe}` where `trendlines` includes all TFs (1W/1D/4H/1H), each tagged with `timeframe` and `weight` |
 | GET | `/api/chart/indicators` | Technical indicator values. Params: `symbol`, `timeframes` (comma-separated, e.g. `4H,1D`). Returns per-timeframe indicator dict |
 | GET | `/api/exchange/symbols` | Full Bitget USDT-M Futures symbol list (~200+). Sourced from Bitget `/api/v2/mix/market/tickers?productType=USDT-FUTURES`. 1-hour server-side cache. Returns `{ok: true, symbols: ["BTCUSDT", ...]}` |
+| GET | `/api/market/prices` | Current mark prices for a list of symbols. Params: `symbols` (comma-separated). 60-second cache. Returns `{ok: true, data: {"BTCUSDT": 80960.1, ...}}` |
 
 ### Call Analyzer
 
@@ -563,7 +577,7 @@ Split across four files:
 - `templates/index.html` — HTML structure only (~910 lines), no inline CSS
 - `templates/chart.html` — standalone detached chart window (self-contained, no shared CSS/JS)
 - `static/style.css` — all dark-theme CSS (~195 lines), loaded via `<link>`
-- `static/app.js` — all JavaScript (~3000 lines), loaded via `<script src="/static/app.js">`
+- `static/js/` — JavaScript split into 13 topic files (see file listing above). `index.html` loads them all as regular `<script>` tags; all functions remain in global scope so `onclick` attributes work unchanged.
 
 Structure:
 ```
@@ -589,7 +603,7 @@ Structure:
     #limit-modal       Add/edit pending limit order
     #match-modal       Track Bitget live order as shadow trade (+ link to call)
     #bulk-link-modal   Link multiple selected limits to one analyst call
-<script src="/static/app.js">
+<script src="/static/js/01-utils.js"> ... <script src="/static/js/13-init.js">
 ```
 
 **Navigation pattern:**
@@ -617,6 +631,14 @@ When `charts` activates: `_initExplorerTfBtns()` is called to populate TF button
 - `_explorerTf` — active timeframe in Chart Explorer (default `'4H'`)
 
 **Auto-refresh:** Live Trades auto-refreshes every 30s via `liveTradesInterval`. AI analysis results and open panels are preserved across refreshes using the cache globals.
+
+**Dashboard parallel fetch:** `loadDashboard()` fires three requests simultaneously via `Promise.all`: `/api/dashboard/kpis`, `/api/market/context`, `/api/live/positions`. The Open Position Risk KPI card renders from the already-available positions data rather than a second round-trip.
+
+**Live Trades cross-page awareness:** `loadLiveTrades()` fetches `/api/limits?status=waiting` in the same `Promise.all` as positions. `renderPositionCards(positions, waitingLimits)` shows a `⏳ N limit(s)` chip on any card whose symbol has waiting limits; clicking it navigates to Pending Orders.
+
+**Proximity alerts:** After `loadPendingLimits('waiting')` renders cards, it calls `/api/market/prices?symbols=...` for all waiting limit symbols. Each card within 5% of current mark price gets a `📍 X.X% from limit` badge (red <1%, yellow <3%, blue <5%) injected into the `#prox-<id>` span on that card.
+
+**Chart Explorer title overlay:** `drawExplorerChart()` injects a `.explorer-chart-title` `<div>` absolutely positioned top-left inside `#explorer-chart-wrap`, showing the symbol name and active timeframe pill. Rebuilt on every draw; removed on chart destroy.
 
 ### Chart Window (`openChart()`)
 

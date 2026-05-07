@@ -263,6 +263,34 @@ trading-journal.service systemd unit file
 #### Open Position Risk on Live Trades
 - **Open Position Risk** KPI card added to the Live Trades KPI strip — same SL-based calculation as the Dashboard (falls back to margin when no SL is set), showing `% of equity` and `· SL-based` / `· no SL` sub-label
 
+### v2.2 — Performance, Cross-Page Awareness & UX Polish
+
+#### Backend Parallelism
+- **`detect_all_trendlines()`** now runs all 4 TF fetches (1W/1D/4H/1H) concurrently via `ThreadPoolExecutor` — ~4× faster chart loads
+- **`get_chart_context()`** parallelises multi-TF indicator computation the same way
+- **Thread-safe cache** — `_cache` dict in `chart_context.py` now protected by a `threading.Lock`
+- **`GET /api/market/prices`** — new endpoint returning `{symbol: mark_price}` for a list of symbols (60-second cache), used for proximity alerts
+
+#### Dashboard Parallel Fetch
+- `loadDashboard()` now fires KPI, market context, and live positions requests in a single `Promise.all` — eliminates two sequential round-trips on load
+
+#### Cross-Page Awareness on Live Trades
+- Each open position card now shows a **`⏳ N limit(s)` chip** when waiting limits exist for the same symbol — clicking it navigates directly to Pending Orders
+- Waiting limits fetched in the same `Promise.all` as positions, zero extra latency
+
+#### Proximity Alerts on Pending Orders
+- After loading waiting limits, the app fetches current mark prices for those symbols via `/api/market/prices`
+- Each limit card shows a **`📍 X.X% from limit`** badge when price is within 5% of the limit level — colour coded: red (<1%), yellow (<3%), blue (<5%)
+
+#### Chart Explorer Title Overlay
+- Coin name and active timeframe are now shown as a persistent overlay in the top-left corner of every Chart Explorer chart
+- Updates on every Draw / timeframe switch; clears cleanly when the chart is destroyed
+
+#### JavaScript Module Split
+- `static/app.js` (3 200 lines) split into **13 focused topic files** under `static/js/` — easier navigation and editing without any functional change
+- Files: `01-utils`, `02-dashboard`, `03-journal`, `04-deep-edge`, `05-advisor`, `06-import`, `07-calls`, `08-live`, `09-analysis`, `10-pending`, `11-sync`, `12-explorer`, `13-init`
+- `bitget_client.py`: added `get_mark_prices(symbols)` for proximity alert price lookups
+
 ### v1.9.5 — Self-Learning Trader Rulebook
 - **`ai_rulebook.py`** — new module: Claude analyses your entire trade history and synthesises 5–10 personalised rules (warnings, strengths, habits, calibration notes) backed by real numbers from your data
 - **`trader_rulebook` DB table** — rules are persisted in SQLite and survive restarts; auto-regenerated weekly by the background sync loop
