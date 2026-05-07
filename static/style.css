@@ -370,3 +370,37 @@ select:focus,input:focus{border-color:var(--accent)}
 .hindsight-hdr{color:var(--muted);font-size:.72rem;background:var(--bg3);
   border-radius:6px 6px 0 0;font-weight:600}
 .hindsight-row:hover{background:var(--bg3)}
+
+/* ── Scanner table (replaces card grid) ─────────────────────────────────── */
+.scanner-tbl-wrap{overflow-x:auto}
+.scanner-tbl{width:100%;border-collapse:collapse;font-size:.82rem}
+.scanner-tbl thead th{padding:8px 12px;text-align:left;font-size:.72rem;
+  color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+  background:var(--bg3);border-bottom:1px solid var(--border)}
+.scanner-tbl thead th:first-child{border-radius:6px 0 0 0}
+.scanner-tbl thead th:last-child{border-radius:0 6px 0 0}
+.scanner-row{cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s}
+.scanner-row td{padding:10px 12px;vertical-align:middle}
+.scanner-row:hover,.scanner-row.active{background:var(--bg3)}
+.scanner-row.active td:first-child{border-left:3px solid var(--accent)}
+.scanner-detail-row td{padding:0;background:var(--bg)}
+.scanner-detail-row{border-bottom:2px solid var(--accent)}
+
+/* Detail panel */
+.scan-detail-panel{padding:18px 20px;border-top:1px solid var(--border)}
+.scan-dp-header{margin-bottom:10px;font-size:.9rem}
+.scan-dp-summary{font-size:.8rem;color:var(--muted);line-height:1.6;
+  margin-bottom:14px;padding:10px 12px;background:var(--bg3);border-radius:6px}
+.scan-dp-levels{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:14px;margin-bottom:12px}
+.scan-dp-level{background:var(--bg3);border-radius:6px;padding:10px 12px}
+.scan-dp-lbl{font-size:.68rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;margin-bottom:3px}
+.scan-dp-price{font-size:1.05rem;font-weight:700;margin-bottom:4px}
+.scan-dp-rat{font-size:.74rem;color:var(--muted);line-height:1.4}
+.scan-dp-conds{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.scan-dp-cond{background:rgba(38,217,107,.08);color:var(--accent3);
+  font-size:.73rem;padding:3px 8px;border-radius:4px}
+.scan-dp-risks{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.scan-dp-risk{background:rgba(255,179,0,.08);color:var(--yellow);
+  font-size:.73rem;padding:3px 8px;border-radius:4px}

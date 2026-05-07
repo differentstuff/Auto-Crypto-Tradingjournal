@@ -1,24 +1,22 @@
 """
 ai_scanner.py — Proactive setup scanner.
 
-Scans a watchlist of USDT-M futures for high-conviction 9-10/10 trade setups.
+Scans a watchlist of USDT-M futures for trade setups scored 6-10/10.
 
 Three-stage pipeline:
   Stage 1 — Confluence filter (parallel, no AI):
              Computes multi-TF RSI/MACD/EMA/ADX signals for all symbols.
-             Passes only symbols with ≥ 3/4 signals aligned in one direction.
+             Passes symbols with ≥ 2 signals aligned in one direction.
 
   Stage 2 — Technical quality gate (no AI, instant):
-             Rejects overextended RSI, absent S/R structure, low ADX chop,
-             price not near any actionable level.
+             Rejects severely overextended RSI, absent S/R structure, flat ADX.
 
   Stage 3 — AI scoring (parallel Claude calls, finalists only):
-             Claude evaluates each finalist with full technical + market context
-             and trader rulebook. Returns only 9-10/10 setups with specific
-             entry/SL/TP price levels.
+             Claude evaluates each finalist and returns scored setups 6-10/10
+             with specific entry zone, SL, TP1, TP2 and rationale for each level.
+             Setups below 6 are discarded.
 
-Results cached for 30 minutes. Scan runs in a background thread so the
-API endpoint returns immediately.
+Results cached for 30 minutes. Scan runs in a background thread.
 """
 
 import json
@@ -37,7 +35,7 @@ import ai_rulebook
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL     = "claude-sonnet-4-6"
-MIN_SCORE = 9
+MIN_SCORE = 6
 CACHE_TTL = 1800  # 30 min between scans
 
 # ── Watchlist ──────────────────────────────────────────────────────────────────
@@ -98,7 +96,7 @@ def _fetch_one(symbol: str):
 
 
 def _stage1(symbols: list) -> list:
-    """Return [(symbol, ctx, conf, direction)] with ≥ 3/4 aligned signals."""
+    """Return [(symbol, ctx, conf, direction)] with ≥ 2 signals aligned."""
     out = []
     with ThreadPoolExecutor(max_workers=8) as ex:
         futures = {ex.submit(_fetch_one, sym): sym for sym in symbols}
@@ -106,9 +104,9 @@ def _stage1(symbols: list) -> list:
             symbol, ctx, conf = f.result()
             if ctx is None or conf is None:
                 continue
-            if conf["bullish"] >= 3:
+            if conf["bullish"] >= 2:
                 out.append((symbol, ctx, conf, "Long"))
-            elif conf["bearish"] >= 3:
+            elif conf["bearish"] >= 2:
                 out.append((symbol, ctx, conf, "Short"))
     return out
 
@@ -130,14 +128,14 @@ def _stage2(candidates: list) -> list:
         price   = ema.get("current_price")
         atr_val = (inds.get("atr", {}) or {}).get("value", 0)
 
-        # Reject: already deeply overextended in signal direction
-        if direction == "Long"  and rsi_val > 76:
+        # Reject: severely overextended (leave some room for momentum entries)
+        if direction == "Long"  and rsi_val > 82:
             continue
-        if direction == "Short" and rsi_val < 24:
+        if direction == "Short" and rsi_val < 18:
             continue
 
-        # Reject: completely directionless (ADX too low)
-        if adx_val < 14:
+        # Reject: completely flat / zero volatility
+        if adx_val < 10:
             continue
 
         # Reject: no S/R structure to define entry/SL/TP
@@ -190,7 +188,7 @@ def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str):
     mkt_block  = f"\nMARKET CONTEXT:\n{mkt_str}\n" if mkt_str else ""
     rb_block   = f"\nTRADER RULEBOOK (known patterns — respect these):\n{rulebook_str}\n" if rulebook_str else ""
 
-    return f"""You are a professional crypto futures analyst. Evaluate whether {symbol} qualifies as a 9-10/10 {direction.upper()} setup right now or within the next 24 hours.
+    return f"""You are a professional crypto futures analyst. Score the current {direction.upper()} setup for {symbol} on a 1-10 scale and provide specific trade parameters.
 
 TECHNICAL SUMMARY:
 {pt_4h}
@@ -209,31 +207,41 @@ TRADER HISTORY ON {symbol}:
 {hist_text}
 {rb_block}
 ─────────────────────────────────────────
-SCORING CRITERIA — all must be satisfied for 9/10:
-1. Confluence: ≥ 3 aligned signals for the {direction} direction
-2. Defined entry: price AT or approaching a structural level (S/R / trendline / EMA)
-3. Clean stop loss: placed beyond the next structural level, at least 1.2× ATR from entry
-4. R:R ≥ 2.5:1 to TP1, ≥ 4:1 to TP2
-5. RSI not overextended at entry (not above 73 for Long / below 27 for Short)
-6. No rulebook violation
+SCORING SCALE:
+6 — Moderate: partial alignment, valid entry zone, but weak R:R or limited confluence
+7 — Good: clear directional bias, structural entry, R:R ≥ 2:1, no major red flags
+8 — Strong: ≥3 signals aligned, clean S/R entry, structural SL, R:R ≥ 2.5:1
+9 — Excellent: all 8-criteria + strong ADX, multi-TF alignment, no rulebook conflicts
+10 — Perfect: textbook chart pattern, volume confirmation, ideal entry timing, R:R ≥ 4:1
 
-For 10/10 additionally: textbook pattern (breakout, flag, W-bottom…), multi-TF alignment,
-ideal entry timing (price just touched support / broke resistance with volume).
+REQUIREMENTS for any score ≥ 6:
+- A specific entry zone (a structural level — S/R, EMA, trendline — not random)
+- A stop loss placed beyond the nearest structural level and ≥ 1× ATR from entry
+- At least one take-profit level at the next significant resistance/support
+- A clear one-sentence rationale for EACH of the three levels above
 
-If this is NOT a 9-10/10 setup, respond with:
-{{"setup_score": 0, "reason": "one sentence"}}
+If the setup scores below 6 (no valid entry, stop would be inside noise, no logical TP):
+{{"setup_score": 0, "reason": "one sentence why this doesn't qualify"}}
 
-If it IS a 9-10/10 setup, respond with specific price levels:
-{{"setup_score": 9, "setup_label": "Excellent", "direction": "{direction}",
-  "entry_zone": {{"low": 0.0, "high": 0.0, "rationale": "why this zone"}},
-  "sl_price": 0.0, "sl_rationale": "structural reason for this SL",
-  "tp1_price": 0.0, "tp2_price": 0.0, "rr_ratio": "1:X.X",
-  "chart_pattern": "e.g. Bull Flag / Break-and-Retest / W-bottom (or null)",
-  "key_conditions": ["signal 1", "signal 2", "signal 3"],
-  "risks": ["risk 1", "risk 2"],
+Otherwise respond with this exact structure:
+{{"setup_score": 8, "setup_label": "Strong",
+  "direction": "{direction}",
+  "entry_zone": {{"low": 0.0, "high": 0.0,
+    "rationale": "Why exactly this zone — reference the structural level"}},
+  "sl_price": 0.0,
+  "sl_rationale": "What structural level this is beyond and ATR distance",
+  "tp1_price": 0.0,
+  "tp1_rationale": "What resistance/support this targets",
+  "tp2_price": 0.0,
+  "tp2_rationale": "What resistance/support this targets",
+  "rr_ratio": "1:X.X",
+  "chart_pattern": "Bull Flag / Break-and-Retest / W-bottom / etc. — or null",
+  "key_conditions": ["most important signal 1", "signal 2", "signal 3"],
+  "risks": ["main risk 1", "risk 2"],
   "urgency": "Now|1-4h|Today|1-3 days",
   "timeframe": "4H",
-  "summary": "2-3 sentence honest assessment"}}
+  "confluence_summary": "One sentence describing the overall technical picture",
+  "summary": "2-3 sentence honest assessment referencing actual numbers"}}
 
 Respond with ONLY valid JSON — no markdown, no code fences."""
 
@@ -243,7 +251,7 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str):
         prompt  = _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str)
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
-            model=MODEL, max_tokens=800,
+            model=MODEL, max_tokens=1024,
             messages=[{"role": "user", "content": prompt}]
         )
         result = json.loads(strip_fence(message.content[0].text.strip()))
