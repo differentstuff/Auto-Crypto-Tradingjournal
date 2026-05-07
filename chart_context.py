@@ -76,6 +76,76 @@ def get_candles(symbol: str, timeframe: str = "4H", limit: int = 200) -> pd.Data
     return _cached(f"candles_{sym}_{timeframe}_{limit}", _fetch)
 
 
+# ── Support / Resistance detection ────────────────────────────────────────────
+
+def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
+                               tolerance_pct: float = 0.003,
+                               max_levels: int = 8) -> list:
+    """
+    Swing-pivot S/R detection with clustering.
+    n_swing: candles each side of a pivot to qualify as local high/low.
+    tolerance_pct: prices within this % are merged into one level.
+    Returns list of {price, type, strength, touches} sorted ascending.
+    """
+    if len(df) < n_swing * 2 + 3:
+        return []
+
+    highs = df["high"].values.astype(float)
+    lows  = df["low"].values.astype(float)
+    close = float(df["close"].iloc[-1])
+
+    pivot_highs, pivot_lows = [], []
+    for i in range(n_swing, len(df) - n_swing):
+        window_h = highs[i - n_swing : i + n_swing + 1]
+        window_l = lows[i  - n_swing : i + n_swing + 1]
+        if highs[i] >= window_h.max():
+            pivot_highs.append(highs[i])
+        if lows[i] <= window_l.min():
+            pivot_lows.append(lows[i])
+
+    def _cluster(prices, level_type):
+        if not prices:
+            return []
+        levels = []
+        for p in sorted(prices):
+            merged = False
+            for lvl in levels:
+                centroid = lvl["_sum"] / lvl["_n"]
+                if abs(p - centroid) / centroid < tolerance_pct:
+                    lvl["_sum"] += p
+                    lvl["_n"]   += 1
+                    merged = True
+                    break
+            if not merged:
+                levels.append({"_sum": p, "_n": 1, "type": level_type})
+        result = []
+        for lvl in levels:
+            price = lvl["_sum"] / lvl["_n"]
+            touches = (
+                sum(1 for h in highs if abs(h - price) / price < tolerance_pct) +
+                sum(1 for l in lows  if abs(l - price) / price < tolerance_pct)
+            )
+            result.append({
+                "price":    round(price, 8),
+                "type":     lvl["type"],
+                "strength": lvl["_n"],
+                "touches":  touches,
+            })
+        return result
+
+    supports    = _cluster(pivot_lows,  "support")
+    resistances = _cluster(pivot_highs, "resistance")
+
+    # Keep only supports near/below price and resistances near/above
+    supports    = [l for l in supports    if l["price"] < close * 1.02]
+    resistances = [l for l in resistances if l["price"] > close * 0.98]
+
+    supports    = sorted(supports,    key=lambda x: (-x["touches"], -x["strength"]))[:max_levels // 2]
+    resistances = sorted(resistances, key=lambda x: (-x["touches"], -x["strength"]))[:max_levels // 2]
+
+    return sorted(supports + resistances, key=lambda x: x["price"])
+
+
 # ── Indicator computation ──────────────────────────────────────────────────────
 
 def compute_indicators(df: pd.DataFrame) -> dict:
@@ -275,6 +345,11 @@ def compute_indicators(df: pd.DataFrame) -> dict:
             candles.append(f"{candle_type} (body {body_pct:.0f}% of range)")
         result["recent_candles"] = candles
 
+    # ── Support / Resistance ───────────────────────────────────────────────────
+    sr = detect_support_resistance(df)
+    if sr:
+        result["support_resistance"] = sr
+
     return result
 
 
@@ -327,6 +402,19 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
     if "recent_candles" in indicators:
         lines.append(f"  Last 3 candles: {' → '.join(indicators['recent_candles'])}")
 
+    if "support_resistance" in indicators:
+        sr   = indicators["support_resistance"]
+        sups = sorted([l for l in sr if l["type"] == "support"],    key=lambda x: -x["price"])
+        ress = sorted([l for l in sr if l["type"] == "resistance"],  key=lambda x:  x["price"])
+        if sups:
+            lines.append(f"  Nearest support:    {sups[0]['price']} ({sups[0]['touches']} touches)")
+        if ress:
+            lines.append(f"  Nearest resistance: {ress[0]['price']} ({ress[0]['touches']} touches)")
+        extra = ([f"S:{l['price']}" for l in sups[1:2]] +
+                 [f"R:{l['price']}" for l in ress[1:2]])
+        if extra:
+            lines.append(f"  Other levels: {', '.join(extra)}")
+
     return "\n".join(lines)
 
 
@@ -359,3 +447,35 @@ def format_multi_tf_for_prompt(symbol: str, timeframes: list = None) -> str:
     ctx = get_chart_context(symbol, timeframes or ["4H", "1D"])
     blocks = [v["prompt_text"] for v in ctx.values() if v.get("prompt_text")]
     return "\n\n".join(blocks)
+
+
+def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) -> dict:
+    """
+    Return OHLCV candles + S/R levels formatted for the frontend chart modal.
+    Candle timestamps are in seconds (as required by LightweightCharts).
+    """
+    df = get_candles(symbol, timeframe, limit=limit)
+    if df is None or df.empty:
+        return {"candles": [], "levels": [], "symbol": symbol, "timeframe": timeframe}
+
+    levels = detect_support_resistance(df)
+
+    candles = [
+        {
+            "time":   int(row["timestamp"] // 1000),
+            "open":   round(float(row["open"]),  8),
+            "high":   round(float(row["high"]),  8),
+            "low":    round(float(row["low"]),   8),
+            "close":  round(float(row["close"]), 8),
+            "volume": round(float(row["volume"]), 2),
+        }
+        for _, row in df.iterrows()
+    ]
+
+    return {
+        "candles":       candles,
+        "levels":        levels,
+        "symbol":        symbol,
+        "timeframe":     timeframe,
+        "current_price": round(float(df["close"].iloc[-1]), 8),
+    }

@@ -83,6 +83,24 @@ def api_market_calendar():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/chart/candles")
+def api_chart_candles():
+    """
+    GET /api/chart/candles?symbol=BTCUSDT&timeframe=4H&limit=200
+    Returns OHLCV candles + detected S/R levels for the frontend chart modal.
+    """
+    try:
+        symbol = request.args.get("symbol", "").strip().upper()
+        if not symbol:
+            return _err("symbol is required")
+        timeframe = request.args.get("timeframe", "4H").strip()
+        limit     = int(request.args.get("limit", 200))
+        return _ok(chart_context.get_candles_for_chart(symbol, timeframe, limit))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/chart/indicators")
 def api_chart_indicators():
     """
