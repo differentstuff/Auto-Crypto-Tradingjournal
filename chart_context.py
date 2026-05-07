@@ -146,6 +146,92 @@ def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
     return sorted(supports + resistances, key=lambda x: x["price"])
 
 
+# ── Trendline detection ────────────────────────────────────────────────────────
+
+def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4) -> list:
+    """
+    Detect ascending support trendlines (uptrend) and descending resistance
+    trendlines (downtrend) via swing-pivot pair validation.
+
+    For each pair of pivots with the correct slope direction, the line is
+    accepted only if no candle body violates it between the two anchor points
+    (within 0.5% tolerance). Lines are then extended to the current candle.
+
+    Returns list of {type, p1_time, p2_time, p1_price, p2_price, touches,
+                     anchor1, anchor2} — up to max_lines total.
+    """
+    if len(df) < n_swing * 2 + 10:
+        return []
+
+    highs = df["high"].values.astype(float)
+    lows  = df["low"].values.astype(float)
+    times = df["timestamp"].values.astype(float)
+    n     = len(df)
+    tol   = 0.005  # 0.5% — crypto needs a bit of breathing room
+
+    pivot_h = [i for i in range(n_swing, n - n_swing)
+               if highs[i] >= highs[i - n_swing:i + n_swing + 1].max()]
+    pivot_l = [i for i in range(n_swing, n - n_swing)
+               if lows[i]  <= lows[i  - n_swing:i + n_swing + 1].min()]
+
+    def _score(pivots, arr, ltype, must_be_above):
+        candidates = []
+        for a in range(len(pivots)):
+            for b in range(a + 1, len(pivots)):
+                i1, i2 = pivots[a], pivots[b]
+                p1, p2 = arr[i1], arr[i2]
+                if must_be_above  and p2 <= p1: continue
+                if not must_be_above and p2 >= p1: continue
+
+                slope = (p2 - p1) / (i2 - i1)
+
+                # Validate: no candle violates the line between i1 and i2
+                valid = True
+                for k in range(i1, i2 + 1):
+                    lv = p1 + slope * (k - i1)
+                    if must_be_above  and arr[k] < lv * (1 - tol): valid = False; break
+                    if not must_be_above and arr[k] > lv * (1 + tol): valid = False; break
+                if not valid:
+                    continue
+
+                # Count additional touches beyond i2
+                touches = 2
+                for k in range(i2 + 1, n):
+                    lv  = p1 + slope * (k - i1)
+                    if abs(arr[k] - lv) / max(lv, 1e-9) < 0.004:
+                        touches += 1
+
+                end_price = p1 + slope * (n - 1 - i1)
+                if end_price <= 0:
+                    continue
+
+                candidates.append({
+                    "type":     ltype,
+                    "p1_time":  int(times[i1]     // 1000),
+                    "p2_time":  int(times[n - 1]  // 1000),
+                    "p1_price": round(p1, 8),
+                    "p2_price": round(end_price, 8),
+                    "touches":  touches,
+                    "anchor1":  round(p1, 8),
+                    "anchor2":  round(p2, 8),
+                })
+
+        candidates.sort(key=lambda x: (-x["touches"], -x["p1_time"]))
+        seen, unique = [], []
+        for c in candidates:
+            sig = (round(c["anchor1"], 2), round(c["anchor2"], 2))
+            if sig not in seen:
+                seen.append(sig)
+                unique.append(c)
+            if len(unique) >= max_lines // 2:
+                break
+        return unique
+
+    up   = _score(pivot_l, lows,  "uptrend",   True)
+    down = _score(pivot_h, highs, "downtrend", False)
+    return up + down
+
+
 # ── Indicator computation ──────────────────────────────────────────────────────
 
 def compute_indicators(df: pd.DataFrame) -> dict:
@@ -350,6 +436,11 @@ def compute_indicators(df: pd.DataFrame) -> dict:
     if sr:
         result["support_resistance"] = sr
 
+    # ── Trendlines ─────────────────────────────────────────────────────────────
+    tl = detect_trendlines(df)
+    if tl:
+        result["trendlines"] = tl
+
     return result
 
 
@@ -415,6 +506,18 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
         if extra:
             lines.append(f"  Other levels: {', '.join(extra)}")
 
+    if "trendlines" in indicators:
+        tls  = indicators["trendlines"]
+        up   = [t for t in tls if t["type"] == "uptrend"]
+        down = [t for t in tls if t["type"] == "downtrend"]
+        parts = []
+        if up:
+            parts.append(f"uptrend support {up[0]['anchor1']}→{up[0]['anchor2']} ({up[0]['touches']} touches)")
+        if down:
+            parts.append(f"downtrend resistance {down[0]['anchor1']}→{down[0]['anchor2']} ({down[0]['touches']} touches)")
+        if parts:
+            lines.append(f"  Trendlines: {', '.join(parts)}")
+
     return "\n".join(lines)
 
 
@@ -458,7 +561,8 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
     if df is None or df.empty:
         return {"candles": [], "levels": [], "symbol": symbol, "timeframe": timeframe}
 
-    levels = detect_support_resistance(df)
+    levels     = detect_support_resistance(df)
+    trendlines = detect_trendlines(df)
 
     candles = [
         {
@@ -475,6 +579,7 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
     return {
         "candles":       candles,
         "levels":        levels,
+        "trendlines":    trendlines,
         "symbol":        symbol,
         "timeframe":     timeframe,
         "current_price": round(float(df["close"].iloc[-1]), 8),

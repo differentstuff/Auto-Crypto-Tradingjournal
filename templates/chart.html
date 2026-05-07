@@ -81,7 +81,7 @@ async function loadChart() {
     return;
   }
 
-  const { candles, levels, current_price } = json.data;
+  const { candles, levels, trendlines, current_price } = json.data;
   if (!candles || !candles.length) {
     document.getElementById('status').textContent = 'No candle data available for ' + symbol;
     return;
@@ -124,23 +124,57 @@ async function loadChart() {
     });
   });
 
+  // Draw trendlines
+  (trendlines || []).forEach(tl => {
+    const isUp = tl.type === 'uptrend';
+    const tls = _chart.addLineSeries({
+      color:                   isUp ? 'rgba(38,217,107,.6)' : 'rgba(239,83,80,.6)',
+      lineWidth:               1,
+      lineStyle:               2,
+      priceLineVisible:        false,
+      lastValueVisible:        false,
+      crosshairMarkerVisible:  false,
+    });
+    tls.setData([
+      { time: tl.p1_time, value: tl.p1_price },
+      { time: tl.p2_time, value: tl.p2_price },
+    ]);
+  });
+
   _chart.timeScale().fitContent();
 
+  // Legend — S/R levels + trendline summary
   const leg = document.getElementById('sr-legend');
-  if (!levels || !levels.length) {
-    leg.innerHTML = '<span style="color:var(--muted);font-size:.74rem">No S/R levels detected in this range</span>';
-  } else {
-    leg.innerHTML = [...levels].reverse().map(lvl => {
-      const isS   = lvl.type === 'support';
-      const dist  = current_price ? ((lvl.price - current_price) / current_price * 100).toFixed(1) : null;
-      const dtxt  = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
-      return `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-               background:${isS ? 'rgba(38,217,107,.1)' : 'rgba(239,83,80,.1)'};
-               color:${isS ? '#26d96b' : '#ef5350'}">
-        ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
-      </span>`;
-    }).join('');
+  const chips = [];
+
+  if (trendlines && trendlines.length) {
+    trendlines.forEach(tl => {
+      const isUp = tl.type === 'uptrend';
+      chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+                   background:${isUp ? 'rgba(38,217,107,.08)' : 'rgba(239,83,80,.08)'};
+                   color:${isUp ? '#26d96b' : '#ef5350'};border:1px solid ${isUp ? 'rgba(38,217,107,.2)' : 'rgba(239,83,80,.2)'}"
+                  title="${tl.anchor1} → ${tl.anchor2}">
+        ${isUp ? '↗ Up' : '↘ Down'} TL (${tl.touches}×)
+      </span>`);
+    });
   }
+
+  if (levels && levels.length) {
+    [...levels].reverse().forEach(lvl => {
+      const isS  = lvl.type === 'support';
+      const dist = current_price ? ((lvl.price - current_price) / current_price * 100).toFixed(1) : null;
+      const dtxt = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
+      chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+                   background:${isS ? 'rgba(38,217,107,.1)' : 'rgba(239,83,80,.1)'};
+                   color:${isS ? '#26d96b' : '#ef5350'}">
+        ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
+      </span>`);
+    });
+  }
+
+  leg.innerHTML = chips.length
+    ? chips.join('')
+    : '<span style="color:#7986cb;font-size:.74rem">No S/R or trendlines detected</span>';
 }
 
 window.addEventListener('resize', () => {
