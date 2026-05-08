@@ -47,9 +47,10 @@ def index():
 
 
 # ── startup ────────────────────────────────────────────────────────────────────
+# init_db() runs at import time so WSGI servers (gunicorn) initialise the schema.
+init_db()
 
 if __name__ == "__main__":
-    init_db()
 
     # Auto-import CSV data if DB is empty
     conn = get_conn()

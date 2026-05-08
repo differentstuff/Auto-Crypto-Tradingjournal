@@ -143,7 +143,7 @@ def save_credentials():
     exchange = (data.get("exchange") or "").lower()
     api_key  = (data.get("api_key")    or "").strip()
     secret   = (data.get("secret_key") or "").strip()
-    phrase   = (data.get("passphrase") or "").strip()
+    phrase   = (data.get("passphrase") or "").strip().replace("\n", "").replace("\r", "")
 
     if exchange not in ("bitget", "blofin"):
         return _err("exchange must be 'bitget' or 'blofin'")

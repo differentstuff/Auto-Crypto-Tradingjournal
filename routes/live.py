@@ -6,6 +6,7 @@ from database import db_conn
 from helpers import _ok, _err
 import ai_live_trade
 import bitget_client
+import blofin_client
 
 bp = Blueprint("live", __name__)
 
@@ -13,8 +14,19 @@ bp = Blueprint("live", __name__)
 @bp.route("/api/live/positions")
 def api_live_positions():
     try:
-        positions = bitget_client.get_open_positions()
-        equity    = bitget_client.get_account_equity()
+        positions, equity = [], {}
+        try:
+            positions = bitget_client.get_open_positions()
+            equity    = bitget_client.get_account_equity()
+        except Exception:
+            pass
+        try:
+            if blofin_client.is_configured():
+                positions += blofin_client.get_open_positions()
+                if not equity:
+                    equity = blofin_client.get_account_equity()
+        except Exception:
+            pass
         return _ok({"positions": positions, "equity": equity})
     except Exception:
         traceback.print_exc()

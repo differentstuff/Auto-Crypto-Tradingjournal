@@ -85,21 +85,22 @@ def _sync_positions(conn) -> int:
                      open_time, close_time, duration_minutes,
                      entry_price, close_price, size_contracts, size_usdt,
                      position_pnl, realized_pnl, opening_fee, closing_fee, total_fees,
-                     external_id, exchange, is_manual)
+                     external_id, exchange, leverage, is_manual)
                 VALUES
                     (:symbol, :base_asset, :direction, :margin_mode,
                      :open_time, :close_time, :duration_minutes,
                      :entry_price, :close_price, :size_contracts, :size_usdt,
                      :position_pnl, :realized_pnl, :opening_fee, :closing_fee, :total_fees,
-                     :external_id, :exchange, 0)
+                     :external_id, :exchange, :leverage, 0)
             """, r)
             inserted    += 1
             new_this_page += 1
 
         conn.commit()
 
-        # If we got fewer than 100 rows or none were new, stop paginating
-        if len(rows) < 100 or new_this_page == 0:
+        # Stop when the API has no more pages; keep going even if this page was all-duplicates
+        # so initial back-fills and recovery syncs don't miss older trades.
+        if len(rows) < 100:
             break
 
         # Move cursor to the oldest historyId on this page for the next request
@@ -118,6 +119,14 @@ def run_sync() -> dict:
         _ensure_exchange_col(conn)
         positions = _sync_positions(conn)
 
+        # Auto-close any analyst calls whose matched Blofin position has now closed
+        calls_closed = 0
+        try:
+            from bitget_sync import _auto_close_calls
+            calls_closed = _auto_close_calls(conn)
+        except Exception:
+            pass
+
         # Update equity/balance
         equity_data = bc.get_account_equity()
         if equity_data:
@@ -126,8 +135,9 @@ def run_sync() -> dict:
 
         _set_setting(conn, "blofin_last_sync_ms", str(int(time.time() * 1000)))
 
-        return {"positions": positions, "equity": equity_data}
+        return {"positions": positions, "calls_closed": calls_closed, "equity": equity_data}
     except Exception as e:
+        _sync_status["last_error"] = str(e)
         raise
     finally:
         conn.close()

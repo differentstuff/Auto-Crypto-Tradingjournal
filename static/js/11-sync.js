@@ -113,3 +113,30 @@ async function sendTelegramTest() {
   if (res_el) res_el.textContent = res.ok ? '✅ Sent — check your Telegram' : '❌ ' + (res.error || 'failed');
   if (btn) btn.disabled = false;
 }
+
+async function loadLiveSyncExchangeDetails() {
+  const el = document.getElementById('sync-exchange-details');
+  if (!el) return;
+  const res = await api('/api/settings/exchanges');
+  if (!res.ok) { el.textContent = 'Could not load exchange details.'; return; }
+  const { bitget, blofin } = res.data;
+  const row = (label, value) =>
+    `<tr><td style="color:var(--muted);padding:4px 0;width:40%">${label}</td><td>${value}</td></tr>`;
+  let html = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:12px">
+    <div style="font-weight:600;margin-bottom:8px">🟡 Bitget</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      ${row('Status', bitget.configured ? '<span style="color:var(--accent3)">● Connected</span>' : '<span style="color:var(--muted)">○ Not configured</span>')}
+      ${bitget.configured ? row('API Key', `<span style="font-family:monospace;font-size:.75rem">${bitget.api_key_preview}</span>`) : ''}
+      ${row('Sync interval', 'Every 5 minutes')}
+      ${row('Mode', 'Incremental · read-only')}
+    </table></div>
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+    <div style="font-weight:600;margin-bottom:8px">🔵 Blofin</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      ${row('Status', blofin.configured ? '<span style="color:var(--accent3)">● Connected</span>' : '<span style="color:var(--muted)">○ Not configured — add keys in Settings</span>')}
+      ${blofin.configured ? row('API Key', `<span style="font-family:monospace;font-size:.75rem">${blofin.api_key_preview}</span>`) : ''}
+      ${row('Sync interval', 'Every 5 minutes')}
+      ${row('Mode', 'Incremental · read-only')}
+    </table></div>`;
+  el.innerHTML = html; // safe: all values are server-generated masked strings
+}

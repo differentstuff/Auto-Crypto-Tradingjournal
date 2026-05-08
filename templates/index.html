@@ -1077,14 +1077,9 @@ select:focus,input:focus{border-color:var(--accent)}
       </div>
 
       <div class="section-title">Connection Details</div>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;font-size:.82rem;max-width:500px">
-        <table style="width:100%;border-collapse:collapse">
-          <tr><td style="color:var(--muted);padding:4px 0;width:40%">Exchange</td><td>Bitget USDT-M Futures</td></tr>
-          <tr><td style="color:var(--muted);padding:4px 0">API Key</td><td style="font-family:monospace;font-size:.75rem">bg_99c0e8…(read-only)</td></tr>
-          <tr><td style="color:var(--muted);padding:4px 0">Sync Interval</td><td>Every 15 minutes</td></tr>
-          <tr><td style="color:var(--muted);padding:4px 0">Mode</td><td>Incremental (new trades only)</td></tr>
-          <tr><td style="color:var(--muted);padding:4px 0">Permissions</td><td>Read-only · No trading possible</td></tr>
-        </table>
+      <div id="sync-exchange-details" style="font-size:.82rem;max-width:500px">
+        <!-- populated by loadLiveSyncExchangeDetails() in 11-sync.js -->
+        <div style="color:var(--muted)">Loading…</div>
       </div>
 
       <!-- Telegram Alerts -->

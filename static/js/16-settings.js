@@ -32,7 +32,7 @@ async function loadSettings() {
             <div>Last run: ${lr}</div>
             <div>Next run: ${nr}</div>
           </div>
-          ${s.last_error ? `<div class="settings-error">Error: ${s.last_error}</div>` : ''}
+          ${s.last_error ? `<div class="settings-error">Error: ${escHtml(s.last_error)}</div>` : ''}
           <button class="btn-primary" onclick="triggerBlofinSync()" style="margin-top:10px">Sync Now</button>
         </div>`;
     }

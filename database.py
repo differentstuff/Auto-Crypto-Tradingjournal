@@ -204,6 +204,7 @@ def init_db():
         ("call_id",                "INTEGER DEFAULT NULL"),
         ("external_id",            "TEXT DEFAULT NULL"),  # exchange positionId (dedup key)
         ("exchange",               "TEXT DEFAULT 'bitget'"),  # 'bitget' | 'blofin'
+        ("leverage",               "INTEGER DEFAULT NULL"),
     ]
     for _col, _typedef in _pos_new_cols:
         try:

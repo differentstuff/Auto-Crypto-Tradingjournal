@@ -25,15 +25,19 @@ function renderMatchBanners(pendingMatches, positions) {
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-        <button class="btn btn-primary btn-sm" onclick="confirmMatch(${call.id}, '${key}')">✅ Yes, this is that trade</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmMatch(${call.id}, '${key}', ${pos.id || 'null'})">✅ Yes, this is that trade</button>
         <button class="btn btn-secondary btn-sm" onclick="dismissMatch(${call.id})">✗ Not this trade</button>
       </div>
     </div>`;
   }).join('');
 }
 
-async function confirmMatch(callId, key) {
-  await api('/api/calls/' + callId + '/confirm-match', 'POST');
+async function confirmMatch(callId, key, positionId) {
+  await api('/api/calls/' + callId + '/confirm-match', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ position_id: positionId || null }),
+  });
   document.getElementById('match-banner-' + callId)?.remove();
   const savedRes = await api('/api/calls/saved');
   if (savedRes.ok) {

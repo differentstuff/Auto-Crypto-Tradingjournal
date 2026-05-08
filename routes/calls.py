@@ -8,6 +8,7 @@ from helpers import _ok, _err
 from analytics import get_deep_stats
 import ai_call_analyzer
 import bitget_client
+import blofin_client
 
 bp = Blueprint("calls", __name__)
 
@@ -20,12 +21,23 @@ def api_calls_analyze():
         if not call_text:
             return _err("call_text is required")
 
+        # Collect equity + open positions from all configured exchanges
+        equity, open_positions = 0.0, []
         try:
             eq_data        = bitget_client.get_account_equity()
-            equity         = float(eq_data.get("accountEquity") or eq_data.get("available") or 1000)
+            equity         = float(eq_data.get("accountEquity") or eq_data.get("available") or 0)
             open_positions = bitget_client.get_open_positions()
         except Exception:
-            equity, open_positions = 1000.0, []
+            pass
+        try:
+            if blofin_client.is_configured():
+                bl_eq = blofin_client.get_account_equity()
+                equity = equity or float(bl_eq.get("equity") or 0)
+                open_positions += blofin_client.get_open_positions()
+        except Exception:
+            pass
+        if equity == 0:
+            equity = 1000.0   # fallback so sizing calc doesn't crash
 
         result = ai_call_analyzer.analyze_call(
             call_text      = call_text,
@@ -101,10 +113,16 @@ def api_calls_save():
 
 @bp.route("/api/calls/check-matches")
 def api_calls_check_matches():
+    positions = []
     try:
         positions = bitget_client.get_open_positions()
     except Exception:
-        return _err("Internal server error", 500)
+        pass
+    try:
+        if blofin_client.is_configured():
+            positions += blofin_client.get_open_positions()
+    except Exception:
+        pass
 
     with db_conn() as conn:
         calls = [dict(r) for r in conn.execute("""
@@ -125,13 +143,21 @@ def api_calls_check_matches():
 
 @bp.route("/api/calls/<int:call_id>/confirm-match", methods=["POST"])
 def api_calls_confirm_match(call_id):
+    d      = request.get_json(silent=True) or {}
+    pos_id = d.get("position_id")
     with db_conn() as conn:
         conn.execute(
             "UPDATE analyzed_calls SET status='matched', matched_at=datetime('now') WHERE id=?",
             (call_id,)
         )
+        if pos_id:
+            # Link the position row to this call for R:R analysis and auto-close
+            conn.execute(
+                "UPDATE positions SET call_id=? WHERE id=?",
+                (call_id, pos_id)
+            )
         conn.commit()
-    return _ok({"matched": call_id})
+    return _ok({"matched": call_id, "position_id": pos_id})
 
 
 @bp.route("/api/calls/<int:call_id>/dismiss", methods=["POST"])
