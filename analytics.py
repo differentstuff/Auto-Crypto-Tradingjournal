@@ -293,7 +293,7 @@ def get_deep_stats(filters=None, conn=None):
         SELECT duration_minutes,
                realized_pnl
         FROM positions {where}
-        WHERE duration_minutes IS NOT NULL
+        {and_} duration_minutes IS NOT NULL
     """, params)
     duration_buckets = _bucket_durations(dur_rows)
 
@@ -538,6 +538,14 @@ def get_ev_by_setup(conn=None, filters=None) -> list:
     where, params = _build_where(filters or {})
     and_ = "AND" if where else "WHERE"
 
+    # Build a position-qualified WHERE clause — _build_where returns bare column names
+    # which become ambiguous after LEFT JOIN. Prefix positions columns with p.
+    p_where = where.replace("symbol =", "p.symbol =") \
+                   .replace("direction =", "p.direction =") \
+                   .replace("close_time >=", "p.close_time >=") \
+                   .replace("close_time <=", "p.close_time <=") \
+                   .replace("COALESCE(exchange,", "COALESCE(p.exchange,") if where else ""
+
     rows = _rows(conn, f"""
         SELECT
             COALESCE(p.setup_type, ac.trade_type, 'Unknown') AS setup_type,
@@ -548,8 +556,9 @@ def get_ev_by_setup(conn=None, filters=None) -> list:
             ROUND(SUM(p.realized_pnl), 2)                                   AS total_pnl
         FROM positions p
         LEFT JOIN analyzed_calls ac ON p.call_id = ac.id
-        {where} {and_} (p.setup_type IS NOT NULL AND p.setup_type != '')
-                     OR (ac.trade_type IS NOT NULL AND ac.trade_type != '')
+        {p_where} {'AND' if p_where else 'WHERE'}
+            ((p.setup_type IS NOT NULL AND p.setup_type != '')
+             OR (ac.trade_type IS NOT NULL AND ac.trade_type != ''))
         GROUP BY setup_type
         HAVING n >= 5
         ORDER BY n DESC
@@ -572,8 +581,7 @@ def get_rolling_stats(conn=None, filters=None, days: int = 30) -> dict:
     """
     if conn is None:
         conn = get_conn()
-    from datetime import datetime as _dt
-    cutoff = _dt.utcnow().strftime(f'%Y-%m-%d')
+    from datetime import datetime as _dt, timedelta as _td
 
     def _stat(extra_where, extra_params):
         n   = _val(conn, f"SELECT COUNT(*) FROM positions {extra_where}", extra_params)
@@ -584,14 +592,10 @@ def get_rolling_stats(conn=None, filters=None, days: int = 30) -> dict:
         return {"trades": n, "win_rate": wr, "total_pnl": pnl, "avg_win": aw, "avg_loss": al}
 
     base_where, base_params = _build_where(filters or {})
-    and_ = "AND" if base_where else "WHERE"
 
     all_time = _stat(base_where, base_params)
 
-    # Build rolling filter by appending date constraint
-    roll_filters = {**(filters or {}), "date_from": _dt.utcnow().strftime(f'%Y-%m-%d')}
-    from datetime import timedelta as _td
-    roll_from = (_dt.utcnow() - _td(days=days)).strftime('%Y-%m-%d')
+    roll_from  = (_dt.utcnow() - _td(days=days)).strftime('%Y-%m-%d')
     roll_where, roll_params = _build_where({**(filters or {}), "date_from": roll_from})
     rolling = _stat(roll_where, roll_params)
 
@@ -604,11 +608,23 @@ def get_accuracy_trend(conn=None, filters=None, window_days: int = 30) -> list:
     setup scores >= threshold actually hit TP1 (True Positive rate).
     Returns list of {month, tp_rate, fp_rate, n} sorted ascending.
     threshold defaults to 6 (min tradeable score).
+    Note: only the exchange filter is safe to apply here — other filters
+    (symbol, direction, date_from/to) reference positions columns that
+    don't exist on analyzed_calls.
     """
     if conn is None:
         conn = get_conn()
-    where, params = _build_where(filters or {})
-    and_ = "AND" if where else "WHERE"
+    # Only apply exchange filter — analyzed_calls has its own date column (created_at)
+    # and does not have close_time, so the standard filters would cause OperationalError.
+    exch = (filters or {}).get("exchange")
+    if exch in ("bitget", "blofin"):
+        where  = "WHERE COALESCE(exchange, 'bitget') = ?"
+        params = [exch]
+        and_   = "AND"
+    else:
+        where  = ""
+        params = []
+        and_   = "WHERE"
 
     rows = _rows(conn, f"""
         SELECT strftime('%Y-%m', created_at) AS month,

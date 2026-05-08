@@ -135,7 +135,7 @@ async function loadDashboard() {
         const n = parseFloat(v);
         return n > 0 ? `<span class="pos">+${n}</span>` : `<span class="neg">${n}</span>`;
       };
-      el.style.display = 'block';
+      el.style.display = 'flex';
       el.querySelector('.rolling-label').textContent = `Last ${ro.days} days`;
       el.querySelector('.rolling-wr').textContent    = (r.win_rate ?? '—') + '%';
       el.querySelector('.rolling-pnl').textContent   = (r.total_pnl >= 0 ? '+' : '') + fmtC(r.total_pnl) + ' USDT';

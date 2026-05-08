@@ -9,7 +9,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.6.0">🚀 Release v2.6.0</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.6.1">🚀 Release v2.6.1</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
 </p>
@@ -258,6 +258,25 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.6.1 — Bug Fixes (code review pass)
+
+**Analytics SQL fixes:**
+- `get_deep_stats`: double `WHERE` clause crash when any filter was active — duration bucket query used `WHERE duration_minutes IS NOT NULL` after an already-present `WHERE` clause; changed to `{and_}` (using the already-computed `and_` variable like all other queries in the same function)
+- `get_accuracy_trend`: applied position-table filters (`close_time`, `symbol`) to `analyzed_calls` which doesn't have those columns — now only applies the `exchange` filter which `analyzed_calls` does have
+- `get_ev_by_setup`: JOIN query had ambiguous column references (`symbol`, `direction`, `exchange`) after `LEFT JOIN analyzed_calls` — qualified all positions columns with `p.` prefix
+- `get_rolling_stats`: removed dead variables `cutoff` and `roll_filters` from incomplete refactor
+
+**Scanner criteria fix:**
+- `_ai_score` (fallback path): called `_build_shared_prefix` without `criteria`, silently ignoring user's disabled criteria in the batch fallback — now passes `criteria=cr`
+
+**Dashboard fix:**
+- `rolling-stats-row` div had `display:none;...;display:flex` in same inline style — the second declaration won, making the strip always visible on load; removed the duplicate, JS now shows it explicitly as `flex` when data arrives
+
+**AI Advisor fix (v2.6.0 follow-up):**
+- Three bugs fixed: `filters` NameError in `_build_prompt`, exchange column SQL crash when DB hasn't run v2.5 migration, `None.capitalize()` on null exchange value
+
+---
 
 ### v2.6.0 — AI Efficiency + Learning + Analytics
 

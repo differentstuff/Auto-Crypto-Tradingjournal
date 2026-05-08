@@ -471,10 +471,12 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
         return None
 
 
-def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=MIN_SCORE):
+def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str,
+              min_score=MIN_SCORE, criteria=None):
     try:
-        shared  = _build_shared_prefix(mkt_str, rulebook_str, min_score)
-        prompt  = _build_prompt(symbol, ctx, conf, direction, "", history, rulebook_str, min_score)
+        cr     = criteria or CRITERIA_DEFAULTS
+        shared = _build_shared_prefix(mkt_str, rulebook_str, min_score, criteria=cr)
+        prompt = _build_prompt(symbol, ctx, conf, direction, "", history, rulebook_str, min_score)
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
             model=MODEL, max_tokens=1200,
@@ -597,7 +599,7 @@ def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
             fs = {
                 ex.submit(
                     _ai_score, sym, ctx, conf, direction,
-                    mkt_str, histories.get(sym, {"trades": 0}), rulebook_str, min_score
+                    mkt_str, histories.get(sym, {"trades": 0}), rulebook_str, min_score, cr
                 ): sym
                 for sym, ctx, conf, direction, _, _ in finalists
             }
