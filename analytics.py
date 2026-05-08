@@ -426,11 +426,10 @@ def get_rr_analysis(conn=None, filters=None):
     """
     if conn is None:
         conn = get_conn()
-    exch_clause = ""
-    params = []
-    if filters and filters.get('exchange') in ('bitget', 'blofin'):
-        exch_clause = "AND COALESCE(p.exchange, 'bitget') = ?"
-        params.append(filters['exchange'])
+    # Use _build_where so symbol/direction/date/exchange filters all apply
+    pos_where, params = _build_where(filters or {})
+    # _build_where creates "WHERE ..." clauses; adapt to fit after the JOIN condition
+    extra = (" AND " + pos_where[6:]) if pos_where else ""  # strip "WHERE " prefix
     rows = _rows(conn, f"""
         SELECT p.id, p.symbol, p.direction,
                p.entry_price   AS actual_entry,
@@ -447,7 +446,7 @@ def get_rr_analysis(conn=None, filters=None):
         JOIN analyzed_calls c ON p.call_id = c.id
         WHERE c.sl_price IS NOT NULL AND c.sl_price > 0
           AND p.entry_price IS NOT NULL AND p.entry_price > 0
-          {exch_clause}
+          {extra}
         ORDER BY p.close_time DESC
         LIMIT 100
     """, params)
