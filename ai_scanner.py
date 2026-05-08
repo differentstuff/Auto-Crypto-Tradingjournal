@@ -91,6 +91,7 @@ _state: dict = {
     "scanned":       0,
     "after_filter":  0,
     "error":         None,
+    "min_score":     MIN_SCORE,
 }
 _state_lock = threading.Lock()
 
@@ -117,8 +118,10 @@ def _fetch_one(symbol: str):
         return symbol, None, None
 
 
-def _stage1(symbols: list) -> list:
-    """Return [(symbol, ctx, conf, direction)] with ≥ 2 signals aligned."""
+def _stage1(symbols: list, min_score: int = MIN_SCORE) -> list:
+    """Return [(symbol, ctx, conf, direction)] with enough aligned signals.
+    For low min_score (≤ 3) only 1 aligned signal is required."""
+    threshold = 1 if min_score <= 3 else 2
     out = []
     with ThreadPoolExecutor(max_workers=8) as ex:
         futures = {ex.submit(_fetch_one, sym): sym for sym in symbols}
@@ -126,21 +129,27 @@ def _stage1(symbols: list) -> list:
             symbol, ctx, conf = f.result()
             if ctx is None or conf is None:
                 continue
-            if conf["bullish"] >= 2:
+            if conf["bullish"] >= threshold:
                 out.append((symbol, ctx, conf, "Long"))
-            elif conf["bearish"] >= 2:
+            elif conf["bearish"] >= threshold:
                 out.append((symbol, ctx, conf, "Short"))
     return out
 
 
 # ── Stage 2: technical quality gate ────────────────────────────────────────────
 
-def _stage2(candidates: list) -> list:
+def _stage2(candidates: list, min_score: int = MIN_SCORE) -> list:
     """
     Technical quality gate — no AI, no network calls.
     Filters to symbols with a genuine structural entry opportunity.
+    Skipped entirely when min_score ≤ 4 (user wants AI to be the sole judge).
     Caps output at 30 to control Claude API cost.
     """
+    if min_score <= 4:
+        out = list(candidates)
+        out.sort(key=lambda x: -x[2].get("score", 0))
+        return out[:30]
+
     out = []
     for symbol, ctx, conf, direction in candidates:
         inds = ctx.get("4H", {}).get("indicators", {})
@@ -201,7 +210,7 @@ def _stage2(candidates: list) -> list:
 
 # ── Stage 3: AI scoring ─────────────────────────────────────────────────────────
 
-def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str):
+def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=MIN_SCORE):
     inds_4h = ctx.get("4H", {}).get("indicators", {})
     ema     = inds_4h.get("ema", {}) or {}
     price   = ema.get("current_price", 0)
@@ -259,7 +268,7 @@ SCORING SCALE:
 9 — Excellent: all 8-criteria + strong ADX, multi-TF alignment, no rulebook conflicts
 10 — Perfect: textbook chart pattern, volume confirmation, ideal entry timing, R:R ≥ 4:1
 
-REQUIREMENTS for any score ≥ 6:
+REQUIREMENTS for any score ≥ {min_score}:
 - A specific entry zone anchored to a named structural level (S/R, EMA, trendline) with exact prices
 - A stop loss beyond the nearest structural level and ≥ 1× ATR from entry — state the level and ATR distance explicitly
 - At least two take-profit levels at significant resistance/support — state exactly what each targets
@@ -271,7 +280,7 @@ RATIONALE DEPTH REQUIRED:
   tp1_rationale: "Previous 4H resistance at $R1, high-volume rejection on [date]. R:R 1:2.3 from midpoint entry."
   tp2_rationale: "Weekly resistance cluster and the 1.618 Fibonacci extension from last major swing. R:R 1:4.1."
 
-If the setup scores below 6 (no valid entry level, SL inside ATR noise, or no logical TP):
+If the setup scores below {min_score} (no valid entry level, SL inside ATR noise, or no logical TP):
 {{"setup_score": 0, "reason": "one sentence why this doesn't qualify"}}
 
 Otherwise respond with this exact structure:
@@ -299,7 +308,7 @@ Otherwise respond with this exact structure:
 Respond with ONLY valid JSON — no markdown, no code fences."""
 
 
-def _build_shared_prefix(mkt_str: str, rulebook_str: str) -> str:
+def _build_shared_prefix(mkt_str: str, rulebook_str: str, min_score: int = MIN_SCORE) -> str:
     """Shared context block — identical for all finalists in a scan, so it caches across parallel calls."""
     mkt_block = f"MARKET CONTEXT:\n{mkt_str}\n\n" if mkt_str else ""
     rb_block  = f"TRADER RULEBOOK:\n{rulebook_str}\n\n" if rulebook_str else ""
@@ -308,15 +317,15 @@ def _build_shared_prefix(mkt_str: str, rulebook_str: str) -> str:
         "SCORING SCALE:\n"
         "6=Moderate, 7=Good(R:R≥2:1), 8=Strong(≥3 signals,R:R≥2.5:1), "
         "9=Excellent(multi-TF+no conflicts), 10=Perfect(textbook+volume+R:R≥4:1)\n"
-        "Score <6 if: no structural entry, SL inside ATR noise, or R:R below 1.5:1."
+        f"Score <{min_score} if: no structural entry, SL inside ATR noise, or R:R below 1.5:1."
     )
 
 
 def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
-                 shared_prefix: str) -> dict | None:
+                 shared_prefix: str, min_score: int = MIN_SCORE) -> dict | None:
     """
     Pass 1 — cheap Haiku call returning only a score (0-10) and confirmed direction.
-    Returns None if score < MIN_SCORE or on any error.
+    Returns None if score < min_score or on any error.
     """
     pt_4h = ctx.get("4H", {}).get("prompt_text", "")
     pt_1d = ctx.get("1D", {}).get("prompt_text", "")
@@ -333,8 +342,8 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
         f"Score this {direction.upper()} setup for {symbol} — return score 0-10.\n\n"
         f"{pt_4h}\n{pt_1d}\n"
         f"Confluence: {conf_line}\nS/R: {sr_compact}\n\n"
-        f'If score < {MIN_SCORE}: {{"score":0}}\n'
-        f'If score >= {MIN_SCORE}: {{"score":7,"direction":"{direction}"}}\n'
+        f'If score < {min_score}: {{"score":0}}\n'
+        f'If score >= {min_score}: {{"score":7,"direction":"{direction}"}}\n'
         "Respond with ONLY valid JSON — no extras."
     )
 
@@ -348,7 +357,7 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
             ]}]
         )
         r = json.loads(strip_fence(msg.content[0].text.strip()))
-        if r.get("score", 0) < MIN_SCORE:
+        if r.get("score", 0) < min_score:
             return None
         return {"score": r["score"], "direction": r.get("direction", direction),
                 "_input_tokens": msg.usage.input_tokens, "_output_tokens": msg.usage.output_tokens}
@@ -356,18 +365,17 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
         return None
 
 
-def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str):
+def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=MIN_SCORE):
     try:
-        # Split prompt into cacheable shared prefix + variable symbol part
-        shared = _build_shared_prefix(mkt_str, rulebook_str)
-        prompt  = _build_prompt(symbol, ctx, conf, direction, "", history, rulebook_str)
+        shared  = _build_shared_prefix(mkt_str, rulebook_str, min_score)
+        prompt  = _build_prompt(symbol, ctx, conf, direction, "", history, rulebook_str, min_score)
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
             model=MODEL, max_tokens=1200,
             messages=build_cached_messages(shared, prompt),
         )
         result = json.loads(strip_fence(message.content[0].text.strip()))
-        if result.get("setup_score", 0) < MIN_SCORE:
+        if result.get("setup_score", 0) < min_score:
             return None
         result["_symbol"]        = symbol
         result["_input_tokens"]  = message.usage.input_tokens
@@ -397,16 +405,17 @@ def _symbol_history(symbol: str, conn) -> dict:
 
 # ── Background scan thread ─────────────────────────────────────────────────────
 
-def _scan_thread(symbols: list):
+def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
     t0 = time.time()
-    _update(status="running", started_at=t0, error=None, setups=[], scanned=0, after_filter=0)
+    _update(status="running", started_at=t0, error=None, setups=[], scanned=0, after_filter=0,
+            min_score=min_score)
 
     try:
         # Stage 1 — confluence filter
-        candidates = _stage1(symbols)
+        candidates = _stage1(symbols, min_score)
 
         # Stage 2 — technical quality gate
-        finalists = _stage2(candidates)
+        finalists = _stage2(candidates, min_score)
         _update(scanned=len(symbols), after_filter=len(finalists))
 
         if not finalists:
@@ -429,11 +438,11 @@ def _scan_thread(symbols: list):
 
         # Stage 3a — Quick score all finalists with Haiku (cheap pass)
         # Shared prefix is identical for all → prompt cache hits after first call
-        shared_prefix = _build_shared_prefix(mkt_str, rulebook_str)
+        shared_prefix = _build_shared_prefix(mkt_str, rulebook_str, min_score)
         quick_results = []
         with ThreadPoolExecutor(max_workers=10) as ex:
             fq = {
-                ex.submit(_quick_score, sym, ctx, conf, dir_, shared_prefix): (sym, ctx, conf, dir_)
+                ex.submit(_quick_score, sym, ctx, conf, dir_, shared_prefix, min_score): (sym, ctx, conf, dir_)
                 for sym, ctx, conf, dir_ in finalists
             }
             for f in as_completed(fq):
@@ -452,7 +461,7 @@ def _scan_thread(symbols: list):
             fs = {
                 ex.submit(
                     _ai_score, sym, ctx, conf, direction,
-                    mkt_str, histories.get(sym, {"trades": 0}), rulebook_str
+                    mkt_str, histories.get(sym, {"trades": 0}), rulebook_str, min_score
                 ): sym
                 for sym, ctx, conf, direction, _ in top_finalists
             }
@@ -472,30 +481,31 @@ def _scan_thread(symbols: list):
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def start_scan(symbols: list = None) -> bool:
+def start_scan(symbols: list = None, min_score: int = MIN_SCORE) -> bool:
     """
-    Start a background scan. Returns False if one is already running
-    or if results are still fresh (< CACHE_TTL seconds old).
+    Start a background scan. Returns False if already running or results are still
+    fresh (< CACHE_TTL seconds old) AND the min_score hasn't changed.
     """
     with _state_lock:
         if _state["status"] == "running":
             return False
         completed_at = _state.get("completed_at")
-        if completed_at and (time.time() - completed_at) < CACHE_TTL:
-            return False  # still fresh
+        score_unchanged = _state.get("min_score", MIN_SCORE) == min_score
+        if completed_at and (time.time() - completed_at) < CACHE_TTL and score_unchanged:
+            return False  # still fresh with same threshold
 
     syms = symbols or DEFAULT_WATCHLIST
-    t = threading.Thread(target=_scan_thread, args=(syms,), daemon=True)
+    t = threading.Thread(target=_scan_thread, args=(syms, min_score), daemon=True)
     t.start()
     return True
 
 
-def force_scan(symbols: list = None) -> bool:
+def force_scan(symbols: list = None, min_score: int = MIN_SCORE) -> bool:
     """Start a scan regardless of cache TTL. Returns False if already running."""
     with _state_lock:
         if _state["status"] == "running":
             return False
     syms = symbols or DEFAULT_WATCHLIST
-    t = threading.Thread(target=_scan_thread, args=(syms,), daemon=True)
+    t = threading.Thread(target=_scan_thread, args=(syms, min_score), daemon=True)
     t.start()
     return True

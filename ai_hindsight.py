@@ -38,8 +38,8 @@ import chart_context
 import ai_rulebook
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-haiku-4-5-20251001"   # Haiku sufficient for retroactive scoring
-ENTER_THRESHOLD = 7   # score ≥ this = ENTER recommendation
+MODEL = "claude-haiku-4-5-20251001"
+ENTER_THRESHOLD = 5   # score ≥ 5 = ENTER; score 5 = NEUTRAL borderline; score < 5 = SKIP
 
 # ── Batch scan state ───────────────────────────────────────────────────────────
 
@@ -145,9 +145,18 @@ TRADER'S HISTORY ON {sym} BEFORE THIS TRADE:
 {rb_block}
 NOTE: Historical funding rates / Fear & Greed are unavailable — base your score on technicals only.
 
+SCORE CALIBRATION:
+- 1-3: Very poor — counter-trend, broken structure, no confluence
+- 4: Weak — limited signals, marginal at best
+- 5: Neutral/borderline — mixed signals, could go either way
+- 6-7: Decent — 2-3 factors aligned, valid setup with manageable risk
+- 8-9: Strong — multiple confluent signals, clear structure, good R:R
+- 10: Near-perfect — all factors aligned, optimal entry
+Use the full range. Most setups should land 4-7. If basic confluence exists (price near support, momentum not overextended), score at least 5-6.
+
 YOUR TASK:
 1. Score this setup 1-10 as if you were seeing it live at entry time
-2. State ENTER or SKIP (use score ≥ 7 as ENTER threshold)
+2. State ENTER or SKIP (use score ≥ 6 as ENTER threshold; score 5 is borderline neutral)
 3. State which direction you would recommend (may differ from what trader did)
 4. If ENTER: provide your recommended entry zone, stop loss, TP1, TP2
 5. If SKIP: one sentence explaining why
@@ -220,18 +229,18 @@ def _compute_comparison(result: dict, trade: dict) -> dict:
 
     # hypothetical P&L
     if score < 5:
-        hyp_pnl = 0.0
-    elif score <= 6:
-        hyp_pnl = actual_pnl        # neutral, no filter
+        hyp_pnl = 0.0               # clear SKIP
+    elif score == 5:
+        hyp_pnl = actual_pnl        # borderline neutral — include as-is
     elif would_enter and direction_match:
         hyp_pnl = actual_pnl        # entered same trade
     elif would_enter and not direction_match:
-        hyp_pnl = 0.0               # conflict, skip
+        hyp_pnl = 0.0               # direction conflict, skip
     else:
         hyp_pnl = 0.0               # SKIP
 
-    # verdict
-    if score <= 6:
+    # verdict — score 5 is borderline NEUTRAL; ≥6 and <5 generate real signals
+    if score == 5:
         verdict = "NEUTRAL"
     elif would_enter and direction_match and actual_pnl > 0:
         verdict = "TP"

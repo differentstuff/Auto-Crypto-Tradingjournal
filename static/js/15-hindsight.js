@@ -117,7 +117,7 @@ function renderHindsightSummary(s, n) {
 
       <!-- Recommended column -->
       <div class="hc-col">
-        <div class="hc-col-header">Following Recommendations (score ≥ 7)</div>
+        <div class="hc-col-header">Following Recommendations (score ≥ 6)</div>
         <div class="hc-kpi">${s.hyp_trades_taken}<div class="hc-kpi-lbl">entered</div></div>
         <div class="hc-kpi ${s.hyp_win_rate >= 55 ? 'pos' : s.hyp_win_rate >= 45 ? 'neu' : 'neg'}">
           ${s.hyp_win_rate}%<div class="hc-kpi-lbl">win rate</div></div>

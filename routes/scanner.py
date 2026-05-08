@@ -18,13 +18,15 @@ bp = Blueprint("scanner", __name__)
 @bp.route("/api/scanner/run", methods=["POST"])
 def api_scanner_run():
     try:
-        force = request.args.get("force") == "1" or (request.get_json(silent=True) or {}).get("force")
-        symbols = (request.get_json(silent=True) or {}).get("symbols")
+        body      = request.get_json(silent=True) or {}
+        force     = request.args.get("force") == "1" or body.get("force")
+        symbols   = body.get("symbols")
+        min_score = max(1, min(10, int(body.get("min_score", 6))))
 
         if force:
-            started = ai_scanner.force_scan(symbols)
+            started = ai_scanner.force_scan(symbols, min_score)
         else:
-            started = ai_scanner.start_scan(symbols)
+            started = ai_scanner.start_scan(symbols, min_score)
 
         state = ai_scanner.get_state()
         if not started and state["status"] == "running":

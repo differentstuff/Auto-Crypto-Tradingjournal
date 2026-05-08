@@ -18,8 +18,8 @@ async function loadScanner() {
 async function startScan(force) {
   const btn = document.getElementById('btn-scan');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
-  const url = '/api/scanner/run' + (force ? '?force=1' : '');
-  const res = await api(url, 'POST');
+  const minScore = parseInt(document.getElementById('scan-min-score')?.value || '6');
+  const res = await api('/api/scanner/run', 'POST', { force: !!force, min_score: minScore });
   if (!res.ok) {
     if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan Now'; }
     return;
@@ -63,16 +63,28 @@ function renderScannerMeta(state) {
     const dur = state.duration_sec ? ` in ${state.duration_sec}s` : '';
     const n   = (state.setups||[]).length;
     const col = n ? 'var(--accent3)' : 'var(--muted)';
+    const filt = state.after_filter > 0 ? ` · ${state.after_filter} to AI` : '';
     statusHtml = `<span style="color:var(--muted)">Last scan ${ago<1?'just now':ago+'m ago'}${dur} · `
-      + `${state.scanned||0} symbols · <strong style="color:${col}">${n} setup${n!==1?'s':''} found</strong></span>`;
+      + `${state.scanned||0} symbols${filt} · <strong style="color:${col}">${n} setup${n!==1?'s':''} found</strong></span>`;
   } else if (state.status === 'error') {
     statusHtml = `<span style="color:var(--red)">Error: ${state.error||'unknown'}</span>`;
   } else {
     statusHtml = `<span style="color:var(--muted)">No scan run yet.</span>`;
   }
 
+  const activeMins = state.min_score ?? 6;
+  const scoreOpts = [1,2,3,4,5,6,7,8,9].map(n =>
+    `<option value="${n}" ${n === activeMins ? 'selected' : ''}>${n}+</option>`
+  ).join('');
+
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px">
+        <label style="font-size:.78rem;color:var(--muted);white-space:nowrap">Min score</label>
+        <select id="scan-min-score" style="padding:5px 8px;font-size:.82rem;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" ${running?'disabled':''}>
+          ${scoreOpts}
+        </select>
+      </div>
       <button class="btn btn-primary" id="btn-scan" onclick="startScan(false)" ${running?'disabled':''}>
         ${running ? '⏳ Scanning…' : '🔍 Scan Now'}
       </button>
@@ -80,7 +92,7 @@ function renderScannerMeta(state) {
       <span style="font-size:.82rem">${statusHtml}</span>
     </div>
     <div style="font-size:.78rem;color:var(--muted);margin-top:6px">
-      ${window._scannerWatchlistCount||40} symbols · scores 6-10 · results cached 30 min · click a row for entry/SL/TP details
+      ${window._scannerWatchlistCount||100} symbols · scores ${activeMins}–10 · results cached 30 min · click a row for details
     </div>`;
 }
 
@@ -92,7 +104,7 @@ function renderScannerResults(state) {
     el.innerHTML = `<div class="no-positions"><div class="icon">🔍</div>
       <div style="font-weight:600;margin-bottom:6px">Ready to scan</div>
       <div style="color:var(--muted);font-size:.85rem">
-        Scans ${window._scannerWatchlistCount||40} symbols and scores setups 6-10/10.<br>
+        Scans ${window._scannerWatchlistCount||100} symbols and scores setups matching your selected minimum.<br>
         Click a result row to see entry zone, stop loss, and take-profit with full rationale.
       </div></div>`;
     return;
@@ -119,7 +131,7 @@ function renderScannerResults(state) {
   if (!_scanSetups.length) {
     el.innerHTML = `<div class="no-positions">
       <div class="icon">😴</div>
-      <div style="font-weight:600;margin-bottom:6px">No setups found (6+/10)</div>
+      <div style="font-weight:600;margin-bottom:6px">No setups found at selected threshold</div>
       <div style="color:var(--muted);font-size:.85rem">
         No symbols passed all three stages right now.<br>
         Market may be choppy or overextended — try again after a key level test.
@@ -129,7 +141,7 @@ function renderScannerResults(state) {
 
   el.innerHTML = `
     <div style="font-size:.8rem;color:var(--muted);margin-bottom:12px">
-      ${_scanSetups.length} setup${_scanSetups.length!==1?'s':''} · sorted by score · click a row for details
+      ${_scanSetups.length} setup${_scanSetups.length!==1?'s':''} · min score ${_scanLastState?.min_score??6}/10 · sorted by score · click a row for details
     </div>
     ${buildScannerTable(_scanSetups)}`;
 }
