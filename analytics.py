@@ -145,12 +145,14 @@ def get_dashboard_kpis(filters=None, conn=None):
         LIMIT 10
     """, params)
 
-    # current calendar month PnL (always UTC, no filter applied)
+    # current calendar month PnL — respects exchange filter
     from datetime import datetime as _dt
-    month_start = _dt.utcnow().strftime('%Y-%m-01')
+    month_start  = _dt.utcnow().strftime('%Y-%m-01')
+    mo_where, mo_params = _build_where({**filters, "date_from": month_start})
+    # _build_where turns date_from into close_time >= ?, so we get the exchange clause too
     current_month_pnl = round(_val(conn,
-        "SELECT SUM(realized_pnl) FROM positions WHERE close_time >= ?",
-        [month_start]
+        f"SELECT SUM(realized_pnl) FROM positions {mo_where}",
+        mo_params
     ), 4)
 
     # wallet balance curve (sample every 50th row to keep payload small)
