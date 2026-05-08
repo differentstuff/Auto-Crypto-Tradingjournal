@@ -80,6 +80,22 @@ async function drawExplorerChart() {
     wickUpColor: '#26d96b', wickDownColor: '#ef5350',
   });
   cs.setData(candles);
+  cs.priceScale().applyOptions({ scaleMargins: { top: 0.04, bottom: 0.22 } });
+
+  // Volume histogram — bottom 20% of chart
+  const volS = _explorerChart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'vol',
+  });
+  _explorerChart.priceScale('vol').applyOptions({
+    scaleMargins: { top: 0.82, bottom: 0 },
+    visible: false,
+  });
+  volS.setData(candles.map(c => ({
+    time:  c.time,
+    value: c.volume,
+    color: c.close >= c.open ? 'rgba(38,217,107,0.30)' : 'rgba(239,83,80,0.30)',
+  })));
 
   // Axis labels for S/R (ghost line — just for right-axis price label)
   (levels || []).forEach(lvl => {
