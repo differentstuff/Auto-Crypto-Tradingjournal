@@ -100,6 +100,43 @@ def get_calibration_for_prompt(conn=None) -> str:
                 f"  Score {r['tier']}: {r['n']} analyzed, {entry_rate:.0f}% entered — "
                 f"TP1 {r['tp1_rate']}%, SL {r['sl_rate']}%, avg P&L {r['avg_pnl']} USDT{verdict}"
             )
+
+        # Append hindsight signal accuracy if data exists
+        try:
+            h_rows = conn.execute("""
+                SELECT
+                    CASE
+                        WHEN setup_score >= 8 THEN 'high (8-10)'
+                        WHEN setup_score >= 6 THEN 'good (6-7)'
+                        WHEN setup_score >= 4 THEN 'moderate (4-5)'
+                        ELSE 'weak (1-3)'
+                    END AS tier,
+                    MIN(setup_score) AS min_score,
+                    COUNT(*) AS n,
+                    SUM(CASE WHEN verdict='TP' THEN 1 ELSE 0 END) AS tp,
+                    SUM(CASE WHEN verdict='FP' THEN 1 ELSE 0 END) AS fp,
+                    SUM(CASE WHEN verdict='TN' THEN 1 ELSE 0 END) AS tn,
+                    SUM(CASE WHEN verdict='FN' THEN 1 ELSE 0 END) AS fn
+                FROM trade_hindsight
+                WHERE verdict IS NOT NULL AND verdict != 'NEUTRAL'
+                GROUP BY tier
+                ORDER BY min_score DESC
+            """).fetchall()
+            if h_rows:
+                lines.append("\nHINDSIGHT SIGNAL ACCURACY (retroactive blind scoring of past trades):")
+                for hr in h_rows:
+                    hr = dict(hr)
+                    sig_total = hr["tp"] + hr["fp"] + hr["tn"] + hr["fn"]
+                    accuracy  = round((hr["tp"] + hr["tn"]) / sig_total * 100, 1) if sig_total else None
+                    acc_txt   = f"{accuracy}%" if accuracy is not None else "n/a"
+                    lines.append(
+                        f"  Score {hr['tier']}: {hr['n']} trades — "
+                        f"TP {hr['tp']} / FP {hr['fp']} / TN {hr['tn']} / FN {hr['fn']} — "
+                        f"accuracy {acc_txt}"
+                    )
+        except Exception:
+            pass  # trade_hindsight table may not exist on older installs
+
         return "\n".join(lines)
     finally:
         if own_conn:
