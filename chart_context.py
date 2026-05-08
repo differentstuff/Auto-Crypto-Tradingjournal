@@ -559,6 +559,72 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
     return (f"{symbol} {timeframe}: " + " | ".join(parts)) if parts else ""
 
 
+# ── Fibonacci retracement detection ───────────────────────────────────────────
+
+FIB_LEVELS = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+FIB_LABELS = {0.0: "0%", 0.236: "23.6%", 0.382: "38.2%",
+              0.5: "50%", 0.618: "61.8%", 0.786: "78.6%", 1.0: "100%"}
+
+
+def detect_fibonacci(df: pd.DataFrame, n_swing: int = 10) -> dict | None:
+    """
+    Auto-detect the most recent significant swing high and low, then compute
+    standard Fibonacci retracement levels between them.
+
+    Uses n_swing candles on each side to qualify a pivot.
+    Returns {swing_high, swing_low, direction, levels: [{ratio, price, label}]}
+    or None if insufficient data.
+    """
+    if df is None or len(df) < n_swing * 2 + 3:
+        return None
+
+    highs = df["high"].values.astype(float)
+    lows  = df["low"].values.astype(float)
+    n     = len(df)
+
+    # Find pivot highs and lows (most recent qualifying pivot)
+    pivot_highs = [i for i in range(n_swing, n - n_swing)
+                   if highs[i] == highs[i - n_swing:i + n_swing + 1].max()]
+    pivot_lows  = [i for i in range(n_swing, n - n_swing)
+                   if lows[i]  == lows[i  - n_swing:i + n_swing + 1].min()]
+
+    if not pivot_highs or not pivot_lows:
+        return None
+
+    last_high_idx = pivot_highs[-1]
+    last_low_idx  = pivot_lows[-1]
+    swing_high    = highs[last_high_idx]
+    swing_low     = lows[last_low_idx]
+
+    if swing_high <= swing_low:
+        return None
+
+    # Direction: if high is more recent → price fell → retracement is upward (bullish fib)
+    # If low is more recent → price rose → retracement is downward (bearish fib)
+    direction = "up" if last_low_idx > last_high_idx else "down"
+
+    levels = []
+    for ratio in FIB_LEVELS:
+        if direction == "up":
+            # Measuring from low to high: 0% = low, 100% = high
+            price = swing_low + ratio * (swing_high - swing_low)
+        else:
+            # Measuring from high to low: 0% = high, 100% = low
+            price = swing_high - ratio * (swing_high - swing_low)
+        levels.append({
+            "ratio": ratio,
+            "price": round(float(price), 8),
+            "label": FIB_LABELS[ratio],
+        })
+
+    return {
+        "swing_high": round(float(swing_high), 8),
+        "swing_low":  round(float(swing_low),  8),
+        "direction":  direction,
+        "levels":     levels,
+    }
+
+
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def get_candles_at_time(symbol: str, timeframe: str, end_time_ms: int,
@@ -787,6 +853,7 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
 
     levels     = detect_support_resistance(df)
     trendlines = detect_all_trendlines(symbol)  # 1W+1D+4H+1H, extended to now
+    fibonacci  = detect_fibonacci(df)
 
     # Weekly S/R — always fetch so major zones show on intraday charts
     htf_levels = []
@@ -817,6 +884,7 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
         "levels":        levels,
         "htf_levels":    htf_levels,
         "trendlines":    trendlines,
+        "fibonacci":     fibonacci,
         "symbol":        symbol,
         "timeframe":     timeframe,
         "current_price": round(float(df["close"].iloc[-1]), 8),

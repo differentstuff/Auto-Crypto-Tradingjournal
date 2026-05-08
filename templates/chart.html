@@ -172,7 +172,7 @@ async function loadChart() {
 
   if (!json.ok) { document.getElementById('status').textContent = 'Error: ' + json.error; return; }
 
-  const { candles, levels, htf_levels, trendlines, current_price } = json.data;
+  const { candles, levels, htf_levels, trendlines, fibonacci, current_price } = json.data;
   if (!candles || !candles.length) {
     document.getElementById('status').textContent = 'No candle data for ' + symbol;
     return;
@@ -283,6 +283,18 @@ async function loadChart() {
   });
 
   _chart.timeScale().fitContent();
+
+  // Fibonacci retracement levels — dashed purple lines with ratio labels
+  if (fibonacci && fibonacci.levels) {
+    fibonacci.levels.forEach(fib => {
+      series.createPriceLine({
+        price: fib.price, lineWidth: 1, lineStyle: 1,
+        color: 'rgba(180,130,255,0.55)',
+        axisLabelVisible: true,
+        title: `Fib ${fib.label}`,
+      });
+    });
+  }
 
   // Weekly S/R axis labels
   (htf_levels || []).forEach(lvl => {

@@ -48,7 +48,7 @@ async function drawExplorerChart() {
   // Fetch candles + S/R + trendlines
   const res = await api(`/api/chart/candles?symbol=${sym}&timeframe=${_explorerTf}&limit=200`);
   if (!res.ok) { status.textContent = 'Error: ' + (res.error || 'failed'); return; }
-  const { candles, levels, htf_levels, trendlines, current_price } = res.data;
+  const { candles, levels, htf_levels, trendlines, fibonacci, current_price } = res.data;
   if (!candles || !candles.length) { status.textContent = 'No data for ' + sym; return; }
 
   status.style.display = 'none';
@@ -140,6 +140,18 @@ async function drawExplorerChart() {
       title: `${liq.label} LIQ`,
     });
   });
+
+  // Fibonacci levels
+  if (fibonacci && fibonacci.levels) {
+    fibonacci.levels.forEach(fib => {
+      cs.createPriceLine({
+        price: fib.price, lineWidth: 1, lineStyle: 1,
+        color: 'rgba(180,130,255,0.55)',
+        axisLabelVisible: true,
+        title: `Fib ${fib.label}`,
+      });
+    });
+  }
 
   // Weekly S/R axis labels
   (htf_levels || []).forEach(lvl => {
