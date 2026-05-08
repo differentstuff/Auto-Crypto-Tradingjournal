@@ -36,7 +36,7 @@ def _prune_stats(deep: dict) -> dict:
     if "by_symbol" in out and isinstance(out["by_symbol"], list):
         out["by_symbol"] = sorted(out["by_symbol"], key=lambda x: -x.get("trade_count", 0))[:10]
     if "by_hour" in out and isinstance(out["by_hour"], list):
-        filtered = [h for h in out["by_hour"] if h.get("n", 0) >= 3]
+        filtered = [h for h in out["by_hour"] if h.get("trade_count", 0) >= 3]
         out["by_hour"] = sorted(filtered, key=lambda x: -abs(x.get("win_rate", 50) - 50))[:8]
     return out
 
