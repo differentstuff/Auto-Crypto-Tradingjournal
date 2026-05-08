@@ -63,7 +63,7 @@ document.title  = symbol + ' — Chart';
 document.getElementById('chart-title').textContent = symbol;
 
 // ── Canvas overlay: S/R boxes + liquidation dashed lines ──────────────────────
-function _startOverlay(wrap, series, levels, liquidations) {
+function _startOverlay(wrap, series, levels, htf_levels, liquidations) {
   // Remove any previous overlay canvas
   const old = wrap.querySelector('.sr-canvas');
   if (old) old.remove();
@@ -84,6 +84,19 @@ function _startOverlay(wrap, series, levels, liquidations) {
 
     // Price scale is ~65px wide on the right — leave it uncovered
     const chartW = w - 65;
+
+    // ── Weekly S/R zones (gold/amber, heavier) ────────────────────────────────
+    (htf_levels || []).forEach(lvl => {
+      const hw = lvl.price * 0.004;
+      const yT = series.priceToCoordinate(lvl.price + hw);
+      const yB = series.priceToCoordinate(lvl.price - hw);
+      if (yT === null || yB === null) return;
+      const a = Math.min(0.10 + (lvl.touches - 1) * 0.04, 0.45).toFixed(3);
+      ctx.fillStyle = `rgba(255,193,60,${a})`;
+      const top = Math.min(yT, yB);
+      const ht  = Math.max(Math.abs(yB - yT), 4);
+      ctx.fillRect(0, top, chartW, ht);
+    });
 
     // ── S/R grey boxes (darker = more touches) ────────────────────────────────
     (levels || []).forEach(lvl => {
@@ -159,7 +172,7 @@ async function loadChart() {
 
   if (!json.ok) { document.getElementById('status').textContent = 'Error: ' + json.error; return; }
 
-  const { candles, levels, trendlines, current_price } = json.data;
+  const { candles, levels, htf_levels, trendlines, current_price } = json.data;
   if (!candles || !candles.length) {
     document.getElementById('status').textContent = 'No candle data for ' + symbol;
     return;
@@ -271,8 +284,19 @@ async function loadChart() {
 
   _chart.timeScale().fitContent();
 
+  // Weekly S/R axis labels
+  (htf_levels || []).forEach(lvl => {
+    const isS = lvl.type === 'support';
+    series.createPriceLine({
+      price: lvl.price, lineWidth: 1, lineStyle: 0,
+      color: 'rgba(255,193,60,0.3)',
+      axisLabelVisible: true,
+      title: `1W ${isS ? 'S' : 'R'} ${lvl.touches}×`,
+    });
+  });
+
   // Start canvas overlay (S/R boxes + liquidation lines)
-  _startOverlay(wrap, series, levels, _liquidations);
+  _startOverlay(wrap, series, levels, htf_levels, _liquidations);
 
   // ── Legend ──────────────────────────────────────────────────────────────────
   const leg   = document.getElementById('sr-legend');
@@ -328,6 +352,18 @@ async function loadChart() {
       border:1px solid ${isUp?'rgba(38,217,107,.18)':'rgba(239,83,80,.18)'}"
       title="${tl.anchor1} → ${tl.anchor2}">
       ${tf}${isUp?'↗ Up':'↘ Down'} TL (${tl.touches}×)
+    </span>`);
+  });
+
+  (htf_levels || []).forEach(lvl => {
+    const isS  = lvl.type === 'support';
+    const dist = current_price ? ((lvl.price-current_price)/current_price*100).toFixed(1) : null;
+    const dtxt = dist !== null ? ` · ${dist>0?'+':''}${dist}%` : '';
+    chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+      background:rgba(255,193,60,0.10);color:rgba(255,193,60,0.95);
+      border:1px solid rgba(255,193,60,0.25)"
+      title="Weekly timeframe structural level">
+      1W ${isS?'▲ S':'▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
     </span>`);
   });
 

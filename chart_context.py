@@ -778,13 +778,27 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
     """
     Return OHLCV candles + S/R levels formatted for the frontend chart modal.
     Candle timestamps are in seconds (as required by LightweightCharts).
+    Also returns htf_levels: weekly S/R so major structural zones are always
+    visible even when viewing intraday timeframes.
     """
     df = get_candles(symbol, timeframe, limit=limit)
     if df is None or df.empty:
-        return {"candles": [], "levels": [], "symbol": symbol, "timeframe": timeframe}
+        return {"candles": [], "levels": [], "htf_levels": [], "symbol": symbol, "timeframe": timeframe}
 
     levels     = detect_support_resistance(df)
     trendlines = detect_all_trendlines(symbol)  # 1W+1D+4H+1H, extended to now
+
+    # Weekly S/R — always fetch so major zones show on intraday charts
+    htf_levels = []
+    if timeframe not in ("1W", "3D"):
+        df_weekly = get_candles(symbol, "1W", limit=100)
+        if df_weekly is not None and not df_weekly.empty:
+            htf_raw = detect_support_resistance(df_weekly, max_levels=6)
+            # Tag as htf and deduplicate against current-TF levels (within 0.6%)
+            cur_prices = {l["price"] for l in levels}
+            for lvl in htf_raw:
+                if not any(abs(lvl["price"] - p) / max(p, 1e-9) < 0.006 for p in cur_prices):
+                    htf_levels.append({**lvl, "htf": True, "timeframe": "1W"})
 
     candles = [
         {
@@ -801,6 +815,7 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
     return {
         "candles":       candles,
         "levels":        levels,
+        "htf_levels":    htf_levels,
         "trendlines":    trendlines,
         "symbol":        symbol,
         "timeframe":     timeframe,

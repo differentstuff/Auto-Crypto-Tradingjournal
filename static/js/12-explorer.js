@@ -48,7 +48,7 @@ async function drawExplorerChart() {
   // Fetch candles + S/R + trendlines
   const res = await api(`/api/chart/candles?symbol=${sym}&timeframe=${_explorerTf}&limit=200`);
   if (!res.ok) { status.textContent = 'Error: ' + (res.error || 'failed'); return; }
-  const { candles, levels, trendlines, current_price } = res.data;
+  const { candles, levels, htf_levels, trendlines, current_price } = res.data;
   if (!candles || !candles.length) { status.textContent = 'No data for ' + sym; return; }
 
   status.style.display = 'none';
@@ -141,8 +141,18 @@ async function drawExplorerChart() {
     });
   });
 
+  // Weekly S/R axis labels
+  (htf_levels || []).forEach(lvl => {
+    const isS = lvl.type === 'support';
+    cs.createPriceLine({
+      price: lvl.price, lineWidth: 1, lineStyle: 0,
+      color: 'rgba(255,193,60,0.3)', axisLabelVisible: true,
+      title: `1W ${isS ? 'S' : 'R'} ${lvl.touches}×`,
+    });
+  });
+
   // Start canvas overlay (S/R grey boxes + liquidation dashed lines)
-  _startSrOverlay(wrap, cs, levels, liqs);
+  _startSrOverlay(wrap, cs, levels, liqs, htf_levels);
 
   // Legend chips
   const chips = [];
@@ -161,6 +171,16 @@ async function drawExplorerChart() {
       color:${isUp ? 'var(--accent3)' : 'var(--red)'};
       border:1px solid ${isUp ? 'rgba(38,217,107,.18)' : 'rgba(239,83,80,.18)'}">
       ${tf}${isUp ? '↗ Up' : '↘ Down'} TL (${tl.touches}×)
+    </span>`);
+  });
+  (htf_levels || []).forEach(lvl => {
+    const isS  = lvl.type === 'support';
+    const dist = current_price ? ((lvl.price - current_price) / current_price * 100).toFixed(1) : null;
+    const dtxt = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
+    chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
+      background:rgba(255,193,60,.10);color:rgba(255,193,60,.95);
+      border:1px solid rgba(255,193,60,.25)" title="Weekly timeframe structural level">
+      1W ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
     </span>`);
   });
   [...(levels || [])].reverse().forEach(lvl => {

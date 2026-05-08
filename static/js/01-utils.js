@@ -34,7 +34,7 @@ function openChart(symbol, tf = '4H') {
 
 // ── Canvas overlay: S/R grey boxes + liquidation dashed lines ────────────────
 // Shared by Chart Explorer (inline) and any future inline charts.
-function _startSrOverlay(wrap, series, levels, liquidations) {
+function _startSrOverlay(wrap, series, levels, liquidations, htf_levels) {
   const old = wrap.querySelector('.sr-canvas');
   if (old) old.remove();
 
@@ -50,6 +50,18 @@ function _startSrOverlay(wrap, series, levels, liquidations) {
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, w, h);
     const cw = w - 65; // leave price-axis column uncovered
+
+    // Weekly S/R — gold/amber, drawn first (behind current-TF levels)
+    (htf_levels || []).forEach(lvl => {
+      const hw = lvl.price * 0.004;
+      const yT = series.priceToCoordinate(lvl.price + hw);
+      const yB = series.priceToCoordinate(lvl.price - hw);
+      if (yT === null || yB === null) return;
+      const a = Math.min(0.10 + (lvl.touches - 1) * 0.04, 0.45).toFixed(3);
+      ctx.fillStyle = `rgba(255,193,60,${a})`;
+      const top = Math.min(yT, yB);
+      ctx.fillRect(0, top, cw, Math.max(Math.abs(yB - yT), 4));
+    });
 
     (levels || []).forEach(lvl => {
       const hw = lvl.price * 0.003;
