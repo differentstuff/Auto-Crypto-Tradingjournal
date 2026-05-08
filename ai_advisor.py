@@ -41,7 +41,8 @@ def _prune_stats(deep: dict) -> dict:
     return out
 
 
-def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "") -> str:
+def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "",
+                  filters: dict = None) -> str:
     """Serialize the key stats into a structured prompt for Claude."""
 
     pruned = _prune_stats(deep)
@@ -104,7 +105,7 @@ def analyze(filters: dict = None) -> dict:
 
     ctx     = market_context.get_market_context(["BTCUSDT"])
     mkt_str = market_context.format_for_prompt(ctx)
-    prompt  = _build_prompt(kpis, deep, mkt_str)
+    prompt  = _build_prompt(kpis, deep, mkt_str, filters=filters)
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
