@@ -9,7 +9,7 @@ A self-hosted crypto futures trading journal with live Bitget API sync, AI-power
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.5">🚀 Release v2.5</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.5.1">🚀 Release v2.5.1</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
 </p>
@@ -223,6 +223,16 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.5.1 — Security Fix: CWE-209 Stack-Trace Exposure
+
+Resolves two open CodeQL alerts (`py/stack-trace-exposure`, severity: error):
+
+- **`routes/settings.py`** — two routes passed raw `str(exception)` into HTTP responses via `_err()`, potentially leaking internal error details, file paths, or stack frames to the client. Replaced with safe pre-approved literals; exception details logged server-side only.
+- **`blofin_sync.py`** — `_sync_status["last_error"] = str(e)` stored raw exception messages in a dict returned to the client via `_ok()`. Replaced with `"Sync error — check server logs"`; real exception printed to server log only.
+- **`helpers._err()`** — hardened with an explicit CWE-209 contract: 5xx always returns `"Internal server error"`; 4xx messages capped at 200 chars; callers must use pre-approved literals.
+
+---
 
 ### v2.5 — Multi-Exchange Support: Bitget + Blofin
 
