@@ -71,6 +71,7 @@ def _calc_sizing(account_equity: float, entry: float, sl: float,
     result = {
         "account_equity":      round(account_equity, 2),
         "risk_pct":            risk_pct,
+        "risk_note":           "2% total across both legs (1% per entry)" if has_dca else "1% of account equity",
         "risk_amount_usdt":    risk_amt,
         "entry_price":         entry,
         "sl_price":            sl,
@@ -193,12 +194,22 @@ def analyze_call(call_text: str, account_equity: float,
     text_lower = call_text.lower()
     setup_type = None  # resolved by Claude; None avoids NameError on similar-trades lookup
 
-    sym_match = re.search(r'\$([A-Z]{2,10})', call_text)
-    symbol    = (sym_match.group(1) + "USDT") if sym_match else "UNKNOWN"
+    # Priority: $SYMBOL / #SYMBOL → explicit XXXUSDT → bare 3-6 uppercase ticker
+    _NON_TICKERS = {"SL", "TP", "DCA", "USD", "ATR", "RSI", "ALL", "BUY", "ASK", "BID"}
+    sym_match = (
+        re.search(r'[\$#]([A-Z]{2,10})', call_text)
+        or re.search(r'\b([A-Z]{2,10})USDT\b', call_text)
+    )
+    if not sym_match:
+        for m in re.finditer(r'\b([A-Z]{3,6})\b', call_text):
+            if m.group(1) not in _NON_TICKERS:
+                sym_match = m
+                break
+    symbol = (sym_match.group(1) + "USDT") if sym_match else "UNKNOWN"
     if symbol.endswith("USDTUSDT"):
         symbol = symbol[:-4]
 
-    direction = "Long"  if "long"  in text_lower else "Short"
+    direction = "Short" if any(w in text_lower for w in ("short", "sell", "bearish")) else "Long"
     has_dca   = "dca"   in text_lower
 
     def _extract_price(keywords, text):

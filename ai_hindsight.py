@@ -39,7 +39,7 @@ import ai_rulebook
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = "claude-haiku-4-5-20251001"
-ENTER_THRESHOLD = 5   # score ≥ 5 = ENTER; score 5 = NEUTRAL borderline; score < 5 = SKIP
+ENTER_THRESHOLD = 6   # score ≥ 6 = ENTER; score 5 = NEUTRAL borderline; score < 5 = SKIP
 
 # ── Batch scan state ───────────────────────────────────────────────────────────
 
@@ -208,24 +208,26 @@ def _compute_comparison(result: dict, trade: dict) -> dict:
     Compute hypothetical P&L and signal verdict from the recommendation.
 
     hypothetical_pnl:
-      SKIP (score < ENTER_THRESHOLD)       → 0 (stayed out)
-      ENTER + direction matches actual     → actual_pnl (same outcome)
-      ENTER + direction conflicts          → 0 (conflict, stay out)
-      Score 5–6 (neutral)                  → actual_pnl (no strong signal)
+      SKIP  (score < 5)                    → 0 (stayed out)
+      Score 5 (neutral borderline)         → actual_pnl (no strong signal, include as-is)
+      ENTER (score ≥ 6) + dir match        → actual_pnl (same outcome)
+      ENTER (score ≥ 6) + dir conflict     → 0 (conflict, stay out)
 
     verdict (signal accuracy):
       TP — score ≥ ENTER_THRESHOLD, direction match, trade profitable
       FP — score ≥ ENTER_THRESHOLD, direction match, trade lost
       TN — score < ENTER_THRESHOLD, trade lost (correct skip)
       FN — score < ENTER_THRESHOLD, trade profitable (missed winner)
-      NEUTRAL — score 5–6
+      NEUTRAL — score exactly 5 (borderline)
     """
     actual_pnl     = float(trade.get("realized_pnl") or 0)
     score          = result.get("setup_score", 5)
     would_enter    = result.get("would_enter", score >= ENTER_THRESHOLD)
     rec_dir        = (result.get("rec_direction") or "").lower()
     actual_dir     = (trade.get("direction") or "").lower()
-    direction_match = (rec_dir == actual_dir) if rec_dir else True
+    # If Claude skipped (would_enter=False) rec_direction is absent — treat as no match
+    # to avoid crediting phantom direction agreement.
+    direction_match = (rec_dir == actual_dir) if rec_dir else bool(would_enter)
 
     # hypothetical P&L
     if score < 5:

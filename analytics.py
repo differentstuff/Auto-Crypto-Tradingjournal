@@ -101,7 +101,12 @@ def get_dashboard_kpis(filters=None, conn=None):
     # profit factor
     sum_wins   = _val(conn, f"SELECT SUM(realized_pnl) FROM positions {where} {'AND' if where else 'WHERE'} realized_pnl > 0", params)
     sum_losses = _val(conn, f"SELECT SUM(realized_pnl) FROM positions {where} {'AND' if where else 'WHERE'} realized_pnl < 0", params)
-    profit_factor = round(sum_wins / abs(sum_losses), 2) if sum_losses else None
+    if sum_losses:
+        profit_factor = round(sum_wins / abs(sum_losses), 2)
+    elif sum_wins and sum_wins > 0:
+        profit_factor = 999.0  # no losing trades — display as ∞ in UI
+    else:
+        profit_factor = None
 
     # cumulative PnL curve (sorted by close_time)
     pnl_rows = _rows(conn, f"SELECT close_time, realized_pnl FROM positions {where} ORDER BY close_time ASC", params)
@@ -356,12 +361,13 @@ def get_deep_stats(filters=None, conn=None):
 
 
 def _bucket_durations(rows):
+    # Boundaries: < 60 min | 60-239 min | 240-1439 min | 1440-10079 min | ≥ 10080 min
     buckets = {
-        "< 1h":      {"label": "< 1h",      "count": 0, "total_pnl": 0},
-        "1-4h":      {"label": "1-4h",      "count": 0, "total_pnl": 0},
-        "4-24h":     {"label": "4-24h",     "count": 0, "total_pnl": 0},
-        "1-7 days":  {"label": "1-7 days",  "count": 0, "total_pnl": 0},
-        "> 7 days":  {"label": "> 7 days",  "count": 0, "total_pnl": 0},
+        "< 1h":      {"label": "< 1h",       "count": 0, "total_pnl": 0},
+        "1h-4h":     {"label": "1h-4h",      "count": 0, "total_pnl": 0},
+        "4h-24h":    {"label": "4h-24h",     "count": 0, "total_pnl": 0},
+        "1-7 days":  {"label": "1-7 days",   "count": 0, "total_pnl": 0},
+        "> 7 days":  {"label": "> 7 days",   "count": 0, "total_pnl": 0},
     }
     for r in rows:
         m   = r['duration_minutes'] or 0
@@ -369,9 +375,9 @@ def _bucket_durations(rows):
         if m < 60:
             k = "< 1h"
         elif m < 240:
-            k = "1-4h"
+            k = "1h-4h"
         elif m < 1440:
-            k = "4-24h"
+            k = "4h-24h"
         elif m < 10080:
             k = "1-7 days"
         else:

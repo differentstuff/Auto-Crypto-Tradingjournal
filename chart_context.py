@@ -31,6 +31,8 @@ _cache: dict = {}
 _cache_lock  = threading.Lock()
 CACHE_TTL    = 600  # 10 minutes
 
+PRICE_TOLERANCE = 0.004  # 0.4% — shared by S/R clustering and trendline validation
+
 
 def _cached(key: str, fn, ttl: int = CACHE_TTL):
     now = time.time()
@@ -84,7 +86,7 @@ def get_candles(symbol: str, timeframe: str = "4H", limit: int = 200) -> pd.Data
 # ── Support / Resistance detection ────────────────────────────────────────────
 
 def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
-                               tolerance_pct: float = 0.003,
+                               tolerance_pct: float = PRICE_TOLERANCE,
                                max_levels: int = 8) -> list:
     """
     Swing-pivot S/R detection with clustering.
@@ -185,7 +187,7 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4,
     lows      = df["low"].values.astype(float)
     times_sec = df["timestamp"].values.astype(float) / 1000.0
     n         = len(df)
-    tol       = 0.005  # 0.5% tolerance
+    tol       = PRICE_TOLERANCE
 
     pivot_h = [i for i in range(n_swing, n - n_swing)
                if highs[i] >= highs[i - n_swing:i + n_swing + 1].max()]
@@ -671,13 +673,15 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
     max_val = len(tfs) * 4  # 4 signals per TF
     pct     = score / max_val if max_val else 0
 
-    if pct >= 0.50:
+    # Thresholds: ±0.33 = net 1/3 of signals aligned (e.g. 6/8 bullish = "Bullish")
+    #             ±0.60 = net 3/5 of signals strongly aligned
+    if pct >= 0.60:
         label = "Strong Bullish"
-    elif pct >= 0.15:
+    elif pct >= 0.33:
         label = "Bullish"
-    elif pct <= -0.50:
+    elif pct <= -0.60:
         label = "Strong Bearish"
-    elif pct <= -0.15:
+    elif pct <= -0.33:
         label = "Bearish"
     else:
         label = "Neutral"

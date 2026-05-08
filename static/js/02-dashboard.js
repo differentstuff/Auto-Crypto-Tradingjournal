@@ -47,8 +47,9 @@ async function loadDashboard() {
   })(mr);
 
   document.getElementById('dash-subtitle').textContent =
-    `${d.total_trades} closed positions · Win rate ${d.win_rate}% · Profit factor ${d.profit_factor ?? '—'}`;
+    `${d.total_trades} closed positions · Win rate ${d.win_rate}% · Profit factor ${d.profit_factor >= 999 ? '∞' : (d.profit_factor ?? '—')}`;
 
+  const fmtPF = v => v == null ? '—' : v >= 999 ? '∞' : v;
   // KPI cards
   const kpis = [
     { label: 'Total Realized P&L', value: (d.total_pnl >= 0 ? '+' : '') + fmtC(d.total_pnl) + ' USDT',
@@ -59,7 +60,7 @@ async function loadDashboard() {
     { label: 'Win Rate', value: d.win_rate + '%', cls: d.win_rate >= 50 ? 'pos' : 'neg',
       sub: `${d.win_trades}W / ${d.loss_trades}L`,
       tip: 'Percentage of trades that closed in profit. Above 50% = more winners than losers. Profit factor matters too — a 40% win rate can still be profitable with large winners.' },
-    { label: 'Profit Factor', value: d.profit_factor ?? '—', cls: d.profit_factor > 1 ? 'pos' : 'neg',
+    { label: 'Profit Factor', value: fmtPF(d.profit_factor), cls: d.profit_factor > 1 ? 'pos' : 'neg',
       sub: 'Gross wins / losses',
       tip: 'Gross profit divided by gross loss. Above 1.5 = strong edge. Above 1.0 = profitable overall. Below 1.0 = losing system.' },
     { label: 'Best Trade', value: '+' + fmtC(d.best_trade) + ' USDT', cls: 'pos',
