@@ -160,6 +160,7 @@ Analyze the call and respond with ONLY a valid JSON object (no markdown, no code
   "risk_reward": {{"ratio": "1:X.X", "entry": 0.0, "sl": 0.0, "tp1": 0.0, "tp2": 0.0}},
   "bitget_settings": {{"symbol":"XYZUSDT","direction":"Long / Buy","margin_mode":"Cross","leverage":"10x","order_1":{{"type":"Market","notional_usdt":0,"note":""}},"order_2":{{"type":"Limit","price":"0.0","notional_usdt":0,"note":"DCA"}},"stop_loss":{{"price":"0.0","type":"Price SL or Candle Close SL (manual)","bitget_instruction":"exact Bitget instruction"}},"take_profit_1":{{"price":"0.0","note":""}},"take_profit_2":{{"price":"0.0","note":""}}}},
   "entry_timing": "Immediate / Wait for retest / Set limit order — with reasoning",
+  "pattern_flags": ["Rulebook warning that directly applies to this call, e.g. 'Friday breakout (your 3 losses avg -$166)'. Empty array if no warnings apply."],
   "optimizations": ["Specific improvement 1", "Specific improvement 2", "Specific improvement 3"],
   "risks": ["Risk 1", "Risk 2", "Risk 3"],
   "historical_context": "One sentence about trader history on this symbol",
