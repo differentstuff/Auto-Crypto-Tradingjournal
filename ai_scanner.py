@@ -261,6 +261,13 @@ TRADER HISTORY ON {symbol}:
 {hist_text}
 {rb_block}
 ─────────────────────────────────────────
+MARKET CONTEXT WEIGHTING:
+- Funding rate > 0.05% in trade direction → reduce score by 1 point (crowd is already on-side, squeeze risk)
+- Funding rate > 0.1% in trade direction → reduce score by 2 points (extremely crowded)
+- Funding rate negative/opposite direction → slight tailwind, can note as positive
+- Fear & Greed < 20 (Extreme Fear): longs get +0.5 adjustment; shorts get −0.5
+- Fear & Greed > 80 (Extreme Greed): longs get −0.5; shorts get +0.5
+
 SCORING SCALE:
 6 — Moderate: partial alignment, valid entry zone, but weak R:R or limited confluence
 7 — Good: clear directional bias, structural entry, R:R ≥ 2:1, no major red flags

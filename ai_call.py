@@ -174,6 +174,13 @@ Level proximity definitions (use when scoring setup quality):
 - SL < 1.0× ATR from entry → inside noise → score ≤ 6
 - R:R < 1.5:1 → score ≤ 6; R:R ≥ 2:1 for score 7+; R:R ≥ 3:1 for score 9+
 
+Market context weighting (apply to setup_quality score):
+- Funding rate > 0.05% in trade direction → reduce score by 1 (crowd already on-side, squeeze risk)
+- Funding rate > 0.1% in trade direction → reduce score by 2 (extremely crowded)
+- Funding rate opposite direction → slight tailwind, can note as positive factor
+- Fear & Greed < 20 (Extreme Fear): long bias gets +0.5; short bias gets −0.5
+- Fear & Greed > 80 (Extreme Greed): long bias gets −0.5; short bias gets +0.5
+
 Rules:
 - Use the pre-calculated position sizing numbers EXACTLY — do not change them
 - If stop loss is based on a candle close (not a price level), set has_candle_close_sl=true and explain how to handle it
