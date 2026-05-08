@@ -36,8 +36,15 @@ def build_cached_messages(context: str, prompt: str,
 
 
 def _err(msg, code=400):
-    # Never expose internal details on server errors (CWE-209)
-    safe = msg if code < 500 else "Internal server error"
+    # CWE-209: never expose stack traces or internal exception details.
+    # 5xx errors always return a generic message.
+    # 4xx errors use the caller-supplied msg, which must be a safe pre-approved literal
+    # (never str(exception) — callers must log exceptions server-side instead).
+    if code >= 500:
+        safe = "Internal server error"
+    else:
+        # Limit length and strip any characters that could reveal internal paths or stack frames
+        safe = str(msg)[:200]
     return jsonify({"ok": False, "error": safe}), code
 
 

@@ -137,7 +137,8 @@ def run_sync() -> dict:
 
         return {"positions": positions, "calls_closed": calls_closed, "equity": equity_data}
     except Exception as e:
-        _sync_status["last_error"] = str(e)
+        print(f"[BlofinSync] run_sync error: {e}", flush=True)   # log detail server-side only
+        _sync_status["last_error"] = "Sync error — check server logs"  # CWE-209: no exception detail in response
         raise
     finally:
         conn.close()
@@ -162,8 +163,8 @@ def start_background_sync():
                     _sync_status["last_error"]  = None
                     print(f"[BlofinSync] {result}", flush=True)
                 except Exception as e:
-                    _sync_status["last_error"] = str(e)
-                    print(f"[BlofinSync] Error: {e}", flush=True)
+                    print(f"[BlofinSync] Error: {e}", flush=True)  # log detail server-side only
+                    _sync_status["last_error"] = "Sync error — check server logs"
                 finally:
                     _sync_status["running"]  = False
                     _sync_status["next_run"] = time.strftime(

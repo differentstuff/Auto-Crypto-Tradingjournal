@@ -128,8 +128,8 @@ def test_connection():
             if equity and equity.get("equity") is not None:
                 return _ok({"exchange": "bitget", "message": f"Connected — equity {equity['equity']} USDT"})
             return _err("Bitget: no equity data returned — check credentials")
-        except Exception as e:
-            return _err(f"Bitget: {e}")
+        except Exception:
+            return _err("Bitget connection failed — check credentials and API permissions")
 
 
 @bp.post("/api/settings/credentials")
@@ -187,8 +187,8 @@ def blofin_sync_trigger():
     try:
         result = blofin_sync.run_sync()
         return _ok(result)
-    except Exception as e:
-        return _err(str(e))
+    except Exception:
+        return _err("Blofin sync failed — check server logs", 500)
 
 
 @bp.get("/api/settings/blofin/status")
