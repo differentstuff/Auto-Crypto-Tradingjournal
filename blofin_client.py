@@ -154,9 +154,12 @@ def get_position_history(limit: int = 100, after: str = None) -> list:
         direction   = _direction(p.get("side", "buy"), p.get("positionSide", "net"))
         entry_price = float(p.get("openAveragePrice") or 0)
         close_price = float(p.get("closeAveragePrice") or 0)
+        # Blofin realizedPnl is NET of fees (confirmed by user).
+        # fee field is the absolute fee amount.
+        # gross = net + fee  |  net is stored as realized_pnl as-is.
         fee         = abs(float(p.get("fee") or 0))
-        pos_pnl     = float(p.get("realizedPnl") or 0)
-        net_pnl     = round(pos_pnl - fee, 6)
+        net_pnl     = float(p.get("realizedPnl") or 0)
+        pos_pnl     = round(net_pnl + fee, 6)   # gross (pre-fee)
         open_ms     = int(p.get("createTime") or 0)
         close_ms    = int(p.get("updateTime") or 0)
         open_iso    = _ms_to_iso(open_ms)
@@ -177,11 +180,11 @@ def get_position_history(limit: int = 100, after: str = None) -> list:
             "close_price":    close_price,
             "size_contracts": str(p.get("closePositions") or ""),
             "size_usdt":      round(entry_price * float(p.get("closePositions") or 0), 2),
-            "position_pnl":   round(pos_pnl, 6),
-            "realized_pnl":   net_pnl,
+            "position_pnl":   pos_pnl,              # gross (pre-fee)
+            "realized_pnl":   round(net_pnl, 6),    # net (as returned by Blofin)
             "total_fees":     round(fee, 6),
-            "opening_fee":    0.0,
-            "closing_fee":    round(fee, 6),
+            "opening_fee":    round(fee * 0.5, 6),  # Blofin charges both sides; split evenly
+            "closing_fee":    round(fee * 0.5, 6),
             "leverage":       int(p.get("leverage") or 1),
         })
     return rows
