@@ -423,6 +423,47 @@ select:focus,input:focus{border-color:var(--accent)}
 .scan-dp-confluence{font-size:.8rem;color:var(--accent2);font-style:italic;
   margin-bottom:8px;padding:0 2px}
 
+/* ── Scanner criteria panel ─────────────────────────────────────────────── */
+.criteria-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  margin-bottom:16px;overflow:hidden}
+.criteria-panel-inner{padding:16px 18px}
+.criteria-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:12px}
+.cr-close{background:none;border:none;color:var(--muted);font-size:1rem;padding:2px 6px;border-radius:4px;transition:.15s}
+.cr-close:hover{color:var(--text);background:var(--bg3)}
+.cr-presets{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:12px;
+  padding-bottom:10px;border-bottom:1px solid var(--border)}
+.cr-preset-btn{padding:4px 12px;font-size:.76rem;background:var(--bg3);color:var(--muted);
+  border:1px solid var(--border);border-radius:20px;transition:.15s}
+.cr-preset-btn:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.cr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px}
+.cr-item{display:grid;grid-template-columns:18px 1fr;grid-template-rows:auto auto;
+  column-gap:8px;align-items:start;padding:8px 10px;border-radius:7px;
+  background:var(--bg3);cursor:pointer;transition:background .15s}
+.cr-item:hover{background:rgba(108,99,255,.12)}
+.cr-item input{grid-row:1;grid-column:1;margin-top:2px;accent-color:var(--accent);cursor:pointer}
+.cr-label{grid-row:1;grid-column:2;font-size:.82rem;font-weight:600;color:var(--text)}
+.cr-desc{grid-row:2;grid-column:2;font-size:.71rem;color:var(--muted);line-height:1.4;margin-top:2px}
+
+/* ── Scanner progress display ───────────────────────────────────────────── */
+.prog-container{width:100%;max-width:600px;margin:0 auto}
+.prog-stages{display:flex;align-items:flex-start;justify-content:center;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.prog-arrow{color:var(--border);font-size:.9rem;margin-top:14px}
+.prog-stage{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:8px;
+  background:var(--bg3);border:1px solid var(--border);min-width:160px;opacity:.5;transition:.3s}
+.prog-stage.active{opacity:1;border-color:var(--yellow);box-shadow:0 0 0 1px rgba(255,179,0,.2)}
+.prog-stage.done{opacity:.85;border-color:var(--accent3)}
+.prog-stage-icon{font-size:1.1rem;min-width:22px;text-align:center;
+  color:var(--muted);padding-top:1px}
+.prog-stage.active .prog-stage-icon{color:var(--yellow)}
+.prog-stage.done .prog-stage-icon{color:var(--accent3)}
+.prog-stage-label{font-size:.82rem;font-weight:700;color:var(--text)}
+.prog-stage-sub{font-size:.72rem;color:var(--muted);margin-top:2px;line-height:1.4}
+.prog-stage.active .prog-stage-sub{color:var(--yellow)}
+.prog-bar-wrap{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.prog-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));
+  border-radius:3px;transition:width .4s ease}
+.prog-detail{font-size:.78rem;color:var(--accent2);text-align:center;margin-top:4px}
+
 /* ── Call Analyzer Legend ────────────────────────────────────────────────── */
 .legend-section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;
   letter-spacing:.08em;color:var(--accent);margin-bottom:5px;padding-bottom:3px;

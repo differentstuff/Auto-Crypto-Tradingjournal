@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// SETUP SCANNER — rated setups 6-10/10, table view with click-to-expand detail
+// SETUP SCANNER — rated setups 6-10/10, live progress, custom criteria
 // ══════════════════════════════════════════════════════════════════════════════
 
 let _scanPollInterval  = null;
@@ -7,19 +7,210 @@ let _scanLastState     = null;
 let _scanExpandedIdx   = null;
 let _scanSetups        = [];
 
+// ── Criteria definition ───────────────────────────────────────────────────────
+
+const SCAN_CRITERIA = [
+  { key: 'rsi',        label: 'RSI filter',            desc: 'Reject/penalise overextended RSI (>78 long, <22 short) in quality gate and Claude prompt' },
+  { key: 'macd',       label: 'MACD alignment',        desc: 'Count MACD crossover/direction as a 4H signal and factor into Claude scoring' },
+  { key: 'ema_stack',  label: 'EMA stack',             desc: 'Count EMA alignment (20>50>200 bullish or reverse) as a 4H signal' },
+  { key: 'adx',        label: 'ADX ≥ 15 trend',        desc: 'Reject flat/choppy markets with ADX below 15 in quality gate' },
+  { key: 'sr_anchor',  label: 'S/R structural anchor', desc: 'Require entry within 4×ATR of a named S/R level — disable for memes or news moves' },
+  { key: 'wavetrend',  label: 'WaveTrend (VMC)',        desc: 'Include VMC Cipher A/B WaveTrend signal in Claude scoring' },
+  { key: 'volume',     label: 'Volume confirm',        desc: 'Reward volume confirmation of the setup move in Claude scoring' },
+  { key: 'funding',    label: 'Funding rate',          desc: 'Penalise score −1/−2 when funding rate is crowded (>0.05% / >0.1%)' },
+  { key: 'fear_greed', label: 'Fear & Greed',          desc: 'Apply ±0.5 score adjustment for extreme Fear & Greed readings' },
+  { key: 'atr_sl',     label: 'ATR SL floor',          desc: 'Cap score ≤ 6 when SL is tighter than 1×ATR from entry (inside noise)' },
+  { key: 'rr_minimum', label: 'R:R minimum',           desc: 'Cap score ≤ 6 for R:R < 1.5:1; require ≥ 2:1 for score 7+' },
+];
+
+const SCAN_PRESETS = {
+  full:      { label: 'Full (default)',   keys: null },
+  trend:     { label: 'Trend Momentum',  keys: { rsi:true,  macd:true,  ema_stack:true,  adx:true,  sr_anchor:false, wavetrend:true,  volume:true,  funding:false, fear_greed:false, atr_sl:false, rr_minimum:true  } },
+  structure: { label: 'Structure-only',  keys: { rsi:false, macd:false, ema_stack:false, adx:false, sr_anchor:true,  wavetrend:false, volume:false, funding:true,  fear_greed:false, atr_sl:true,  rr_minimum:true  } },
+  meme:      { label: 'Meme / Low-cap',  keys: { rsi:true,  macd:false, ema_stack:false, adx:false, sr_anchor:false, wavetrend:false, volume:true,  funding:true,  fear_greed:true,  atr_sl:false, rr_minimum:false } },
+};
+
+const _CR_KEY = 'scanCriteria';
+
+function _loadCriteria() {
+  try { const s = localStorage.getItem(_CR_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  return null;
+}
+function _saveCriteria(cr) { localStorage.setItem(_CR_KEY, JSON.stringify(cr)); }
+
+function _readCriteriaFromCheckboxes() {
+  const cr = {};
+  SCAN_CRITERIA.forEach(c => {
+    const el = document.getElementById('cr-' + c.key);
+    cr[c.key] = el ? el.checked : true;
+  });
+  return cr;
+}
+
+function _applyPreset(presetKey) {
+  const p = SCAN_PRESETS[presetKey];
+  if (!p) return;
+  SCAN_CRITERIA.forEach(c => {
+    const el = document.getElementById('cr-' + c.key);
+    if (el) el.checked = (p.keys === null) ? true : (p.keys[c.key] !== false);
+  });
+  _onCriteriaChange();
+}
+
+function _onCriteriaChange() {
+  const cr = _readCriteriaFromCheckboxes();
+  _saveCriteria(cr);
+  // Update preset label
+  const pl = document.getElementById('cr-preset-label');
+  if (pl) {
+    let matched = 'Custom';
+    for (const [k, p] of Object.entries(SCAN_PRESETS)) {
+      if (p.keys === null) {
+        if (SCAN_CRITERIA.every(c => cr[c.key] !== false)) { matched = p.label; break; }
+      } else {
+        if (SCAN_CRITERIA.every(c => (cr[c.key] !== false) === (p.keys[c.key] !== false))) { matched = p.label; break; }
+      }
+    }
+    pl.textContent = matched;
+  }
+  // Update count badge
+  const cnt = document.getElementById('cr-active-count');
+  if (cnt) {
+    const n = SCAN_CRITERIA.filter(c => cr[c.key] !== false).length;
+    cnt.textContent = n + ' / ' + SCAN_CRITERIA.length + ' criteria active';
+    cnt.style.color = n === SCAN_CRITERIA.length ? 'var(--muted)' : 'var(--yellow)';
+  }
+}
+
+// ── Criteria panel builder (DOM-safe) ─────────────────────────────────────────
+
+function _renderCriteriaPanel() {
+  const old = document.getElementById('criteria-panel');
+  if (old) old.remove();
+
+  const saved = _loadCriteria() || {};
+  const panel = document.createElement('div');
+  panel.id = 'criteria-panel';
+  panel.className = 'criteria-panel';
+  panel.style.display = 'none';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'criteria-header';
+  const hdrText = document.createElement('div');
+  const hdrTitle = document.createElement('div');
+  hdrTitle.style.cssText = 'font-weight:700;font-size:.9rem;color:var(--text)';
+  hdrTitle.textContent = 'Scoring Criteria';
+  const hdrSub = document.createElement('div');
+  hdrSub.style.cssText = 'font-size:.75rem;color:var(--muted);margin-top:2px';
+  hdrSub.textContent = 'Choose which checks Claude applies. Hover any item for details. Disabled criteria are skipped in the quality gate and Claude prompt.';
+  hdrText.appendChild(hdrTitle);
+  hdrText.appendChild(hdrSub);
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'cr-close';
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = _toggleCriteriaPanel;
+  hdr.appendChild(hdrText);
+  hdr.appendChild(closeBtn);
+  panel.appendChild(hdr);
+
+  // Presets row
+  const presetsRow = document.createElement('div');
+  presetsRow.className = 'cr-presets';
+  const presetsLbl = document.createElement('span');
+  presetsLbl.style.cssText = 'font-size:.72rem;color:var(--muted);margin-right:6px';
+  presetsLbl.textContent = 'Presets:';
+  presetsRow.appendChild(presetsLbl);
+  Object.entries(SCAN_PRESETS).forEach(([k, p]) => {
+    const btn = document.createElement('button');
+    btn.className = 'cr-preset-btn';
+    btn.textContent = p.label;
+    btn.onclick = () => _applyPreset(k);
+    presetsRow.appendChild(btn);
+  });
+  const presetLabel = document.createElement('span');
+  presetLabel.id = 'cr-preset-label';
+  presetLabel.style.cssText = 'font-size:.72rem;color:var(--accent2);margin-left:8px';
+  presetsRow.appendChild(presetLabel);
+  panel.appendChild(presetsRow);
+
+  // Criteria grid
+  const grid = document.createElement('div');
+  grid.className = 'cr-grid';
+  SCAN_CRITERIA.forEach(c => {
+    const label = document.createElement('label');
+    label.className = 'cr-item';
+    label.title = c.desc;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'cr-' + c.key;
+    cb.checked = (saved[c.key] !== false);
+    cb.addEventListener('change', _onCriteriaChange);
+    const lbl = document.createElement('span');
+    lbl.className = 'cr-label';
+    lbl.textContent = c.label;
+    const desc = document.createElement('span');
+    desc.className = 'cr-desc';
+    desc.textContent = c.desc;
+    label.appendChild(cb);
+    label.appendChild(lbl);
+    label.appendChild(desc);
+    grid.appendChild(label);
+  });
+  panel.appendChild(grid);
+
+  // Footer
+  const footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)';
+  const cnt = document.createElement('span');
+  cnt.id = 'cr-active-count';
+  cnt.style.cssText = 'font-size:.75rem;color:var(--muted)';
+  const footerBtns = document.createElement('div');
+  footerBtns.style.display = 'flex';
+  footerBtns.style.gap = '8px';
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn btn-secondary btn-sm';
+  resetBtn.textContent = 'Reset to defaults';
+  resetBtn.onclick = () => _applyPreset('full');
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn btn-primary btn-sm';
+  applyBtn.textContent = 'Apply & Scan';
+  applyBtn.onclick = () => { _toggleCriteriaPanel(); startScan(true); };
+  footerBtns.appendChild(resetBtn);
+  footerBtns.appendChild(applyBtn);
+  footer.appendChild(cnt);
+  footer.appendChild(footerBtns);
+  panel.appendChild(footer);
+
+  const meta = document.getElementById('scanner-meta');
+  if (meta) meta.after(panel);
+
+  _onCriteriaChange();
+}
+
+function _toggleCriteriaPanel() {
+  let panel = document.getElementById('criteria-panel');
+  if (!panel) { _renderCriteriaPanel(); panel = document.getElementById('criteria-panel'); }
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
 async function loadScanner() {
   _loadScannerWatchlist();
   const state = await api('/api/scanner/status');
   if (!state.ok) return;
   renderScannerPage(state.data);
   if (state.data.status === 'running') _startScanPoller();
+  _renderCriteriaPanel();
 }
 
 async function startScan(force) {
   const btn = document.getElementById('btn-scan');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
   const minScore = parseInt(document.getElementById('scan-min-score')?.value || '6');
-  const res = await api('/api/scanner/run', 'POST', { force: !!force, min_score: minScore });
+  const criteria = _readCriteriaFromCheckboxes();
+  _saveCriteria(criteria);
+  const res = await api('/api/scanner/run', 'POST', { force: !!force, min_score: minScore, criteria });
   if (!res.ok) {
     if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan Now'; }
     return;
@@ -35,7 +226,7 @@ function _startScanPoller() {
     if (!res.ok) return;
     renderScannerPage(res.data);
     if (res.data.status !== 'running') _stopScanPoller();
-  }, 2500);
+  }, 2000);
 }
 function _stopScanPoller() {
   if (_scanPollInterval) { clearInterval(_scanPollInterval); _scanPollInterval = null; }
@@ -55,45 +246,167 @@ function renderScannerMeta(state) {
   const running = state.status === 'running';
   const done    = state.status === 'completed';
 
-  let statusHtml = '';
+  let statusText = '';
+  let statusColor = 'var(--muted)';
   if (running) {
-    statusHtml = `<span style="color:var(--yellow)">⏳ Scanning — ${state.scanned||0} symbols · ${state.after_filter||0} sent to AI…</span>`;
+    const stageLabel = state.stage_label || 'Scanning…';
+    const detail     = state.stage_detail || '';
+    statusText  = '⏳ ' + stageLabel + (detail ? ' — ' + detail : '');
+    statusColor = 'var(--yellow)';
   } else if (done) {
-    const ago = state.completed_at ? Math.round((Date.now()/1000 - state.completed_at)/60) : 0;
-    const dur = state.duration_sec ? ` in ${state.duration_sec}s` : '';
-    const n   = (state.setups||[]).length;
-    const col = n ? 'var(--accent3)' : 'var(--muted)';
+    const ago  = state.completed_at ? Math.round((Date.now()/1000 - state.completed_at)/60) : 0;
+    const dur  = state.duration_sec ? ` in ${state.duration_sec}s` : '';
+    const n    = (state.setups||[]).length;
     const filt = state.after_filter > 0 ? ` · ${state.after_filter} to AI` : '';
-    statusHtml = `<span style="color:var(--muted)">Last scan ${ago<1?'just now':ago+'m ago'}${dur} · `
-      + `${state.scanned||0} symbols${filt} · <strong style="color:${col}">${n} setup${n!==1?'s':''} found</strong></span>`;
+    statusText  = `Last scan ${ago<1?'just now':ago+'m ago'}${dur} · ${state.scanned||0} symbols${filt} · ${n} setup${n!==1?'s':''} found`;
+    statusColor = n ? 'var(--accent3)' : 'var(--muted)';
   } else if (state.status === 'error') {
-    statusHtml = `<span style="color:var(--red)">Error: ${state.error||'unknown'}</span>`;
+    statusText  = 'Error: scan failed';
+    statusColor = 'var(--red)';
   } else {
-    statusHtml = `<span style="color:var(--muted)">No scan run yet.</span>`;
+    statusText  = 'No scan run yet.';
   }
 
-  const activeMins = state.min_score ?? 6;
-  const scoreOpts = [1,2,3,4,5,6,7,8,9].map(n =>
-    `<option value="${n}" ${n === activeMins ? 'selected' : ''}>${n}+</option>`
-  ).join('');
+  // Rebuild DOM instead of innerHTML to avoid hook
+  el.textContent = '';
 
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:6px">
-        <label style="font-size:.78rem;color:var(--muted);white-space:nowrap">Min score</label>
-        <select id="scan-min-score" style="padding:5px 8px;font-size:.82rem;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" ${running?'disabled':''}>
-          ${scoreOpts}
-        </select>
-      </div>
-      <button class="btn btn-primary" id="btn-scan" onclick="startScan(false)" ${running?'disabled':''}>
-        ${running ? '⏳ Scanning…' : '🔍 Scan Now'}
-      </button>
-      ${done ? '<button class="btn btn-secondary btn-sm" onclick="startScan(true)">🔄 Re-scan</button>' : ''}
-      <span style="font-size:.82rem">${statusHtml}</span>
-    </div>
-    <div style="font-size:.78rem;color:var(--muted);margin-top:6px">
-      ${window._scannerWatchlistCount||100} symbols · scores ${activeMins}–10 · results cached 30 min · click a row for details
-    </div>`;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+
+  // Min score selector
+  const scoreWrap = document.createElement('div');
+  scoreWrap.style.cssText = 'display:flex;align-items:center;gap:6px';
+  const scoreLbl = document.createElement('label');
+  scoreLbl.style.cssText = 'font-size:.78rem;color:var(--muted);white-space:nowrap';
+  scoreLbl.textContent = 'Min score';
+  const scoreEl = document.createElement('select');
+  scoreEl.id = 'scan-min-score';
+  scoreEl.disabled = running;
+  scoreEl.style.cssText = 'padding:5px 8px;font-size:.82rem;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)';
+  const activeMins = state.min_score ?? 6;
+  [1,2,3,4,5,6,7,8,9].forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n + '+';
+    if (n === activeMins) opt.selected = true;
+    scoreEl.appendChild(opt);
+  });
+  scoreWrap.appendChild(scoreLbl); scoreWrap.appendChild(scoreEl);
+  row.appendChild(scoreWrap);
+
+  // Scan button
+  const scanBtn = document.createElement('button');
+  scanBtn.className = 'btn btn-primary';
+  scanBtn.id = 'btn-scan';
+  scanBtn.disabled = running;
+  scanBtn.textContent = running ? '⏳ Scanning…' : '🔍 Scan Now';
+  scanBtn.onclick = () => startScan(false);
+  row.appendChild(scanBtn);
+
+  // Re-scan button
+  if (done) {
+    const rsBtn = document.createElement('button');
+    rsBtn.className = 'btn btn-secondary btn-sm';
+    rsBtn.textContent = '🔄 Re-scan';
+    rsBtn.onclick = () => startScan(true);
+    row.appendChild(rsBtn);
+  }
+
+  // Criteria button with active count badge
+  const saved = _loadCriteria() || {};
+  const activeCount = SCAN_CRITERIA.filter(c => saved[c.key] !== false).length;
+  const crBtn = document.createElement('button');
+  crBtn.className = 'btn btn-secondary btn-sm';
+  crBtn.id = 'btn-criteria';
+  crBtn.onclick = _toggleCriteriaPanel;
+  const crBtnTxt = document.createElement('span');
+  crBtnTxt.textContent = '⚙ Criteria';
+  crBtn.appendChild(crBtnTxt);
+  if (activeCount < SCAN_CRITERIA.length) {
+    const badge = document.createElement('span');
+    badge.style.cssText = 'font-size:.7rem;background:rgba(255,179,0,.15);color:var(--yellow);padding:2px 7px;border-radius:10px;margin-left:5px';
+    badge.textContent = activeCount + '/' + SCAN_CRITERIA.length;
+    crBtn.appendChild(badge);
+  }
+  row.appendChild(crBtn);
+
+  // Status text
+  const status = document.createElement('span');
+  status.style.cssText = 'font-size:.82rem;color:' + statusColor;
+  status.textContent = statusText;
+  row.appendChild(status);
+
+  el.appendChild(row);
+
+  const sub = document.createElement('div');
+  sub.style.cssText = 'font-size:.78rem;color:var(--muted);margin-top:6px';
+  sub.textContent = (window._scannerWatchlistCount||100) + ' symbols · scores ' + activeMins + '–10 · results cached 30 min · click a row for details';
+  el.appendChild(sub);
+}
+
+function _buildProgressBlock(state) {
+  const stage = state.stage || 0;
+  const pct   = Math.min(100, state.stage_progress || 0);
+  const detail = state.stage_detail || '';
+
+  const stages = [
+    { n:1, label:'Confluence filter',   sub:'Parallel OHLCV + TA for all symbols' },
+    { n:2, label:'Quality gate',        sub:'RSI · ADX · S/R · signal count' },
+    { n:3, label:'AI scoring',          sub:'Haiku pre-filter → Sonnet batch' },
+  ];
+
+  const wrap = document.createElement('div');
+  wrap.className = 'prog-container';
+
+  const row = document.createElement('div');
+  row.className = 'prog-stages';
+
+  stages.forEach((s, idx) => {
+    if (idx > 0) {
+      const arr = document.createElement('div');
+      arr.className = 'prog-arrow';
+      arr.textContent = '→';
+      row.appendChild(arr);
+    }
+    const done   = stage > s.n;
+    const active = stage === s.n;
+    const div = document.createElement('div');
+    div.className = 'prog-stage' + (done ? ' done' : active ? ' active' : '');
+    const icon = document.createElement('div');
+    icon.className = 'prog-stage-icon';
+    icon.textContent = done ? '✓' : active ? '⏳' : String(s.n);
+    const lbl = document.createElement('div');
+    lbl.className = 'prog-stage-label';
+    lbl.textContent = s.label;
+    const sub = document.createElement('div');
+    sub.className = 'prog-stage-sub';
+    sub.textContent = active && detail ? detail : s.sub;
+    div.appendChild(icon);
+    div.appendChild(lbl);
+    div.appendChild(sub);
+    row.appendChild(div);
+  });
+  wrap.appendChild(row);
+
+  // Progress bar for stages with pct data
+  if ((stage === 1 || stage === 3) && pct > 0) {
+    const barWrap = document.createElement('div');
+    barWrap.className = 'prog-bar-wrap';
+    const fill = document.createElement('div');
+    fill.className = 'prog-bar-fill';
+    fill.style.width = pct + '%';
+    barWrap.appendChild(fill);
+    wrap.appendChild(barWrap);
+  }
+
+  // Detail line for stages 2+
+  if (stage >= 2 && detail) {
+    const det = document.createElement('div');
+    det.className = 'prog-detail';
+    det.textContent = detail;
+    wrap.appendChild(det);
+  }
+
+  return wrap;
 }
 
 function renderScannerResults(state) {
@@ -101,27 +414,32 @@ function renderScannerResults(state) {
   if (!el) return;
 
   if (state.status === 'idle') {
-    el.innerHTML = `<div class="no-positions"><div class="icon">🔍</div>
-      <div style="font-weight:600;margin-bottom:6px">Ready to scan</div>
-      <div style="color:var(--muted);font-size:.85rem">
-        Scans ${window._scannerWatchlistCount||100} symbols and scores setups matching your selected minimum.<br>
-        Click a result row to see entry zone, stop loss, and take-profit with full rationale.
-      </div></div>`;
+    const wrap = document.createElement('div');
+    wrap.className = 'no-positions';
+    wrap.innerHTML = '<div class="icon">🔍</div>';
+    const t = document.createElement('div');
+    t.style.cssText = 'font-weight:600;margin-bottom:6px';
+    t.textContent = 'Ready to scan';
+    const d = document.createElement('div');
+    d.style.cssText = 'color:var(--muted);font-size:.85rem';
+    d.textContent = 'Scans ' + (window._scannerWatchlistCount||100) + ' symbols. Use ⚙ Criteria to customise which checks apply. Click a result row for entry / SL / TP details.';
+    wrap.appendChild(t); wrap.appendChild(d);
+    el.textContent = '';
+    el.appendChild(wrap);
     return;
   }
   if (state.status === 'running') {
-    el.innerHTML = `<div class="no-positions">
-      <div class="icon" style="animation:pulse 1.5s infinite">⏳</div>
-      <div style="font-weight:600;margin-bottom:6px">Scan in progress…</div>
-      <div style="color:var(--muted);font-size:.85rem;line-height:1.8">
-        Stage 1 — multi-TF confluence (parallel)<br>
-        Stage 2 — technical quality gate<br>
-        Stage 3 — AI scoring (returns 6-10/10 only)
-      </div></div>`;
+    const wrap = document.createElement('div');
+    wrap.className = 'no-positions';
+    wrap.style.padding = '28px 20px';
+    wrap.appendChild(_buildProgressBlock(state));
+    el.textContent = '';
+    el.appendChild(wrap);
     return;
   }
   if (state.status === 'error') {
-    el.innerHTML = `<div style="color:var(--red);padding:24px">Scan error: ${state.error||'unknown'}</div>`;
+    el.textContent = 'Scan error — check server logs';
+    el.style.cssText = 'color:var(--red);padding:24px';
     return;
   }
 

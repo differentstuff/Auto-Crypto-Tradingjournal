@@ -80,18 +80,70 @@ DEFAULT_WATCHLIST = [
     "WOOUSDT", "KLAYUSDT", "GMTUSDT",
 ]
 
+# ── Criteria defaults ──────────────────────────────────────────────────────────
+# Each key maps to a scoring check. When False the stage-2 gate skips the hard
+# filter AND the prompt tells Claude to ignore that criterion.
+
+CRITERIA_DEFAULTS: dict = {
+    "rsi":        True,   # Reject overextended RSI (>78 long / <22 short)
+    "macd":       True,   # MACD alignment counts as a 4H signal
+    "ema_stack":  True,   # EMA stack alignment counts as a 4H signal
+    "adx":        True,   # Reject ADX < 15 (flat/choppy)
+    "sr_anchor":  True,   # Require ≥2 S/R levels + entry within 4×ATR
+    "wavetrend":  True,   # VMC Cipher / WaveTrend signal in scoring
+    "volume":     True,   # Volume confirmation in scoring
+    "funding":    True,   # Funding rate penalty (-1/-2 score points)
+    "fear_greed": True,   # Fear & Greed ±0.5 adjustment
+    "atr_sl":     True,   # Cap score ≤ 6 when SL < 1×ATR from entry
+    "rr_minimum": True,   # Cap score ≤ 6 when R:R < 1.5:1
+}
+
+_CRITERIA_DISABLED_LABELS: dict = {
+    "rsi":        "RSI overbought/oversold — do NOT penalise or filter on RSI extremes",
+    "macd":       "MACD alignment — ignore MACD direction entirely",
+    "ema_stack":  "EMA stack — ignore EMA alignment entirely",
+    "adx":        "ADX trend strength — do NOT require or factor ADX",
+    "sr_anchor":  "S/R anchor — entry does NOT need to be near a named level; score purely on momentum/pattern",
+    "wavetrend":  "WaveTrend/VMC Cipher — ignore WT signal entirely",
+    "volume":     "Volume confirmation — do NOT require or reward volume",
+    "funding":    "Funding rate — do NOT apply any funding rate penalties",
+    "fear_greed": "Fear & Greed — do NOT apply F&G score adjustments",
+    "atr_sl":     "ATR SL floor — do NOT cap score if SL is tight (inside 1×ATR)",
+    "rr_minimum": "R:R minimum — do NOT cap score for low R:R; score the setup quality regardless",
+}
+
+
+def _disabled_criteria_block(criteria: dict) -> str:
+    """Return a prompt section listing which checks Claude must skip."""
+    disabled = [
+        f"  - {_CRITERIA_DISABLED_LABELS[k]}"
+        for k in _CRITERIA_DISABLED_LABELS
+        if not criteria.get(k, True)
+    ]
+    if not disabled:
+        return ""
+    return (
+        "DISABLED SCORING CRITERIA (user has turned these OFF — do NOT apply them, "
+        "do NOT mention them in your rationale):\n" + "\n".join(disabled)
+    )
+
+
 # ── Scan state ─────────────────────────────────────────────────────────────────
 
 _state: dict = {
-    "status":        "idle",   # idle | running | completed | error
-    "started_at":    None,
-    "completed_at":  None,
-    "duration_sec":  None,
-    "setups":        [],
-    "scanned":       0,
-    "after_filter":  0,
-    "error":         None,
-    "min_score":     MIN_SCORE,
+    "status":          "idle",   # idle | running | completed | error
+    "stage":           0,        # 0=idle, 1=confluence, 2=quality gate, 3=AI scoring
+    "stage_label":     "",       # e.g. "Stage 1 — Confluence filter"
+    "stage_detail":    "",       # e.g. "42 / 100 symbols processed"
+    "stage_progress":  0,        # 0–100 within current stage
+    "started_at":      None,
+    "completed_at":    None,
+    "duration_sec":    None,
+    "setups":          [],
+    "scanned":         0,
+    "after_filter":    0,
+    "error":           None,
+    "min_score":       MIN_SCORE,
 }
 _state_lock = threading.Lock()
 
@@ -120,13 +172,21 @@ def _fetch_one(symbol: str):
 
 def _stage1(symbols: list, min_score: int = MIN_SCORE) -> list:
     """Return [(symbol, ctx, conf, direction)] with enough aligned signals.
-    For low min_score (≤ 3) only 1 aligned signal is required."""
+    Emits live progress via _update() as futures complete."""
     threshold = 1 if min_score <= 3 else 2
-    out = []
+    total = len(symbols)
+    out   = []
+    done  = 0
     with ThreadPoolExecutor(max_workers=8) as ex:
         futures = {ex.submit(_fetch_one, sym): sym for sym in symbols}
         for f in as_completed(futures):
             symbol, ctx, conf = f.result()
+            done += 1
+            if done % 10 == 0 or done == total:
+                _update(
+                    stage_detail  = f"{done} / {total} symbols fetched",
+                    stage_progress= int(done / total * 100),
+                )
             if ctx is None or conf is None:
                 continue
             if conf["bullish"] >= threshold:
@@ -138,13 +198,16 @@ def _stage1(symbols: list, min_score: int = MIN_SCORE) -> list:
 
 # ── Stage 2: technical quality gate ────────────────────────────────────────────
 
-def _stage2(candidates: list, min_score: int = MIN_SCORE) -> list:
+def _stage2(candidates: list, min_score: int = MIN_SCORE,
+             criteria: dict = None) -> list:
     """
     Technical quality gate — no AI, no network calls.
-    Filters to symbols with a genuine structural entry opportunity.
+    Respects `criteria` dict: disabled criteria skip the corresponding hard filter.
     Skipped entirely when min_score ≤ 4 (user wants AI to be the sole judge).
     Caps output at 30 to control Claude API cost.
     """
+    cr = criteria or CRITERIA_DEFAULTS
+
     if min_score <= 4:
         out = list(candidates)
         out.sort(key=lambda x: -x[2].get("score", 0))
@@ -166,44 +229,50 @@ def _stage2(candidates: list, min_score: int = MIN_SCORE) -> list:
         atr_val = (inds.get("atr", {}) or {}).get("value", 0)
 
         # Reject: RSI already deeply overextended in signal direction
-        if direction == "Long"  and rsi_val > 78:
-            continue
-        if direction == "Short" and rsi_val < 22:
-            continue
+        if cr.get("rsi", True):
+            if direction == "Long"  and rsi_val > 78:
+                continue
+            if direction == "Short" and rsi_val < 22:
+                continue
 
         # Reject: no trend structure (choppy / flat)
-        if adx_val < 15:
+        if cr.get("adx", True) and adx_val < 15:
             continue
 
         # Reject: no S/R structure to define entry/SL/TP
-        if len(sr) < 2:
-            continue
-
-        # Reject: price too far from any actionable S/R level
-        if price and atr_val and sr:
-            distances = [abs(l["price"] - price) for l in sr]
-            if min(distances) > atr_val * 4:
+        if cr.get("sr_anchor", True):
+            if len(sr) < 2:
                 continue
+            if price and atr_val and sr:
+                distances = [abs(l["price"] - price) for l in sr]
+                if min(distances) > atr_val * 4:
+                    continue
 
-        # Require at least 2 aligned signals specifically on 4H
+        # Require at least 2 aligned 4H signals (only from enabled indicators)
         bull_4h = bear_4h = 0
-        if rsi_val > 55:   bull_4h += 1
-        elif rsi_val < 45: bear_4h += 1
-        if macd.get("trend") == "bullish":   bull_4h += 1
-        elif macd.get("trend") == "bearish": bear_4h += 1
-        if "bullish" in ema.get("alignment", ""):   bull_4h += 1
-        elif "bearish" in ema.get("alignment", ""): bear_4h += 1
-        if "bullish" in adx_d.get("direction", ""):   bull_4h += 1
-        elif "bearish" in adx_d.get("direction", ""): bear_4h += 1
+        if cr.get("rsi", True):
+            if rsi_val > 55:   bull_4h += 1
+            elif rsi_val < 45: bear_4h += 1
+        if cr.get("macd", True):
+            if macd.get("trend") == "bullish":   bull_4h += 1
+            elif macd.get("trend") == "bearish": bear_4h += 1
+        if cr.get("ema_stack", True):
+            if "bullish" in ema.get("alignment", ""):   bull_4h += 1
+            elif "bearish" in ema.get("alignment", ""): bear_4h += 1
+        if cr.get("adx", True):
+            if "bullish" in adx_d.get("direction", ""):   bull_4h += 1
+            elif "bearish" in adx_d.get("direction", ""): bear_4h += 1
 
-        if direction == "Long"  and bull_4h < 2:
-            continue
-        if direction == "Short" and bear_4h < 2:
-            continue
+        # Minimum 2 aligned signals — but only if at least 2 criteria are enabled
+        enabled_signal_criteria = sum(cr.get(k, True) for k in ("rsi", "macd", "ema_stack", "adx"))
+        if enabled_signal_criteria >= 2:
+            if direction == "Long"  and bull_4h < 2:
+                continue
+            if direction == "Short" and bear_4h < 2:
+                continue
 
         out.append((symbol, ctx, conf, direction))
 
-    # Cap to avoid excessive Claude API calls; sort by total confluence first
     out.sort(key=lambda x: -x[2].get("score", 0))
     return out[:30]
 
@@ -323,16 +392,28 @@ Otherwise respond with this exact structure:
 Respond with ONLY valid JSON — no markdown, no code fences."""
 
 
-def _build_shared_prefix(mkt_str: str, rulebook_str: str, min_score: int = MIN_SCORE) -> str:
-    """Shared context block — identical for all finalists in a scan, so it caches across parallel calls."""
+def _build_shared_prefix(mkt_str: str, rulebook_str: str,
+                          min_score: int = MIN_SCORE, criteria: dict = None) -> str:
+    """Shared context block — identical for all finalists in a scan, caches across calls."""
+    cr        = criteria or CRITERIA_DEFAULTS
     mkt_block = f"MARKET CONTEXT:\n{mkt_str}\n\n" if mkt_str else ""
     rb_block  = f"TRADER RULEBOOK:\n{rulebook_str}\n\n" if rulebook_str else ""
+    dis_block = _disabled_criteria_block(cr)
+    dis_part  = f"\n{dis_block}\n" if dis_block else ""
+
+    # Build dynamic score cap line based on enabled criteria
+    caps = []
+    if cr.get("sr_anchor", True): caps.append("no structural entry")
+    if cr.get("atr_sl",    True): caps.append("SL inside ATR noise")
+    if cr.get("rr_minimum",True): caps.append("R:R below 1.5:1")
+    cap_str = " or ".join(caps) if caps else "no valid setup"
+
     return (
         f"{mkt_block}{rb_block}"
         "SCORING SCALE:\n"
         "5=Moderate(borderline), 6=Acceptable(tradeable,R:R≥1.5), 7=Good(R:R≥2:1), "
         "8=Strong(≥3 signals,R:R≥2.5:1), 9=Excellent(multi-TF,R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
-        f"Score <{min_score} if: no structural entry, SL inside ATR noise, or R:R below 1.5:1."
+        f"Score <{min_score} if: {cap_str}.{dis_part}"
     )
 
 
@@ -410,7 +491,7 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_
         return None
 
 
-def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE):
+def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE, criteria=None):
     """Build a single prompt for all top-N symbols. Returns (system_prefix, user_prompt)."""
     parts = []
     for i, (symbol, ctx, conf, direction, score, _reason) in enumerate(finalists, 1):
@@ -435,6 +516,17 @@ def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE):
             f"History: {json.dumps(hist)}"
         )
 
+    cr = criteria or CRITERIA_DEFAULTS
+    dis_block = _disabled_criteria_block(cr)
+    dis_part  = f"\n{dis_block}\n" if dis_block else ""
+
+    # Dynamic score cap rules based on enabled criteria
+    level_rules = []
+    if cr.get("sr_anchor", True): level_rules.append("Entry >1×ATR from level → max 6")
+    if cr.get("atr_sl",    True): level_rules.append("SL <1×ATR from entry → max 6")
+    if cr.get("rr_minimum",True): level_rules.append("R:R<1.5 → max 6")
+    level_str = ". ".join(level_rules) + "." if level_rules else ""
+
     setups_text = "\n\n".join(parts)
     user_prompt = (
         f"Analyze these {len(finalists)} crypto futures setups. "
@@ -442,7 +534,7 @@ def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE):
         f"{setups_text}\n\n"
         f"SCORING SCALE: 6=Acceptable(R:R≥1.5), 7=Good(R:R≥2:1), 8=Strong(R:R≥2.5), "
         f"9=Excellent(R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
-        f"LEVEL RULES: Entry >1×ATR from level → max 6. SL <1×ATR from entry → max 6. R:R<1.5 → max 6.\n\n"
+        f"{level_str}{dis_part}\n"
         f"For setups scoring >= {min_score}, use this structure:\n"
         '{"symbol":"X","direction":"Long","setup_score":7,"setup_label":"Good",'
         '"why_this_score":"2-3 sentences","entry_zone":{"low":0,"high":0,"rationale":"..."},'
@@ -456,15 +548,17 @@ def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE):
     return user_prompt
 
 
-def _batch_ai_score(finalists, mkt_str, histories, rulebook_str, min_score=MIN_SCORE):
+def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
+                    min_score=MIN_SCORE, criteria=None):
     """
     Single Claude (Sonnet) call for all top-N finalists.
     Falls back to individual calls if the batch response is malformed or incomplete.
     """
     if not finalists:
         return []
-    shared = _build_shared_prefix(mkt_str, rulebook_str, min_score)
-    user_prompt = _build_batch_prompt(finalists, histories, min_score)
+    cr = criteria or CRITERIA_DEFAULTS
+    shared = _build_shared_prefix(mkt_str, rulebook_str, min_score, criteria=cr)
+    user_prompt = _build_batch_prompt(finalists, histories, min_score, criteria=cr)
     try:
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
@@ -534,22 +628,37 @@ def _symbol_history(symbol: str, conn) -> dict:
 
 # ── Background scan thread ─────────────────────────────────────────────────────
 
-def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
+def _scan_thread(symbols: list, min_score: int = MIN_SCORE, criteria: dict = None):
+    cr = criteria or CRITERIA_DEFAULTS
     t0 = time.time()
-    _update(status="running", started_at=t0, error=None, setups=[], scanned=0, after_filter=0,
-            min_score=min_score)
+    _update(
+        status="running", started_at=t0, error=None, setups=[], scanned=0, after_filter=0,
+        min_score=min_score,
+        stage=1, stage_label="Stage 1 — Confluence filter",
+        stage_detail=f"Fetching multi-TF data for {len(symbols)} symbols…",
+        stage_progress=0,
+    )
 
     try:
-        # Stage 1 — confluence filter
+        # Stage 1 — confluence filter (emits per-symbol progress internally)
         candidates = _stage1(symbols, min_score)
+        passed1 = len(candidates)
 
         # Stage 2 — technical quality gate
-        finalists = _stage2(candidates, min_score)
-        _update(scanned=len(symbols), after_filter=len(finalists))
+        _update(
+            stage=2, stage_label="Stage 2 — Quality gate",
+            stage_detail=f"{passed1} symbols passed confluence → applying technical filters…",
+            stage_progress=0,
+        )
+        finalists = _stage2(candidates, min_score, criteria=cr)
+        _update(scanned=len(symbols), after_filter=len(finalists),
+                stage_detail=f"{passed1} passed confluence · {len(finalists)} passed quality gate",
+                stage_progress=100)
 
         if not finalists:
             _update(status="completed", completed_at=time.time(),
-                    duration_sec=round(time.time() - t0, 1))
+                    duration_sec=round(time.time() - t0, 1),
+                    stage=0, stage_label="", stage_detail="No candidates passed the quality gate")
             return
 
         # Shared context for all finalists
@@ -561,7 +670,7 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
         except Exception:
             mkt_str = ""
 
-        # Append BTC market regime to market string
+        # Append BTC market regime
         try:
             regime = market_context.get_btc_regime()
             regime_map = {"bull": "📈 BTC is in a BULL regime (EMA50 > EMA200) — favour long setups",
@@ -575,10 +684,16 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
             rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
             histories = {s: _symbol_history(s, conn) for s, _, _, _ in finalists}
 
-        # Stage 3a — Quick score all finalists with Haiku (cheap pass)
-        # Shared prefix is identical for all → prompt cache hits after first call
-        shared_prefix = _build_shared_prefix(mkt_str, rulebook_str, min_score)
+        # Stage 3a — Quick score all finalists with Haiku (cheap pre-filter pass)
+        _update(
+            stage=3, stage_label="Stage 3a — Haiku quick-score",
+            stage_detail=f"Fast-scoring {len(finalists)} finalist{'s' if len(finalists)!=1 else ''} with Haiku…",
+            stage_progress=0,
+        )
+        shared_prefix = _build_shared_prefix(mkt_str, rulebook_str, min_score, criteria=cr)
         quick_results = []
+        qs_done = [0]
+        qs_total = len(finalists)
         with ThreadPoolExecutor(max_workers=10) as ex:
             fq = {
                 ex.submit(_quick_score, sym, ctx, conf, dir_, shared_prefix, min_score): (sym, ctx, conf, dir_)
@@ -586,6 +701,11 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
             }
             for f in as_completed(fq):
                 sym, ctx, conf, dir_ = fq[f]
+                qs_done[0] += 1
+                _update(
+                    stage_detail  = f"Haiku scoring: {qs_done[0]} / {qs_total} symbols",
+                    stage_progress= int(qs_done[0] / qs_total * 100),
+                )
                 r = f.result()
                 if r is not None:
                     quick_results.append((sym, ctx, conf, dir_, r["score"], r.get("reason", "")))
@@ -596,26 +716,37 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
         rest_finalists = quick_results[FULL_DETAIL_TOP_N:]
 
         # Stage 3b — Full detail with Sonnet: single batched call for all top-N
-        setups = _batch_ai_score(top_finalists, mkt_str, histories, rulebook_str, min_score)
+        _update(
+            stage_label   = "Stage 3b — Sonnet full analysis",
+            stage_detail  = f"Batch-scoring top {len(top_finalists)} setup{'s' if len(top_finalists)!=1 else ''} with Sonnet…",
+            stage_progress= 0,
+        )
+        setups = _batch_ai_score(top_finalists, mkt_str, histories, rulebook_str,
+                                  min_score, criteria=cr)
+        _update(stage_progress=100)
 
         # Add non-top-N setups with Haiku score + one-sentence rationale
         for sym, ctx, conf, direction, score, reason in rest_finalists:
             inds = ctx.get("4H", {}).get("indicators", {})
             price = inds.get("ema", {}).get("current_price")
             setups.append({
-                "symbol":      sym,
-                "direction":   direction,
-                "setup_score": score,
-                "setup_label": "Quick score only",
-                "why_this_score": reason or "No rationale (Haiku quick-score pass)",
-                "quick_score_only": True,
-                "confluence":  conf.get("label", ""),
-                "current_price": price,
+                "symbol":            sym,
+                "direction":         direction,
+                "setup_score":       score,
+                "setup_label":       "Quick score only",
+                "why_this_score":    reason or "No rationale (Haiku quick-score pass)",
+                "quick_score_only":  True,
+                "confluence":        conf.get("label", ""),
+                "current_price":     price,
             })
 
         setups.sort(key=lambda x: -x.get("setup_score", 0))
-        _update(status="completed", setups=setups,
-                completed_at=time.time(), duration_sec=round(time.time() - t0, 1))
+        _update(
+            status="completed", setups=setups,
+            completed_at=time.time(), duration_sec=round(time.time() - t0, 1),
+            stage=0, stage_label="",
+            stage_detail=f"{len(setups)} setup{'s' if len(setups)!=1 else ''} found in {round(time.time()-t0,1)}s",
+        )
 
     except Exception as e:
         _update(status="error", error=str(e),
@@ -624,7 +755,8 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def start_scan(symbols: list = None, min_score: int = MIN_SCORE) -> bool:
+def start_scan(symbols: list = None, min_score: int = MIN_SCORE,
+               criteria: dict = None) -> bool:
     """
     Start a background scan. Returns False if already running or results are still
     fresh (< CACHE_TTL seconds old) AND the min_score hasn't changed.
@@ -632,23 +764,26 @@ def start_scan(symbols: list = None, min_score: int = MIN_SCORE) -> bool:
     with _state_lock:
         if _state["status"] == "running":
             return False
-        completed_at = _state.get("completed_at")
+        completed_at   = _state.get("completed_at")
         score_unchanged = _state.get("min_score", MIN_SCORE) == min_score
         if completed_at and (time.time() - completed_at) < CACHE_TTL and score_unchanged:
             return False  # still fresh with same threshold
 
     syms = symbols or DEFAULT_WATCHLIST
-    t = threading.Thread(target=_scan_thread, args=(syms, min_score), daemon=True)
+    cr   = criteria or CRITERIA_DEFAULTS
+    t = threading.Thread(target=_scan_thread, args=(syms, min_score, cr), daemon=True)
     t.start()
     return True
 
 
-def force_scan(symbols: list = None, min_score: int = MIN_SCORE) -> bool:
+def force_scan(symbols: list = None, min_score: int = MIN_SCORE,
+               criteria: dict = None) -> bool:
     """Start a scan regardless of cache TTL. Returns False if already running."""
     with _state_lock:
         if _state["status"] == "running":
             return False
     syms = symbols or DEFAULT_WATCHLIST
-    t = threading.Thread(target=_scan_thread, args=(syms, min_score), daemon=True)
+    cr   = criteria or CRITERIA_DEFAULTS
+    t = threading.Thread(target=_scan_thread, args=(syms, min_score, cr), daemon=True)
     t.start()
     return True

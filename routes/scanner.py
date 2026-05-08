@@ -24,10 +24,17 @@ def api_scanner_run():
         symbols   = body.get("symbols")
         min_score = max(1, min(10, int(body.get("min_score", 6))))
 
+        # Validate and merge criteria — only accept known keys, values must be bool
+        raw_criteria = body.get("criteria") or {}
+        criteria = {
+            k: bool(raw_criteria.get(k, v))
+            for k, v in ai_scanner.CRITERIA_DEFAULTS.items()
+        }
+
         if force:
-            started = ai_scanner.force_scan(symbols, min_score)
+            started = ai_scanner.force_scan(symbols, min_score, criteria=criteria)
         else:
-            started = ai_scanner.start_scan(symbols, min_score)
+            started = ai_scanner.start_scan(symbols, min_score, criteria=criteria)
 
         state = ai_scanner.get_state()
         if not started and state["status"] == "running":
@@ -35,6 +42,16 @@ def api_scanner_run():
         if not started and state["status"] == "completed":
             return _ok({"message": "Returning cached results (< 30 min old). Use force=1 to rescan.", **state})
         return _ok({"message": "Scan started", **state})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/scanner/criteria-defaults")
+def api_scanner_criteria_defaults():
+    """Return the full criteria defaults dict for the frontend configurator."""
+    try:
+        return _ok(ai_scanner.CRITERIA_DEFAULTS)
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
