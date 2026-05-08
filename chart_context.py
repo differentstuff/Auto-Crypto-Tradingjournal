@@ -324,6 +324,76 @@ def detect_all_trendlines(symbol: str) -> list:
     return result
 
 
+# ── VMC Cipher A/B — WaveTrend Oscillator ─────────────────────────────────────
+#
+# Original indicator: VuManChu Cipher B by LazyBear / LuxAlgo (TradingView).
+# Formula reference: https://www.tradingview.com/script/2KE8wTuF-VuManChu-Cipher-B-Divergences/
+#
+# Cipher A  = WaveTrend oscillator only (WT1, WT2 lines + histogram).
+# Cipher B  = Cipher A + Money Flow (MFI) + divergence signals (buy/sell circles).
+#
+# Parameters (matching the original TradingView defaults):
+#   n1 = 10   channel_length  (EMA period for smoothing HLC3)
+#   n2 = 21   average_length  (second EMA — produces WT1)
+#   ob = 53   overbought      |  60 = strong OB  |  75 = extreme OB
+#   os = -53  oversold        | -60 = strong OS  | -80 = extreme OS (gold signal)
+#   mfi_period = 60           (RSI period for money flow)
+
+def compute_wavetrend(df: pd.DataFrame,
+                      n1: int = 10, n2: int = 21,
+                      ob: float = 53, os_: float = -53,
+                      mfi_period: int = 60) -> pd.DataFrame:
+    """
+    Compute WaveTrend (Cipher A core) and Money Flow (Cipher B addition).
+
+    Returns a DataFrame aligned to df with columns:
+      wt1, wt2, histogram, mfi,
+      cross_bull, cross_bear,   (bool: crossover on this bar)
+      signal                    ('gold_buy' | 'buy' | 'sell' | None)
+    """
+    hlc3   = (df["high"] + df["low"] + df["close"]) / 3.0
+    esa    = hlc3.ewm(span=n1, adjust=False).mean()
+    d      = (hlc3 - esa).abs().ewm(span=n1, adjust=False).mean()
+    # Guard against zero d (flat price)
+    ci     = (hlc3 - esa) / (0.015 * d.replace(0, float("nan"))).fillna(1e-9)
+    wt1    = ci.ewm(span=n2, adjust=False).mean()
+    wt2    = wt1.rolling(4, min_periods=1).mean()
+    hist   = wt1 - wt2
+
+    # Cipher B — Money Flow: RSI of (HLC3 × volume) normalised to ±100
+    mfi_src = hlc3 * df["volume"]
+    mfi_rsi = ta.rsi(mfi_src, length=mfi_period)
+    if mfi_rsi is not None and not mfi_rsi.empty:
+        # Rescale RSI [0,100] → [-100, 100] (centred at zero)
+        mfi = (mfi_rsi - 50.0) * 2.0
+    else:
+        mfi = pd.Series(0.0, index=df.index)
+
+    # Crossover detection (current bar WT1 crosses above/below WT2)
+    cross_bull = (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
+    cross_bear = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+
+    # Signal dots (matching Cipher B visual logic)
+    signal = pd.Series(None, index=df.index, dtype=object)
+    gold_mask = cross_bull & (wt2 < -80)
+    buy_mask  = cross_bull & (wt2 < os_)  & ~gold_mask
+    sell_mask = cross_bear & (wt2 > ob)
+    signal[gold_mask] = "gold_buy"
+    signal[buy_mask]  = "buy"
+    signal[sell_mask] = "sell"
+
+    result = pd.DataFrame({
+        "wt1":       wt1.round(2),
+        "wt2":       wt2.round(2),
+        "histogram": hist.round(2),
+        "mfi":       mfi.round(2),
+        "cross_bull": cross_bull,
+        "cross_bear": cross_bear,
+        "signal":    signal,
+    }, index=df.index)
+    return result
+
+
 # ── Indicator computation ──────────────────────────────────────────────────────
 
 def compute_indicators(df: pd.DataFrame) -> dict:
@@ -522,6 +592,32 @@ def compute_indicators(df: pd.DataFrame) -> dict:
                 candle_type = "doji"
             candles.append(f"{candle_type} (body {body_pct:.0f}% of range)")
         result["recent_candles"] = candles
+
+    # ── WaveTrend / VMC Cipher A+B ────────────────────────────────────────────
+    try:
+        wt_df    = compute_wavetrend(df)
+        wt1_last = float(wt_df["wt1"].iloc[-1])
+        wt2_last = float(wt_df["wt2"].iloc[-1])
+        mfi_last = float(wt_df["mfi"].iloc[-1])
+        sig_last = wt_df["signal"].iloc[-1]
+        cb_last  = bool(wt_df["cross_bull"].iloc[-1])
+        cs_last  = bool(wt_df["cross_bear"].iloc[-1])
+        wt_zone  = (
+            "overbought"  if wt1_last >  53 else
+            "oversold"    if wt1_last < -53 else
+            "neutral"
+        )
+        result["wavetrend"] = {
+            "wt1":       round(wt1_last, 2),
+            "wt2":       round(wt2_last, 2),
+            "histogram": round(wt1_last - wt2_last, 2),
+            "mfi":       round(mfi_last, 2),
+            "cross":     "bullish" if cb_last else ("bearish" if cs_last else None),
+            "zone":      wt_zone,
+            "signal":    sig_last,    # 'gold_buy' | 'buy' | 'sell' | None
+        }
+    except Exception:
+        pass  # WaveTrend is non-critical; degrade gracefully
 
     # ── Support / Resistance ───────────────────────────────────────────────────
     sr = detect_support_resistance(df)
@@ -897,6 +993,23 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
     trendlines = detect_all_trendlines(symbol)  # 1W+1D+4H+1H, extended to now
     fibonacci  = detect_fibonacci(df)
 
+    # WaveTrend series for the oscillator pane
+    try:
+        wt_df      = compute_wavetrend(df)
+        wt_series  = [
+            {
+                "time":      int(row["timestamp"] // 1000),
+                "wt1":       round(float(wt_df["wt1"].iloc[i]),  2),
+                "wt2":       round(float(wt_df["wt2"].iloc[i]),  2),
+                "histogram": round(float(wt_df["histogram"].iloc[i]), 2),
+                "mfi":       round(float(wt_df["mfi"].iloc[i]),  2),
+                "signal":    wt_df["signal"].iloc[i],
+            }
+            for i, (_, row) in enumerate(df.iterrows())
+        ]
+    except Exception:
+        wt_series = []
+
     # Weekly S/R — always fetch so major zones show on intraday charts
     htf_levels = []
     if timeframe not in ("1W", "3D"):
@@ -927,6 +1040,7 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
         "htf_levels":    htf_levels,
         "trendlines":    trendlines,
         "fibonacci":     fibonacci,
+        "wavetrend":     wt_series,
         "symbol":        symbol,
         "timeframe":     timeframe,
         "current_price": round(float(df["close"].iloc[-1]), 8),
