@@ -1,6 +1,6 @@
 import traceback
 
-from flask import Blueprint, request
+from flask import Blueprint, request, jsonify
 
 from database import db_conn
 from helpers import _ok, _err
@@ -47,7 +47,9 @@ def api_ai_analyze():
         return _ok(ai_advisor.analyze(filters=filters or {}))
     except Exception as e:
         traceback.print_exc()
-        return _err(f"{type(e).__name__}: {e}", 500)
+        import traceback as _tb
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}",
+                        "trace": _tb.format_exc()[-500:]}), 500
 
 
 @bp.route("/api/rulebook")
