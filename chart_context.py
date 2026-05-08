@@ -542,6 +542,11 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
     if "bollinger" in indicators:
         parts.append(f"BB {indicators['bollinger']['position_pct']}%")
 
+    if "volume" in indicators:
+        v = indicators["volume"]
+        arrow = "↑" if v["ratio"] > 1.5 else ("↓" if v["ratio"] < 0.7 else "")
+        parts.append(f"Vol {v['ratio']}x{arrow}")
+
     if "support_resistance" in indicators:
         sr   = indicators["support_resistance"]
         sups = sorted([l for l in sr if l["type"] == "support"],   key=lambda x: -x["price"])
@@ -687,15 +692,17 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         macd_w = _macd_weight(inds.get("macd", {}))
         ema_w  = _ema_weight(inds.get("ema",   {}))
         adx_w  = _adx_weight(inds.get("adx",   {}))
+        base_score = rsi_w + macd_w + ema_w + adx_w
+        vol_w  = _volume_weight(inds, base_score)
 
-        tf_score = rsi_w + macd_w + ema_w + adx_w
+        tf_score = base_score + vol_w
         total_score += tf_score
 
-        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w) if w > 0), 1)
-        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w) if w < 0), 1)
+        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, vol_w) if w > 0), 1)
+        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
-    max_val = float(len(tfs) * 4)   # 4 signals × max weight 1.0 per TF
+    max_val = float(len(tfs) * 4.5)  # 4 directional signals (max 1.0) + volume bonus (max 0.5)
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
@@ -727,17 +734,35 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
     }
 
 
+def _volume_weight(inds: dict, directional_score: float) -> float:
+    """
+    Volume confirms the dominant direction.
+    High volume (>1.5×) amplifies consensus by ±0.5.
+    Low volume (<0.7×) dampens consensus by ∓0.25.
+    Direction taken from the four other signals' net score.
+    """
+    ratio = inds.get("volume", {}).get("ratio", 1.0)
+    sign  = 1 if directional_score > 0 else (-1 if directional_score < 0 else 0)
+    if ratio > 1.5:
+        return  0.5 * sign
+    if ratio < 0.7:
+        return -0.25 * sign
+    return 0.0
+
+
 def _get_tf_weights(ctx: dict, tf: str) -> list:
-    """Return the four signal weights for a single timeframe."""
+    """Return the five signal weights for a single timeframe (RSI/MACD/EMA/ADX/Vol)."""
     inds = ctx.get(tf, {}).get("indicators", {})
     if not inds.get("ok"):
         return []
-    return [
+    base = [
         _rsi_weight(inds.get("rsi",  {}).get("value", 50)),
         _macd_weight(inds.get("macd", {})),
         _ema_weight(inds.get("ema",   {})),
         _adx_weight(inds.get("adx",   {})),
     ]
+    base.append(_volume_weight(inds, sum(base)))
+    return base
 
 
 def format_multi_tf_for_prompt(symbol: str, timeframes: list = None) -> str:
