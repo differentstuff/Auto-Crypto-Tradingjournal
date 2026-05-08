@@ -49,7 +49,8 @@ def _symbol_history(symbol: str, conn) -> dict:
 
 def _calc_sizing(account_equity: float, entry: float, sl: float,
                  dca_price: float = None, dca_pct: int = 40,
-                 leverage: int = LEVERAGE) -> dict:
+                 leverage: int = LEVERAGE, direction: str = "Long") -> dict:
+    is_long   = direction.lower() == "long"
     has_dca   = dca_price is not None
     risk_pct  = 2.0 if has_dca else 1.0
     risk_amt  = round(account_equity * risk_pct / 100, 2)
@@ -61,10 +62,14 @@ def _calc_sizing(account_equity: float, entry: float, sl: float,
         avg_entry = entry
         e1_pct    = 100
 
-    if avg_entry <= sl:
-        return {"error": "Stop loss must be below entry price"}
+    # Validate SL placement: Long → SL below entry; Short → SL above entry
+    if is_long and avg_entry <= sl:
+        return {"error": "Long stop loss must be below entry price"}
+    if not is_long and avg_entry >= sl:
+        return {"error": "Short stop loss must be above entry price"}
 
-    stop_dist = (avg_entry - sl) / avg_entry
+    # stop_dist is always positive (distance as fraction of entry)
+    stop_dist = abs(avg_entry - sl) / avg_entry
     notional  = round(risk_amt / stop_dist, 0)
     margin    = round(notional / leverage, 2)
 
@@ -255,7 +260,7 @@ def analyze_call(call_text: str, account_equity: float,
     sizing = {}
     if entry_price and sl_price and entry_price != sl_price:
         sizing = _calc_sizing(account_equity, entry_price, sl_price,
-                              dca_price if has_dca else None)
+                              dca_price if has_dca else None, direction=direction)
     else:
         sizing = {
             "note":             "Could not auto-extract prices — check call text",
