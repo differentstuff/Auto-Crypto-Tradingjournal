@@ -9,7 +9,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.5.1">🚀 Release v2.5.1</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.5.2">🚀 Release v2.5.2</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
 </p>
@@ -223,6 +223,34 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.5.2 — Multi-Exchange Correctness & AI Accuracy
+
+**Critical fixes:**
+- `_auto_close_calls` now exchange-aware — Blofin closes can no longer stamp outcomes on Bitget calls; `analyzed_calls.exchange` column added
+- Short trade sizing fixed — `_calc_sizing` had no direction param; Shorts with valid SL (above entry) always got a sizing error
+- `current_month_pnl` on Dashboard now respects the exchange filter
+- Blofin `realizedPnl` double-fee subtraction fixed (confirmed net-of-fees field)
+- `_prune_stats` by_hour filter used wrong field name (`n` → `trade_count`) — AI advisor was receiving empty hourly data
+
+**AI accuracy:**
+- AI advisor prompt label is now exchange-aware ("Bitget" / "Blofin" / "Multi-exchange")
+- Calibration block filters by exchange when active
+- Symbol history and similar-trades queries accept exchange filter
+- `prompt_builder.build_context` accepts `exchange_filter` param
+
+**Calculations:**
+- Combined equity (Bitget + Blofin sum) used for call sizing and live display
+- Blofin equity field `equity` normalized to `accountEquity` key for frontend
+- R:R analysis now uses full `_build_where` filter (symbol, direction, dates, exchange)
+- Exchange filter applied to: heatmap, pattern detector, hindsight, R:R, advisor, journal month P&L
+
+**Code quality:**
+- f-string SQL interpolation replaced with parameterized queries in `ai_hindsight` + `ai_pattern_detector`
+- `liveWaitingLimits` cached at module scope — limit badges no longer vanish after confirm-match
+- Tooltips now anchor above/below the hovered element with a directional arrow (not cursor-following); interactive elements restored to pointer cursor
+
+---
 
 ### v2.5.1 — Security Fix: CWE-209 Stack-Trace Exposure
 
