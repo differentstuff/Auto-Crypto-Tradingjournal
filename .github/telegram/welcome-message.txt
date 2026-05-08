@@ -1,0 +1,26 @@
+👋 Welcome to the Auto Crypto Trading Journal community!
+
+This is the official channel for the open-source, self-hosted crypto futures trading journal — built with Flask, SQLite, and Claude AI, running on a Raspberry Pi.
+
+📈 What this project does:
+• Syncs live trades from Bitget and Blofin automatically
+• AI-powered call analyzer — paste any analyst call and get a full briefing with entry/SL/TP, position sizing, and a 1–10 quality score
+• Setup Scanner — scans 100 USDT-M futures symbols every 30 min using a 3-stage pipeline (confluence → quality gate → AI scoring) with Telegram alerts
+• Hindsight Analysis — retroactively scores your past trades to show how following AI recommendations would have changed your P&L
+• Deep analytics — win rate, profit factor, Sharpe/Calmar ratios, drawdown overlay, market regime tags, and much more
+• 100% self-hosted — your trading data never leaves your network
+
+🆓 Free & open source
+Everything runs on your own hardware. No subscriptions, no cloud lock-in, no data sharing.
+
+🔗 GitHub: https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal
+
+📋 This community:
+• 📢 Channel — release announcements and project news
+• 💬 Discussion Group — join for updates, feedback, and bug reports
+  → Updates: new releases posted automatically
+  → Feedback & Feature Requests: share your ideas
+  → Bug Reports: report issues
+  → General: anything else
+
+Feel free to star ⭐ the repo if you find it useful, and share your feedback in the group!

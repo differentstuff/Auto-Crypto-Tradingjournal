@@ -1,0 +1,37 @@
+name: Telegram Release Notification
+
+# Fires when a GitHub Release is published.
+# Sends a formatted announcement to:
+#   1. The Telegram channel  (@autocryptotradingjournal or numeric ID)
+#   2. The Updates topic in the linked discussion group (optional)
+#
+# Setup — add these in GitHub → Settings → Secrets → Actions:
+#   TELEGRAM_BOT_TOKEN        (required) — bot token from @BotFather
+#   TELEGRAM_CHANNEL_ID       (required) — @autocryptotradingjournal or numeric ID
+#   TELEGRAM_GROUP_ID         (optional) — numeric ID of the linked Forum Group
+#   TELEGRAM_UPDATES_TOPIC_ID (optional) — thread ID of the Updates topic
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify:
+    name: Send Telegram announcement
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+
+      - name: Post release to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN:        ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID:       ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_GROUP_ID:         ${{ secrets.TELEGRAM_GROUP_ID }}
+          TELEGRAM_UPDATES_TOPIC_ID: ${{ secrets.TELEGRAM_UPDATES_TOPIC_ID }}
+          RELEASE_TAG:               ${{ github.event.release.tag_name }}
+          RELEASE_NAME:              ${{ github.event.release.name }}
+          RELEASE_BODY:              ${{ github.event.release.body }}
+          RELEASE_URL:               ${{ github.event.release.html_url }}
+          PRERELEASE:                ${{ github.event.release.prerelease }}
+        run: python3 .github/scripts/telegram_release.py
