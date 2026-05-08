@@ -269,10 +269,11 @@ MARKET CONTEXT WEIGHTING:
 - Fear & Greed > 80 (Extreme Greed): longs get −0.5; shorts get +0.5
 
 SCORING SCALE:
-6 — Moderate: partial alignment, valid entry zone, but weak R:R or limited confluence
-7 — Good: clear directional bias, structural entry, R:R ≥ 2:1, no major red flags
+5 — Moderate: mixed signals, borderline — not worth entering without improvement
+6 — Acceptable: clear bias + valid level, SL structural, R:R ≥ 1.5:1 — tradeable
+7 — Good: multiple aligned signals, structural entry + SL, R:R ≥ 2:1
 8 — Strong: ≥3 signals aligned, clean S/R entry, structural SL, R:R ≥ 2.5:1
-9 — Excellent: all 8-criteria + strong ADX, multi-TF alignment, no rulebook conflicts
+9 — Excellent: near-ideal — all criteria met, multi-TF alignment, R:R ≥ 3:1
 10 — Perfect: textbook chart pattern, volume confirmation, ideal entry timing, R:R ≥ 4:1
 
 LEVEL PROXIMITY DEFINITIONS (use these when rating entry quality):
@@ -329,8 +330,8 @@ def _build_shared_prefix(mkt_str: str, rulebook_str: str, min_score: int = MIN_S
     return (
         f"{mkt_block}{rb_block}"
         "SCORING SCALE:\n"
-        "6=Moderate, 7=Good(R:R≥2:1), 8=Strong(≥3 signals,R:R≥2.5:1), "
-        "9=Excellent(multi-TF+no conflicts), 10=Perfect(textbook+volume+R:R≥4:1)\n"
+        "5=Moderate(borderline), 6=Acceptable(tradeable,R:R≥1.5), 7=Good(R:R≥2:1), "
+        "8=Strong(≥3 signals,R:R≥2.5:1), 9=Excellent(multi-TF,R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
         f"Score <{min_score} if: no structural entry, SL inside ATR noise, or R:R below 1.5:1."
     )
 

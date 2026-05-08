@@ -145,14 +145,18 @@ TRADER'S HISTORY ON {sym} BEFORE THIS TRADE:
 {rb_block}
 NOTE: Historical funding rates / Fear & Greed are unavailable — base your score on technicals only.
 
-SCORE CALIBRATION:
-- 1-3: Very poor — counter-trend, broken structure, no confluence
-- 4: Weak — limited signals, marginal at best
-- 5: Neutral/borderline — mixed signals, could go either way
-- 6-7: Decent — 2-3 factors aligned, valid setup with manageable risk
-- 8-9: Strong — multiple confluent signals, clear structure, good R:R
-- 10: Near-perfect — all factors aligned, optimal entry
-Use the full range. Most setups should land 4-7. If basic confluence exists (price near support, momentum not overextended), score at least 5-6.
+SCORE CALIBRATION (use these labels exactly):
+- 1: Terrible — no valid setup, counter-trend into strong resistance
+- 2: Very Poor — vague idea, wrong entry zone, SL missing or inside noise
+- 3: Poor — some directional view but bad structure, chasing or arbitrary SL
+- 4: Weak — entry plausible but R:R poor, SL too tight, or signals conflict
+- 5: Moderate — decent idea, acceptable structure, borderline — don't enter
+- 6: Acceptable — clear bias + valid level, SL structural, R:R ≥ 1.5:1 — tradeable
+- 7: Good — multiple aligned signals, structural entry + SL, R:R ≥ 2:1
+- 8: Strong — ≥3 signals, clean structure, R:R ≥ 2.5:1, no rulebook conflict
+- 9: Excellent — near-ideal, multi-TF alignment, R:R ≥ 3:1
+- 10: Perfect — textbook pattern, volume confirmation, ideal entry, R:R ≥ 4:1
+Use the full range. Most setups should land 4-7.
 
 YOUR TASK:
 1. Score this setup 1-10 as if you were seeing it live at entry time
