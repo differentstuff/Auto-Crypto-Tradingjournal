@@ -100,12 +100,18 @@ def analyze(filters: dict = None) -> dict:
         filters = {}
 
     with db_conn() as conn:
-        kpis = get_dashboard_kpis(filters=filters, conn=conn)
-        deep = get_deep_stats(filters=filters, conn=conn)
+        # Check whether the exchange column exists; fall back to unfiltered if not
+        # (handles DBs that pre-date the v2.5 multi-exchange migration).
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(positions)").fetchall()}
+        safe_filters = filters if "exchange" in cols else {
+            k: v for k, v in filters.items() if k != "exchange"
+        }
+        kpis = get_dashboard_kpis(filters=safe_filters, conn=conn)
+        deep = get_deep_stats(filters=safe_filters, conn=conn)
 
     ctx     = market_context.get_market_context(["BTCUSDT"])
     mkt_str = market_context.format_for_prompt(ctx)
-    prompt  = _build_prompt(kpis, deep, mkt_str, filters=filters)
+    prompt  = _build_prompt(kpis, deep, mkt_str, filters=safe_filters)
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 

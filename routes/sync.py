@@ -1,6 +1,6 @@
 import traceback
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 
 from database import db_conn
 from helpers import _ok, _err
@@ -45,11 +45,9 @@ def api_ai_analyze():
     try:
         filters = request.get_json(force=True) if request.content_length else {}
         return _ok(ai_advisor.analyze(filters=filters or {}))
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        import traceback as _tb
-        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}",
-                        "trace": _tb.format_exc()[-500:]}), 500
+        return _err("Internal server error", 500)
 
 
 @bp.route("/api/rulebook")
