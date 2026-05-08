@@ -45,9 +45,9 @@ def api_ai_analyze():
     try:
         filters = request.get_json(force=True) if request.content_length else {}
         return _ok(ai_advisor.analyze(filters=filters or {}))
-    except Exception:
+    except Exception as e:
         traceback.print_exc()
-        return _err("Internal server error", 500)
+        return _err(f"{type(e).__name__}: {e}", 500)
 
 
 @bp.route("/api/rulebook")
