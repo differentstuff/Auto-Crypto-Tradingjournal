@@ -36,9 +36,9 @@ function _reloadCurrentPage() {
     case 'deep':      if (typeof loadDeepStats  === 'function') loadDeepStats();  break;
     case 'edge':      if (typeof loadEdgeLab    === 'function') loadEdgeLab();    break;
     case 'ai':        if (typeof loadAdvisor    === 'function') loadAdvisor();    break;
-    case 'hindsight': if (typeof loadHindsight  === 'function') loadHindsight();  break;
+    case 'hindsight': if (typeof loadHindsight    === 'function') loadHindsight();    break;
     case 'import':    if (typeof loadImportStatus === 'function') loadImportStatus(); break;
-    // Charts, live, pending, scanner don't filter by exchange in the same way
+    case 'trades':    if (typeof loadLiveTrades   === 'function') loadLiveTrades();   break;
   }
 }
 

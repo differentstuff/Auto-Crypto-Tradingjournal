@@ -33,11 +33,12 @@ function renderMatchBanners(pendingMatches, positions) {
 }
 
 async function confirmMatch(callId, key, positionId) {
-  await api('/api/calls/' + callId + '/confirm-match', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ position_id: positionId || null }),
-  });
+  // api(url, method, body) — must use positional args, not a fetch-options object
+  const res = await api('/api/calls/' + callId + '/confirm-match', 'POST', { position_id: positionId || null });
+  if (!res.ok) {
+    notify('Could not confirm match — ' + (res.error || 'server error'), 'err');
+    return;
+  }
   document.getElementById('match-banner-' + callId)?.remove();
   const savedRes = await api('/api/calls/saved');
   if (savedRes.ok) {
@@ -45,6 +46,7 @@ async function confirmMatch(callId, key, positionId) {
     if (call) liveCallMatches[key] = call;
   }
   renderPositionCards(livePositionsCache);
+  notify('Call linked — will auto-close when position closes', 'ok');
 }
 
 async function dismissMatch(callId) {

@@ -20,7 +20,13 @@ async function loadLiveTrades() {
     ]);
     if (!posRes.ok) throw new Error(posRes.error);
 
+    // Store ALL positions in the cache (needed for chart overlays and call matching)
     livePositionsCache = posRes.data.positions || [];
+    // Apply exchange filter for display
+    const exchF = (typeof _globalExchange !== 'undefined') ? _globalExchange : 'all';
+    const displayPositions = exchF === 'all'
+      ? livePositionsCache
+      : livePositionsCache.filter(p => (p.exchange || 'bitget') === exchF);
     const eq = posRes.data.equity || {};
 
     // Economic calendar warning (non-blocking)
@@ -45,7 +51,7 @@ async function loadLiveTrades() {
       api('/api/market/context?symbols=' + syms).then(mr => {
         if (mr.ok) {
           liveMarketCtx = mr.data.symbols || {};
-          renderPositionCards(livePositionsCache, waitingLimits);  // re-render with context
+          renderPositionCards(displayPositions, waitingLimits);  // re-render with context
         }
       });
     }
@@ -72,10 +78,10 @@ async function loadLiveTrades() {
     liveCallMatches = { ...confirmedMatches };
 
     const waitingLimits = limRes.ok ? (limRes.data || []) : [];
-    renderLiveKpis(livePositionsCache, eq);
-    renderMatchBanners(pendingMatches, livePositionsCache);
-    renderCorrelationWarning(livePositionsCache);
-    renderPositionCards(livePositionsCache, waitingLimits);
+    renderLiveKpis(displayPositions, eq);
+    renderMatchBanners(pendingMatches, displayPositions);
+    renderCorrelationWarning(livePositionsCache);  // keep full set for correlation analysis
+    renderPositionCards(displayPositions, waitingLimits);
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
   } catch(e) {
@@ -198,6 +204,7 @@ function renderPositionCards(positions, waitingLimits) {
           <div class="pos-badge" style="margin-top:4px">
             <span class="badge ${p.direction.toLowerCase()}">${p.direction}</span>
             <span class="badge" style="background:rgba(108,99,255,.15);color:var(--accent)">${p.leverage}x</span>
+            ${p.exchange && p.exchange !== 'bitget' ? `<span class="badge" style="background:rgba(79,195,247,.15);color:rgba(79,195,247,.9);font-size:.62rem">${p.exchange}</span>` : ''}
             ${noSl ? '<span class="badge" style="background:rgba(239,83,80,.15);color:var(--red);font-size:.65rem">NO SL</span>' : ''}
             ${isCritical ? '<span class="badge" style="background:rgba(239,83,80,.25);color:var(--red);animation:pulse 1.5s infinite">⚠ CRITICAL</span>' : ''}
             ${is48h ? `<span class="chip-48h">⏱ ${Math.floor(p.duration_minutes/1440)}d+ OPEN</span>` : ''}
