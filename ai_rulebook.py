@@ -151,29 +151,30 @@ def get_calibration_for_prompt(conn=None, exchange: str = None) -> str:
 # ── Similar trades ─────────────────────────────────────────────────────────────
 
 def get_similar_trades(symbol: str, setup_type: str, direction: str,
-                       conn, limit: int = MAX_SIMILAR) -> list:
+                       conn, limit: int = MAX_SIMILAR,
+                       exchange: str = None) -> list:
     """
     Fetch recent closed trades for same symbol + setup type + direction.
     Falls back to symbol-only if fewer than 3 matching trades found.
+    exchange: if set, restrict to trades from that exchange.
     """
-    rows = conn.execute("""
-        SELECT realized_pnl, direction, setup_type, duration_minutes,
-               entry_price, close_price, open_time
-        FROM positions
-        WHERE symbol = ?
-          AND direction = ?
-          AND (setup_type = ? OR ? IS NULL OR ? = '')
-        ORDER BY close_time DESC LIMIT ?
-    """, (symbol, direction, setup_type, setup_type, setup_type, limit)).fetchall()
+    exch_clause = " AND COALESCE(exchange,'bitget')=?" if exchange in ('bitget','blofin') else ""
+    ep          = [exchange] if exch_clause else []
+    rows = conn.execute(
+        f"SELECT realized_pnl, direction, setup_type, duration_minutes, "
+        f"entry_price, close_price, open_time FROM positions "
+        f"WHERE symbol=? AND direction=? AND (setup_type=? OR ? IS NULL OR ?='')"
+        f"{exch_clause} ORDER BY close_time DESC LIMIT ?",
+        [symbol, direction, setup_type, setup_type, setup_type] + ep + [limit]
+    ).fetchall()
 
     if len(rows) < 3:
-        rows = conn.execute("""
-            SELECT realized_pnl, direction, setup_type, duration_minutes,
-                   entry_price, close_price, open_time
-            FROM positions
-            WHERE symbol = ?
-            ORDER BY close_time DESC LIMIT ?
-        """, (symbol, limit)).fetchall()
+        rows = conn.execute(
+            f"SELECT realized_pnl, direction, setup_type, duration_minutes, "
+            f"entry_price, close_price, open_time FROM positions "
+            f"WHERE symbol=?{exch_clause} ORDER BY close_time DESC LIMIT ?",
+            [symbol] + ep + [limit]
+        ).fetchall()
 
     return [dict(r) for r in rows]
 

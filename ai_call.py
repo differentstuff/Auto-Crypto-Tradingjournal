@@ -29,12 +29,14 @@ LEVERAGE = 10
 
 # ── Sizing ─────────────────────────────────────────────────────────────────────
 
-def _symbol_history(symbol: str, conn) -> dict:
-    rows = conn.execute("""
-        SELECT realized_pnl, duration_minutes, direction
-        FROM positions WHERE symbol = ?
-        ORDER BY close_time DESC LIMIT 20
-    """, (symbol,)).fetchall()
+def _symbol_history(symbol: str, conn, exchange: str = None) -> dict:
+    exch_clause = " AND COALESCE(exchange,'bitget')=?" if exchange in ('bitget','blofin') else ""
+    params      = [symbol] + ([exchange] if exch_clause else [])
+    rows = conn.execute(
+        f"SELECT realized_pnl, duration_minutes, direction FROM positions "
+        f"WHERE symbol=?{exch_clause} ORDER BY close_time DESC LIMIT 20",
+        params
+    ).fetchall()
     if not rows:
         return {"trades": 0}
     pnls = [r[0] for r in rows if r[0] is not None]
