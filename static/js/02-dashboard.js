@@ -56,7 +56,7 @@ async function loadDashboard() {
       cls: pnlClass(d.total_pnl), sub: `Net after fees`,
       tip: 'Sum of all closed trade profits and losses after deducting exchange fees. This is your actual earned money.' },
     { label: 'Total Fees', value: fmtC(d.total_fees) + ' USDT', cls: 'neg', sub: 'Paid to exchange',
-      tip: 'Total trading fees paid to Bitget across all trades — opening and closing fees combined.' },
+      tip: 'Total trading fees paid to exchanges across all trades — opening and closing fees combined.' },
     { label: 'Win Rate', value: d.win_rate + '%', cls: d.win_rate >= 50 ? 'pos' : 'neg',
       sub: `${d.win_trades}W / ${d.loss_trades}L`,
       tip: 'Percentage of trades that closed in profit. Above 50% = more winners than losers. Profit factor matters too — a 40% win rate can still be profitable with large winners.' },

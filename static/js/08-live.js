@@ -4,6 +4,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 let liveTradesInterval  = null;
 let livePositionsCache  = [];
+let liveWaitingLimits   = [];   // cached so confirm-match can re-render without losing badges
 let liveAnalysisCache   = {};   // key: "SYMBOL_direction" → analysis result dict
 let liveOpenPanels      = new Set();  // indices of cards with open AI panels
 let liveCallMatches     = {};   // key: "SYMBOL_direction" → saved call data
@@ -51,7 +52,7 @@ async function loadLiveTrades() {
       api('/api/market/context?symbols=' + syms).then(mr => {
         if (mr.ok) {
           liveMarketCtx = mr.data.symbols || {};
-          renderPositionCards(displayPositions, waitingLimits);  // re-render with context
+          renderPositionCards(displayPositions, liveWaitingLimits);  // re-render with context
         }
       });
     }
@@ -77,11 +78,11 @@ async function loadLiveTrades() {
 
     liveCallMatches = { ...confirmedMatches };
 
-    const waitingLimits = limRes.ok ? (limRes.data || []) : [];
+    liveWaitingLimits = limRes.ok ? (limRes.data || []) : [];
     renderLiveKpis(displayPositions, eq);
     renderMatchBanners(pendingMatches, displayPositions);
     renderCorrelationWarning(livePositionsCache);  // keep full set for correlation analysis
-    renderPositionCards(displayPositions, waitingLimits);
+    renderPositionCards(displayPositions, liveWaitingLimits);
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
   } catch(e) {
@@ -117,7 +118,7 @@ function renderLiveKpis(positions, eq) {
 
   document.getElementById('trades-kpi-grid').innerHTML = [
     { label: 'Open Positions', value: positions.length, cls: 'neu', sub: `${critical} critical`,
-      tip: `Number of currently open futures positions on Bitget. Critical = unrealized loss > 30% of margin (${critical} position${critical!==1?'s':''} flagged).` },
+      tip: `Number of currently open futures positions across all configured exchanges. Critical = unrealized loss > 30% of margin (${critical} position${critical!==1?'s':''} flagged).` },
     { label: 'Total Unrealized P&L', value: (totalUnrl>=0?'+':'')+fmtC(totalUnrl)+' USDT',
       cls: pnlClass(totalUnrl), sub: 'Across all open trades',
       tip: 'Combined mark-to-market profit or loss across all open positions. Fluctuates with price — not realized until you close.' },

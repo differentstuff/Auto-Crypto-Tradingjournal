@@ -47,7 +47,12 @@ async function confirmMatch(callId, key, positionId, exchange) {
     const call = savedRes.data.find(c => c.id === callId);
     if (call) liveCallMatches[key] = call;
   }
-  renderPositionCards(livePositionsCache);
+  // Use cached liveWaitingLimits so limit badges don't disappear after confirm
+  const exchF2 = (typeof _globalExchange !== 'undefined') ? _globalExchange : 'all';
+  const displayPos = exchF2 === 'all'
+    ? livePositionsCache
+    : livePositionsCache.filter(p => (p.exchange || 'bitget') === exchF2);
+  renderPositionCards(displayPos, liveWaitingLimits);
   notify('Call linked — will auto-close when position closes', 'ok');
 }
 
