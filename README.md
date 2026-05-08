@@ -224,6 +224,30 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v2.3 — Code Audit & Accuracy Fixes
+
+Ten targeted fixes from a full codebase audit. No new features — pure correctness and label clarity.
+
+#### Call Analyzer (`ai_call.py`)
+- **Direction detection fixed** — previously defaulted to Short for any call that lacked the word "long". Now detects Short/Sell/Bearish explicitly and defaults to Long, matching how analyst calls are written in practice
+- **Symbol extraction expanded** — previously required a `$` prefix (`$BTC`). Now also matches `#SYMBOL`, bare `XXXUSDT`, and a guarded bare-ticker fallback (blocks SL/TP/DCA/USD false positives). Calls without a dollar sign no longer produce `UNKNOWN` symbol, preserving history lookup and correlation checks
+- **DCA risk annotation** — sizing output now includes a `risk_note` field clarifying that the 2% DCA risk figure is the total across both entry legs, not per-entry
+
+#### Hindsight Analysis (`ai_hindsight.py`)
+- **`ENTER_THRESHOLD` raised 5 → 6** — now matches what the prompt instructs Claude (`score ≥ 6 = ENTER`). Fixes the fallback `would_enter` default when Claude omits the field
+- **`direction_match` default corrected** — previously defaulted to `True` when Claude omitted `rec_direction` (SKIP responses). Now defaults to `would_enter`, preventing phantom direction-match credit on skipped trades
+- **Docstring corrected** — stated "score 5–6 = neutral" but code correctly treats only score 5 as neutral and score ≥ 6 as ENTER per the prompt
+
+#### Analytics (`analytics.py`)
+- **Profit factor on perfect streaks** — returned `None` (displayed as "—") when there were zero losing trades. Now returns `999.0`, rendered as **∞** in the dashboard
+- **Duration bucket labels** — clarified to `1h-4h` / `4h-24h` to make the hour boundary unambiguous
+
+#### Chart Context (`chart_context.py`)
+- **Confluence thresholds tightened** — "Bullish" label raised from 15% → 33% net signal alignment; "Strong Bullish" from 50% → 60%. Previously a single net signal out of six triggered a directional label that flowed into AI prompts
+- **Unified price tolerance** — `PRICE_TOLERANCE = 0.004` shared constant replaces separate 0.3% (S/R clustering) and 0.5% (trendline validation) values, ensuring both algorithms agree on what counts as the same price zone
+
+---
+
 ### v2.2 — Setup Scanner, Hindsight Analysis & Scoring Guide
 
 #### Setup Scanner (⭐ new nav page)

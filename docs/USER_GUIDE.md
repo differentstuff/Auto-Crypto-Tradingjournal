@@ -40,7 +40,7 @@ The 11 cards at the top show your key numbers across all time (or filtered by th
 - **Total P&L** — sum of all realized_pnl (net of fees)
 - **Total Fees** — total trading fees paid
 - **Win Rate** — % of trades that closed positive
-- **Profit Factor** — total wins ÷ abs(total losses). Above 1.0 = profitable overall; above 1.5 = good
+- **Profit Factor** — total wins ÷ abs(total losses). Above 1.0 = profitable overall; above 1.5 = good. Shows **∞** when the filtered window contains no losing trades
 - **Best Trade / Worst Trade** — single best and worst PnL
 - **Avg Win / Avg Loss** — average size of winning vs losing trades
 - **Max Drawdown** — largest peak-to-trough drop on the cumulative PnL curve

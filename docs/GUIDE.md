@@ -350,10 +350,12 @@ Pure Python over SQLite. Two public functions:
 - Weekday (Mon–Sun, `strftime('%w')`)
 - Hour of day (0–23 UTC, based on open_time)
 - Direction (Long vs Short)
-- Duration buckets (`< 1h`, `1-4h`, `4-24h`, `1-7 days`, `> 7 days`)
+- Duration buckets (`< 1h`, `1h-4h`, `4h-24h`, `1-7 days`, `> 7 days`)
 - Streaks (max + current win/loss streaks)
 - Fee analysis (total, avg, % of gross PnL)
 - Worst 5 symbols
+
+**`profit_factor` edge case (v2.3):** Returns `999.0` when `sum_losses == 0` (zero losing trades in the filtered window). The dashboard renders this as **∞**. Returns `None` only when there are no trades at all.
 
 **Filter building:** `_build_where(filters)` returns parameterized `(where_clause, params)` — no SQL injection possible.
 
@@ -393,6 +395,20 @@ BTCUSDT 4H: RSI 58(neu) | MACD bull | EMA ↑all | ADX 28↑ | ATR 1.2% | BB 62%
 {"score": 3, "max": 8, "bullish": 5, "bearish": 2, "label": "Bullish", "details": ["4H: 3↑/1↓", "1D: 2↑/1↓"]}
 ```
 Injected by `prompt_builder` as a single CONFLUENCE line: `CONFLUENCE (4H/1D): Bullish (+3/8 — 5 bullish / 2 bearish signals)`.
+
+**Label thresholds (v2.3):** `pct = net_score / max_signals`
+
+| pct range | Label |
+|-----------|-------|
+| ≥ 0.60 | Strong Bullish |
+| ≥ 0.33 | Bullish |
+| > −0.33 | Neutral |
+| ≤ −0.33 | Bearish |
+| ≤ −0.60 | Strong Bearish |
+
+Raised from 0.15/0.50 (v2.2) — a single net signal out of six previously triggered a directional label.
+
+**`PRICE_TOLERANCE = 0.004` (v2.3):** Shared constant (0.4%) used by both `detect_support_resistance()` (formerly 0.003) and `detect_trendlines()` (formerly 0.005) so both algorithms treat the same price zone as one level.
 
 ---
 
@@ -456,16 +472,22 @@ All routes continue importing from `ai_call_analyzer` unchanged. Logic lives in 
 
 ### `analyze_call(call_text, account_equity, image_b64, image_type, market_regime, open_positions)`
 
+**Symbol extraction (v2.3):** Priority order — `$SYMBOL` / `#SYMBOL` → bare `XXXUSDT` → guarded bare ticker (blocklist: SL, TP, DCA, USD, ATR, RSI, ALL, BUY, ASK, BID). Falls back to `UNKNOWN` only if nothing matches.
+
+**Direction detection (v2.3):** Detects Short/Sell/Bearish explicitly; defaults to Long. Previously defaulted to Short for any call that lacked the word "long".
+
 **Price extraction:** Regex patterns for `entry at $X`, `dca: $X`, `sl under $X`, `@$X` etc. Falls back to highest/lowest price in text for entry/SL.
 
 **Position sizing formula:**
 ```
-risk_pct  = 2.0% (DCA) or 1.0% (no DCA)
+risk_pct  = 2.0% (DCA) or 1.0% (no DCA)   ← total risk, not per entry
 risk_amount = equity × risk_pct / 100
 stop_dist = (avg_entry − sl) / avg_entry
 notional  = risk_amount / stop_dist
 margin    = notional / leverage
 ```
+
+**`risk_note` field (v2.3):** Sizing output includes `"risk_note": "2% total across both legs (1% per entry)"` for DCA trades so the doubled percentage is unambiguous.
 
 **ATR SL quality check (v2.1):** `_atr_sl_warning()` fetches 1H ATR. If `|entry − sl| < 0.5× ATR` → "inside noise" warning; if `< 1× ATR` → "tight stop" caution. Injected as `⚠ ATR RISK:` block in prompt.
 
@@ -1552,17 +1574,26 @@ For each trade:
 2. `chart_context.get_historical_context(symbol, ["4H","1D"], end_ms)` fetches candles ending at entry time (bypasses cache, uses Bitget `endTime` param)
 3. Full indicator suite computed on the historical candle snapshot
 4. Claude prompted to score as if seeing the setup live at that moment — actual outcome never revealed
-5. Comparison computed server-side: `hypothetical_pnl` = actual_pnl if would enter same direction (score ≥ 7), else 0
+5. Comparison computed server-side (v2.3 thresholds):
+   - score < 5 → SKIP, hypothetical_pnl = 0
+   - score == 5 → NEUTRAL borderline, hypothetical_pnl = actual_pnl (no strong signal)
+   - score ≥ 6 → ENTER, hypothetical_pnl = actual_pnl (direction match) or 0 (conflict)
+
+### Key constants (v2.3)
+
+`ENTER_THRESHOLD = 6` — aligns with the prompt instruction `score ≥ 6 = ENTER`. Used as fallback for `would_enter` when Claude omits the field. Previously was 5 (inconsistent with prompt).
 
 ### Signal accuracy verdicts
 
-| Verdict | Meaning |
-|---------|---------|
-| TP | Would enter, direction match, trade profitable |
-| FP | Would enter, direction match, trade lost |
-| TN | Would skip, trade lost (correct) |
-| FN | Would skip, trade was profitable (missed) |
-| NEUTRAL | Score 5-6 — no strong signal either way |
+| Verdict | Condition |
+|---------|-----------|
+| TP | score ≥ 6, direction match, trade profitable |
+| FP | score ≥ 6, direction match, trade lost |
+| TN | score < 6, trade lost (correct skip) |
+| FN | score < 6, trade was profitable (missed) |
+| NEUTRAL | score exactly 5 — borderline, excluded from accuracy stats |
+
+`direction_match` (v2.3): defaults to `would_enter` (not `True`) when Claude omits `rec_direction`. Prevents SKIP responses from receiving phantom direction-match credit.
 
 Signal accuracy = (TP + TN) / (TP + FP + TN + FN) — measures how well the scoring predicts real outcomes on your own history.
 
