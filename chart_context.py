@@ -685,6 +685,27 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
         arrow = "↑" if v["ratio"] > 1.5 else ("↓" if v["ratio"] < 0.7 else "")
         parts.append(f"Vol {v['ratio']}x{arrow}")
 
+    if "wavetrend" in indicators:
+        wt = indicators["wavetrend"]
+        wt1v = wt.get("wt1", 0)
+        sig  = wt.get("signal")
+        zone = wt.get("zone", "neutral")
+        cross = wt.get("cross")
+        if sig == "gold_buy":
+            wt_str = f"WT GOLD↑({wt1v})"   # extreme OS cross — strongest buy
+        elif sig == "buy":
+            wt_str = f"WT↑XO-OS({wt1v})"  # bullish cross in oversold
+        elif sig == "sell":
+            wt_str = f"WT↓XO-OB({wt1v})"  # bearish cross in overbought
+        elif cross == "bullish":
+            wt_str = f"WT↑XO({wt1v})"     # cross outside OS zone
+        elif cross == "bearish":
+            wt_str = f"WT↓XO({wt1v})"
+        else:
+            zone_tag = "OB" if zone == "overbought" else ("OS" if zone == "oversold" else "")
+            wt_str = f"WT {wt1v}{('('+zone_tag+')') if zone_tag else ''}"
+        parts.append(wt_str)
+
     if "support_resistance" in indicators:
         sr   = indicators["support_resistance"]
         sups = sorted([l for l in sr if l["type"] == "support"],   key=lambda x: -x["price"])
@@ -896,17 +917,18 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         macd_w = _macd_weight(inds.get("macd", {}))
         ema_w  = _ema_weight(inds.get("ema",   {}))
         adx_w  = _adx_weight(inds.get("adx",   {}))
-        base_score = rsi_w + macd_w + ema_w + adx_w
+        wt_w   = _wt_weight(inds.get("wavetrend", {}))
+        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w
         vol_w  = _volume_weight(inds, base_score)
 
         tf_score = base_score + vol_w
         total_score += tf_score
 
-        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, vol_w) if w > 0), 1)
-        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, vol_w) if w < 0), 1)
+        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, vol_w) if w > 0), 1)
+        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
-    max_val = float(len(tfs) * 4.5)  # 4 directional signals (max 1.0) + volume bonus (max 0.5)
+    max_val = float(len(tfs) * 5.5)  # 5 directional signals (max 1.0) + volume bonus (max 0.5)
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
@@ -938,6 +960,24 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
     }
 
 
+def _wt_weight(wt: dict) -> float:
+    """
+    WaveTrend contribution (Cipher A/B).
+    Crossover signals in OB/OS zones are the strongest inputs (±1.0).
+    Gold signal (extreme oversold cross) = max bullish (1.0).
+    Position-only (no cross) scales WT1 value like RSI: ±0.5 max.
+    """
+    if not wt:
+        return 0.0
+    signal = wt.get("signal")
+    if signal == "gold_buy":   return  1.0
+    if signal == "buy":        return  0.85
+    if signal == "sell":       return -0.85
+    # No fresh cross — use WT1 position scaled to ±0.5
+    wt1 = wt.get("wt1", 0.0)
+    return max(-0.5, min(0.5, wt1 / 60.0))
+
+
 def _volume_weight(inds: dict, directional_score: float) -> float:
     """
     Volume confirms the dominant direction.
@@ -955,7 +995,7 @@ def _volume_weight(inds: dict, directional_score: float) -> float:
 
 
 def _get_tf_weights(ctx: dict, tf: str) -> list:
-    """Return the five signal weights for a single timeframe (RSI/MACD/EMA/ADX/Vol)."""
+    """Return the six signal weights for a single timeframe (RSI/MACD/EMA/ADX/WT/Vol)."""
     inds = ctx.get(tf, {}).get("indicators", {})
     if not inds.get("ok"):
         return []
@@ -964,6 +1004,7 @@ def _get_tf_weights(ctx: dict, tf: str) -> list:
         _macd_weight(inds.get("macd", {})),
         _ema_weight(inds.get("ema",   {})),
         _adx_weight(inds.get("adx",   {})),
+        _wt_weight(inds.get("wavetrend", {})),
     ]
     base.append(_volume_weight(inds, sum(base)))
     return base
