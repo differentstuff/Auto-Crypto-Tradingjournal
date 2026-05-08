@@ -184,9 +184,12 @@ function buildScannerRow(s, i) {
                    Today:'rgba(108,99,255,.12)','1-3 days':'rgba(121,134,203,.08)'}[s.urgency] || '';
   const urgCol  = {Now:'var(--red)','1-4h':'var(--yellow)',Today:'var(--accent)','1-3 days':'var(--muted)'}[s.urgency] || 'var(--muted)';
 
-  const row = `<tr class="scanner-row" onclick="toggleScanDetail(${i})" data-idx="${i}">
+  const quickOnly = s.quick_score_only;
+  const row = `<tr class="scanner-row${quickOnly?' scanner-row-quick':''}" onclick="toggleScanDetail(${i})" data-idx="${i}"
+    title="${quickOnly ? 'Quick score only (Haiku) — no full breakdown available' : ''}">
     <td><span style="font-size:1rem;font-weight:800;color:${scoreCol}">${score}</span>
-        <span style="font-size:.7rem;color:var(--muted)">/10</span></td>
+        <span style="font-size:.7rem;color:var(--muted)">/10</span>
+        ${quickOnly ? '<span style="font-size:.6rem;color:var(--muted);margin-left:3px">⚡</span>' : ''}</td>
     <td style="font-weight:700">${base}<span style="color:var(--muted);font-size:.7rem">USDT</span></td>
     <td><span class="badge" style="background:${dirBg};color:${dirColor};font-size:.72rem">${(s.direction||'').toUpperCase()}</span></td>
     <td style="font-size:.75rem;color:var(--muted);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${conf}</td>
@@ -243,6 +246,7 @@ function buildDetailPanel(s, i) {
         <span style="color:${isLong?'var(--accent3)':'var(--red)'}">${s.direction}</span> —
         <span style="color:${scoreColor}">${s.setup_score}/10 ${scoreLabel}</span>
       </span>
+      ${s.quick_score_only ? `<span style="font-size:.7rem;color:var(--muted);margin-left:8px">⚡ Quick score (Haiku) — no full breakdown</span>` : ''}
     </div>
 
     ${s.why_this_score ? `

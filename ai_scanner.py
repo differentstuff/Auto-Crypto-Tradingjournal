@@ -354,18 +354,20 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
     ) or "none"
 
     variable = (
-        f"Score this {direction.upper()} setup for {symbol} — return score 0-10.\n\n"
+        f"Score this {direction.upper()} setup for {symbol} — return score 0-10 "
+        f"and one short sentence explaining the key factor behind the score.\n\n"
         f"{pt_4h}\n{pt_1d}\n"
         f"Confluence: {conf_line}\nS/R: {sr_compact}\n\n"
         f'If score < {min_score}: {{"score":0}}\n'
-        f'If score >= {min_score}: {{"score":7,"direction":"{direction}"}}\n'
+        f'If score >= {min_score}: {{"score":7,"direction":"{direction}",'
+        f'"reason":"one sentence — main factor (e.g. \'4H EMA stack bullish, RSI reset to 52, clean S/R entry zone\')"}}\n'
         "Respond with ONLY valid JSON — no extras."
     )
 
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         msg = client.messages.create(
-            model=FAST_MODEL, max_tokens=50,
+            model=FAST_MODEL, max_tokens=120,
             messages=[{"role": "user", "content": [
                 {"type": "text", "text": shared_prefix},
                 {"type": "text", "text": variable},
@@ -374,8 +376,13 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
         r = json.loads(strip_fence(msg.content[0].text.strip()))
         if r.get("score", 0) < min_score:
             return None
-        return {"score": r["score"], "direction": r.get("direction", direction),
-                "_input_tokens": msg.usage.input_tokens, "_output_tokens": msg.usage.output_tokens}
+        return {
+            "score":     r["score"],
+            "direction": r.get("direction", direction),
+            "reason":    r.get("reason", ""),
+            "_input_tokens":  msg.usage.input_tokens,
+            "_output_tokens": msg.usage.output_tokens,
+        }
     except Exception:
         return None
 
@@ -464,11 +471,12 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
                 sym, ctx, conf, dir_ = fq[f]
                 r = f.result()
                 if r is not None:
-                    quick_results.append((sym, ctx, conf, dir_, r["score"]))
+                    quick_results.append((sym, ctx, conf, dir_, r["score"], r.get("reason", "")))
 
         # Sort by quick score, take top N for expensive full-detail pass
         quick_results.sort(key=lambda x: -x[4])
-        top_finalists = quick_results[:FULL_DETAIL_TOP_N]
+        top_finalists  = quick_results[:FULL_DETAIL_TOP_N]
+        rest_finalists = quick_results[FULL_DETAIL_TOP_N:]
 
         # Stage 3b — Full detail with Sonnet on top-N only
         setups = []
@@ -478,12 +486,27 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
                     _ai_score, sym, ctx, conf, direction,
                     mkt_str, histories.get(sym, {"trades": 0}), rulebook_str, min_score
                 ): sym
-                for sym, ctx, conf, direction, _ in top_finalists
+                for sym, ctx, conf, direction, _, _reason in top_finalists
             }
             for f in as_completed(fs):
                 result = f.result()
                 if result is not None:
                     setups.append(result)
+
+        # Add non-top-N setups with Haiku score + one-sentence rationale
+        for sym, ctx, conf, direction, score, reason in rest_finalists:
+            inds = ctx.get("4H", {}).get("indicators", {})
+            price = inds.get("ema", {}).get("current_price")
+            setups.append({
+                "symbol":      sym,
+                "direction":   direction,
+                "setup_score": score,
+                "setup_label": "Quick score only",
+                "why_this_score": reason or "No rationale (Haiku quick-score pass)",
+                "quick_score_only": True,
+                "confluence":  conf.get("label", ""),
+                "current_price": price,
+            })
 
         setups.sort(key=lambda x: -x.get("setup_score", 0))
         _update(status="completed", setups=setups,
