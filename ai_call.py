@@ -167,6 +167,13 @@ Analyze the call and respond with ONLY a valid JSON object (no markdown, no code
   "summary": "2-3 sentence honest overall assessment of this call"
 }}
 
+Level proximity definitions (use when scoring setup quality):
+- Entry ≤ 0.5× ATR from structural level → strong anchor, no penalty
+- Entry 0.5–1.0× ATR from structural level → acceptable, note it
+- Entry > 1.0× ATR from nearest level → structural anchor missing → score ≤ 6
+- SL < 1.0× ATR from entry → inside noise → score ≤ 6
+- R:R < 1.5:1 → score ≤ 6; R:R ≥ 2:1 for score 7+; R:R ≥ 3:1 for score 9+
+
 Rules:
 - Use the pre-calculated position sizing numbers EXACTLY — do not change them
 - If stop loss is based on a candle close (not a price level), set has_candle_close_sl=true and explain how to handle it

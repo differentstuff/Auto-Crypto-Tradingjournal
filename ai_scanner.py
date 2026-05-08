@@ -268,6 +268,13 @@ SCORING SCALE:
 9 — Excellent: all 8-criteria + strong ADX, multi-TF alignment, no rulebook conflicts
 10 — Perfect: textbook chart pattern, volume confirmation, ideal entry timing, R:R ≥ 4:1
 
+LEVEL PROXIMITY DEFINITIONS (use these when rating entry quality):
+- Entry ≤ 0.5× ATR from the structural level → strong anchor, no penalty
+- Entry 0.5–1.0× ATR from the structural level → acceptable, note in rationale
+- Entry > 1.0× ATR from nearest level → structural anchor missing → reduce score 1–2 points
+- SL ≥ 1.0× ATR from entry → adequate; SL < 1.0× ATR → inside noise floor → score cannot exceed 6
+- R:R below 1.5:1 → score cannot exceed 6; R:R ≥ 2:1 → required for score ≥ 7; R:R ≥ 3:1 for score ≥ 9
+
 REQUIREMENTS for any score ≥ {min_score}:
 - A specific entry zone anchored to a named structural level (S/R, EMA, trendline) with exact prices
 - A stop loss beyond the nearest structural level and ≥ 1× ATR from entry — state the level and ATR distance explicitly
