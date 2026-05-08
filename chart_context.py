@@ -97,24 +97,31 @@ def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
     if len(df) < n_swing * 2 + 3:
         return []
 
+    import math as _math
     highs = df["high"].values.astype(float)
     lows  = df["low"].values.astype(float)
     close = float(df["close"].iloc[-1])
+    n_bars = len(highs)
 
+    # Decay constant: a candle ~35 bars ago carries ~50% the weight of the last bar.
+    DECAY = 0.02
+
+    # Collect (price, candle_index) tuples for pivots
     pivot_highs, pivot_lows = [], []
-    for i in range(n_swing, len(df) - n_swing):
+    for i in range(n_swing, n_bars - n_swing):
         window_h = highs[i - n_swing : i + n_swing + 1]
         window_l = lows[i  - n_swing : i + n_swing + 1]
         if highs[i] >= window_h.max():
-            pivot_highs.append(highs[i])
+            pivot_highs.append((highs[i], i))
         if lows[i] <= window_l.min():
-            pivot_lows.append(lows[i])
+            pivot_lows.append((lows[i], i))
 
-    def _cluster(prices, level_type):
-        if not prices:
+    def _cluster(pivots, level_type):
+        """Cluster (price, index) pivots; count touches with exponential recency decay."""
+        if not pivots:
             return []
         levels = []
-        for p in sorted(prices):
+        for p, idx in sorted(pivots, key=lambda x: x[0]):
             merged = False
             for lvl in levels:
                 centroid = lvl["_sum"] / lvl["_n"]
@@ -125,18 +132,25 @@ def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
                     break
             if not merged:
                 levels.append({"_sum": p, "_n": 1, "type": level_type})
+
         result = []
         for lvl in levels:
             price = lvl["_sum"] / lvl["_n"]
-            touches = (
-                sum(1 for h in highs if abs(h - price) / price < tolerance_pct) +
-                sum(1 for l in lows  if abs(l - price) / price < tolerance_pct)
-            )
+            # Recency-weighted touch count: w = exp(-DECAY * bars_from_end)
+            weighted = 0.0
+            raw      = 0
+            for k in range(n_bars):
+                bars_ago = n_bars - 1 - k
+                if abs(highs[k] - price) / price < tolerance_pct or \
+                   abs(lows[k]  - price) / price < tolerance_pct:
+                    weighted += _math.exp(-DECAY * bars_ago)
+                    raw      += 1
             result.append({
                 "price":    round(price, 8),
                 "type":     lvl["type"],
                 "strength": lvl["_n"],
-                "touches":  touches,
+                "touches":  raw,                    # raw count shown in UI
+                "w_touches": round(weighted, 2),    # recency-weighted for ranking
             })
         return result
 
@@ -147,8 +161,9 @@ def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
     supports    = [l for l in supports    if l["price"] < close * 1.02]
     resistances = [l for l in resistances if l["price"] > close * 0.98]
 
-    supports    = sorted(supports,    key=lambda x: (-x["touches"], -x["strength"]))[:max_levels // 2]
-    resistances = sorted(resistances, key=lambda x: (-x["touches"], -x["strength"]))[:max_levels // 2]
+    # Rank by recency-weighted touches so a recently-tested level outranks a stale one
+    supports    = sorted(supports,    key=lambda x: (-x["w_touches"], -x["strength"]))[:max_levels // 2]
+    resistances = sorted(resistances, key=lambda x: (-x["w_touches"], -x["strength"]))[:max_levels // 2]
 
     return sorted(supports + resistances, key=lambda x: x["price"])
 
