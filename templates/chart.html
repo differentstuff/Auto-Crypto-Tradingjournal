@@ -24,6 +24,10 @@ header{display:flex;align-items:center;justify-content:space-between;
 .tf-btn:hover:not(.active){background:var(--bg);color:var(--fg)}
 .tf-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
 #chart-wrap{flex:1;min-height:0;position:relative}
+#wt-wrap{height:130px;flex-shrink:0;position:relative;
+         border-top:1px solid rgba(255,255,255,.06);background:var(--bg)}
+#wt-label{position:absolute;top:4px;left:8px;z-index:4;pointer-events:none;
+          font-size:.68rem;font-weight:600;letter-spacing:.04em;color:var(--muted)}
 #sr-legend{padding:7px 14px;background:var(--bg2);border-top:1px solid var(--border);
            display:flex;gap:6px;flex-wrap:wrap;min-height:34px;align-items:center;flex-shrink:0}
 #status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -36,6 +40,7 @@ header{display:flex;align-items:center;justify-content:space-between;
   <div id="tf-btns"></div>
 </header>
 <div id="chart-wrap"><div id="status">Loading chart…</div></div>
+<div id="wt-wrap"><div id="wt-label">VMC Cipher B — WaveTrend</div></div>
 <div id="sr-legend"></div>
 
 <script>
@@ -44,6 +49,7 @@ let symbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
 let tf     = params.get('timeframe') || '4H';
 const TFS  = ['15m','1H','4H','1D'];
 let _chart = null;
+let _wtChart = null;
 
 // Liquidation levels: liqs=[{price,label},...]
 let _liquidations = [];
@@ -156,7 +162,8 @@ async function loadChart() {
   document.getElementById('status').textContent = 'Loading…';
   document.getElementById('status').style.display = 'flex';
   document.getElementById('sr-legend').innerHTML  = '';
-  if (_chart) { _chart.remove(); _chart = null; }
+  if (_chart)   { _chart.remove();   _chart   = null; }
+  if (_wtChart) { _wtChart.remove(); _wtChart = null; }
   // Remove old overlay canvas now (new one created after chart builds)
   const old = wrap.querySelector('.sr-canvas');
   if (old) old.remove();
@@ -172,7 +179,7 @@ async function loadChart() {
 
   if (!json.ok) { document.getElementById('status').textContent = 'Error: ' + json.error; return; }
 
-  const { candles, levels, htf_levels, trendlines, fibonacci, current_price } = json.data;
+  const { candles, levels, htf_levels, trendlines, fibonacci, wavetrend, current_price } = json.data;
   if (!candles || !candles.length) {
     document.getElementById('status').textContent = 'No candle data for ' + symbol;
     return;
@@ -310,6 +317,9 @@ async function loadChart() {
     });
   });
 
+  // VMC Cipher B — WaveTrend oscillator pane
+  _buildWtPane(document.getElementById('wt-wrap'), wavetrend || [], _chart);
+
   // Start canvas overlay (S/R boxes + liquidation lines)
   _startOverlay(wrap, series, levels, htf_levels, _liquidations);
 
@@ -399,10 +409,101 @@ async function loadChart() {
     : '<span style="color:#7986cb;font-size:.74rem">No S/R or trendlines detected</span>';
 }
 
+// ── VMC Cipher B — WaveTrend pane builder ─────────────────────────────────────
+// Renders a 130px oscillator below the main chart.
+// Uses a second LightweightCharts instance; timeScale is synced to main chart.
+function _buildWtPane(wtWrap, wtData, mainChart) {
+  // Tear down previous instance if any
+  if (_wtChart) { _wtChart.remove(); _wtChart = null; }
+  if (!wtData || !wtData.length) return;
+
+  _wtChart = LightweightCharts.createChart(wtWrap, {
+    width:  wtWrap.clientWidth,
+    height: 130,
+    layout: { background: { type: 'solid', color: '#0a0d14' }, textColor: 'rgba(121,134,203,0.6)' },
+    grid:   { vertLines: { color: 'rgba(255,255,255,.03)' }, horzLines: { color: 'rgba(255,255,255,.03)' } },
+    crosshair:       { mode: 1 },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,.07)', scaleMargins: { top: 0.05, bottom: 0.05 } },
+    timeScale:       { visible: false },  // hidden — synced via subscribeVisibleLogicalRangeChange
+    handleScroll:    false,
+    handleScale:     false,
+  });
+
+  // OB/OS zone fills using two baseline series with fill between
+  // Approximate with createPriceLine at ±53, ±60, ±80
+  const refLines = [
+    { price:  60, color: 'rgba(239,83,80,0.20)',  title: 'OB' },
+    { price:  53, color: 'rgba(239,83,80,0.10)',  title: '' },
+    { price:   0, color: 'rgba(255,255,255,0.12)', title: '0' },
+    { price: -53, color: 'rgba(38,217,107,0.10)', title: '' },
+    { price: -60, color: 'rgba(38,217,107,0.20)', title: 'OS' },
+    { price: -80, color: 'rgba(255,213,60,0.25)', title: 'GOLD' },
+  ];
+
+  // WT2 series (red, drawn first so WT1 renders on top)
+  const wt2Series = _wtChart.addLineSeries({
+    color: 'rgba(239,83,80,0.70)', lineWidth: 1,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  wt2Series.setData(wtData.map(d => ({ time: d.time, value: d.wt2 })));
+  refLines.forEach(r => wt2Series.createPriceLine({
+    price: r.price, lineWidth: 1, lineStyle: 2,
+    color: r.color, axisLabelVisible: !!r.title, title: r.title,
+  }));
+
+  // MFI histogram (Cipher B money flow) — subtle background bars
+  const mfiSeries = _wtChart.addHistogramSeries({
+    priceFormat: { type: 'volume' }, priceScaleId: 'mfi',
+  });
+  _wtChart.priceScale('mfi').applyOptions({
+    scaleMargins: { top: 0.60, bottom: 0 }, visible: false,
+  });
+  mfiSeries.setData(wtData.map(d => ({
+    time: d.time, value: Math.abs(d.mfi),
+    color: d.mfi >= 0 ? 'rgba(38,217,107,0.18)' : 'rgba(239,83,80,0.18)',
+  })));
+
+  // WT1 series (teal/cyan, main line)
+  const wt1Series = _wtChart.addLineSeries({
+    color: 'rgba(79,195,247,0.90)', lineWidth: 2,
+    priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: true,
+  });
+  wt1Series.setData(wtData.map(d => ({ time: d.time, value: d.wt1 })));
+
+  // Signal markers (buy circles, gold circles, sell diamonds)
+  const markers = wtData
+    .filter(d => d.signal)
+    .map(d => ({
+      time:     d.time,
+      position: d.signal === 'sell' ? 'aboveBar' : 'belowBar',
+      color:    d.signal === 'gold_buy' ? '#ffd700'
+              : d.signal === 'buy'      ? '#26d96b'
+              :                           '#ef5350',
+      shape:    d.signal === 'sell' ? 'arrowDown' : 'circle',
+      text:     d.signal === 'gold_buy' ? '●' : '',
+      size:     d.signal === 'gold_buy' ? 2 : 1,
+    }));
+  wt1Series.setMarkers(markers);
+
+  // Sync timeScale with main chart
+  mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (range && _wtChart) _wtChart.timeScale().setVisibleLogicalRange(range);
+  });
+  _wtChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (range && _chart) _chart.timeScale().setVisibleLogicalRange(range);
+  });
+
+  mainChart.timeScale().fitContent();
+}
+
 window.addEventListener('resize', () => {
   if (_chart) {
     const wrap = document.getElementById('chart-wrap');
     _chart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
+  }
+  if (_wtChart) {
+    const wtWrap = document.getElementById('wt-wrap');
+    _wtChart.applyOptions({ width: wtWrap.clientWidth });
   }
 });
 
