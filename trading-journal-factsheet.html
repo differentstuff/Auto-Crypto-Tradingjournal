@@ -432,7 +432,7 @@
   <!-- HEADER -->
   <div class="header">
     <div class="header-inner">
-      <div class="app-badge">📈 Self-Hosted · Open Source · Raspberry Pi · v2.5</div>
+      <div class="app-badge">📈 Self-Hosted · Open Source · Raspberry Pi · v2.6</div>
       <div class="app-title">Crypto <span>Trading</span> Journal</div>
       <div class="tagline">AI-powered analytics and trade decision platform for Bitget &amp; Blofin USDT-M Futures</div>
       <div class="header-stats">
@@ -489,9 +489,14 @@
           <div class="kpi-sub">wins ÷ losses</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Avg Win</div>
-          <div class="kpi-val g">+$89.50</div>
-          <div class="kpi-sub">per trade</div>
+          <div class="kpi-lbl">Sharpe Ratio</div>
+          <div class="kpi-val g">1.42</div>
+          <div class="kpi-sub">ann. vol 38%</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Calmar Ratio</div>
+          <div class="kpi-val b">2.1</div>
+          <div class="kpi-sub">max DD 18%</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Max Drawdown</div>
@@ -499,20 +504,37 @@
           <div class="kpi-sub">peak to trough</div>
         </div>
       </div>
+      <div style="margin:5px 0 4px;padding:4px 8px;background:#1e2235;border-radius:5px;font-size:6pt;color:#8892a4;display:flex;gap:14px">
+        <span style="color:#7986cb;font-weight:600">Last 30 days:</span>
+        <span>Win rate <strong style="color:#26d96b">68.4%</strong></span>
+        <span>P&amp;L <strong style="color:#26d96b">+$1,840</strong></span>
+        <span style="color:#6b7280">47 trades · vs all-time 64.2%</span>
+      </div>
 
-      <!-- Equity curve SVG -->
+      <!-- Equity + drawdown overlay SVG -->
       <div class="chart-area">
-        <div class="chart-label">Cumulative P&amp;L</div>
+        <div class="chart-label">Wallet Balance + Drawdown %</div>
         <svg class="chart-svg" viewBox="0 0 460 44" preserveAspectRatio="none">
           <defs>
             <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#26d96b" stop-opacity="0.25"/>
-              <stop offset="100%" stop-color="#26d96b" stop-opacity="0.02"/>
+              <stop offset="0%" stop-color="#4fc3f7" stop-opacity="0.20"/>
+              <stop offset="100%" stop-color="#4fc3f7" stop-opacity="0.02"/>
+            </linearGradient>
+            <linearGradient id="ddgrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#ef5350" stop-opacity="0.18"/>
+              <stop offset="100%" stop-color="#ef5350" stop-opacity="0.02"/>
             </linearGradient>
           </defs>
-          <path d="M0,40 L20,38 L40,35 L60,36 L80,30 L100,28 L120,25 L140,27 L160,22 L180,18 L200,20 L220,15 L240,12 L260,14 L280,10 L300,8 L320,11 L340,7 L360,5 L380,4 L400,3 L420,5 L440,2 L460,1" stroke="#26d96b" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          <!-- Wallet balance line (blue) -->
+          <path d="M0,40 L20,38 L40,35 L60,36 L80,30 L100,28 L120,25 L140,27 L160,22 L180,18 L200,20 L220,15 L240,12 L260,14 L280,10 L300,8 L320,11 L340,7 L360,5 L380,4 L400,3 L420,5 L440,2 L460,1" stroke="#4fc3f7" stroke-width="1.5" fill="none"/>
           <path d="M0,40 L20,38 L40,35 L60,36 L80,30 L100,28 L120,25 L140,27 L160,22 L180,18 L200,20 L220,15 L240,12 L260,14 L280,10 L300,8 L320,11 L340,7 L360,5 L380,4 L400,3 L420,5 L440,2 L460,1 L460,44 L0,44Z" fill="url(#grad)"/>
+          <!-- Drawdown overlay (red, secondary axis — peaks at 0, dips down) -->
+          <path d="M0,44 L20,44 L40,43 L60,43.5 L80,43 L100,42 L120,42.5 L140,41 L160,43 L180,44 L200,43 L220,44 L240,44 L260,43 L280,44 L300,44 L320,42 L340,44 L360,44 L380,44 L400,44 L420,43.5 L440,44 L460,44" stroke="rgba(239,83,80,0.6)" stroke-width="1" fill="url(#ddgrad)"/>
         </svg>
+        <div style="display:flex;gap:10px;margin-top:2px;font-size:5.5pt">
+          <span style="color:#4fc3f7">— Balance</span>
+          <span style="color:rgba(239,83,80,0.8)">— Drawdown %</span>
+        </div>
       </div>
 
       <!-- Recent trades -->
@@ -580,12 +602,12 @@
     <div class="feat-card r">
       <span class="feat-icon">🔬</span>
       <div class="feat-title">Edge Lab</div>
-      <div class="feat-desc">Self-learning Trader Rulebook from your own trade history. Pattern detector finds win/loss patterns by setup, session, weekday, and direction — per exchange or combined.</div>
+      <div class="feat-desc">Self-learning Trader Rulebook + Pattern Detector. Finds win/loss patterns by setup type, session, weekday — plus <strong>cross-pattern combos</strong> (e.g. "NY session + Breakout: 78% WR").</div>
     </div>
     <div class="feat-card" style="border-left-color:#8b5cf6;background:#faf5ff">
-      <span class="feat-icon">📊</span>
-      <div class="feat-title">Chart Explorer</div>
-      <div class="feat-desc">Any symbol, any timeframe. VMC Cipher B oscillator, auto-Fibonacci retracements, weekly S/R zones, volume histogram, ATR-adaptive trendlines with at-risk flagging.</div>
+      <span class="feat-icon">🤖</span>
+      <div class="feat-title">AI Token Dashboard</div>
+      <div class="feat-desc">Every Claude call logged: input/output/cached tokens and estimated USD cost per module. Rolling 7-day and all-time view in Settings. Batch scanner cuts token use ~40%.</div>
     </div>
   </div>
 
@@ -606,7 +628,7 @@
       <div class="p2-title">Crypto <span>Trading</span> Journal</div>
       <div class="p2-subtitle">AI modules · Automated scanner · Telegram alerts · Open source</div>
     </div>
-    <div class="p2-badge">📈 v2.5 · May 2026</div>
+    <div class="p2-badge">📈 v2.6.0 · May 2026</div>
   </div>
 
   <!-- HOW IT WORKS PIPELINE -->
@@ -627,7 +649,7 @@
     <div class="pipe-step">
       <div class="pipe-num">3</div>
       <div class="pipe-title">AI Scoring</div>
-      <div class="pipe-desc">Claude evaluates each finalist · returns 6-10/10 with entry/SL/TP</div>
+      <div class="pipe-desc">Single batched Sonnet prompt for all top-N · 6-10/10 with entry/SL/TP · regime-aware</div>
     </div>
     <div class="pipe-arrow">→</div>
     <div class="pipe-step">
@@ -783,20 +805,24 @@
       <div style="background:#f8f9ff;border:1px solid #e5e7f0;border-radius:8px;padding:10px 12px">
         <div class="spec-grid">
           <div class="spec-row"><span class="spec-key">Backend</span><span class="spec-val">Python 3.13 / Flask 3.1</span></div>
-          <div class="spec-row"><span class="spec-key">Database</span><span class="spec-val">SQLite 3 (WAL mode)</span></div>
-          <div class="spec-row"><span class="spec-key">Frontend</span><span class="spec-val">Vanilla JS SPA</span></div>
-          <div class="spec-row"><span class="spec-key">Charts</span><span class="spec-val">LightweightCharts v4 + VMC Cipher B</span></div>
-          <div class="spec-row"><span class="spec-key">AI</span><span class="spec-val">Claude Sonnet 4.6 / Haiku 4.5</span></div>
-          <div class="spec-row"><span class="spec-key">Exchanges</span><span class="spec-val">Bitget v2 · Blofin v1 (both)</span></div>
-          <div class="spec-row"><span class="spec-key">TA Engine</span><span class="spec-val">pandas-ta + WaveTrend (VMC)</span></div>
-          <div class="spec-row"><span class="spec-key">Alerts</span><span class="spec-val">Telegram Bot API</span></div>
+          <div class="spec-row"><span class="spec-key">Database</span><span class="spec-val">SQLite 3 (WAL mode · 11 tables)</span></div>
+          <div class="spec-row"><span class="spec-key">Frontend</span><span class="spec-val">Vanilla JS SPA · 16 modules</span></div>
+          <div class="spec-row"><span class="spec-key">Charts</span><span class="spec-val">LightweightCharts v4 + VMC Cipher A/B</span></div>
+          <div class="spec-row"><span class="spec-key">AI</span><span class="spec-val">Claude Sonnet 4.6 · Haiku 4.5 (batch)</span></div>
+          <div class="spec-row"><span class="spec-key">Caching</span><span class="spec-val">Prompt caching (ephemeral cache_control)</span></div>
+          <div class="spec-row"><span class="spec-key">Exchanges</span><span class="spec-val">Bitget REST v2 · Blofin REST v1</span></div>
+          <div class="spec-row"><span class="spec-key">TA Engine</span><span class="spec-val">pandas-ta · WaveTrend (VMC Cipher)</span></div>
+          <div class="spec-row"><span class="spec-key">Alerts</span><span class="spec-val">Telegram Bot API (stdlib only)</span></div>
           <div class="spec-row"><span class="spec-key">Hardware</span><span class="spec-val">Raspberry Pi 5 (8GB)</span></div>
-          <div class="spec-row"><span class="spec-key">Deployment</span><span class="spec-val">systemd service</span></div>
+          <div class="spec-row"><span class="spec-key">Deployment</span><span class="spec-val">systemd service · auto-restart</span></div>
         </div>
         <div style="margin-top:8px;padding-top:6px;border-top:1px solid #e5e7f0">
           <div style="font-size:7pt;font-weight:700;color:#1a1a2e;margin-bottom:4px">14 Navigation Pages</div>
           <div style="font-size:6.5pt;color:#6b7280;line-height:1.7">
             Dashboard · Journal · Deep Dive · Edge Lab · AI Advisor · Call Analyzer · Live Trades · Chart Explorer · Pending Orders · Import · Live Sync · ⭐ Setup Scanner · 🔮 Hindsight · ⚙️ Settings
+          </div>
+          <div style="margin-top:5px;font-size:6.5pt;color:#6b7280;line-height:1.7">
+            <span style="font-weight:700;color:#1a1a2e">New in v2.6: </span>Sharpe/Calmar · Drawdown overlay · Rolling 30d strip · Token usage · Regime tagging · Cross-patterns · CoT scoring · MFE/MAE · EV per setup
           </div>
         </div>
       </div>
