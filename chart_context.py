@@ -187,7 +187,17 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4,
     lows      = df["low"].values.astype(float)
     times_sec = df["timestamp"].values.astype(float) / 1000.0
     n         = len(df)
-    tol       = PRICE_TOLERANCE
+
+    # ATR-relative tolerance: 0.5× ATR as % of price, floored at PRICE_TOLERANCE.
+    # BTC 4H candles wick 1-2%; a fixed 0.4% tolerance rejected valid trendlines.
+    try:
+        atr_s   = ta.atr(df["high"], df["low"], df["close"], length=14)
+        atr_val = float(atr_s.iloc[-1]) if atr_s is not None and not atr_s.empty else 0
+        cur_p   = float(df["close"].iloc[-1])
+        atr_pct = atr_val / cur_p if cur_p > 0 else 0
+        tol     = max(PRICE_TOLERANCE, 0.5 * atr_pct)
+    except Exception:
+        tol = PRICE_TOLERANCE
 
     pivot_h = [i for i in range(n_swing, n - n_swing)
                if highs[i] >= highs[i - n_swing:i + n_swing + 1].max()]
@@ -217,7 +227,7 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4,
                 touches = 2
                 for k in range(i2 + 1, n):
                     lv = p1 + ci_slope * (k - i1)
-                    if abs(arr[k] - lv) / max(lv, 1e-9) < 0.004:
+                    if abs(arr[k] - lv) / max(lv, 1e-9) < tol:
                         touches += 1
 
                 # Real-time slope to extend the line to now
