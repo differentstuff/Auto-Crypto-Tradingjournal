@@ -39,6 +39,10 @@ def _build_where(filters):
             clauses.append("close_time <= ?")
             params.append(filters['date_to'] + ' 23:59:59')
 
+    if filters.get('exchange') in ('bitget', 'blofin'):
+        clauses.append("COALESCE(exchange, 'bitget') = ?")
+        params.append(filters['exchange'])
+
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, params
 
@@ -390,14 +394,15 @@ def _bucket_durations(rows):
     return list(buckets.values())
 
 
-def get_heatmap_data(conn=None) -> list:
+def get_heatmap_data(conn=None, filters=None) -> list:
     """
     Trade stats grouped by weekday (0=Sun…6=Sat) and open hour (0-23 UTC).
     Returns list of {weekday, hour, trade_count, total_pnl, win_rate}.
     """
     if conn is None:
         conn = get_conn()
-    return _rows(conn, """
+    where, params = _build_where(filters or {})
+    return _rows(conn, f"""
         SELECT
             CAST(strftime('%w', close_time) AS INTEGER) AS weekday,
             CAST(strftime('%H', open_time)  AS INTEGER) AS hour,
@@ -405,13 +410,13 @@ def get_heatmap_data(conn=None) -> list:
             ROUND(SUM(realized_pnl), 2)                  AS total_pnl,
             ROUND(100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END)
                   / COUNT(*), 1)                         AS win_rate
-        FROM positions
+        FROM positions {where}
         GROUP BY weekday, hour
         ORDER BY weekday, hour
-    """)
+    """, params)
 
 
-def get_rr_analysis(conn=None):
+def get_rr_analysis(conn=None, filters=None):
     """
     Planned vs realized R:R for trades linked to analyst calls via positions.call_id.
     Realized R:R = (actual_close - planned_entry) / abs(planned_entry - planned_sl).
@@ -419,7 +424,12 @@ def get_rr_analysis(conn=None):
     """
     if conn is None:
         conn = get_conn()
-    rows = _rows(conn, """
+    exch_clause = ""
+    params = []
+    if filters and filters.get('exchange') in ('bitget', 'blofin'):
+        exch_clause = "AND COALESCE(p.exchange, 'bitget') = ?"
+        params.append(filters['exchange'])
+    rows = _rows(conn, f"""
         SELECT p.id, p.symbol, p.direction,
                p.entry_price   AS actual_entry,
                p.close_price   AS actual_close,
@@ -435,9 +445,10 @@ def get_rr_analysis(conn=None):
         JOIN analyzed_calls c ON p.call_id = c.id
         WHERE c.sl_price IS NOT NULL AND c.sl_price > 0
           AND p.entry_price IS NOT NULL AND p.entry_price > 0
+          {exch_clause}
         ORDER BY p.close_time DESC
         LIMIT 100
-    """)
+    """, params)
 
     result = []
     for r in rows:

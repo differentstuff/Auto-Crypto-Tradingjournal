@@ -13,7 +13,7 @@ async function loadSymbols() {
 
 async function journalLoad(page) {
   journalPage = page;
-  const exchFilter = (typeof getExchangeFilter === 'function') ? getExchangeFilter() : 'all';
+  const exchFilter = _globalExchange || 'all';
   const params = new URLSearchParams({
     page,
     per_page: 50,

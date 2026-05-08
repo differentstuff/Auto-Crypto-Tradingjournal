@@ -43,8 +43,11 @@ def api_hindsight_status():
 @bp.route("/api/hindsight/results")
 def api_hindsight_results():
     try:
-        limit = int(request.args.get("limit", 200))
-        return _ok(ai_hindsight.get_results(limit))
+        limit    = int(request.args.get("limit", 200))
+        exchange = request.args.get("exchange", "").strip().lower()
+        return _ok(ai_hindsight.get_results(
+            limit, exchange=exchange if exchange in ("bitget", "blofin") else None
+        ))
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

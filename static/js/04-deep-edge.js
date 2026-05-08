@@ -105,7 +105,10 @@ async function runPatternDetector() {
   btn.textContent = '🔍 Analysing…';
   box.innerHTML   = '<div style="color:var(--muted);font-size:.85rem;padding:8px 0">Running Claude analysis on your trade history…</div>';
 
-  const res = await api('/api/analytics/patterns', 'POST');
+  const res = await api('/api/analytics/patterns', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(exchFilters()),
+  });
   btn.disabled    = false;
   btn.textContent = '🔍 Detect Patterns';
 
@@ -151,7 +154,7 @@ async function runPatternDetector() {
 }
 
 async function loadDeep() {
-  const res = await api('/api/analytics/deep');
+  const res = await api('/api/analytics/deep?' + new URLSearchParams(exchFilters()));
   if (!res.ok) return;
   const d = res.data;
 
@@ -251,7 +254,7 @@ async function loadDeep() {
     </tr>`).join('');
 
   // Heatmap
-  const hmRes = await api('/api/analytics/heatmap');
+  const hmRes = await api('/api/analytics/heatmap?' + new URLSearchParams(exchFilters()));
   if (hmRes.ok) renderHeatmap(hmRes.data);
 
 }
@@ -261,7 +264,7 @@ async function loadDeep() {
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadEdge() {
   loadRulebook();
-  const res = await api('/api/analytics/deep');
+  const res = await api('/api/analytics/deep?' + new URLSearchParams(exchFilters()));
   if (!res.ok) return;
   const d = res.data;
 
@@ -308,7 +311,7 @@ async function loadEdge() {
   }
 
   // Planned vs realized R:R
-  const rrRes = await api('/api/analytics/rr');
+  const rrRes = await api('/api/analytics/rr?' + new URLSearchParams(exchFilters()));
   if (rrRes.ok && rrRes.data.items.length) {
     document.getElementById('deep-rr-tbody').innerHTML = rrRes.data.items.map(r => {
       const rrColor = r.realized_rr == null ? '' : r.realized_rr >= 1 ? 'pos' : 'neg';

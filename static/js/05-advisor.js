@@ -8,7 +8,7 @@ async function runAI() {
   document.getElementById('ai-results').style.display = 'none';
 
   try {
-    const res = await api('/api/ai/analyze', 'POST', {});
+    const res = await api('/api/ai/analyze', 'POST', exchFilters());
     if (!res.ok) throw new Error(res.error);
     const d = res.data;
     renderAI(d);

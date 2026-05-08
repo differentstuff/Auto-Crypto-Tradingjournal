@@ -32,6 +32,15 @@ showPage = function(name) {
 };
 
 // ── Initial load ───────────────────────────────────────────────────────────────
+// Restore exchange pill from localStorage
+(function(){
+  const saved = localStorage.getItem('globalExchange') || 'all';
+  ['all','bitget','blofin'].forEach(id => {
+    const el = document.getElementById('ep-' + id);
+    if (el) el.classList.toggle('active', id === saved);
+  });
+})();
+
 loadDashboard();
 // Poll sync status every 30s so the sync bar stays current
 pollSyncStatus();

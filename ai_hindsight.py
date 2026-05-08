@@ -357,18 +357,22 @@ def start_batch(n: int = 50) -> bool:
     return True
 
 
-def get_results(limit: int = 100) -> dict:
+def get_results(limit: int = 100, exchange: str = None) -> dict:
     """
     Fetch stored hindsight results + compute summary comparison metrics.
     Returns dict with {rows, summary}.
     """
+    exch_clause = ""
+    if exchange in ('bitget', 'blofin'):
+        exch_clause = f" AND COALESCE(p.exchange, 'bitget') = '{exchange}'"
     with db_conn() as conn:
-        rows = [dict(r) for r in conn.execute("""
+        rows = [dict(r) for r in conn.execute(f"""
             SELECT h.*, p.symbol, p.direction, p.open_time, p.close_time,
                    p.entry_price, p.close_price, p.duration_minutes, p.setup_type,
                    p.size_usdt
             FROM trade_hindsight h
             JOIN positions p ON p.id = h.position_id
+            WHERE 1=1{exch_clause}
             ORDER BY p.close_time DESC
             LIMIT ?
         """, (limit,)).fetchall()]

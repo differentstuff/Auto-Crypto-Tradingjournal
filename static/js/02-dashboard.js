@@ -4,7 +4,7 @@
 async function loadDashboard() {
   // Fetch KPIs, market context, and live positions in parallel
   const [res, mr, lr] = await Promise.all([
-    api('/api/dashboard/kpis'),
+    api('/api/dashboard/kpis?' + new URLSearchParams(exchFilters())),
     api('/api/market/context?symbols=BTCUSDT'),
     api('/api/live/positions'),
   ]);

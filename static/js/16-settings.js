@@ -51,11 +51,8 @@ async function loadSettings() {
     <div style="height:16px"></div>
     ${_exchangeCard('blofin', 'Blofin', '🔵', blofin)}
     ${blofinSyncHtml}
-    <div class="settings-section-title" style="margin-top:32px">Journal Filter by Exchange</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="exch-filter-btn${_exchangeFilter==='all'?' active':''}" onclick="setExchangeFilter('all',this)">All Exchanges</button>
-      <button class="exch-filter-btn${_exchangeFilter==='bitget'?' active':''}" onclick="setExchangeFilter('bitget',this)">Bitget only</button>
-      <button class="exch-filter-btn${_exchangeFilter==='blofin'?' active':''}" onclick="setExchangeFilter('blofin',this)">Blofin only</button>
+    <div class="settings-section-title" style="margin-top:32px;color:var(--muted);font-size:.8rem">
+      💡 Use the <b>All / Bitget / Blofin</b> pills in the top bar to filter all statistics, charts, and analytics by exchange.
     </div>`;
 
   _injectSettingsCSS();
@@ -206,17 +203,6 @@ async function triggerBlofinSync() {
 }
 
 
-// ── Exchange filter for journal ────────────────────────────────────────────────
-let _exchangeFilter = localStorage.getItem('journalExchangeFilter') || 'all';
-
-function setExchangeFilter(val, btn) {
-  _exchangeFilter = val;
-  localStorage.setItem('journalExchangeFilter', val);
-  document.querySelectorAll('.exch-filter-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  if (typeof loadJournal === 'function') loadJournal();
-}
-
-function getExchangeFilter() {
-  return _exchangeFilter;
-}
+// Exchange filter is now global in the sync bar (01-utils.js setGlobalExchange).
+// getExchangeFilter() is kept as an alias for backward compatibility.
+function getExchangeFilter() { return _globalExchange; }

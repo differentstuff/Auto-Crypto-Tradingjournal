@@ -10,7 +10,7 @@ async function loadHindsight() {
   renderHindsightStatus(res.data);
   if (res.data.status === 'running') _startHindsightPoller();
 
-  const r2 = await api('/api/hindsight/results');
+  const r2 = await api('/api/hindsight/results?' + new URLSearchParams(exchFilters()));
   if (r2.ok && r2.data.rows && r2.data.rows.length) renderHindsightResults(r2.data);
 }
 
@@ -31,7 +31,7 @@ function _startHindsightPoller() {
     renderHindsightStatus(s.data);
     if (s.data.status !== 'running') {
       clearInterval(_hindsightPoll); _hindsightPoll = null;
-      const r = await api('/api/hindsight/results');
+      const r = await api('/api/hindsight/results?' + new URLSearchParams(exchFilters()));
       if (r.ok) renderHindsightResults(r.data);
     }
   }, 2000);

@@ -20,7 +20,7 @@ MIN_TOTAL_TRADES = 20
 MIN_CATEGORY     = 5
 
 
-def detect_patterns(conn=None) -> dict:
+def detect_patterns(conn=None, filters=None) -> dict:
     """
     Analyse trade history and return pattern findings from Claude.
     Returns {"findings": [...], "trade_count": int, "insufficient_data": bool}
@@ -28,8 +28,13 @@ def detect_patterns(conn=None) -> dict:
     own_conn = conn is None
     if own_conn:
         conn = get_conn()
+    exch_filter = ""
+    if filters and filters.get('exchange') in ('bitget', 'blofin'):
+        exch_filter = f" AND COALESCE(exchange, 'bitget') = '{filters['exchange']}'"
     try:
-        total = conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0]
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM positions WHERE 1=1{exch_filter}"
+        ).fetchone()[0]
         if total < MIN_TOTAL_TRADES:
             return {
                 "findings":          [],
@@ -38,7 +43,7 @@ def detect_patterns(conn=None) -> dict:
                 "message":           f"Need at least {MIN_TOTAL_TRADES} trades — you have {total}.",
             }
 
-        stats = _collect_stats(conn)
+        stats = _collect_stats(conn, exch_filter)
         findings = _ask_claude(stats, total)
         return {
             "findings":          findings,
@@ -53,20 +58,20 @@ def detect_patterns(conn=None) -> dict:
             conn.close()
 
 
-def _collect_stats(conn) -> dict:
+def _collect_stats(conn, exch_filter: str = "") -> dict:
     def rows(sql):
         return [dict(r) for r in conn.execute(sql).fetchall()]
 
-    by_setup = rows("""
+    by_setup = rows(f"""
         SELECT setup_type, COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl,
                ROUND(SUM(realized_pnl),2) AS total_pnl
-        FROM positions WHERE setup_type IS NOT NULL AND setup_type != ''
+        FROM positions WHERE setup_type IS NOT NULL AND setup_type != ''{exch_filter}
         GROUP BY setup_type ORDER BY n DESC
     """)
 
-    by_weekday = rows("""
+    by_weekday = rows(f"""
         SELECT CASE strftime('%w',close_time)
                  WHEN '0' THEN 'Sunday' WHEN '1' THEN 'Monday' WHEN '2' THEN 'Tuesday'
                  WHEN '3' THEN 'Wednesday' WHEN '4' THEN 'Thursday' WHEN '5' THEN 'Friday'
@@ -74,10 +79,10 @@ def _collect_stats(conn) -> dict:
                COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions GROUP BY day ORDER BY win_rate DESC
+        FROM positions WHERE 1=1{exch_filter} GROUP BY day ORDER BY win_rate DESC
     """)
 
-    by_session = rows("""
+    by_session = rows(f"""
         SELECT CASE
                  WHEN CAST(strftime('%H',open_time) AS INT) BETWEEN 0  AND 7  THEN 'Asia (00-08)'
                  WHEN CAST(strftime('%H',open_time) AS INT) BETWEEN 8  AND 12 THEN 'London (08-13)'
@@ -87,18 +92,18 @@ def _collect_stats(conn) -> dict:
                COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions GROUP BY session ORDER BY win_rate DESC
+        FROM positions WHERE 1=1{exch_filter} GROUP BY session ORDER BY win_rate DESC
     """)
 
-    by_direction = rows("""
+    by_direction = rows(f"""
         SELECT direction, COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl,
                ROUND(SUM(realized_pnl),2) AS total_pnl
-        FROM positions GROUP BY direction
+        FROM positions WHERE 1=1{exch_filter} GROUP BY direction
     """)
 
-    by_duration = rows("""
+    by_duration = rows(f"""
         SELECT CASE
                  WHEN duration_minutes < 60    THEN '< 1h'
                  WHEN duration_minutes < 240   THEN '1-4h'
@@ -109,24 +114,24 @@ def _collect_stats(conn) -> dict:
                COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions WHERE duration_minutes IS NOT NULL
+        FROM positions WHERE duration_minutes IS NOT NULL{exch_filter}
         GROUP BY bucket ORDER BY win_rate DESC
     """)
 
-    by_grade = rows("""
+    by_grade = rows(f"""
         SELECT execution_grade AS grade, COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions WHERE execution_grade IS NOT NULL
+        FROM positions WHERE execution_grade IS NOT NULL{exch_filter}
         GROUP BY grade ORDER BY grade
     """)
 
     # Recent trend: last 20 vs all-time
-    recent = conn.execute("""
+    recent = conn.execute(f"""
         SELECT COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(SUM(realized_pnl),2) AS total_pnl
-        FROM (SELECT realized_pnl FROM positions ORDER BY close_time DESC LIMIT 20)
+        FROM (SELECT realized_pnl FROM positions WHERE 1=1{exch_filter} ORDER BY close_time DESC LIMIT 20)
     """).fetchone()
     recent_stats = dict(recent) if recent else {}
 

@@ -2,6 +2,46 @@
 const charts = {};
 let currentPage = 'dashboard';
 
+// ── Global exchange filter ────────────────────────────────────────────────────
+// 'all' | 'bitget' | 'blofin' — persisted in localStorage, applied to every
+// stats/analytics API call so every page shows data for the selected exchange.
+let _globalExchange = localStorage.getItem('globalExchange') || 'all';
+
+function setGlobalExchange(val, btn) {
+  _globalExchange = val;
+  localStorage.setItem('globalExchange', val);
+  // Update pill styles
+  ['all','bitget','blofin'].forEach(id => {
+    const el = document.getElementById('ep-' + id);
+    if (el) el.classList.toggle('active', id === val);
+  });
+  // Reload whatever page is currently visible
+  _reloadCurrentPage();
+}
+
+/** Return the exchange param string for appending to API calls, e.g. '&exchange=bitget' or '' */
+function exchParam() {
+  return _globalExchange && _globalExchange !== 'all' ? `&exchange=${_globalExchange}` : '';
+}
+
+/** Return exchange as a filters object key (for POST bodies) */
+function exchFilters() {
+  return _globalExchange && _globalExchange !== 'all' ? { exchange: _globalExchange } : {};
+}
+
+function _reloadCurrentPage() {
+  switch(currentPage) {
+    case 'dashboard': if (typeof loadDashboard  === 'function') loadDashboard();  break;
+    case 'journal':   if (typeof journalLoad    === 'function') journalLoad(1);   break;
+    case 'deep':      if (typeof loadDeepStats  === 'function') loadDeepStats();  break;
+    case 'edge':      if (typeof loadEdgeLab    === 'function') loadEdgeLab();    break;
+    case 'ai':        if (typeof loadAdvisor    === 'function') loadAdvisor();    break;
+    case 'hindsight': if (typeof loadHindsight  === 'function') loadHindsight();  break;
+    case 'import':    if (typeof loadImportStatus === 'function') loadImportStatus(); break;
+    // Charts, live, pending, scanner don't filter by exchange in the same way
+  }
+}
+
 // ── S/R Chart — opens as a detached, resizable window ───────────────────────
 function openChart(symbol, tf = '4H') {
   const liqs = (livePositionsCache || [])

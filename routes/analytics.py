@@ -37,8 +37,9 @@ def api_analytics_deep():
 @bp.route("/api/analytics/heatmap")
 def api_analytics_heatmap():
     try:
+        filters = _filters_from_args()
         with db_conn() as conn:
-            data = get_heatmap_data(conn=conn)
+            data = get_heatmap_data(conn=conn, filters=filters)
         return _ok(data)
     except Exception:
         traceback.print_exc()
@@ -48,8 +49,10 @@ def api_analytics_heatmap():
 @bp.route("/api/analytics/patterns", methods=["POST"])
 def api_analytics_patterns():
     try:
+        body    = request.get_json(silent=True) or {}
+        filters = {**_filters_from_args(), **{k: v for k, v in body.items() if k == "exchange"}}
         with db_conn() as conn:
-            result = ai_pattern_detector.detect_patterns(conn=conn)
+            result = ai_pattern_detector.detect_patterns(conn=conn, filters=filters)
         return _ok(result)
     except Exception:
         traceback.print_exc()
@@ -59,8 +62,9 @@ def api_analytics_patterns():
 @bp.route("/api/analytics/rr")
 def api_analytics_rr():
     try:
+        filters = _filters_from_args()
         with db_conn() as conn:
-            data = get_rr_analysis(conn=conn)
+            data = get_rr_analysis(conn=conn, filters=filters)
         return _ok({"items": data})
     except Exception:
         traceback.print_exc()

@@ -254,7 +254,11 @@ select:focus,input:focus{border-color:var(--accent)}
 .sync-dot.syncing{background:var(--yellow);animation:pulse 1s ease-in-out infinite}
 .sync-dot.error{background:var(--red)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.sync-equity{margin-left:auto;font-weight:600;color:var(--accent2)}
+.sync-equity{font-weight:600;color:var(--accent2)}
+.exch-pills{display:flex;gap:3px;margin-left:auto;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:2px}
+.exch-pill{padding:3px 10px;border-radius:4px;font-size:.72rem;cursor:pointer;color:var(--muted);border:none;background:transparent;transition:.15s;font-weight:500}
+.exch-pill:hover{color:var(--text)}
+.exch-pill.active{background:var(--accent);color:#fff}
 .btn-sync{padding:4px 12px;font-size:.75rem;background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.3);color:var(--accent);border-radius:4px;cursor:pointer}
 .btn-sync:hover{background:rgba(108,99,255,.3)}
 .btn-sync:disabled{opacity:.4;cursor:default}
@@ -424,9 +428,15 @@ select:focus,input:focus{border-color:var(--accent)}
   <!-- ── Live Sync Bar ─────────────────────────────────────────────────── -->
   <div class="sync-bar" id="sync-bar">
     <div class="sync-dot" id="sync-dot"></div>
-    <span id="sync-label">Connecting to Bitget…</span>
+    <span id="sync-label">Connecting…</span>
     <button class="btn-sync" id="btn-sync" onclick="triggerSync()">⟳ Sync Now</button>
     <span class="sync-equity" id="sync-equity"></span>
+    <!-- Global exchange filter — applies to all pages -->
+    <div class="exch-pills" id="exch-pills">
+      <button class="exch-pill active" id="ep-all"    onclick="setGlobalExchange('all',this)"    data-tip="Show trades from all exchanges">All</button>
+      <button class="exch-pill"        id="ep-bitget" onclick="setGlobalExchange('bitget',this)" data-tip="Bitget only">Bitget</button>
+      <button class="exch-pill"        id="ep-blofin" onclick="setGlobalExchange('blofin',this)" data-tip="Blofin only">Blofin</button>
+    </div>
   </div>
 
   <main style="flex:1;overflow-y:auto">
