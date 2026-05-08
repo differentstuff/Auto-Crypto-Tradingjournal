@@ -15,6 +15,7 @@ import time
 
 import blofin_client as bc
 from database import get_conn
+import market_context as _mkt
 
 SYNC_INTERVAL_SECONDS = 5 * 60  # every 5 minutes (same cadence as Bitget)
 
@@ -105,6 +106,18 @@ def _sync_positions(conn) -> int:
 
         # Move cursor to the oldest historyId on this page for the next request
         after = rows[-1].get("external_id", "")
+
+    # Tag market regime on newly inserted positions
+    if inserted > 0:
+        try:
+            regime = _mkt.get_btc_regime()
+            conn.execute(
+                "UPDATE positions SET market_regime = ? WHERE market_regime IS NULL AND exchange = 'blofin'",
+                (regime,)
+            )
+            conn.commit()
+        except Exception:
+            pass
 
     return inserted
 

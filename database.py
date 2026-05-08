@@ -158,7 +158,8 @@ def init_db():
         ("hit_sl",          "INTEGER DEFAULT 0"),
         ("outcome_at",      "TEXT DEFAULT NULL"),
         ("actual_notional", "REAL DEFAULT NULL"),
-        ("exchange",        "TEXT DEFAULT NULL"),  # 'bitget' | 'blofin' — set at confirm-match
+        ("exchange",        "TEXT DEFAULT NULL"),   # 'bitget' | 'blofin' — set at confirm-match
+        ("cot_reasoning",   "TEXT DEFAULT NULL"),   # chain-of-thought reasoning from Claude
     ]
     for _col, _typedef in _new_cols:
         try:
@@ -206,6 +207,11 @@ def init_db():
         ("external_id",            "TEXT DEFAULT NULL"),  # exchange positionId (dedup key)
         ("exchange",               "TEXT DEFAULT 'bitget'"),  # 'bitget' | 'blofin'
         ("leverage",               "INTEGER DEFAULT NULL"),
+        ("market_regime",          "TEXT DEFAULT NULL"),   # 'bull' | 'bear' | 'range' at trade open
+        ("mfe_price",              "REAL DEFAULT NULL"),   # max favorable excursion price
+        ("mae_price",              "REAL DEFAULT NULL"),   # max adverse excursion price
+        ("mfe_pct",                "REAL DEFAULT NULL"),   # MFE as % of entry
+        ("mae_pct",                "REAL DEFAULT NULL"),   # MAE as % of entry
     ]
     for _col, _typedef in _pos_new_cols:
         try:
@@ -283,6 +289,20 @@ def init_db():
             file_type      TEXT,     -- 'positions', 'orders', 'order_details', 'transactions'
             rows_imported  INTEGER,
             imported_at    TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # ── token_usage ────────────────────────────────────────────────────────────
+    # One row per Claude API call. Provides cost visibility per module.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS token_usage (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts             TEXT    DEFAULT (datetime('now')),
+            module         TEXT    NOT NULL,   -- 'call_analyzer', 'scanner', 'rulebook', 'hindsight', 'advisor'
+            model          TEXT    NOT NULL,
+            input_tokens   INTEGER NOT NULL,
+            output_tokens  INTEGER NOT NULL,
+            cached_tokens  INTEGER DEFAULT 0
         )
     """)
 

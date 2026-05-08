@@ -16,7 +16,7 @@ import anthropic
 
 from analytics import get_dashboard_kpis, get_deep_stats
 from database  import db_conn
-from helpers   import strip_fence
+from helpers   import strip_fence, log_token_usage
 import market_context
 
 ANTHROPIC_API_KEY = os.environ.get(
@@ -114,7 +114,7 @@ def analyze(filters: dict = None) -> dict:
         messages=[{"role": "user", "content": prompt}]
     )
 
-    # Claude sometimes wraps output in markdown fences even when asked not to
+    log_token_usage("advisor", MODEL, message.usage.input_tokens, message.usage.output_tokens)
     raw = strip_fence(message.content[0].text.strip())
 
     try:

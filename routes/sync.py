@@ -63,8 +63,10 @@ def api_rulebook_get():
 @bp.route("/api/rulebook/update", methods=["POST"])
 def api_rulebook_update():
     try:
+        body  = request.get_json(force=True, silent=True) or {}
+        force = bool(body.get("force", False))
         with db_conn() as conn:
-            return _ok(ai_rulebook.update_rulebook(conn))
+            return _ok(ai_rulebook.update_rulebook(conn, force=force))
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

@@ -48,12 +48,39 @@ def detect_patterns(conn=None, filters=None) -> dict:
         findings = _ask_claude(stats, total)
         return {
             "findings":          findings,
+            "cross_patterns":    stats.get("cross_session_setup", []),
             "trade_count":       total,
             "insufficient_data": False,
         }
     except Exception:
         traceback.print_exc()
         return {"error": "Pattern detection failed — see server logs"}
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def get_top_strengths_for_prompt(conn=None, limit: int = 3) -> str:
+    """
+    Returns top positive patterns (strength type) as a short prompt block.
+    Used by prompt_builder to inject winning-pattern encouragement alongside warnings.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_conn()
+    try:
+        rows = [dict(r) for r in conn.execute("""
+            SELECT rule_type, title, rule FROM trader_rulebook
+            WHERE rule_type = 'strength'
+            ORDER BY data_points DESC
+            LIMIT ?
+        """, (limit,)).fetchall()]
+        if not rows:
+            return ""
+        lines = ["YOUR WINNING PATTERNS (exploit these):"]
+        for r in rows:
+            lines.append(f"  ✓ {r['title']}: {r['rule']}")
+        return "\n".join(lines)
     finally:
         if own_conn:
             conn.close()
@@ -136,14 +163,34 @@ def _collect_stats(conn, exch_clause: str = "", exch_params: tuple = ()) -> dict
     """, exch_params).fetchone()
     recent_stats = dict(recent) if recent else {}
 
+    # Cross-pattern: session × setup_type combos
+    cross_session_setup = rows(f"""
+        SELECT
+            CASE
+                WHEN CAST(strftime('%H',open_time) AS INT) BETWEEN 0  AND 7  THEN 'Asia'
+                WHEN CAST(strftime('%H',open_time) AS INT) BETWEEN 8  AND 12 THEN 'London'
+                WHEN CAST(strftime('%H',open_time) AS INT) BETWEEN 13 AND 20 THEN 'NY'
+                ELSE 'Off-hours'
+            END AS session,
+            COALESCE(setup_type, 'Unknown') AS setup_type,
+            COUNT(*) AS n,
+            ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
+            ROUND(AVG(realized_pnl),2) AS avg_pnl
+        FROM positions WHERE setup_type IS NOT NULL AND setup_type != ''{exch_clause}
+        GROUP BY session, setup_type
+        HAVING n >= 5
+        ORDER BY win_rate DESC
+    """)
+
     return {
-        "by_setup":     by_setup,
-        "by_weekday":   by_weekday,
-        "by_session":   by_session,
-        "by_direction": by_direction,
-        "by_duration":  by_duration,
-        "by_grade":     by_grade,
-        "recent_20":    recent_stats,
+        "by_setup":            by_setup,
+        "by_weekday":          by_weekday,
+        "by_session":          by_session,
+        "by_direction":        by_direction,
+        "by_duration":         by_duration,
+        "by_grade":            by_grade,
+        "recent_20":           recent_stats,
+        "cross_session_setup": cross_session_setup,
     }
 
 
@@ -194,6 +241,13 @@ def _ask_claude(stats: dict, total_trades: int) -> list:
             f"RECENT FORM (last 20 trades): {r20.get('win_rate')}% WR, "
             f"total P&L {r20.get('total_pnl')} USDT"
         )
+
+    cross = [r for r in stats.get("cross_session_setup", []) if r.get("n", 0) >= 5]
+    if cross:
+        sections.append("CROSS-PATTERN (session × setup type):\n" + "\n".join(
+            f"  {r['session']} + {r['setup_type']}: {r['n']} trades, {r['win_rate']}% WR, avg {r['avg_pnl']} USDT"
+            for r in cross[:10]
+        ) + "\n(Use these combos to identify highest-conviction entry conditions)")
 
     data_block = "\n\n".join(sections) if sections else "Insufficient categorised data."
 

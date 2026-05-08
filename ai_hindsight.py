@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import anthropic
 
 from database import db_conn
-from helpers import strip_fence
+from helpers import strip_fence, log_token_usage
 import chart_context
 import ai_rulebook
 
@@ -199,6 +199,8 @@ def _analyze_one(trade: dict, rulebook_str: str) -> dict | None:
             model=MODEL, max_tokens=512,
             messages=[{"role": "user", "content": prompt}]
         )
+        log_token_usage("hindsight", MODEL,
+                        message.usage.input_tokens, message.usage.output_tokens)
         result = json.loads(strip_fence(message.content[0].text.strip()))
         result["_input_tokens"]  = message.usage.input_tokens
         result["_output_tokens"] = message.usage.output_tokens

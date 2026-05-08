@@ -86,8 +86,8 @@ def api_calls_save():
                tp1_price, tp2_price, avg_entry, total_notional, margin_needed,
                risk_pct, risk_amount, leverage, has_dca, has_candle_close_sl,
                setup_score, setup_label, rr_ratio, trade_type,
-               sl_warning, entry_timing, analysis_json, analyst)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               sl_warning, entry_timing, analysis_json, analyst, cot_reasoning)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             d.get("symbol"), d.get("direction"),
             d.get("_call_text", ""),
@@ -104,6 +104,7 @@ def api_calls_save():
             d.get("sl_warning"), d.get("entry_timing"),
             json.dumps(d),
             (d.get("_analyst") or "").strip(),
+            d.get("thinking"),
         ))
         new_id = cur.lastrowid
         conn.commit()

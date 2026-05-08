@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import bitget_client as bc
 from database import get_conn
+import market_context as _mkt
 
 SYNC_INTERVAL_SECONDS  = 5 * 60    # auto-sync every 5 minutes
 STARTUP_LOOKBACK_DAYS  = 2         # orders/bills catch-up window on first sync after (re)start
@@ -162,6 +163,19 @@ def _sync_positions(conn) -> int:
         inserted += 1
 
     conn.commit()
+
+    # Tag market regime on newly inserted positions (batch — one regime lookup per sync)
+    if inserted > 0:
+        try:
+            regime = _mkt.get_btc_regime()
+            cur.execute("""
+                UPDATE positions SET market_regime = ?
+                WHERE market_regime IS NULL
+            """, (regime,))
+            conn.commit()
+        except Exception:
+            pass
+
     return inserted
 
 

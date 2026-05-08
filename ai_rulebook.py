@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 import anthropic
 from database import get_conn
-from helpers  import strip_fence
+from helpers  import strip_fence, log_token_usage
 
 MODEL        = "claude-sonnet-4-6"
 MIN_TRADES   = 15
@@ -89,6 +89,10 @@ def get_calibration_for_prompt(conn=None, exchange: str = None) -> str:
             GROUP BY tier
             ORDER BY min_score DESC
         """, exch_params).fetchall()
+        if not rows:
+            return ""
+        # Only emit tiers where at least one trade has an actual outcome recorded
+        rows = [r for r in rows if r["tp1_rate"] is not None or r["sl_rate"] is not None]
         if not rows:
             return ""
         lines = ["YOUR SETUP SCORE CALIBRATION (entry rate + actual outcomes):"]
@@ -383,14 +387,19 @@ def _ask_claude(stats: dict, total: int) -> list:
         model=MODEL, max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
+    log_token_usage("rulebook", MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
     raw = strip_fence(resp.content[0].text.strip())
     return json.loads(raw)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def update_rulebook(conn=None) -> dict:
-    """Generate fresh rules and persist to trader_rulebook. Returns result dict."""
+MIN_NEW_TRADES = 5   # minimum new closed trades required to regenerate the rulebook
+
+
+def update_rulebook(conn=None, force: bool = False) -> dict:
+    """Generate fresh rules and persist to trader_rulebook. Returns result dict.
+    Pass force=True to bypass the new-trade guard."""
     own_conn = conn is None
     if own_conn:
         conn = get_conn()
@@ -401,6 +410,18 @@ def update_rulebook(conn=None) -> dict:
                 "rules": [], "trade_count": total, "insufficient_data": True,
                 "message": f"Need at least {MIN_TRADES} trades — you have {total}.",
             }
+
+        if not force:
+            stored = conn.execute(
+                "SELECT value FROM settings WHERE key='rulebook_trade_count'"
+            ).fetchone()
+            prev_count = int(stored[0]) if stored else 0
+            delta = total - prev_count
+            if delta < MIN_NEW_TRADES:
+                return {
+                    **get_rulebook(conn), "skipped": True,
+                    "message": f"Only {delta} new trade(s) since last update — need {MIN_NEW_TRADES}+. Use force=true to override.",
+                }
 
         stats = _collect_stats(conn)
         rules = _ask_claude(stats, total)
@@ -416,6 +437,9 @@ def update_rulebook(conn=None) -> dict:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         conn.execute(
             "INSERT OR REPLACE INTO settings (key,value) VALUES ('rulebook_updated_at',?)", (now,)
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key,value) VALUES ('rulebook_trade_count',?)", (str(total),)
         )
         conn.commit()
         return get_rulebook(conn)
@@ -453,6 +477,7 @@ def get_rulebook(conn=None) -> dict:
 def get_rulebook_for_prompt(conn=None) -> str:
     """
     Concise text block for Claude prompt injection.
+    Rules older than 30 days get a [stale] annotation so Claude can down-weight them.
     Warnings and calibration first — most safety-critical.
     """
     own_conn = conn is None
@@ -460,7 +485,9 @@ def get_rulebook_for_prompt(conn=None) -> str:
         conn = get_conn()
     try:
         rows = conn.execute("""
-            SELECT rule_type, title, rule, confidence FROM trader_rulebook
+            SELECT rule_type, title, rule, confidence,
+                   CAST(julianday('now') - julianday(generated_at) AS INTEGER) AS age_days
+            FROM trader_rulebook
             ORDER BY CASE rule_type
                 WHEN 'warning' THEN 1 WHEN 'calibration' THEN 2
                 WHEN 'habit' THEN 3 WHEN 'strength' THEN 4 ELSE 5 END
@@ -474,7 +501,9 @@ def get_rulebook_for_prompt(conn=None) -> str:
         icon = {"warning": "⚠", "strength": "✓", "habit": "→", "calibration": "~"}
         lines = [f"TRADER RULEBOOK (personalised from trade history, updated {ts}):"]
         for r in rows:
-            lines.append(f"  {icon.get(r[0],'•')} [{r[0].upper()}] {r[1]}: {r[2]}")
+            age = r[4] or 0
+            stale = " [stale — may not reflect recent behaviour]" if age > 30 else ""
+            lines.append(f"  {icon.get(r[0],'•')} [{r[0].upper()}] {r[1]}: {r[2]}{stale}")
         return "\n".join(lines)
     finally:
         if own_conn:

@@ -15,9 +15,45 @@ Priority order (highest signal density first):
 
 import chart_context
 import ai_rulebook
+import ai_pattern_detector
 
 # ~1 400 tokens of context at 4 chars/token — leaves plenty for the main prompt
 MAX_CONTEXT_CHARS = 5_600
+
+# Setup-type-specific scoring rubrics (P14)
+_RUBRICS = {
+    "breakout": (
+        "BREAKOUT RUBRIC: 9-10 = clean volume-confirmed break of multi-touch level with retest entry, "
+        "ATR-wide SL below break zone, R:R ≥ 3:1. 7-8 = clear level break, moderate volume, structural SL. "
+        "6 = break with weak volume or SL inside noise. Penalise false-break patterns heavily."
+    ),
+    "reversal": (
+        "REVERSAL RUBRIC: 9-10 = extreme RSI divergence at major S/R, multi-TF confirmation, "
+        "clear candle rejection pattern, R:R ≥ 3:1. 7-8 = strong level + indicator signal. "
+        "6 = moderate confluence only. Penalise reversals against the weekly trend unless very strong."
+    ),
+    "continuation": (
+        "CONTINUATION RUBRIC: 9-10 = pullback to EMA in strong trend with RSI reset 45-55, "
+        "higher low structure intact, R:R ≥ 2.5:1. 7-8 = clear trend + EMA touch. "
+        "6 = shallower trend or choppy structure. Never score > 7 if ADX < 25."
+    ),
+    "range": (
+        "RANGE RUBRIC: 9-10 = clearly defined range with 3+ touches per side, entry at range boundary, "
+        "SL outside range, TP at opposite boundary, R:R ≥ 2:1. 7-8 = 2 touches minimum. "
+        "6 = narrow range or overlapping candles. Penalise range trades when ADX > 30 (trending)."
+    ),
+}
+
+
+def get_setup_rubric(setup_type: str) -> str:
+    """Return the scoring rubric for a given setup type (case-insensitive prefix match)."""
+    if not setup_type:
+        return ""
+    lower = setup_type.lower()
+    for key, rubric in _RUBRICS.items():
+        if key in lower or lower in key:
+            return rubric
+    return ""
 
 
 def build_context(
@@ -30,6 +66,7 @@ def build_context(
     include_rulebook: bool = True,
     include_calibration: bool = True,
     include_similar: bool = True,
+    include_strengths: bool = True,
     timeframes: list = None,
     exchange_filter: str = None,   # 'bitget' | 'blofin' | None (all)
 ) -> str:
@@ -104,7 +141,17 @@ def build_context(
         else:
             _truncated.append(f"chart (budget={remaining})")
 
-    # ── 5. Similar past trades ────────────────────────────────────────────────
+    # ── 5. Positive pattern strengths (anti-pattern injection) ───────────────
+    if include_strengths and conn is not None:
+        if remaining > 150:
+            strengths = ai_pattern_detector.get_top_strengths_for_prompt(conn)
+            if strengths:
+                if len(strengths) > remaining:
+                    strengths = strengths[:remaining]
+                sections.append(strengths)
+                remaining -= len(strengths)
+
+    # ── 6. Similar past trades ────────────────────────────────────────────────
     if include_similar and conn is not None and symbol:
         if remaining > 200:
             sim = ai_rulebook.get_similar_trades_for_prompt(

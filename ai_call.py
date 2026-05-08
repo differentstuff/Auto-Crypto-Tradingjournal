@@ -17,10 +17,26 @@ from concurrent.futures import ThreadPoolExecutor
 import anthropic
 
 from database import db_conn
-from helpers import strip_fence, build_cached_messages
+from helpers import strip_fence, build_cached_messages, log_token_usage
 import market_context
 import prompt_builder
 import trade_utils
+
+_TECH_TERMS = (
+    "support", "resistance", "sr", "s/r", "trendline", "trend line",
+    "ema", " sma", " ma ", "rsi", "macd", "level", "zone", "range",
+    "breakout", "breakdown", "retest", "fib", "fibonacci", "atr",
+    "pattern", "channel", "wedge", "triangle", "flag", "pennant",
+    "consolidat", "accumul", "distribut", "volume", "liquidity",
+    "sweep", "wick", "rejection", "confluence", "bullish", "bearish",
+    "oversold", "overbought", "divergence", "crossover", "structure",
+)
+
+
+def _has_tech_levels(text: str) -> bool:
+    """Return True if call text references technical analysis concepts worth charting."""
+    lower = text.lower()
+    return any(t in lower for t in _TECH_TERMS)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL    = "claude-sonnet-4-6"
@@ -130,7 +146,8 @@ def _correlation_warning(symbol: str, direction: str, open_positions: list) -> s
 # ── Prompt builder ─────────────────────────────────────────────────────────────
 
 def _build_prompt(call_text: str, sizing: dict, history: dict,
-                  has_image: bool, atr_warning: str = "", corr_warning: str = "") -> str:
+                  has_image: bool, atr_warning: str = "", corr_warning: str = "",
+                  rubric: str = "") -> str:
     """Build the variable part of the call analysis prompt (context passed separately for caching)."""
     chart_note = (
         "A TradingView chart image is attached — analyse it carefully: "
@@ -138,13 +155,14 @@ def _build_prompt(call_text: str, sizing: dict, history: dict,
         "the analyst's projected path, and any relevant price levels visible."
     ) if has_image else "No chart image was provided."
 
-    atr_block  = f"\n⚠ ATR RISK: {atr_warning}\n" if atr_warning else ""
-    corr_block = f"\n⚠ PORTFOLIO CORRELATION: {corr_warning}\n" if corr_warning else ""
+    atr_block    = f"\n⚠ ATR RISK: {atr_warning}\n" if atr_warning else ""
+    corr_block   = f"\n⚠ PORTFOLIO CORRELATION: {corr_warning}\n" if corr_warning else ""
+    rubric_block = f"\n{rubric}\n" if rubric else ""
 
     return f"""You are an expert crypto futures trading analyst. A trade call from a crypto analyst has been submitted for analysis.
 
 {chart_note}
-{atr_block}{corr_block}
+{atr_block}{corr_block}{rubric_block}
 TRADE CALL TEXT:
 {call_text}
 
@@ -154,9 +172,19 @@ PRE-CALCULATED POSITION SIZING (do NOT recalculate — embed these numbers direc
 TRADER'S HISTORY ON THIS SYMBOL:
 {json.dumps(history, indent=2)}
 
-Analyze the call and respond with ONLY a valid JSON object (no markdown, no code fences):
+INSTRUCTIONS: Before assigning any scores, reason step-by-step in the "thinking" field:
+  1. Identify the trade direction and setup type
+  2. Assess the structural anchor (is there a named S/R level, EMA, or trendline within 1× ATR?)
+  3. Evaluate the SL placement (is it outside the ATR noise floor?)
+  4. Calculate the R:R (is it ≥ 1.5:1? ≥ 2:1? ≥ 3:1?)
+  5. Check market context signals (funding rate, Fear & Greed adjustments)
+  6. Arrive at a score 1-10 with explicit reasoning
+  THEN fill in all other fields.
+
+Respond with ONLY a valid JSON object (no markdown, no code fences):
 
 {{
+  "thinking": "Step-by-step reasoning: 1) Direction = Long, setup = Breakout. 2) Entry $X is at... etc.",
   "symbol": "XYZUSDT",
   "direction": "Long",
   "trade_type": "e.g. Breakout / Range / Trend Follow / Reversal",
@@ -290,25 +318,45 @@ def analyze_call(call_text: str, account_equity: float,
     elif need_mkt:
         mkt_str = market_context.get_market_str([symbol])
 
+    use_chart = _has_tech_levels(call_text)
+
+    # Detect setup type from call text for rubric injection
+    _text_lower = call_text.lower()
+    detected_type = None
+    for kw, st in (("breakout","breakout"),("breakdown","breakout"),("reversal","reversal"),
+                   ("trend follow","continuation"),("continuation","continuation"),
+                   ("range","range"),("scalp","range")):
+        if kw in _text_lower:
+            detected_type = st
+            break
+
+    rubric = prompt_builder.get_setup_rubric(detected_type or "")
+
     with db_conn() as conn:
         history = _symbol_history(symbol, conn)
         ctx_str = prompt_builder.build_context(
-            conn       = conn,
-            symbol     = symbol,
-            direction  = direction,
-            setup_type = setup_type,
-            market_str = mkt_str,
-            timeframes = ["4H", "1D"],
+            conn          = conn,
+            symbol        = symbol,
+            direction     = direction,
+            setup_type    = setup_type,
+            market_str    = mkt_str,
+            include_chart = use_chart,
+            timeframes    = ["4H", "1D"],
         )
 
     prompt   = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
-                              atr_warning=atr_warn, corr_warning=corr_warn)
+                              atr_warning=atr_warn, corr_warning=corr_warn,
+                              rubric=rubric)
     messages = build_cached_messages(ctx_str, prompt, image_b64, image_type)
     client   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message  = client.messages.create(
         model=MODEL, max_tokens=2048,
         messages=messages,
     )
+
+    cached = getattr(message.usage, "cache_read_input_tokens", 0) or 0
+    log_token_usage("call_analyzer", MODEL,
+                    message.usage.input_tokens, message.usage.output_tokens, cached)
 
     raw = strip_fence(message.content[0].text.strip())
 

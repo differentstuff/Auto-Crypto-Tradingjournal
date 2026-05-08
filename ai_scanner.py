@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import anthropic
 
 from database import db_conn
-from helpers import strip_fence, build_cached_messages
+from helpers import strip_fence, build_cached_messages, log_token_usage
 import chart_context
 import market_context
 import ai_rulebook
@@ -376,6 +376,9 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
         r = json.loads(strip_fence(msg.content[0].text.strip()))
         if r.get("score", 0) < min_score:
             return None
+        cached = getattr(msg.usage, "cache_read_input_tokens", 0) or 0
+        log_token_usage("scanner_quick", FAST_MODEL,
+                        msg.usage.input_tokens, msg.usage.output_tokens, cached)
         return {
             "score":     r["score"],
             "direction": r.get("direction", direction),
@@ -405,6 +408,110 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_
         return result
     except Exception:
         return None
+
+
+def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE):
+    """Build a single prompt for all top-N symbols. Returns (system_prefix, user_prompt)."""
+    parts = []
+    for i, (symbol, ctx, conf, direction, score, _reason) in enumerate(finalists, 1):
+        inds_4h = ctx.get("4H", {}).get("indicators", {})
+        ema     = inds_4h.get("ema", {}) or {}
+        price   = ema.get("current_price", 0)
+        atr_val = (inds_4h.get("atr", {}) or {}).get("value", 0)
+        pt_4h   = ctx.get("4H", {}).get("prompt_text", "No 4H data")
+        pt_1d   = ctx.get("1D", {}).get("prompt_text", "No 1D data")
+        sr_4h   = inds_4h.get("support_resistance", [])
+        sr_text = "  ".join(
+            f"{'S' if l['type']=='support' else 'R'}:{l['price']:.6g}({l.get('touches',1)}t)"
+            for l in sorted(sr_4h, key=lambda x: -x.get("touches", 1))[:4]
+        ) or "none"
+        hist = histories.get(symbol, {"trades": 0})
+        conf_line = f"{conf['label']} ({conf['bullish']}↑/{conf['bearish']}↓)"
+        parts.append(
+            f"--- SETUP {i}: {symbol} ({direction.upper()}) ---\n"
+            f"{pt_4h}\n{pt_1d}\n"
+            f"Confluence: {conf_line}  |  Price: {price:.6g}  |  ATR: {atr_val:.4g}\n"
+            f"S/R: {sr_text}\n"
+            f"History: {json.dumps(hist)}"
+        )
+
+    setups_text = "\n\n".join(parts)
+    user_prompt = (
+        f"Analyze these {len(finalists)} crypto futures setups. "
+        f"Return a JSON ARRAY of exactly {len(finalists)} objects — one per setup, in the same order.\n\n"
+        f"{setups_text}\n\n"
+        f"SCORING SCALE: 6=Acceptable(R:R≥1.5), 7=Good(R:R≥2:1), 8=Strong(R:R≥2.5), "
+        f"9=Excellent(R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
+        f"LEVEL RULES: Entry >1×ATR from level → max 6. SL <1×ATR from entry → max 6. R:R<1.5 → max 6.\n\n"
+        f"For setups scoring >= {min_score}, use this structure:\n"
+        '{"symbol":"X","direction":"Long","setup_score":7,"setup_label":"Good",'
+        '"why_this_score":"2-3 sentences","entry_zone":{"low":0,"high":0,"rationale":"..."},'
+        '"sl_price":0,"sl_rationale":"...","tp1_price":0,"tp1_rationale":"...",'
+        '"tp2_price":0,"tp2_rationale":"...","rr_ratio":"1:X","chart_pattern":null,'
+        '"key_conditions":["..."],"risks":["..."],"urgency":"Now|1-4h|Today|1-3 days",'
+        '"timeframe":"4H","confluence_summary":"...","summary":"..."}\n'
+        f'For setups scoring below {min_score}: {{"symbol":"X","setup_score":0,"reason":"why"}}\n\n'
+        "Respond with ONLY a valid JSON array — no markdown, no code fences."
+    )
+    return user_prompt
+
+
+def _batch_ai_score(finalists, mkt_str, histories, rulebook_str, min_score=MIN_SCORE):
+    """
+    Single Claude (Sonnet) call for all top-N finalists.
+    Falls back to individual calls if the batch response is malformed or incomplete.
+    """
+    if not finalists:
+        return []
+    shared = _build_shared_prefix(mkt_str, rulebook_str, min_score)
+    user_prompt = _build_batch_prompt(finalists, histories, min_score)
+    try:
+        client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        message = client.messages.create(
+            model=MODEL, max_tokens=min(4096, 1200 * len(finalists)),
+            messages=build_cached_messages(shared, user_prompt),
+        )
+        raw = strip_fence(message.content[0].text.strip())
+        results = json.loads(raw)
+        if not isinstance(results, list) or len(results) < len(finalists):
+            raise ValueError("incomplete batch response")
+
+        total_in  = message.usage.input_tokens
+        total_out = message.usage.output_tokens
+        per_in    = total_in  // len(finalists)
+        per_out   = total_out // len(finalists)
+
+        out = []
+        for i, (symbol, ctx, conf, direction, _score, _reason) in enumerate(finalists):
+            r = results[i] if i < len(results) else {}
+            if r.get("setup_score", 0) < min_score:
+                continue
+            r["_symbol"]        = symbol
+            r["_input_tokens"]  = per_in
+            r["_output_tokens"] = per_out
+            out.append(r)
+        cached = getattr(message.usage, "cache_read_input_tokens", 0) or 0
+        log_token_usage("scanner_batch", MODEL, total_in, total_out, cached)
+        print(f"[scanner] batch scored {len(finalists)} symbols → {len(out)} setups "
+              f"({total_in} in / {total_out} out tokens)", flush=True)
+        return out
+    except Exception as e:
+        print(f"[scanner] batch call failed ({e}), falling back to individual calls", flush=True)
+        # Fallback: individual calls in parallel
+        out = []
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            fs = {
+                ex.submit(
+                    _ai_score, sym, ctx, conf, direction,
+                    mkt_str, histories.get(sym, {"trades": 0}), rulebook_str, min_score
+                ): sym
+                for sym, ctx, conf, direction, _, _ in finalists
+            }
+            for f in as_completed(fs):
+                result = f.result()
+                if result is not None:
+                    out.append(result)
+        return out
 
 
 # ── Symbol history helper ───────────────────────────────────────────────────────
@@ -454,6 +561,16 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
         except Exception:
             mkt_str = ""
 
+        # Append BTC market regime to market string
+        try:
+            regime = market_context.get_btc_regime()
+            regime_map = {"bull": "📈 BTC is in a BULL regime (EMA50 > EMA200) — favour long setups",
+                          "bear": "📉 BTC is in a BEAR regime (EMA50 < EMA200) — favour short setups",
+                          "range": "↔ BTC is in a RANGE/transition — both directions valid, be selective"}
+            mkt_str = (mkt_str + "\n" if mkt_str else "") + f"BTC MARKET REGIME: {regime_map[regime]}"
+        except Exception:
+            pass
+
         with db_conn() as conn:
             rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
             histories = {s: _symbol_history(s, conn) for s, _, _, _ in finalists}
@@ -478,20 +595,8 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE):
         top_finalists  = quick_results[:FULL_DETAIL_TOP_N]
         rest_finalists = quick_results[FULL_DETAIL_TOP_N:]
 
-        # Stage 3b — Full detail with Sonnet on top-N only
-        setups = []
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            fs = {
-                ex.submit(
-                    _ai_score, sym, ctx, conf, direction,
-                    mkt_str, histories.get(sym, {"trades": 0}), rulebook_str, min_score
-                ): sym
-                for sym, ctx, conf, direction, _, _reason in top_finalists
-            }
-            for f in as_completed(fs):
-                result = f.result()
-                if result is not None:
-                    setups.append(result)
+        # Stage 3b — Full detail with Sonnet: single batched call for all top-N
+        setups = _batch_ai_score(top_finalists, mkt_str, histories, rulebook_str, min_score)
 
         # Add non-top-N setups with Haiku score + one-sentence rationale
         for sym, ctx, conf, direction, score, reason in rest_finalists:

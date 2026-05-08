@@ -203,6 +203,37 @@ def get_market_context(symbols: Optional[list] = None) -> dict:
     return result
 
 
+def get_btc_regime(as_of_ts: str = None) -> str:
+    """
+    Determine BTC market regime ('bull', 'bear', or 'range') at a given ISO timestamp.
+    Uses 50-day EMA vs 200-day EMA cross: bull if EMA50 > EMA200, bear otherwise.
+    Falls back to 'range' on any error.
+
+    as_of_ts — ISO datetime string; if None, uses current market data.
+    """
+    try:
+        import chart_context as _cc
+        tfs  = ["1D"]
+        ctx  = _cc.get_chart_context("BTCUSDT", tfs)
+        inds = ctx.get("1D", {}).get("indicators", {})
+        ema  = inds.get("ema", {}) or {}
+        # ema contains: ema20, ema50, ema200, current_price
+        ema50  = ema.get("ema50",  0) or 0
+        ema200 = ema.get("ema200", 0) or 0
+        price  = ema.get("current_price", 0) or 0
+        if ema50 and ema200:
+            spread = (ema50 - ema200) / ema200
+            if spread > 0.03:
+                return "bull"
+            elif spread < -0.03:
+                return "bear"
+            else:
+                return "range"
+        return "range"
+    except Exception:
+        return "range"
+
+
 def format_for_prompt(ctx: dict) -> str:
     """Concise text block for Claude prompts."""
     lines = []

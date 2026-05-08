@@ -53,9 +53,29 @@ async function loadSettings() {
     ${blofinSyncHtml}
     <div class="settings-section-title" style="margin-top:32px;color:var(--muted);font-size:.8rem">
       💡 Use the <b>All / Bitget / Blofin</b> pills in the top bar to filter all statistics, charts, and analytics by exchange.
+    </div>
+
+    <div class="settings-section-title" style="margin-top:28px">🤖 AI Token Usage (last 7 days)</div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+        <thead>
+          <tr style="color:var(--muted);text-align:left;border-bottom:1px solid var(--border)">
+            <th style="padding:4px 8px">Module</th>
+            <th style="padding:4px 8px">Model</th>
+            <th style="padding:4px 8px">Input tok</th>
+            <th style="padding:4px 8px">Output tok</th>
+            <th style="padding:4px 8px">Est. cost</th>
+          </tr>
+        </thead>
+        <tbody id="token-usage-body">
+          <tr><td colspan="5" style="color:var(--muted);padding:8px">Loading…</td></tr>
+        </tbody>
+      </table>
+      <div id="token-usage-total" style="margin-top:8px;font-size:.76rem;color:var(--muted)"></div>
     </div>`;
 
   _injectSettingsCSS();
+  loadTokenUsage();
 }
 
 
@@ -141,10 +161,7 @@ async function testExchangeConn(exchange) {
   btn.disabled = true;
   btn.textContent = 'Testing…';
   out.textContent = '';
-  const res = await api('/api/settings/test-connection', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ exchange }),
-  });
+  const res = await api('/api/settings/test-connection', 'POST', { exchange });
   btn.disabled    = false;
   btn.textContent = 'Test Connection';
   if (res.ok) {
@@ -177,10 +194,8 @@ async function saveCredentials(exchange) {
   }
   out.style.color = 'var(--muted)';
   out.textContent = 'Saving…';
-  const res = await api('/api/settings/credentials', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ exchange, api_key: key, secret_key: secret, passphrase: phrase }),
-  });
+  const res = await api('/api/settings/credentials', 'POST',
+    { exchange, api_key: key, secret_key: secret, passphrase: phrase });
   if (res.ok) {
     out.style.color = 'var(--accent3)';
     out.textContent = '✓ Saved';
@@ -193,13 +208,34 @@ async function saveCredentials(exchange) {
 
 
 async function triggerBlofinSync() {
-  const res = await api('/api/settings/blofin/sync', { method: 'POST' });
+  const res = await api('/api/settings/blofin/sync', 'POST');
   if (res.ok) {
     notify(`Blofin sync: ${res.data.positions} new trade(s) imported`, 'ok');
     setTimeout(loadSettings, 800);
   } else {
     notify(res.error || 'Blofin sync failed', 'err');
   }
+}
+
+
+async function loadTokenUsage() {
+  const el = document.getElementById('token-usage-body');
+  if (!el) return;
+  const res = await api('/api/token-usage?days=7');
+  if (!res.ok) { el.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">No data yet</td></tr>'; return; }
+  const d = res.data;
+  const rows = (d.by_module || []).map(r => `
+    <tr>
+      <td>${r.module}</td>
+      <td style="color:var(--muted);font-size:.75rem">${r.model.split('-').slice(-2).join('-')}</td>
+      <td>${(r.total_input || 0).toLocaleString()}</td>
+      <td>${(r.total_output || 0).toLocaleString()}</td>
+      <td style="color:var(--accent3)">$${r.est_cost_usd}</td>
+    </tr>`).join('');
+  el.innerHTML = rows || '<tr><td colspan="5" style="color:var(--muted)">No calls in last 7 days</td></tr>';
+  const tot = d.totals || {};
+  document.getElementById('token-usage-total').textContent =
+    `7-day total: ${(tot.total_input||0).toLocaleString()} in + ${(tot.total_output||0).toLocaleString()} out tokens — est. $${d.est_cost_usd} USD`;
 }
 
 

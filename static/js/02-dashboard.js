@@ -2,11 +2,13 @@
 // DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadDashboard() {
-  // Fetch KPIs, market context, and live positions in parallel
-  const [res, mr, lr] = await Promise.all([
+  // Fetch KPIs, market context, live positions, and new stats in parallel
+  const [res, mr, lr, scRes, rollRes] = await Promise.all([
     api('/api/dashboard/kpis?' + new URLSearchParams(exchFilters())),
     api('/api/market/context?symbols=BTCUSDT'),
     api('/api/live/positions'),
+    api('/api/analytics/sharpe-calmar?' + new URLSearchParams(exchFilters())),
+    api('/api/analytics/rolling?' + new URLSearchParams(exchFilters())),
   ]);
   if (!res.ok) return;
   const d = res.data;
@@ -84,6 +86,64 @@ async function loadDashboard() {
       ${k.sub ? `<div class="kpi-sub">${k.sub}</div>` : ''}
     </div>`).join('');
 
+  // Sharpe / Calmar cards (appended separately to avoid re-rendering the full grid)
+  if (scRes.ok && scRes.data.sharpe != null) {
+    const sc   = scRes.data;
+    const grid = document.getElementById('kpi-grid');
+    [
+      { label: 'Sharpe Ratio',
+        value: sc.sharpe,
+        sub:   'Ann. vol ' + sc.ann_volatility_pct + '%',
+        cls:   sc.sharpe >= 1 ? 'pos' : sc.sharpe > 0 ? 'neu' : 'neg',
+        tip:   'Annualised Sharpe from daily wallet returns. ≥1 good, ≥2 excellent.' },
+      { label: 'Calmar Ratio',
+        value: sc.calmar ?? '—',
+        sub:   'Max DD ' + sc.max_drawdown_pct + '%',
+        cls:   sc.calmar >= 1 ? 'pos' : 'neu',
+        tip:   'Annualised return / max drawdown. ≥1 = you earned back your worst DD in a year.' },
+    ].forEach(k => {
+      const card = document.createElement('div');
+      card.className = 'kpi-card';
+      if (k.tip) card.dataset.tip = k.tip;
+      const lbl = document.createElement('div');
+      lbl.className = 'kpi-label';
+      lbl.textContent = k.label;
+      const val = document.createElement('div');
+      val.className = 'kpi-value ' + (k.cls || '');
+      val.textContent = k.value;
+      card.appendChild(lbl);
+      card.appendChild(val);
+      if (k.sub) {
+        const sub = document.createElement('div');
+        sub.className = 'kpi-sub';
+        sub.textContent = k.sub;
+        card.appendChild(sub);
+      }
+      grid.appendChild(card);
+    });
+  }
+
+  // Rolling 30-day comparison row
+  if (rollRes.ok) {
+    const ro  = rollRes.data;
+    const el  = document.getElementById('rolling-stats-row');
+    if (el && ro.rolling && ro.all_time) {
+      const r = ro.rolling, a = ro.all_time;
+      const pnlCls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+      const diff = v => {
+        if (v == null) return '';
+        const n = parseFloat(v);
+        return n > 0 ? `<span class="pos">+${n}</span>` : `<span class="neg">${n}</span>`;
+      };
+      el.style.display = 'block';
+      el.querySelector('.rolling-label').textContent = `Last ${ro.days} days`;
+      el.querySelector('.rolling-wr').textContent    = (r.win_rate ?? '—') + '%';
+      el.querySelector('.rolling-pnl').textContent   = (r.total_pnl >= 0 ? '+' : '') + fmtC(r.total_pnl) + ' USDT';
+      el.querySelector('.rolling-pnl').className     = 'rolling-pnl kpi-value ' + pnlCls(r.total_pnl);
+      el.querySelector('.rolling-trades').textContent = r.trades + ' trades';
+    }
+  }
+
   // Open position risk — already fetched in parallel above
   if (lr.ok) {
     const pos = lr.data.positions || [];
@@ -143,17 +203,47 @@ async function loadDashboard() {
     }, { plugins: { legend: { display: false } } });
   }
 
-  // Wallet chart
+  // Wallet chart with drawdown overlay
   if (d.wallet_curve.length) {
+    const wc = d.wallet_curve;
+    // Compute drawdown from peak as a percentage at each point
+    let peak = wc[0].wallet_balance || 0;
+    const ddPct = wc.map(p => {
+      const b = p.wallet_balance || 0;
+      if (b > peak) peak = b;
+      return peak > 0 ? parseFloat(((b - peak) / peak * 100).toFixed(2)) : 0;
+    });
     makeChart('walletChart', 'line', {
-      labels: d.wallet_curve.map(p => p.date.slice(0,10)),
-      datasets: [{
-        label: 'Wallet Balance (USDT)',
-        data: d.wallet_curve.map(p => p.wallet_balance),
-        borderColor: '#4fc3f7', backgroundColor: 'rgba(79,195,247,.08)',
-        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
-      }]
-    }, { plugins: { legend: { display: false } } });
+      labels: wc.map(p => p.date.slice(0,10)),
+      datasets: [
+        {
+          label: 'Wallet Balance (USDT)',
+          data:  wc.map(p => p.wallet_balance),
+          borderColor: '#4fc3f7', backgroundColor: 'rgba(79,195,247,.08)',
+          fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+          yAxisID: 'yBalance',
+        },
+        {
+          label: 'Drawdown %',
+          data:  ddPct,
+          borderColor: 'rgba(239,83,80,.7)', backgroundColor: 'rgba(239,83,80,.08)',
+          fill: true, tension: 0.1, pointRadius: 0, borderWidth: 1.5,
+          yAxisID: 'yDD',
+        },
+      ]
+    }, {
+      plugins: { legend: { display: true, position: 'bottom',
+        labels: { color: '#7986cb', font: { size: 10 } } } },
+      scales: {
+        x:        { ticks: { color: '#7986cb', font: { size: 10 } }, grid: { color: 'rgba(45,50,80,.6)' } },
+        yBalance: { type: 'linear', position: 'left',
+                    ticks: { color: '#4fc3f7', font: { size: 10 } }, grid: { color: 'rgba(45,50,80,.6)' } },
+        yDD:      { type: 'linear', position: 'right',
+                    ticks: { color: 'rgba(239,83,80,.8)', font: { size: 9 },
+                             callback: v => v + '%' },
+                    grid: { drawOnChartArea: false } },
+      },
+    });
   }
 
   // Top symbols bar chart

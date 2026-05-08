@@ -475,6 +475,237 @@ def get_rr_analysis(conn=None, filters=None):
     return result
 
 
+def get_mfe_mae(conn=None, filters=None) -> dict:
+    """
+    MFE/MAE stats from positions that have mfe_pct / mae_pct populated.
+    Returns distribution buckets and per-setup-type averages.
+    """
+    if conn is None:
+        conn = get_conn()
+    where, params = _build_where(filters or {})
+    and_ = "AND" if where else "WHERE"
+
+    raw = _rows(conn, f"""
+        SELECT direction, mfe_pct, mae_pct, realized_pnl, setup_type
+        FROM positions {where}
+        {and_} mfe_pct IS NOT NULL AND mae_pct IS NOT NULL
+    """, params)
+
+    if not raw:
+        return {"available": False, "message": "No MFE/MAE data yet — will populate on next sync"}
+
+    by_setup = {}
+    for r in raw:
+        st = r.get("setup_type") or "Unknown"
+        if st not in by_setup:
+            by_setup[st] = {"mfe_sum": 0, "mae_sum": 0, "n": 0}
+        by_setup[st]["mfe_sum"] += r["mfe_pct"] or 0
+        by_setup[st]["mae_sum"] += r["mae_pct"] or 0
+        by_setup[st]["n"]       += 1
+
+    by_setup_list = [
+        {
+            "setup_type": st,
+            "avg_mfe_pct": round(v["mfe_sum"] / v["n"], 2),
+            "avg_mae_pct": round(v["mae_sum"] / v["n"], 2),
+            "n": v["n"],
+        }
+        for st, v in by_setup.items()
+        if v["n"] >= 3
+    ]
+    by_setup_list.sort(key=lambda x: -x["n"])
+
+    all_mfe = [r["mfe_pct"] for r in raw if r["mfe_pct"] is not None]
+    all_mae = [r["mae_pct"] for r in raw if r["mae_pct"] is not None]
+
+    return {
+        "available":  True,
+        "count":      len(raw),
+        "avg_mfe_pct": round(sum(all_mfe) / len(all_mfe), 2) if all_mfe else None,
+        "avg_mae_pct": round(sum(all_mae) / len(all_mae), 2) if all_mae else None,
+        "by_setup":   by_setup_list,
+    }
+
+
+def get_ev_by_setup(conn=None, filters=None) -> list:
+    """
+    Expected Value = (win_rate × avg_win) + (loss_rate × avg_loss)  per setup type.
+    Requires positions linked to analyzed_calls via call_id for setup_type.
+    Falls back to positions.setup_type when call_id is absent.
+    """
+    if conn is None:
+        conn = get_conn()
+    where, params = _build_where(filters or {})
+    and_ = "AND" if where else "WHERE"
+
+    rows = _rows(conn, f"""
+        SELECT
+            COALESCE(p.setup_type, ac.trade_type, 'Unknown') AS setup_type,
+            COUNT(*)                                                         AS n,
+            ROUND(100.0 * SUM(CASE WHEN p.realized_pnl > 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS win_rate,
+            ROUND(AVG(CASE WHEN p.realized_pnl > 0 THEN p.realized_pnl END), 2) AS avg_win,
+            ROUND(AVG(CASE WHEN p.realized_pnl < 0 THEN p.realized_pnl END), 2) AS avg_loss,
+            ROUND(SUM(p.realized_pnl), 2)                                   AS total_pnl
+        FROM positions p
+        LEFT JOIN analyzed_calls ac ON p.call_id = ac.id
+        {where} {and_} (p.setup_type IS NOT NULL AND p.setup_type != '')
+                     OR (ac.trade_type IS NOT NULL AND ac.trade_type != '')
+        GROUP BY setup_type
+        HAVING n >= 5
+        ORDER BY n DESC
+    """, params)
+
+    result = []
+    for r in rows:
+        wr   = (r["win_rate"] or 0) / 100
+        lr   = 1 - wr
+        aw   = r["avg_win"]  or 0
+        al   = r["avg_loss"] or 0
+        ev   = round(wr * aw + lr * al, 2)
+        result.append({**r, "ev_usdt": ev, "ev_positive": ev > 0})
+    return result
+
+
+def get_rolling_stats(conn=None, filters=None, days: int = 30) -> dict:
+    """
+    Compare last `days` days vs all-time for win_rate, avg_rr, total_pnl.
+    """
+    if conn is None:
+        conn = get_conn()
+    from datetime import datetime as _dt
+    cutoff = _dt.utcnow().strftime(f'%Y-%m-%d')
+
+    def _stat(extra_where, extra_params):
+        n   = _val(conn, f"SELECT COUNT(*) FROM positions {extra_where}", extra_params)
+        wr  = _val(conn, f"SELECT ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),1) FROM positions {extra_where}", extra_params)
+        pnl = round(_val(conn, f"SELECT SUM(realized_pnl) FROM positions {extra_where}", extra_params), 4)
+        aw  = round(_val(conn, f"SELECT AVG(realized_pnl) FROM positions {extra_where} {'AND' if extra_where else 'WHERE'} realized_pnl>0", extra_params), 4)
+        al  = round(_val(conn, f"SELECT AVG(realized_pnl) FROM positions {extra_where} {'AND' if extra_where else 'WHERE'} realized_pnl<0", extra_params), 4)
+        return {"trades": n, "win_rate": wr, "total_pnl": pnl, "avg_win": aw, "avg_loss": al}
+
+    base_where, base_params = _build_where(filters or {})
+    and_ = "AND" if base_where else "WHERE"
+
+    all_time = _stat(base_where, base_params)
+
+    # Build rolling filter by appending date constraint
+    roll_filters = {**(filters or {}), "date_from": _dt.utcnow().strftime(f'%Y-%m-%d')}
+    from datetime import timedelta as _td
+    roll_from = (_dt.utcnow() - _td(days=days)).strftime('%Y-%m-%d')
+    roll_where, roll_params = _build_where({**(filters or {}), "date_from": roll_from})
+    rolling = _stat(roll_where, roll_params)
+
+    return {"days": days, "rolling": rolling, "all_time": all_time}
+
+
+def get_accuracy_trend(conn=None, filters=None, window_days: int = 30) -> list:
+    """
+    Rolling analyst accuracy: for each calendar month, compute what % of
+    setup scores >= threshold actually hit TP1 (True Positive rate).
+    Returns list of {month, tp_rate, fp_rate, n} sorted ascending.
+    threshold defaults to 6 (min tradeable score).
+    """
+    if conn is None:
+        conn = get_conn()
+    where, params = _build_where(filters or {})
+    and_ = "AND" if where else "WHERE"
+
+    rows = _rows(conn, f"""
+        SELECT strftime('%Y-%m', created_at) AS month,
+               COUNT(*) AS n,
+               SUM(CASE WHEN hit_tp1=1 THEN 1 ELSE 0 END) AS tp_count,
+               SUM(CASE WHEN hit_sl=1  THEN 1 ELSE 0 END) AS fp_count
+        FROM analyzed_calls
+        {where} {and_} outcome IS NOT NULL AND setup_score >= 6
+        GROUP BY month
+        ORDER BY month ASC
+    """, params)
+
+    result = []
+    for r in rows:
+        n = r["n"] or 0
+        if n < 3:
+            continue
+        result.append({
+            "month":    r["month"],
+            "n":        n,
+            "tp_rate":  round(r["tp_count"] / n * 100, 1),
+            "fp_rate":  round(r["fp_count"] / n * 100, 1),
+        })
+    return result
+
+
+def get_sharpe_calmar(conn=None, filters=None) -> dict:
+    """
+    Compute Sharpe ratio (annualised daily returns / std) and
+    Calmar ratio (annualised return / max drawdown) from wallet_snapshots.
+    """
+    import math
+    if conn is None:
+        conn = get_conn()
+
+    rows = _rows(conn, """
+        SELECT date, wallet_balance
+        FROM wallet_snapshots
+        WHERE wallet_balance IS NOT NULL
+        ORDER BY date ASC
+    """)
+
+    if len(rows) < 10:
+        return {"sharpe": None, "calmar": None, "message": "Insufficient wallet history"}
+
+    balances = [r["wallet_balance"] for r in rows]
+    # Daily returns (approximate — wallet_snapshots may have multiple entries per day)
+    daily: dict = {}
+    for r in rows:
+        d = r["date"][:10]
+        daily[d] = r["wallet_balance"]  # last balance of each day
+
+    sorted_days = sorted(daily.keys())
+    if len(sorted_days) < 10:
+        return {"sharpe": None, "calmar": None, "message": "Insufficient daily data"}
+
+    daily_returns = []
+    for i in range(1, len(sorted_days)):
+        prev = daily[sorted_days[i - 1]]
+        curr = daily[sorted_days[i]]
+        if prev and prev > 0:
+            daily_returns.append((curr - prev) / prev)
+
+    if not daily_returns:
+        return {"sharpe": None, "calmar": None}
+
+    mean_ret = sum(daily_returns) / len(daily_returns)
+    variance = sum((r - mean_ret) ** 2 for r in daily_returns) / len(daily_returns)
+    std_ret  = math.sqrt(variance) if variance > 0 else 0
+
+    ann_return = mean_ret * 365
+    ann_std    = std_ret  * math.sqrt(365)
+    sharpe = round(ann_return / ann_std, 3) if ann_std > 0 else None
+
+    # Max drawdown from wallet curve
+    peak = balances[0]
+    max_dd_abs = 0
+    for b in balances:
+        if b > peak:
+            peak = b
+        dd = peak - b
+        if dd > max_dd_abs:
+            max_dd_abs = dd
+
+    max_dd_pct = round(max_dd_abs / peak * 100, 2) if peak > 0 else 0
+    calmar     = round(ann_return * 100 / max_dd_pct, 3) if max_dd_pct > 0 else None
+
+    return {
+        "sharpe":       sharpe,
+        "calmar":       calmar,
+        "ann_return_pct": round(ann_return * 100, 2),
+        "ann_volatility_pct": round(ann_std * 100, 2),
+        "max_drawdown_pct":   max_dd_pct,
+        "days_analyzed":      len(sorted_days),
+    }
+
+
 def _calc_streaks(pnl_series):
     max_win = cur_win = max_loss = cur_loss = 0
     for pnl in pnl_series:

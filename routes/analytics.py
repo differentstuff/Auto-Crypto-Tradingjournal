@@ -4,7 +4,9 @@ from flask import Blueprint, request, render_template
 
 from database import db_conn
 from helpers import _ok, _err, _filters_from_args
-from analytics import get_dashboard_kpis, get_deep_stats, get_rr_analysis, get_heatmap_data
+from analytics import (get_dashboard_kpis, get_deep_stats, get_rr_analysis, get_heatmap_data,
+                        get_mfe_mae, get_ev_by_setup, get_rolling_stats, get_sharpe_calmar,
+                        get_accuracy_trend)
 import ai_pattern_detector
 import chart_context
 
@@ -84,6 +86,117 @@ def api_chart_candles():
         timeframe = request.args.get("timeframe", "4H").strip()
         limit     = int(request.args.get("limit", 200))
         return _ok(chart_context.get_candles_for_chart(symbol, timeframe, limit))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/analytics/mfe-mae")
+def api_mfe_mae():
+    try:
+        with db_conn() as conn:
+            return _ok(get_mfe_mae(conn=conn, filters=_filters_from_args()))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/analytics/ev-by-setup")
+def api_ev_by_setup():
+    try:
+        with db_conn() as conn:
+            return _ok(get_ev_by_setup(conn=conn, filters=_filters_from_args()))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/analytics/rolling")
+def api_rolling_stats():
+    try:
+        days = int(request.args.get("days", 30))
+        with db_conn() as conn:
+            return _ok(get_rolling_stats(conn=conn, filters=_filters_from_args(), days=days))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/analytics/accuracy-trend")
+def api_accuracy_trend():
+    try:
+        with db_conn() as conn:
+            return _ok(get_accuracy_trend(conn=conn, filters=_filters_from_args()))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/analytics/sharpe-calmar")
+def api_sharpe_calmar():
+    try:
+        with db_conn() as conn:
+            return _ok(get_sharpe_calmar(conn=conn, filters=_filters_from_args()))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/token-usage")
+def api_token_usage():
+    """GET /api/token-usage?days=7  — rolling usage + per-module breakdown."""
+    try:
+        days = int(request.args.get("days", 7))
+        with db_conn() as conn:
+            rows = [dict(r) for r in conn.execute("""
+                SELECT module, model,
+                       COUNT(*) AS calls,
+                       SUM(input_tokens)  AS total_input,
+                       SUM(output_tokens) AS total_output,
+                       SUM(cached_tokens) AS total_cached
+                FROM token_usage
+                WHERE ts >= datetime('now', ? || ' days')
+                GROUP BY module, model
+                ORDER BY total_input DESC
+            """, (f"-{days}",)).fetchall()]
+
+            totals = dict(conn.execute("""
+                SELECT SUM(input_tokens) AS total_input,
+                       SUM(output_tokens) AS total_output,
+                       SUM(cached_tokens) AS total_cached,
+                       COUNT(*) AS total_calls
+                FROM token_usage
+                WHERE ts >= datetime('now', ? || ' days')
+            """, (f"-{days}",)).fetchone() or {})
+
+            all_time = dict(conn.execute("""
+                SELECT SUM(input_tokens) AS total_input,
+                       SUM(output_tokens) AS total_output,
+                       COUNT(*) AS total_calls
+                FROM token_usage
+            """).fetchone() or {})
+
+        sonnet_in_cost  = 3.0 / 1_000_000   # $/token (input)
+        sonnet_out_cost = 15.0 / 1_000_000  # $/token (output)
+        haiku_in_cost   = 0.8 / 1_000_000
+        haiku_out_cost  = 4.0 / 1_000_000
+
+        def cost(row):
+            if "haiku" in row.get("model", "").lower():
+                return round(row["total_input"] * haiku_in_cost + row["total_output"] * haiku_out_cost, 4)
+            return round(row["total_input"] * sonnet_in_cost + row["total_output"] * sonnet_out_cost, 4)
+
+        for r in rows:
+            r["est_cost_usd"] = cost(r)
+
+        total_cost = sum(r["est_cost_usd"] for r in rows)
+        return _ok({
+            "days": days,
+            "by_module": rows,
+            "totals": totals,
+            "all_time": all_time,
+            "est_cost_usd": round(total_cost, 4),
+        })
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
