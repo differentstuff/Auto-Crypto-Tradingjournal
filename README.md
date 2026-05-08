@@ -9,7 +9,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.5.2">🚀 Release v2.5.2</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.6.0">🚀 Release v2.6.0</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
 </p>
@@ -223,6 +223,39 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.6.0 — AI Efficiency + Learning + Analytics
+
+**Token efficiency (Proposals 1-4):**
+- P1: Skip chart context when call text has no technical keywords (~30% token saving)
+- P2: Rulebook regen guard — skip if fewer than 5 new trades since last update
+- P3: Calibration block prunes empty tiers (no outcome data) from prompt
+- P4: Scanner stage-3 now uses a single batched Sonnet call for all top-N symbols (~40% saving)
+
+**Observability (P5):**
+- Token usage dashboard in Settings — every AI call logged with input/output/cached tokens and estimated USD cost
+
+**Smarter AI (P6-P14):**
+- P6: `POST /api/scanner/calibrate` — auto-suggests adjusted ENTER_THRESHOLD from 30-day TP/FP data
+- P7: Rule confidence decay — rules >30 days old get `[stale]` annotation in prompts
+- P8: Analyst accuracy trend — `/api/analytics/accuracy-trend` monthly TP/FP rates for scored calls
+- P9: Market regime tagging — positions tagged bull/bear/range at entry on each sync
+- P10: Cross-pattern compounding — session × setup_type combos in pattern detector + Claude prompt
+- P11: Chain-of-thought scoring — call analyzer prompt requires step-by-step reasoning before JSON
+- P12: Anti-pattern injection — top-3 positive patterns (strengths) added to every call prompt
+- P13: BTC market regime in scanner prompt — bull/bear/range influences setup scoring
+- P14: Setup-type scoring rubrics — Breakout/Reversal/Continuation/Range specific criteria injected
+
+**Analytics (P15-P19):**
+- P15: MFE/MAE columns added to positions table; `/api/analytics/mfe-mae`
+- P16: Expected Value per setup type — `/api/analytics/ev-by-setup`
+- P17: Rolling 30-day metrics strip on Dashboard — `/api/analytics/rolling`
+- P18: Equity curve drawdown overlay — wallet chart shows drawdown % on secondary axis
+- P19: Sharpe & Calmar ratio KPI cards on Dashboard — computed from wallet_snapshots
+
+**Bug fix:** Settings page `api()` calls used wrong signature (object instead of method string)
+
+---
 
 ### v2.5.2 — Multi-Exchange Correctness & AI Accuracy
 
