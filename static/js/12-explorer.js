@@ -111,12 +111,14 @@ async function drawExplorerChart() {
   const _TL_ALPHA = {1:.30, 2:.50, 3:.70, 4:.90};
   const _TL_WIDTH = {1:1,   2:1.5, 3:2,   4:2.5};
   [...(trendlines || [])].reverse().forEach(tl => {
-    const isUp = tl.type === 'uptrend';
-    const w    = tl.weight || 1;
-    const tls  = _explorerChart.addLineSeries({
-      color:     isUp ? `rgba(38,217,107,${_TL_ALPHA[w]??0.5})` : `rgba(239,83,80,${_TL_ALPHA[w]??0.5})`,
-      lineWidth: _TL_WIDTH[w] ?? 1,
-      lineStyle: 2,
+    const isUp  = tl.type === 'uptrend';
+    const w     = tl.weight || 1;
+    const a     = _TL_ALPHA[w] ?? 0.5;
+    const color = tl.at_risk
+      ? `rgba(255,179,0,${Math.min(a + 0.2, 1)})`
+      : (isUp ? `rgba(38,217,107,${a})` : `rgba(239,83,80,${a})`);
+    const tls   = _explorerChart.addLineSeries({
+      color, lineWidth: _TL_WIDTH[w] ?? 1, lineStyle: 2,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
     });
     tls.setData([
@@ -176,13 +178,16 @@ async function drawExplorerChart() {
     </span>`);
   });
   (trendlines || []).forEach(tl => {
-    const isUp = tl.type === 'uptrend';
-    const tf   = tl.timeframe ? `<b style="opacity:.7;font-size:.63rem">${tl.timeframe}</b> ` : '';
+    const isUp  = tl.type === 'uptrend';
+    const tfLbl = tl.timeframe ? `<b style="opacity:.7;font-size:.63rem">${tl.timeframe}</b> ` : '';
+    const risk  = tl.at_risk ? ' ⚠' : '';
+    const col   = tl.at_risk ? '#ffb300' : (isUp ? 'var(--accent3)' : 'var(--red)');
+    const bg    = tl.at_risk ? 'rgba(255,179,0,.10)' : (isUp ? 'rgba(38,217,107,.07)' : 'rgba(239,83,80,.07)');
+    const bdr   = tl.at_risk ? 'rgba(255,179,0,.30)'  : (isUp ? 'rgba(38,217,107,.18)' : 'rgba(239,83,80,.18)');
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-      background:${isUp ? 'rgba(38,217,107,.07)' : 'rgba(239,83,80,.07)'};
-      color:${isUp ? 'var(--accent3)' : 'var(--red)'};
-      border:1px solid ${isUp ? 'rgba(38,217,107,.18)' : 'rgba(239,83,80,.18)'}">
-      ${tf}${isUp ? '↗ Up' : '↘ Down'} TL (${tl.touches}×)
+      background:${bg};color:${col};border:1px solid ${bdr}"
+      title="${tl.anchor1} → ${tl.anchor2}${tl.at_risk ? ' — nearly breached' : ''}">
+      ${tfLbl}${isUp ? '↗ Up' : '↘ Down'} TL (${tl.touches}×)${risk}
     </span>`);
   });
   (htf_levels || []).forEach(lvl => {

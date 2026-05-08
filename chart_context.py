@@ -224,11 +224,17 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4,
                 if not valid:
                     continue
 
-                touches = 2
+                touches  = 2
+                at_risk  = False
+                # at_risk: a post-anchor candle came within 30% of the tolerance band
+                at_risk_threshold = tol * 0.30
                 for k in range(i2 + 1, n):
-                    lv = p1 + ci_slope * (k - i1)
-                    if abs(arr[k] - lv) / max(lv, 1e-9) < tol:
+                    lv      = p1 + ci_slope * (k - i1)
+                    dist    = abs(arr[k] - lv) / max(lv, 1e-9)
+                    if dist < tol:
                         touches += 1
+                    elif dist < (tol + at_risk_threshold):
+                        at_risk = True
 
                 # Real-time slope to extend the line to now
                 t1, t2 = times_sec[i1], times_sec[i2]
@@ -248,6 +254,7 @@ def detect_trendlines(df: pd.DataFrame, n_swing: int = 5, max_lines: int = 4,
                     "touches":  touches,
                     "anchor1":  round(p1, 8),
                     "anchor2":  round(p2, 8),
+                    "at_risk":  at_risk,
                 })
 
         candidates.sort(key=lambda x: (-x["touches"], -x["p1_time"]))
