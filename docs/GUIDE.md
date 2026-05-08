@@ -1,5 +1,6 @@
 # Crypto Trading Journal — Full Technical Reference
 
+**Version:** v2.6.0  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
 **Project path:** `/home/<your-user>/trading-journal/`
@@ -140,6 +141,13 @@ requirements.txt                ← Python dependencies
 | execution_grade | TEXT | A / B / C / D — Claude-assigned execution quality grade |
 | execution_grade_reason | TEXT | Claude's written explanation for the grade |
 | external_id | TEXT | Bitget positionId (dedup key) |
+| exchange | TEXT | `bitget` or `blofin` |
+| leverage | INTEGER | position leverage |
+| market_regime | TEXT | `bull` / `bear` / `range` — BTC EMA50/200 regime at entry time |
+| mfe_price | REAL | max favourable excursion price |
+| mae_price | REAL | max adverse excursion price |
+| mfe_pct | REAL | MFE as % of entry |
+| mae_pct | REAL | MAE as % of entry |
 | created_at | TEXT | |
 | updated_at | TEXT | |
 
@@ -153,7 +161,16 @@ Powers the wallet equity curve chart. Key columns: `date`, `symbol`, `type`, `am
 
 ### `settings` — Key/value store
 
-Key/value pairs. Created by `init_db()` (not just bitget_sync). Used for: `last_sync_ms`, `account_equity`, `available_balance` (bitget_sync), `rulebook_updated_at` (ai_rulebook).
+Key/value pairs. Created by `init_db()`. Known keys:
+
+| Key | Set by | Purpose |
+|-----|--------|---------|
+| `last_sync_ms` | bitget_sync | cursor for incremental sync |
+| `account_equity` | bitget_sync | cached equity (USDT) |
+| `available_balance` | bitget_sync | available margin |
+| `rulebook_updated_at` | ai_rulebook | ISO timestamp of last regen |
+| `rulebook_trade_count` | ai_rulebook | trade count at last regen (guard) |
+| `enter_threshold` | scanner/calibrate | minimum score to show a setup |
 
 ### `analyzed_calls` — Saved call analyses
 
@@ -195,7 +212,23 @@ One row per analyst call the user analyzed and chose to save.
 | hit_sl | INTEGER | 0/1 |
 | outcome_at | TEXT | when outcome was recorded |
 | actual_notional | REAL | actual trade size used |
+| exchange | TEXT | `bitget` or `blofin` — set at confirm-match |
+| cot_reasoning | TEXT | Claude's chain-of-thought reasoning before score |
 | created_at | TEXT | |
+
+### `token_usage` — AI call cost log (v2.6.0)
+
+One row per Claude API call. Used by the token usage dashboard in Settings.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | auto |
+| ts | TEXT | UTC timestamp (datetime('now')) |
+| module | TEXT | `call_analyzer`, `scanner_quick`, `scanner_batch`, `rulebook`, `hindsight`, `advisor` |
+| model | TEXT | full model ID |
+| input_tokens | INTEGER | |
+| output_tokens | INTEGER | |
+| cached_tokens | INTEGER | cache_read_input_tokens (0 if not cached) |
 
 ### `pending_limits` — Shadow trades (limit orders not yet triggered)
 
@@ -678,6 +711,12 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | GET | `/` | Serve SPA (index.html) |
 | GET | `/api/dashboard/kpis` | Dashboard KPIs + chart arrays |
 | GET | `/api/analytics/deep` | Deep-dive stats object |
+| GET | `/api/analytics/rolling` | Rolling 30-day vs all-time stats. Param: `days` (default 30) |
+| GET | `/api/analytics/sharpe-calmar` | Sharpe & Calmar ratios from wallet_snapshots |
+| GET | `/api/analytics/mfe-mae` | MFE/MAE distribution + per-setup-type averages |
+| GET | `/api/analytics/ev-by-setup` | Expected Value per setup type (requires ≥5 trades/type) |
+| GET | `/api/analytics/accuracy-trend` | Monthly TP/FP rates for scored calls (≥6/10) |
+| GET | `/api/token-usage` | Token usage + estimated cost. Param: `days` (default 7) |
 | GET | `/api/symbols` | Distinct symbol list |
 | GET | `/api/wallet/history` | Wallet balance curve (downsampled) |
 
@@ -718,7 +757,7 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/rulebook` | Fetch current rules from DB |
-| POST | `/api/rulebook/update` | Regenerate rules via Claude + persist to DB |
+| POST | `/api/rulebook/update` | Regenerate rules via Claude + persist to DB. Body: `{"force": true}` to bypass the 5-new-trades guard |
 
 ### Chart
 
@@ -783,9 +822,12 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | POST | `/api/scanner/run?force=1` | Force re-scan even if cache < 30 min old |
 | GET | `/api/scanner/status` | Poll state: `{status, scanned, after_filter, setups, duration_sec}` |
 | GET | `/api/scanner/watchlist` | Return default 100-symbol watchlist |
+| POST | `/api/scanner/calibrate` | Analyse last 30 days of calls vs outcomes and suggest adjusted ENTER_THRESHOLD. Add `?apply=1` to persist to settings |
 
 Scan runs in a background thread. Poll `/status` every 2.5s until `status !== "running"`.
 Results cached for 30 minutes. `setups` is a list of scored setups (6-10/10) with full entry/SL/TP detail.
+
+**Stage 3 batching (v2.6.0):** All top-N finalists are scored in a single Sonnet prompt (`_batch_ai_score()`), reducing API calls from N to 1. Falls back to parallel individual calls if the batched response is malformed.
 
 ### Hindsight Analysis (routes/hindsight.py)
 

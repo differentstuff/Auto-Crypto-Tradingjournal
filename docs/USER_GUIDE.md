@@ -50,7 +50,7 @@ The main overview of your trading performance. Data updates automatically whenev
 
 ### KPI Cards
 
-The 11 cards at the top show your key numbers across all time (or filtered by the date range you set):
+The cards at the top show your key numbers across all time (or filtered by the date range you set):
 
 - **Total P&L** — sum of all realized_pnl (net of fees)
 - **Total Fees** — total trading fees paid
@@ -60,9 +60,20 @@ The 11 cards at the top show your key numbers across all time (or filtered by th
 - **Avg Win / Avg Loss** — average size of winning vs losing trades
 - **Max Drawdown** — largest peak-to-trough drop on the cumulative PnL curve
 - **Total Trades** — count of closed positions
-- **Open Position Risk** — maximum loss if all your stop-losses trigger simultaneously, shown as USDT and % of equity. Uses SL-based calculation when stops are set; falls back to full margin otherwise.
+- **Sharpe Ratio** *(new in v2.6)* — annualised return ÷ annualised volatility from daily wallet returns. ≥1 is good, ≥2 is excellent. Only shown when at least 10 days of wallet data exist
+- **Calmar Ratio** *(new in v2.6)* — annualised return ÷ maximum drawdown %. ≥1 means you earned back your worst drawdown within a year
+- **Open Position Risk** — maximum loss if all your stop-losses trigger simultaneously, shown as USDT and % of equity
 
 **Tip:** Hover any KPI card to see a plain-language explanation of the metric, what good/bad values look like, and how it is calculated.
+
+### Rolling 30-Day Strip *(new in v2.6)*
+
+A summary bar below the KPI grid shows your **last 30 days** stats alongside all-time: win rate, total P&L, and trade count. Lets you quickly spot if your recent form is improving or declining vs your historical average.
+
+### Charts
+
+- **Cumulative P&L** — line chart of running total profit over time
+- **Wallet Balance + Drawdown Overlay** *(new in v2.6)* — wallet balance on the left axis; drawdown % from peak on the right axis (red area). A spike downward on the red overlay shows where equity dipped furthest from its recent high
 
 ### Monthly Target Tracker
 
@@ -78,10 +89,6 @@ Target is saved in your browser (localStorage) so it persists across page reload
 
 Shows how many consecutive wins or losses you're on right now (based on all-time trade history in date order).
 
-### Charts
-
-- **Cumulative P&L** — line chart of running total profit over time
-- **Wallet Balance History** — actual account equity over time (from Bitget transaction data)
 - **Top 5 Symbols** — bar chart of your best performing pairs
 - **Win vs Loss** — doughnut of win/loss trade counts
 
@@ -793,6 +800,27 @@ High accuracy means the setup scoring system genuinely predicts your outcomes. I
 
 - Historical market context (funding rates, Fear & Greed at entry time) is not available — scoring is technicals-only for hindsight analysis
 - Results are stored permanently; click the trash / clear option to reset and re-run
+
+---
+
+## Settings
+
+**API Credentials** — Enter your Bitget and Blofin API keys here. Use the **Test Connection** button after saving to confirm the credentials are working. Keys are stored in `.env` on the Pi and never sent anywhere except directly to the exchange.
+
+**AI Token Usage** *(new in v2.6)* — A table at the bottom of the Settings page shows every Claude AI call logged in the last 7 days, broken down by module (call_analyzer, scanner_quick, scanner_batch, rulebook, hindsight, advisor), with input/output/cached token counts and estimated USD cost. Use this to understand your AI spend and see how prompt caching and the scanner batch call are reducing costs.
+
+---
+
+## New in v2.6.0
+
+A summary of the most user-visible changes:
+
+- **Dashboard** — Sharpe ratio and Calmar ratio KPI cards. Rolling 30-day stats strip. Drawdown overlay on wallet chart.
+- **Deep Dive** — Expected Value per setup type. MFE/MAE tracking (max favourable/adverse excursion). Market regime tags on positions (bull/bear/range). Cross-pattern combos (e.g. "NY session + Breakout").
+- **Call Analyzer** — Chain-of-thought reasoning field stored per analysis. Setup-type rubrics (Breakout/Reversal/Continuation/Range criteria). Positive pattern injection in prompt ("you win 78% on NY breakouts").
+- **Scanner** — Single batched Sonnet prompt for all top-N symbols (~40% token saving). BTC market regime context injected. `/api/scanner/calibrate` endpoint to auto-adjust threshold.
+- **Rulebook** — Regen guard (needs 5+ new trades). Stale rules annotated after 30 days.
+- **Settings** — Token usage dashboard.
 
 ---
 
