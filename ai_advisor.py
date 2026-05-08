@@ -71,11 +71,13 @@ def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "") -> str:
         "worst_symbols": pruned.get("worst_symbols", []),
     }
 
-    stats_json = json.dumps(summary)
+    stats_json  = json.dumps(summary)
+    exch        = (filters or {}).get("exchange", "").capitalize()
+    exch_label  = f"{exch} USDT-M Futures" if exch else "Multi-exchange USDT-M Futures (Bitget + Blofin)"
 
     mkt_block = f"\nCURRENT MARKET CONTEXT:\n{mkt_ctx}\n" if mkt_ctx else ""
 
-    return f"""You are a crypto futures trading coach. Analyze this trader's 6-month Bitget USDT-M Futures data and respond with ONLY a valid JSON object — no markdown, no code fences, no explanation outside the JSON.
+    return f"""You are a crypto futures trading coach. Analyze this trader's 6-month {exch_label} data and respond with ONLY a valid JSON object — no markdown, no code fences, no explanation outside the JSON.
 
 TRADING STATISTICS:
 {stats_json}

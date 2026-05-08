@@ -31,6 +31,7 @@ def build_context(
     include_calibration: bool = True,
     include_similar: bool = True,
     timeframes: list = None,
+    exchange_filter: str = None,   # 'bitget' | 'blofin' | None (all)
 ) -> str:
     """
     Assemble the shared context block for a Claude prompt.
@@ -65,10 +66,10 @@ def build_context(
         else:
             _truncated.append(f"rulebook (budget={remaining})")
 
-    # ── 3. Calibration ────────────────────────────────────────────────────────
+    # ── 3. Calibration — filtered by exchange when active ─────────────────────
     if include_calibration and conn is not None:
         if remaining > 300:
-            cal = ai_rulebook.get_calibration_for_prompt(conn)
+            cal = ai_rulebook.get_calibration_for_prompt(conn, exchange=exchange_filter)
             if cal:
                 sections.append(cal)
                 remaining -= len(cal)

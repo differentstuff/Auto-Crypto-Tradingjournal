@@ -54,16 +54,21 @@ def get_calibration_data(conn) -> list:
     return [dict(r) for r in rows]
 
 
-def get_calibration_for_prompt(conn=None) -> str:
+def get_calibration_for_prompt(conn=None, exchange: str = None) -> str:
     """
     Enhanced calibration block: includes entry rate per tier + actionable verdict.
-    Uses all analyzed calls (not just those with outcomes) for entry rate accuracy.
+    exchange: if provided, filters to calls matched to that exchange only.
     """
     own_conn = conn is None
     if own_conn:
         conn = get_conn()
+    exch_clause = ""
+    exch_params = []
+    if exchange in ('bitget', 'blofin'):
+        exch_clause = "AND COALESCE(exchange, 'bitget') = ?"
+        exch_params = [exchange]
     try:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT
                 CASE
                     WHEN setup_score >= 8 THEN 'high (8-10)'
@@ -80,10 +85,10 @@ def get_calibration_for_prompt(conn=None) -> str:
                     / NULLIF(SUM(CASE WHEN outcome IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS sl_rate,
                 ROUND(AVG(CASE WHEN outcome IS NOT NULL THEN outcome_pnl END), 2) AS avg_pnl
             FROM analyzed_calls
-            WHERE setup_score IS NOT NULL
+            WHERE setup_score IS NOT NULL {exch_clause}
             GROUP BY tier
             ORDER BY min_score DESC
-        """).fetchall()
+        """, exch_params).fetchall()
         if not rows:
             return ""
         lines = ["YOUR SETUP SCORE CALIBRATION (entry rate + actual outcomes):"]
