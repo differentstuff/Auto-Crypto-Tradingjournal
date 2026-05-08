@@ -9,9 +9,9 @@ A self-hosted crypto futures trading journal with live Bitget API sync, AI-power
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.1">🚀 Release v2.1</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.5">🚀 Release v2.5</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.1/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
 </p>
 
 ---
