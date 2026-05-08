@@ -362,9 +362,11 @@ def get_results(limit: int = 100, exchange: str = None) -> dict:
     Fetch stored hindsight results + compute summary comparison metrics.
     Returns dict with {rows, summary}.
     """
-    exch_clause = ""
+    exch_clause  = ""
+    exch_params  = []
     if exchange in ('bitget', 'blofin'):
-        exch_clause = f" AND COALESCE(p.exchange, 'bitget') = '{exchange}'"
+        exch_clause = " AND COALESCE(p.exchange, 'bitget') = ?"
+        exch_params = [exchange]
     with db_conn() as conn:
         rows = [dict(r) for r in conn.execute(f"""
             SELECT h.*, p.symbol, p.direction, p.open_time, p.close_time,
@@ -375,7 +377,7 @@ def get_results(limit: int = 100, exchange: str = None) -> dict:
             WHERE 1=1{exch_clause}
             ORDER BY p.close_time DESC
             LIMIT ?
-        """, (limit,)).fetchall()]
+        """, exch_params + [limit]).fetchall()]
 
     if not rows:
         return {"rows": [], "summary": None}

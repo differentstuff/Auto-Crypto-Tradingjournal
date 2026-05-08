@@ -28,12 +28,13 @@ def detect_patterns(conn=None, filters=None) -> dict:
     own_conn = conn is None
     if own_conn:
         conn = get_conn()
-    exch_filter = ""
-    if filters and filters.get('exchange') in ('bitget', 'blofin'):
-        exch_filter = f" AND COALESCE(exchange, 'bitget') = '{filters['exchange']}'"
+    # Parameterized exchange filter — never interpolate values into SQL
+    exch_val    = (filters or {}).get('exchange')
+    exch_clause = " AND COALESCE(exchange, 'bitget') = ?" if exch_val in ('bitget', 'blofin') else ""
+    exch_params = (exch_val,) if exch_clause else ()
     try:
         total = conn.execute(
-            f"SELECT COUNT(*) FROM positions WHERE 1=1{exch_filter}"
+            f"SELECT COUNT(*) FROM positions WHERE 1=1{exch_clause}", exch_params
         ).fetchone()[0]
         if total < MIN_TOTAL_TRADES:
             return {
@@ -43,7 +44,7 @@ def detect_patterns(conn=None, filters=None) -> dict:
                 "message":           f"Need at least {MIN_TOTAL_TRADES} trades — you have {total}.",
             }
 
-        stats = _collect_stats(conn, exch_filter)
+        stats = _collect_stats(conn, exch_clause, exch_params)
         findings = _ask_claude(stats, total)
         return {
             "findings":          findings,
@@ -58,16 +59,16 @@ def detect_patterns(conn=None, filters=None) -> dict:
             conn.close()
 
 
-def _collect_stats(conn, exch_filter: str = "") -> dict:
-    def rows(sql):
-        return [dict(r) for r in conn.execute(sql).fetchall()]
+def _collect_stats(conn, exch_clause: str = "", exch_params: tuple = ()) -> dict:
+    def rows(sql, extra_params=()):
+        return [dict(r) for r in conn.execute(sql, exch_params + extra_params).fetchall()]
 
     by_setup = rows(f"""
         SELECT setup_type, COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl,
                ROUND(SUM(realized_pnl),2) AS total_pnl
-        FROM positions WHERE setup_type IS NOT NULL AND setup_type != ''{exch_filter}
+        FROM positions WHERE setup_type IS NOT NULL AND setup_type != ''{exch_clause}
         GROUP BY setup_type ORDER BY n DESC
     """)
 
@@ -79,7 +80,7 @@ def _collect_stats(conn, exch_filter: str = "") -> dict:
                COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions WHERE 1=1{exch_filter} GROUP BY day ORDER BY win_rate DESC
+        FROM positions WHERE 1=1{exch_clause} GROUP BY day ORDER BY win_rate DESC
     """)
 
     by_session = rows(f"""
@@ -92,7 +93,7 @@ def _collect_stats(conn, exch_filter: str = "") -> dict:
                COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions WHERE 1=1{exch_filter} GROUP BY session ORDER BY win_rate DESC
+        FROM positions WHERE 1=1{exch_clause} GROUP BY session ORDER BY win_rate DESC
     """)
 
     by_direction = rows(f"""
@@ -100,7 +101,7 @@ def _collect_stats(conn, exch_filter: str = "") -> dict:
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl,
                ROUND(SUM(realized_pnl),2) AS total_pnl
-        FROM positions WHERE 1=1{exch_filter} GROUP BY direction
+        FROM positions WHERE 1=1{exch_clause} GROUP BY direction
     """)
 
     by_duration = rows(f"""
@@ -114,7 +115,7 @@ def _collect_stats(conn, exch_filter: str = "") -> dict:
                COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions WHERE duration_minutes IS NOT NULL{exch_filter}
+        FROM positions WHERE duration_minutes IS NOT NULL{exch_clause}
         GROUP BY bucket ORDER BY win_rate DESC
     """)
 
@@ -122,17 +123,17 @@ def _collect_stats(conn, exch_filter: str = "") -> dict:
         SELECT execution_grade AS grade, COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(AVG(realized_pnl),2) AS avg_pnl
-        FROM positions WHERE execution_grade IS NOT NULL{exch_filter}
+        FROM positions WHERE execution_grade IS NOT NULL{exch_clause}
         GROUP BY grade ORDER BY grade
     """)
 
-    # Recent trend: last 20 vs all-time
+    # Recent trend: last 20 vs all-time (subquery needs params passed explicitly)
     recent = conn.execute(f"""
         SELECT COUNT(*) AS n,
                ROUND(100.0*SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END)/COUNT(*),1) AS win_rate,
                ROUND(SUM(realized_pnl),2) AS total_pnl
-        FROM (SELECT realized_pnl FROM positions WHERE 1=1{exch_filter} ORDER BY close_time DESC LIMIT 20)
-    """).fetchone()
+        FROM (SELECT realized_pnl FROM positions WHERE 1=1{exch_clause} ORDER BY close_time DESC LIMIT 20)
+    """, exch_params).fetchone()
     recent_stats = dict(recent) if recent else {}
 
     return {
