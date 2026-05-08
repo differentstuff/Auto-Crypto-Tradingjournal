@@ -136,23 +136,44 @@ function _startSrOverlay(wrap, series, levels, liquidations, htf_levels) {
 // ── end chart ────────────────────────────────────────────────────────────────
 
 // ── Tooltip engine ────────────────────────────────────────────────────────────
+// ── Tooltip — anchored popup above the element, not cursor-following ──────────
 const _tip = document.createElement('div');
 _tip.id = 'tip';
 document.body.appendChild(_tip);
+
+function _positionTip(el) {
+  const r   = el.getBoundingClientRect();
+  const tw  = _tip.offsetWidth  || 260;
+  const th  = _tip.offsetHeight || 40;
+  const gap = 8;
+
+  // Horizontal: centre over element, clamp to viewport
+  let left = r.left + r.width / 2 - tw / 2;
+  left = Math.max(gap, Math.min(left, window.innerWidth - tw - gap));
+
+  // Vertical: prefer above; flip below if too close to top
+  let top;
+  if (r.top - th - gap > 0) {
+    top = r.top - th - gap + window.scrollY;       // above
+    _tip.classList.remove('tip-below');
+  } else {
+    top = r.bottom + gap + window.scrollY;          // below
+    _tip.classList.add('tip-below');
+  }
+
+  _tip.style.left = left + 'px';
+  _tip.style.top  = top  + 'px';
+}
+
 document.addEventListener('mouseover', e => {
   const el = e.target.closest('[data-tip]');
   if (!el) { _tip.classList.remove('visible'); return; }
   _tip.textContent = el.dataset.tip;
   _tip.classList.add('visible');
+  _positionTip(el);
 });
 document.addEventListener('mouseout', e => {
   if (e.target.closest('[data-tip]')) _tip.classList.remove('visible');
-});
-document.addEventListener('mousemove', e => {
-  if (!_tip.classList.contains('visible')) return;
-  const x = e.clientX + 14, y = e.clientY + 14;
-  _tip.style.left = (x + _tip.offsetWidth  > window.innerWidth  ? e.clientX - _tip.offsetWidth  - 8 : x) + 'px';
-  _tip.style.top  = (y + _tip.offsetHeight > window.innerHeight ? e.clientY - _tip.offsetHeight - 8 : y) + 'px';
 });
 // ── end tooltip ───────────────────────────────────────────────────────────────
 
