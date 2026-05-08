@@ -13,6 +13,7 @@ async function loadSymbols() {
 
 async function journalLoad(page) {
   journalPage = page;
+  const exchFilter = (typeof getExchangeFilter === 'function') ? getExchangeFilter() : 'all';
   const params = new URLSearchParams({
     page,
     per_page: 50,
@@ -24,6 +25,7 @@ async function journalLoad(page) {
     date_from: document.getElementById('j-from').value,
     date_to:   document.getElementById('j-to').value,
   });
+  if (exchFilter && exchFilter !== 'all') params.set('exchange', exchFilter);
   const res = await api('/api/positions?' + params);
   if (!res.ok) return;
   const { positions, total, pages } = res.data;
@@ -32,7 +34,10 @@ async function journalLoad(page) {
   document.getElementById('journal-tbody').innerHTML = positions.map(t => `
     <tr onclick="openNotesModal(${t.id},'${escHtml(t.notes||'')}','${escHtml(t.tags||'')}','${escHtml(t.analyst||'')}','${escHtml(t.setup_type||'')}','${escHtml(t.execution_grade||'')}','${escHtml(t.execution_grade_reason||'')}',${t.call_id||'null'})"
         style="cursor:pointer" title="Click to edit">
-      <td><strong>${t.symbol}</strong></td>
+      <td>
+        <strong>${t.symbol}</strong>
+        ${t.exchange && t.exchange !== 'bitget' ? `<span style="font-size:.62rem;padding:1px 5px;border-radius:3px;background:rgba(79,195,247,.15);color:rgba(79,195,247,.9);margin-left:4px">${t.exchange}</span>` : ''}
+      </td>
       <td><span class="badge ${t.direction.toLowerCase()}">${t.direction}</span></td>
       <td>${t.open_time?.slice(0,16)}</td>
       <td>${t.close_time?.slice(0,16)}</td>

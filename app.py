@@ -6,6 +6,7 @@ from database import init_db, get_conn
 from importer import import_folder
 
 import bitget_sync
+import blofin_sync
 import scanner_scheduler
 
 from routes.journal   import bp as journal_bp
@@ -17,6 +18,7 @@ from routes.live      import bp as live_bp
 from routes.sync      import bp as sync_bp
 from routes.scanner   import bp as scanner_bp
 from routes.hindsight import bp as hindsight_bp
+from routes.settings  import bp as settings_bp
 
 # ── app setup ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,7 @@ app.register_blueprint(live_bp)
 app.register_blueprint(sync_bp)
 app.register_blueprint(scanner_bp)
 app.register_blueprint(hindsight_bp)
+app.register_blueprint(settings_bp)
 
 
 @app.route("/")
@@ -58,6 +61,7 @@ if __name__ == "__main__":
     conn.close()
 
     bitget_sync.start_background_sync()
+    blofin_sync.start_background_sync()
     scanner_scheduler.start()
 
     port = int(os.environ.get("PORT", 8082))

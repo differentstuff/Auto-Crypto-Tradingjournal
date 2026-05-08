@@ -100,6 +100,11 @@ def api_positions_list():
         clauses.append("setup_type = ?")
         params.append(setup)
 
+    exchange = request.args.get("exchange", "").strip().lower()
+    if exchange in ("bitget", "blofin"):
+        clauses.append("COALESCE(exchange, 'bitget') = ?")
+        params.append(exchange)
+
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
 
     with db_conn() as conn:
@@ -108,7 +113,8 @@ def api_positions_list():
             f"""SELECT id, symbol, direction, open_time, close_time, duration_minutes,
                        entry_price, close_price, size_contracts, size_usdt,
                        position_pnl, realized_pnl, total_fees, notes, tags, is_manual, analyst,
-                       setup_type, call_id, execution_grade, execution_grade_reason
+                       setup_type, call_id, execution_grade, execution_grade_reason,
+                       COALESCE(exchange, 'bitget') AS exchange
                 FROM positions {where}
                 ORDER BY close_time DESC
                 LIMIT ? OFFSET ?""",

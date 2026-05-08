@@ -415,6 +415,9 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="nav-item" onclick="showPage('hindsight')" id="nav-hindsight">
       <span class="nav-icon">🔮</span><span>Hindsight</span>
     </div>
+    <div class="nav-item" onclick="showPage('settings')" id="nav-settings">
+      <span class="nav-icon">⚙️</span><span>Settings</span>
+    </div>
   </nav>
 
   <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
@@ -1163,6 +1166,13 @@ select:focus,input:focus{border-color:var(--accent)}
       </div>
     </div>
 
+    <!-- ── Settings ──────────────────────────────────────────────────────────── -->
+    <div id="page-settings" class="page-view">
+      <div class="page-title">Settings</div>
+      <div class="page-subtitle">Exchange API credentials and connection status</div>
+      <div id="settings-content" style="max-width:700px"></div>
+    </div>
+
   </main>
   </div>
 </div>
@@ -1460,6 +1470,7 @@ select:focus,input:focus{border-color:var(--accent)}
 <script src="/static/js/13-init.js?v=2.1"></script>
 <script src="/static/js/14-scanner.js?v=2.1"></script>
 <script src="/static/js/15-hindsight.js?v=2.1"></script>
+<script src="/static/js/16-settings.js?v=2.4"></script>
 
 </body>
 </html>
