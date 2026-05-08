@@ -45,8 +45,9 @@ def build_context(
 
     Returns a single string to embed verbatim in any Claude prompt.
     """
-    sections = []
-    remaining = MAX_CONTEXT_CHARS
+    sections   = []
+    remaining  = MAX_CONTEXT_CHARS
+    _truncated = []   # sections skipped or cut due to budget
 
     # ── 1. Market context (caller provides pre-fetched string) ────────────────
     if market_str and remaining > 0:
@@ -55,51 +56,68 @@ def build_context(
         remaining -= len(block)
 
     # ── 2. Rulebook ───────────────────────────────────────────────────────────
-    if include_rulebook and conn is not None and remaining > 500:
-        rb = ai_rulebook.get_rulebook_for_prompt(conn)
-        if rb:
-            sections.append(rb)
-            remaining -= len(rb)
+    if include_rulebook and conn is not None:
+        if remaining > 500:
+            rb = ai_rulebook.get_rulebook_for_prompt(conn)
+            if rb:
+                sections.append(rb)
+                remaining -= len(rb)
+        else:
+            _truncated.append(f"rulebook (budget={remaining})")
 
     # ── 3. Calibration ────────────────────────────────────────────────────────
-    if include_calibration and conn is not None and remaining > 300:
-        cal = ai_rulebook.get_calibration_for_prompt(conn)
-        if cal:
-            sections.append(cal)
-            remaining -= len(cal)
+    if include_calibration and conn is not None:
+        if remaining > 300:
+            cal = ai_rulebook.get_calibration_for_prompt(conn)
+            if cal:
+                sections.append(cal)
+                remaining -= len(cal)
+        else:
+            _truncated.append(f"calibration (budget={remaining})")
 
     # ── 4. Chart context (compact single-line-per-TF format) ─────────────────
-    if include_chart and symbol and remaining > 400:
-        tfs = timeframes or ["4H", "1D"]
-        ctx = chart_context.get_chart_context(symbol, tfs)
-        lines = []
-        for tf in tfs:
-            pt = ctx.get(tf, {}).get("prompt_text", "")
-            if pt:
-                if len(pt) > remaining - 200:
-                    pt = pt[:remaining - 200] + "…"
-                lines.append(pt)
-                remaining -= len(pt)
-        conf = chart_context.confluence_score(symbol, tfs, ctx=ctx)
-        if conf:
-            conf_line = (
-                f"CONFLUENCE ({'/'.join(tfs)}): {conf['label']} "
-                f"({conf['score']:+d}/{conf['max']} — "
-                f"{conf['bullish']} bullish / {conf['bearish']} bearish signals)"
-            )
-            lines.append(conf_line)
-            remaining -= len(conf_line)
-        if lines:
-            sections.append("\n".join(lines))
+    if include_chart and symbol:
+        if remaining > 400:
+            tfs = timeframes or ["4H", "1D"]
+            ctx = chart_context.get_chart_context(symbol, tfs)
+            lines = []
+            for tf in tfs:
+                pt = ctx.get(tf, {}).get("prompt_text", "")
+                if pt:
+                    if len(pt) > remaining - 200:
+                        _truncated.append(f"chart/{tf} trimmed ({len(pt)}→{remaining-200} chars)")
+                        pt = pt[:remaining - 200] + "…"
+                    lines.append(pt)
+                    remaining -= len(pt)
+            conf = chart_context.confluence_score(symbol, tfs, ctx=ctx)
+            if conf:
+                conf_line = (
+                    f"CONFLUENCE ({'/'.join(tfs)}): {conf['label']} "
+                    f"({conf['score']:+.2f}/{conf['max']} — "
+                    f"{conf['bullish']} bullish / {conf['bearish']} bearish signals)"
+                )
+                lines.append(conf_line)
+                remaining -= len(conf_line)
+            if lines:
+                sections.append("\n".join(lines))
+        else:
+            _truncated.append(f"chart (budget={remaining})")
 
     # ── 5. Similar past trades ────────────────────────────────────────────────
-    if include_similar and conn is not None and symbol and remaining > 200:
-        sim = ai_rulebook.get_similar_trades_for_prompt(
-            symbol, setup_type or "", direction or "", conn
-        )
-        if sim:
-            if len(sim) > remaining:
-                sim = sim[:remaining] + "\n  [truncated]"
-            sections.append(sim)
+    if include_similar and conn is not None and symbol:
+        if remaining > 200:
+            sim = ai_rulebook.get_similar_trades_for_prompt(
+                symbol, setup_type or "", direction or "", conn
+            )
+            if sim:
+                if len(sim) > remaining:
+                    _truncated.append(f"similar trades trimmed ({len(sim)}→{remaining} chars)")
+                    sim = sim[:remaining] + "\n  [truncated]"
+                sections.append(sim)
+        else:
+            _truncated.append(f"similar trades (budget={remaining})")
+
+    if _truncated:
+        print(f"[prompt_builder] context budget truncated: {', '.join(_truncated)}", flush=True)
 
     return "\n\n".join(sections)

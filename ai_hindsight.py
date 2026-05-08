@@ -114,7 +114,7 @@ def _build_prompt(trade: dict, ctx: dict, conf: dict, history: dict,
     pt_4h = ctx.get("4H", {}).get("prompt_text", "No 4H data")
     pt_1d = ctx.get("1D", {}).get("prompt_text", "No 1D data")
     conf_line = (
-        f"{conf['label']} ({conf['score']:+d}/{conf['max']} — "
+        f"{conf['label']} ({conf['score']:+.2f}/{conf['max']} — "
         f"{conf['bullish']} bullish / {conf['bearish']} bearish signals)"
     ) if conf else "N/A"
 
