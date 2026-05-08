@@ -14,19 +14,33 @@ bp = Blueprint("live", __name__)
 @bp.route("/api/live/positions")
 def api_live_positions():
     try:
-        positions, equity = [], {}
+        positions   = []
+        total_eq    = 0.0
+        total_avail = 0.0
+        raw_equity  = {}
+
         try:
-            positions = bitget_client.get_open_positions()
-            equity    = bitget_client.get_account_equity()
+            positions  = bitget_client.get_open_positions()
+            raw_equity = bitget_client.get_account_equity()
+            total_eq    += float(raw_equity.get("accountEquity") or raw_equity.get("equity") or 0)
+            total_avail += float(raw_equity.get("available") or 0)
         except Exception:
             pass
         try:
             if blofin_client.is_configured():
                 positions += blofin_client.get_open_positions()
-                if not equity:
-                    equity = blofin_client.get_account_equity()
+                bl_eq      = blofin_client.get_account_equity()
+                total_eq    += float(bl_eq.get("equity") or 0)
+                total_avail += float(bl_eq.get("available") or 0)
         except Exception:
             pass
+
+        # Normalize to a consistent shape the frontend always expects
+        equity = {
+            **raw_equity,
+            "accountEquity": str(round(total_eq,    8)),
+            "available":     str(round(total_avail, 8)),
+        }
         return _ok({"positions": positions, "equity": equity})
     except Exception:
         traceback.print_exc()

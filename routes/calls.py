@@ -21,18 +21,18 @@ def api_calls_analyze():
         if not call_text:
             return _err("call_text is required")
 
-        # Collect equity + open positions from all configured exchanges
+        # Combine equity across all configured exchanges and collect all open positions
         equity, open_positions = 0.0, []
         try:
             eq_data        = bitget_client.get_account_equity()
-            equity         = float(eq_data.get("accountEquity") or eq_data.get("available") or 0)
+            equity        += float(eq_data.get("accountEquity") or eq_data.get("available") or 0)
             open_positions = bitget_client.get_open_positions()
         except Exception:
             pass
         try:
             if blofin_client.is_configured():
-                bl_eq = blofin_client.get_account_equity()
-                equity = equity or float(bl_eq.get("equity") or 0)
+                bl_eq   = blofin_client.get_account_equity()
+                equity += float(bl_eq.get("equity") or 0)   # sum, not OR
                 open_positions += blofin_client.get_open_positions()
         except Exception:
             pass
