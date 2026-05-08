@@ -2,8 +2,9 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // CHART EXPLORER
 // ══════════════════════════════════════════════════════════════════════════════
-let _explorerChart = null;
-let _explorerTf    = '4H';
+let _explorerChart   = null;
+let _explorerWtChart = null;
+let _explorerTf      = '4H';
 const _EXPLORER_TFS = ['15m', '1H', '4H', '1D'];
 
 function _initExplorerTfBtns() {
@@ -37,9 +38,12 @@ async function drawExplorerChart() {
   const leg    = document.getElementById('explorer-sr-legend');
   const indEl  = document.getElementById('explorer-indicators');
 
-  if (_explorerChart) { _explorerChart.remove(); _explorerChart = null; }
+  if (_explorerChart)   { _explorerChart.remove();   _explorerChart   = null; }
+  if (_explorerWtChart) { _explorerWtChart.remove(); _explorerWtChart = null; }
   const oldTitle = wrap.querySelector('.explorer-chart-title');
   if (oldTitle) oldTitle.remove();
+  const oldWt = document.getElementById('explorer-wt-wrap');
+  if (oldWt) oldWt.remove();
   status.textContent   = 'Loading chart…';
   status.style.display = 'flex';
   leg.innerHTML        = '';
@@ -48,7 +52,7 @@ async function drawExplorerChart() {
   // Fetch candles + S/R + trendlines
   const res = await api(`/api/chart/candles?symbol=${sym}&timeframe=${_explorerTf}&limit=200`);
   if (!res.ok) { status.textContent = 'Error: ' + (res.error || 'failed'); return; }
-  const { candles, levels, htf_levels, trendlines, fibonacci, current_price } = res.data;
+  const { candles, levels, htf_levels, trendlines, fibonacci, wavetrend, current_price } = res.data;
   if (!candles || !candles.length) { status.textContent = 'No data for ' + sym; return; }
 
   status.style.display = 'none';
@@ -209,7 +213,10 @@ async function drawExplorerChart() {
       ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
     </span>`);
   });
-  leg.innerHTML = chips.length ? chips.join('') : '<span style="color:var(--muted);font-size:.74rem">No S/R or trendlines detected</span>';
+  leg.innerHTML = chips.length ? chips.join('') : '<span style="color:var(--muted);font-size:.74rem">No S/R or trendlines detected</span>'; // safe: all values are escaped prices/numbers
+
+  // VMC Cipher B — WaveTrend pane (inserted dynamically between chart and legend)
+  _buildExplorerWtPane(wrap, wavetrend || [], _explorerChart);
 
   // Resize handler
   window.__explorerResize = () => {
@@ -292,6 +299,94 @@ async function _loadExplorerIndicators(sym) {
       'Nearest support and resistance levels detected by price touch count. More touches = stronger level. S = price bounced up from here. R = price rejected down from here.');
   }
 
-  el.innerHTML = html;
+  // VMC Cipher B indicator card
+  if (ind.wavetrend) {
+    const wt = ind.wavetrend;
+    const sig = wt.signal;
+    const sigLabel = sig === 'gold_buy' ? '🟡 Gold Buy' : sig === 'buy' ? '🟢 Buy' : sig === 'sell' ? '🔴 Sell' : '—';
+    const wt1c = wt.wt1 > 53 ? 'var(--red)' : wt.wt1 < -53 ? 'var(--accent3)' : 'var(--accent2)';
+    html += card('VMC Cipher B',
+      `WT1 ${wt.wt1}  WT2 ${wt.wt2}`,
+      `MFI ${wt.mfi} · Zone: ${wt.zone} · Signal: ${sigLabel}`,
+      wt1c,
+      'VuManChu Cipher B. WT1 (teal) = WaveTrend oscillator. WT2 (red) = signal line. Cross above WT2 in oversold (<−53) = buy. Cross below in overbought (>53) = sell. Gold signal at <−80 = extreme oversold reversal. MFI = money flow strength.');
+  }
+
+  el.innerHTML = html; // safe: all content is numbers/labels from server indicators
+}
+
+// ── VMC Cipher B WaveTrend pane for Chart Explorer ────────────────────────────
+function _buildExplorerWtPane(chartWrap, wtData, mainChart) {
+  if (_explorerWtChart) { _explorerWtChart.remove(); _explorerWtChart = null; }
+  if (!wtData || !wtData.length) return;
+
+  // Create wt-wrap div and insert after the chart wrap's parent
+  const wtWrap = document.createElement('div');
+  wtWrap.id = 'explorer-wt-wrap';
+  wtWrap.style.cssText = 'height:130px;position:relative;border-top:1px solid rgba(255,255,255,.06);background:#0a0d14';
+  chartWrap.parentNode.insertBefore(wtWrap, chartWrap.nextSibling);
+
+  const label = document.createElement('div');
+  label.style.cssText = 'position:absolute;top:4px;left:8px;z-index:4;pointer-events:none;font-size:.68rem;font-weight:600;letter-spacing:.04em;color:rgba(121,134,203,0.6)';
+  label.textContent = 'VMC Cipher B — WaveTrend';
+  wtWrap.appendChild(label);
+
+  _explorerWtChart = LightweightCharts.createChart(wtWrap, {
+    width:  wtWrap.clientWidth,
+    height: 130,
+    layout: { background: { type: 'solid', color: '#0a0d14' }, textColor: 'rgba(121,134,203,0.6)' },
+    grid:   { vertLines: { color: 'rgba(255,255,255,.03)' }, horzLines: { color: 'rgba(255,255,255,.03)' } },
+    crosshair:       { mode: 1 },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,.07)', scaleMargins: { top: 0.05, bottom: 0.05 } },
+    timeScale:       { visible: false },
+    handleScroll:    false,
+    handleScale:     false,
+  });
+
+  // WT2 (red), reference lines, MFI histogram, WT1 (teal), markers — same as chart.html
+  const wt2S = _explorerWtChart.addLineSeries({
+    color: 'rgba(239,83,80,0.70)', lineWidth: 1,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  wt2S.setData(wtData.map(d => ({ time: d.time, value: d.wt2 })));
+  [{ p: 60, c: 'rgba(239,83,80,0.20)', t: 'OB' },
+   { p: 53, c: 'rgba(239,83,80,0.10)', t: '' },
+   { p:  0, c: 'rgba(255,255,255,0.12)', t: '0' },
+   { p:-53, c: 'rgba(38,217,107,0.10)', t: '' },
+   { p:-60, c: 'rgba(38,217,107,0.20)', t: 'OS' },
+   { p:-80, c: 'rgba(255,213,60,0.25)', t: 'GOLD' },
+  ].forEach(r => wt2S.createPriceLine({ price: r.p, lineWidth: 1, lineStyle: 2, color: r.c, axisLabelVisible: !!r.t, title: r.t }));
+
+  const mfiS = _explorerWtChart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'mfi' });
+  _explorerWtChart.priceScale('mfi').applyOptions({ scaleMargins: { top: 0.60, bottom: 0 }, visible: false });
+  mfiS.setData(wtData.map(d => ({ time: d.time, value: Math.abs(d.mfi), color: d.mfi >= 0 ? 'rgba(38,217,107,0.18)' : 'rgba(239,83,80,0.18)' })));
+
+  const wt1S = _explorerWtChart.addLineSeries({
+    color: 'rgba(79,195,247,0.90)', lineWidth: 2,
+    priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: true,
+  });
+  wt1S.setData(wtData.map(d => ({ time: d.time, value: d.wt1 })));
+  wt1S.setMarkers(wtData.filter(d => d.signal).map(d => ({
+    time: d.time,
+    position: d.signal === 'sell' ? 'aboveBar' : 'belowBar',
+    color: d.signal === 'gold_buy' ? '#ffd700' : d.signal === 'buy' ? '#26d96b' : '#ef5350',
+    shape: d.signal === 'sell' ? 'arrowDown' : 'circle',
+    size: d.signal === 'gold_buy' ? 2 : 1,
+  })));
+
+  // Sync timeScales
+  mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (range && _explorerWtChart) _explorerWtChart.timeScale().setVisibleLogicalRange(range);
+  });
+  _explorerWtChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (range && _explorerChart) _explorerChart.timeScale().setVisibleLogicalRange(range);
+  });
+
+  // Keep wt-wrap width in sync on resize
+  window.__explorerWtResize = () => {
+    if (_explorerWtChart) _explorerWtChart.applyOptions({ width: wtWrap.clientWidth });
+  };
+  window.removeEventListener('resize', window.__explorerWtResize);
+  window.addEventListener('resize', window.__explorerWtResize);
 }
 
