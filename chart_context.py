@@ -101,6 +101,16 @@ def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
     highs = df["high"].values.astype(float)
     lows  = df["low"].values.astype(float)
     close = float(df["close"].iloc[-1])
+
+    # ATR-relative clustering tolerance: use max(tolerance_pct, 0.3×ATR%)
+    # so cheap altcoins ($0.01) and BTC ($100k) both cluster with sensible precision
+    try:
+        _atr_s = ta.atr(df["high"], df["low"], df["close"], length=14)
+        _atr_v = float(_atr_s.iloc[-1]) if _atr_s is not None and not _atr_s.empty else 0
+        _atr_pct = _atr_v / close if close > 0 else 0
+        tolerance_pct = max(tolerance_pct, 0.3 * _atr_pct)
+    except Exception:
+        pass  # keep passed-in tolerance_pct
     n_bars = len(highs)
 
     # Decay constant: a candle ~35 bars ago carries ~50% the weight of the last bar.
