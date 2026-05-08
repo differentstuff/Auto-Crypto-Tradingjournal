@@ -73,7 +73,7 @@ def _build_prompt(kpis: dict, deep: dict, mkt_ctx: str = "",
     }
 
     stats_json  = json.dumps(summary)
-    exch        = (filters or {}).get("exchange", "").capitalize()
+    exch        = ((filters or {}).get("exchange") or "").capitalize()
     exch_label  = f"{exch} USDT-M Futures" if exch else "Multi-exchange USDT-M Futures (Bitget + Blofin)"
 
     mkt_block = f"\nCURRENT MARKET CONTEXT:\n{mkt_ctx}\n" if mkt_ctx else ""
