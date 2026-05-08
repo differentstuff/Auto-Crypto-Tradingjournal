@@ -137,27 +137,31 @@ def api_calls_check_matches():
     for pos in positions:
         for call in calls:
             if call["symbol"] == pos["symbol"] and call["direction"] == pos["direction"]:
-                matches.append({"call": call, "position": pos})
+                matches.append({
+                    "call":     call,
+                    "position": pos,
+                    "exchange": pos.get("exchange", "bitget"),  # passed to confirm-match
+                })
     return _ok(matches)
 
 
 @bp.route("/api/calls/<int:call_id>/confirm-match", methods=["POST"])
 def api_calls_confirm_match(call_id):
-    d      = request.get_json(silent=True) or {}
-    pos_id = d.get("position_id")
+    d        = request.get_json(silent=True) or {}
+    pos_id   = d.get("position_id")
+    exchange = (d.get("exchange") or "bitget").lower()
+    if exchange not in ("bitget", "blofin"):
+        exchange = "bitget"
     with db_conn() as conn:
+        # Record exchange so auto-close only fires from the right exchange's sync
         conn.execute(
-            "UPDATE analyzed_calls SET status='matched', matched_at=datetime('now') WHERE id=?",
-            (call_id,)
+            "UPDATE analyzed_calls SET status='matched', matched_at=datetime('now'), exchange=? WHERE id=?",
+            (exchange, call_id)
         )
         if pos_id:
-            # Link the position row to this call for R:R analysis and auto-close
-            conn.execute(
-                "UPDATE positions SET call_id=? WHERE id=?",
-                (call_id, pos_id)
-            )
+            conn.execute("UPDATE positions SET call_id=? WHERE id=?", (call_id, pos_id))
         conn.commit()
-    return _ok({"matched": call_id, "position_id": pos_id})
+    return _ok({"matched": call_id, "position_id": pos_id, "exchange": exchange})
 
 
 @bp.route("/api/calls/<int:call_id>/dismiss", methods=["POST"])

@@ -158,6 +158,7 @@ def init_db():
         ("hit_sl",          "INTEGER DEFAULT 0"),
         ("outcome_at",      "TEXT DEFAULT NULL"),
         ("actual_notional", "REAL DEFAULT NULL"),
+        ("exchange",        "TEXT DEFAULT NULL"),  # 'bitget' | 'blofin' — set at confirm-match
     ]
     for _col, _typedef in _new_cols:
         try:

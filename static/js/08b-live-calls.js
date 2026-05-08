@@ -25,16 +25,18 @@ function renderMatchBanners(pendingMatches, positions) {
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-        <button class="btn btn-primary btn-sm" onclick="confirmMatch(${call.id}, '${key}', ${pos.id || 'null'})">✅ Yes, this is that trade</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmMatch(${call.id}, '${key}', ${pos.id || 'null'}, '${pos.exchange || 'bitget'}')">✅ Yes, this is that trade</button>
         <button class="btn btn-secondary btn-sm" onclick="dismissMatch(${call.id})">✗ Not this trade</button>
       </div>
     </div>`;
   }).join('');
 }
 
-async function confirmMatch(callId, key, positionId) {
-  // api(url, method, body) — must use positional args, not a fetch-options object
-  const res = await api('/api/calls/' + callId + '/confirm-match', 'POST', { position_id: positionId || null });
+async function confirmMatch(callId, key, positionId, exchange) {
+  const res = await api('/api/calls/' + callId + '/confirm-match', 'POST', {
+    position_id: positionId || null,
+    exchange: exchange || 'bitget',
+  });
   if (!res.ok) {
     notify('Could not confirm match — ' + (res.error || 'server error'), 'err');
     return;

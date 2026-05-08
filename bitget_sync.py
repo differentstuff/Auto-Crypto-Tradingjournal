@@ -167,23 +167,23 @@ def _sync_positions(conn) -> int:
 
 # ── Auto-close matched calls ───────────────────────────────────────────────────
 
-def _auto_close_calls(conn) -> int:
+def _auto_close_calls(conn, exchange: str = "bitget") -> int:
     """
-    For every 'matched' call, find the most recent closed position with the
-    same symbol and compatible direction that closed AFTER the call was created.
-    Determines outcome from close_price vs SL/TP levels, then marks the call closed.
+    For every 'matched' call on `exchange`, find the most recent closed position
+    on the same exchange with the same symbol/direction that closed after the call
+    was created. Determines outcome from close_price vs SL/TP levels.
 
-    Run after every position sync — safe to call repeatedly (only touches
-    calls still in 'matched' status).
-
-    Returns number of calls auto-closed.
+    exchange: 'bitget' | 'blofin' — only closes calls matched to this exchange.
+    Calls with no exchange set (NULL) default to 'bitget' for backward compat.
+    Run after each sync — safe to call repeatedly (only touches 'matched' calls).
     """
     cur   = conn.cursor()
     calls = cur.execute("""
         SELECT id, symbol, direction, sl_price, tp1_price, tp2_price, created_at
         FROM analyzed_calls
         WHERE status = 'matched'
-    """).fetchall()
+          AND COALESCE(exchange, 'bitget') = ?
+    """, (exchange,)).fetchall()
 
     closed = 0
     for call in calls:
@@ -198,9 +198,10 @@ def _auto_close_calls(conn) -> int:
             WHERE symbol    = ?
               AND direction = ?
               AND close_time > ?
+              AND COALESCE(exchange, 'bitget') = ?
             ORDER BY close_time DESC
             LIMIT 1
-        """, (symbol, pos_dir, created_at or "")).fetchone()
+        """, (symbol, pos_dir, created_at or "", exchange)).fetchone()
 
         if not pos:
             continue

@@ -123,7 +123,7 @@ def run_sync() -> dict:
         calls_closed = 0
         try:
             from bitget_sync import _auto_close_calls
-            calls_closed = _auto_close_calls(conn)
+            calls_closed = _auto_close_calls(conn, exchange="blofin")
         except Exception:
             pass
 
