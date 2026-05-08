@@ -410,6 +410,37 @@ Raised from 0.15/0.50 (v2.2) — a single net signal out of six previously trigg
 
 **`PRICE_TOLERANCE = 0.004` (v2.3):** Shared constant (0.4%) used by both `detect_support_resistance()` (formerly 0.003) and `detect_trendlines()` (formerly 0.005) so both algorithms treat the same price zone as one level.
 
+**`compute_wavetrend(df, n1=10, n2=21)` (v2.4):** Implements VuManChu Cipher A/B.
+- Source: VuManChu Cipher B by LazyBear / LuxAlgo (TradingView). Params match TradingView defaults.
+- Cipher A: `HLC3 → ESA=EMA(n1) → D=EMA(|HLC3−ESA|,n1) → CI=(HLC3−ESA)/(0.015×D) → WT1=EMA(CI,n2) → WT2=SMA(WT1,4)`
+- Cipher B: `MFI = (RSI(HLC3×volume, 60) − 50) × 2` → rescaled to ±100
+- Signals: `gold_buy` (WT2<−80 + cross↑), `buy` (WT2<−53 + cross↑), `sell` (WT2>53 + cross↓)
+- `compute_indicators()` includes `wavetrend: {wt1, wt2, histogram, mfi, cross, zone, signal}`
+- `get_candles_for_chart()` includes `wavetrend` per-bar array for frontend rendering
+
+**`confluence_score()` signal weights (v2.4):** 6 directional signals + volume = max 5.5 per TF
+
+| Signal | Weight |
+|--------|--------|
+| RSI | `(val−50)/30` clamped ±1, dead-band ±5 |
+| MACD | ±1.0 aligned+growing, ±0.5 aligned+fading |
+| EMA | ±1.0 full stack+alignment, ±0.5 partial |
+| ADX | ±`min(adx/50, 1.0)` × direction |
+| WaveTrend | ±1.0 gold/sell, ±0.85 buy, ±WT1/60 otherwise |
+| Volume | ±0.5 if >1.5× avg, ∓0.25 if <0.7× avg |
+
+**`format_for_prompt()` WT output:** appends token-efficient WT state: `WT GOLD↑(−82)` / `WT↑XO-OS(−54)` / `WT 32` etc.
+
+**`detect_fibonacci(df, n_swing=10)`** (v2.4): Auto-detects most recent swing high/low, returns 7 levels (0%, 23.6%, 38.2%, 50%, 61.8%, 78.6%, 100%).
+
+**`detect_support_resistance()` improvements (v2.4):**
+- Recency-weighted touch count: `w = Σ exp(−0.02 × bars_from_end)` — recent tests outrank stale ones
+- ATR-relative clustering tolerance: `max(PRICE_TOLERANCE, 0.3 × ATR_pct)` — scales with volatility
+
+**`detect_trendlines()` improvements (v2.4):**
+- ATR-relative validation tolerance: `max(PRICE_TOLERANCE, 0.5 × ATR_pct)` — prevents rejecting valid trendlines on volatile instruments
+- `at_risk=True` flag when any post-anchor candle came within 130% of the tolerance band
+
 ---
 
 ## `ai_advisor.py` — Portfolio AI Analysis

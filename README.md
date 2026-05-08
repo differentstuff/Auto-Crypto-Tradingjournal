@@ -224,6 +224,50 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v2.4 — VMC Cipher A/B, Optimisation Pass & Chart Improvements
+
+#### VMC Cipher A/B — WaveTrend Oscillator
+- **`compute_wavetrend()`** in `chart_context.py` — full VuManChu Cipher B formula (n1=10, n2=21), matching TradingView defaults
+  - **Cipher A core:** HLC3 → EMA channel → CI normalisation → WT1 (EMA21) + WT2 (SMA4) + histogram
+  - **Cipher B addition:** MFI = RSI(HLC3×Volume, 60) rescaled to ±100 for money flow context
+  - **Signals:** gold_buy (WT2 < −80 + bullish cross), buy (WT2 < −53 + cross), sell (WT2 > 53 + bearish cross)
+- **Scoring integration:** WT is the 6th confluence signal; gold_buy=±1.0, buy=±0.85, sell=∓0.85, position-only scales WT1/60 to ±0.5
+- **Prompt context:** `format_for_prompt()` appends WT state: `WT GOLD↑(−82)` / `WT↑XO-OS(−54)` / `WT↓XO-OB(57)` — Claude sees explicit Cipher B context on every analysis
+- **Chart pane (130px)** below the candlestick chart in both the detached chart window and Chart Explorer:
+  - WT1 teal line (Cipher A), WT2 red line, MFI histogram (Cipher B, background)
+  - Reference lines at ±53, ±60, ±80 and zero
+  - Signal markers: 🟢 buy circle, 🟡 gold circle, 🔴 sell arrowDown
+  - TimeScale synced bi-directionally with main chart
+- **VMC Cipher B indicator card** in the Chart Explorer indicator panel
+
+#### Optimisation Pass (16 tasks)
+
+**Scoring & AI Accuracy**
+- Confluence signals are now magnitude-weighted — RSI/MACD/EMA/ADX scale by strength (RSI 72 ≠ RSI 51)
+- Volume added as a 5th confluence signal: high volume (>1.5×) amplifies directional consensus
+- ATR-relative "near a level" definitions quantified in all scoring prompts (≤0.5× ATR = strong, >1× ATR = score cap)
+- Funding rate and Fear/Greed penalty rules quantified: funding >0.05% in trade direction = −1 point
+- `pattern_flags` added to call analyzer JSON schema (was always undefined — Personal Pattern Warnings never showed)
+- Scoring scale labels unified across scanner, hindsight, and SCORING_GUIDE.md (6=Acceptable, 7=Good, etc.)
+
+**Chart Rendering**
+- Volume histogram bars (bottom 20% of chart, green/red by candle direction)
+- Weekly S/R levels (gold/amber zones) shown on intraday charts — major structure always visible
+- Auto-drawn Fibonacci retracements (0–78.6%) from most recent significant swing
+- ATR-relative trendline validation tolerance (replaces fixed 0.4%)
+- At-risk trendlines rendered amber with ⚠ badge when a candle wick came within 30% of breaching
+
+**S/R Quality**
+- Recency-weighted touch counting — exponential decay (λ=0.02) so a level tested last week outranks one tested 6 months ago
+- ATR-relative clustering tolerance — scales with instrument volatility instead of fixed 0.4%
+
+**Code Quality**
+- Context budget truncation logged to server output when rulebook/calibration is cut
+- Hindsight TP/FP/TN/FN verdicts fed back into the calibration block Claude sees on every analysis
+- Haiku quick-pass (scanner) now returns a one-sentence rationale; ranked 13–30 setups surfaced with ⚡ badge
+
+---
+
 ### v2.3 — Code Audit & Accuracy Fixes
 
 Ten targeted fixes from a full codebase audit. No new features — pure correctness and label clarity.
