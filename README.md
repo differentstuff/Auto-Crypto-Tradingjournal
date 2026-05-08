@@ -224,6 +224,40 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
+### v2.5 — Multi-Exchange Support: Bitget + Blofin
+
+#### Blofin Integration
+- **`blofin_client.py`** — full authenticated Blofin REST API v1 client (HMAC-SHA256, `ACCESS-KEY / ACCESS-SIGN / ACCESS-TIMESTAMP / ACCESS-NONCE / ACCESS-PASSPHRASE`). Fetches closed position history (cursor-paginated by `historyId`), open positions, and account equity
+- **`blofin_sync.py`** — background sync daemon (5-min cadence, 15s startup delay after Bitget). Deduplicates by `historyId`, tags all rows `exchange='blofin'`, stores equity to settings table, calls `_auto_close_calls()` so analyst calls auto-close from Blofin closures
+- **Live Trades** — open positions from both Bitget and Blofin shown on the same page
+- **Check-Matches** — analyst call matching panel now checks open positions on both exchanges; confirm-match writes `call_id` back to the positions row for R:R analysis
+- **Call Analysis** — position sizing uses Bitget equity, falls through to Blofin equity if Bitget is not configured
+- **positions table** — new `exchange` column (`'bitget'` | `'blofin'`), new `leverage` column; Blofin trades show a teal exchange badge in the journal
+
+#### ⚙️ Settings Module (new nav page)
+- `GET /api/settings/exchanges` — returns masked API key preview + connection status for each exchange
+- `POST /api/settings/test-connection` — live connection test (Bitget or Blofin)
+- `POST /api/settings/credentials` — write new keys to `.env` + reload in process (no restart needed)
+- `POST /api/settings/blofin/sync` — manual Blofin sync trigger with result display
+- Inline credential form for editing keys; passphrase sanitised before write
+- Live Sync connection panel now shows both exchanges dynamically
+
+#### All / Bitget / Blofin Global Exchange Filter
+- Three persistent pills in the **top sync bar** — visible on every page
+- Filter applies to: Dashboard KPIs, Deep Dive, Edge Lab, Heatmap, R:R analysis, Pattern Detector, AI Advisor, Hindsight, Journal
+- Selection stored in `localStorage` and restored on reload
+- Backend: `_filters_from_args()` and `_build_where()` in `analytics.py` propagate the exchange clause to all stat queries automatically
+
+#### Bug Fixes (12 total from code audit)
+- `confirm-match` now writes `call_id` to the positions row (was never linked before)
+- `_auto_close_calls()` now runs after every Blofin sync, not just Bitget
+- Call analysis no longer falls back to fake $1,000 equity when Bitget not configured
+- `init_db()` moved outside `__main__` guard — works under gunicorn/WSGI
+- Blofin sync pagination now fetches full history on initial back-fill
+- Manual sync errors recorded to status; passphrase protected from newline injection
+
+---
+
 ### v2.4 — VMC Cipher A/B, Optimisation Pass & Chart Improvements
 
 #### VMC Cipher A/B — WaveTrend Oscillator

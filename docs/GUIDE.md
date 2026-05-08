@@ -582,6 +582,74 @@ Assesses a pending limit order before it fills. Checks: entry quality vs chart S
 
 ---
 
+## `blofin_client.py` — Blofin REST API Client (v2.5)
+
+Authenticated Blofin REST API v1 client (read-only). Auth requires 5 headers per request:
+
+| Header | Value |
+|--------|-------|
+| `ACCESS-KEY` | API key |
+| `ACCESS-SIGN` | `base64(hex(hmac_sha256(secret, path+METHOD+ts+nonce+body)))` |
+| `ACCESS-TIMESTAMP` | Unix ms string |
+| `ACCESS-NONCE` | `uuid4().hex` (unique per request) |
+| `ACCESS-PASSPHRASE` | Passphrase set when creating the API key |
+
+**Key functions:**
+- `is_configured()` → True if API key + secret are both set
+- `test_connection()` → `{ok, msg}` with equity
+- `get_account_equity()` → `{equity, available}` USDT
+- `get_position_history(limit, after)` → cursor-paginated closed positions, normalised to match Bitget DB schema
+- `get_open_positions()` → current open positions with mark price, unrealized P&L, liquidation price
+
+**Instrument ID mapping:** `'BTC-USDT'` → `'BTCUSDT'` (Bitget format for DB consistency)
+
+---
+
+## `blofin_sync.py` — Blofin Background Sync (v2.5)
+
+Mirror of `bitget_sync.py` for Blofin. Starts 15s after Bitget sync to avoid startup resource spikes.
+
+- Deduplicates by `historyId` (→ `external_id` column, `exchange='blofin'`)
+- Cursor pagination: fetches up to 20 pages × 100 rows per cycle
+- After each sync cycle: calls `_auto_close_calls(conn)` from `bitget_sync` so analyst calls matched to Blofin positions auto-close
+- Stores `blofin_equity`, `blofin_available`, `blofin_last_sync_ms` in settings table
+- Disabled automatically when `BLOFIN_API_KEY` or `BLOFIN_SECRET_KEY` are not set
+
+---
+
+## `routes/settings.py` — Exchange Credential Management (v2.5)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET  | `/api/settings/exchanges` | Masked key preview + connection status for Bitget and Blofin |
+| POST | `/api/settings/test-connection` | Live auth test — body `{exchange: 'bitget'|'blofin'}` |
+| POST | `/api/settings/credentials` | Write credentials to `.env` + reload in current process |
+| POST | `/api/settings/blofin/sync` | Manual Blofin sync trigger |
+| GET  | `/api/settings/blofin/status` | Blofin sync status + equity |
+
+`_write_env(updates)` updates `.env` in place, preserving all comments and unrelated keys.  
+API keys validated with `^[A-Za-z0-9\-_]+$` before write. Passphrase stripped of newlines.
+
+---
+
+## Exchange Filter (v2.5)
+
+A global `All / Bitget / Blofin` pill selector in the sync bar filters all stats.
+
+**Frontend:**
+- `_globalExchange` (`localStorage.globalExchange`) — `'all'` | `'bitget'` | `'blofin'`
+- `exchParam()` → `'&exchange=bitget'` or `''`
+- `exchFilters()` → `{exchange: 'bitget'}` or `{}`
+- `setGlobalExchange(val)` — updates pills + calls `_reloadCurrentPage()` to refresh whatever is visible
+
+**Backend:**
+- `helpers._filters_from_args()` extracts `exchange` from query string
+- `analytics._build_where(filters)` adds `COALESCE(exchange,'bitget') = ?` when set
+- Applies to: Dashboard KPIs, Deep Dive, Heatmap, R:R, Pattern Detector, AI Advisor, Hindsight, Journal
+- `get_heatmap_data(filters)`, `get_rr_analysis(filters)`, `ai_pattern_detector.detect_patterns(filters)`, `ai_hindsight.get_results(exchange)` all exchange-aware
+
+---
+
 ## Route Blueprints
 
 Routes are split across `routes/` — registered in `app.py` at startup. All blueprints share `helpers.py` (`_ok`, `_err`, `_filters_from_args`) and `database.db_conn()`.
@@ -593,10 +661,11 @@ Routes are split across `routes/` — registered in `app.py` at startup. All blu
 | `market` | `routes/market.py` | Market context, economic calendar, exchange symbols, mark prices (v2.1) |
 | `calls` | `routes/calls.py` | Call analyzer, saved calls, outcomes, analyst stats |
 | `limits` | `routes/limits.py` | Pending limit orders |
-| `live` | `routes/live.py` | Live Bitget positions, pending orders, per-trade AI |
+| `live` | `routes/live.py` | Live positions from Bitget + Blofin, pending orders, per-trade AI |
 | `sync` | `routes/sync.py` | Sync trigger, sync status, AI advisor, rulebook |
 | `scanner` | `routes/scanner.py` | Setup scanner run/status/watchlist |
 | `hindsight` | `routes/hindsight.py` | Retroactive analysis run/status/results/clear |
+| `settings` | `routes/settings.py` | Exchange credential management, connection test, Blofin sync (v2.5) |
 
 ## API Reference
 

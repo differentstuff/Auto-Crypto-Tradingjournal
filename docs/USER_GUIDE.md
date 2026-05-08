@@ -1,13 +1,13 @@
 # Crypto Trading Journal — User Guide
 
 **App URL:** http://`<your-host>`:8082  
-**Exchange:** Bitget USDT-M Futures
+**Exchanges:** Bitget USDT-M Futures · Blofin USDT-M Futures
 
 ---
 
 ## Overview
 
-The Trading Journal is a personal analytics and AI-assisted decision tool for your Bitget futures trading. It has 13 sections accessible from the left sidebar:
+The Trading Journal is a personal analytics and AI-assisted decision tool for your crypto futures trading across **Bitget and Blofin**. It has 14 sections accessible from the left sidebar:
 
 | Icon | Section | What it does |
 |------|---------|--------------|
@@ -17,15 +17,30 @@ The Trading Journal is a personal analytics and AI-assisted decision tool for yo
 | 🔭 | Edge Lab | Setup analysis, execution grading, pattern detector, R:R tracking, Trader Rulebook |
 | 🤖 | AI Advisor | Full portfolio analysis by Claude |
 | ⬆️ | Import Data | Upload new Bitget CSV exports |
-| 📊 | Chart Explorer | Interactive candlestick charts for any symbol with S/R, trendlines, and indicators |
-| 📡 | Call Analyzer | Analyze analyst trade calls before entering |
-| ⚡ | Live Trades | Real-time open positions with AI analysis |
-| 🔴 | Live Sync | Bitget connection status and manual sync |
+| 📊 | Chart Explorer | Interactive candlestick charts with VMC Cipher B, Fibonacci, weekly S/R, and volume |
+| 📡 | Call Analyzer | Analyze analyst trade calls before entering (links to Bitget or Blofin position) |
+| ⚡ | Live Trades | Real-time open positions from both exchanges with AI analysis |
+| 🔴 | Live Sync | Exchange connection status and manual sync |
 | ⏳ | Pending Orders | Track limit orders set but not yet triggered |
 | ⭐ | Setup Scanner | Scan 100 symbols for high-quality setups (6-10/10) with entry/SL/TP recommendations |
 | 🔮 | Hindsight | Retroactively score your past trades to see how recommendations would have changed your P&L |
+| ⚙️ | Settings | Manage API credentials for Bitget and Blofin, test connections, trigger manual syncs |
 
-At the top of every page there is a **status bar** showing the last sync time and your current account equity. The **Sync Now** button triggers an immediate update from Bitget.
+### Exchange Filter (top bar)
+
+Every page has three persistent pills in the top status bar:
+
+```
+[ All ] [ Bitget ] [ Blofin ]
+```
+
+Click **Bitget** → all statistics, charts, AI analysis, and the journal show only Bitget trades.  
+Click **Blofin** → same for Blofin.  
+Click **All** → combined view across both exchanges.  
+
+Your selection is saved in the browser and remembered across page reloads.
+
+At the top of every page there is also a **status bar** showing the last sync time and your current account equity. The **Sync Now** button triggers an immediate update from both exchanges.
 
 ---
 

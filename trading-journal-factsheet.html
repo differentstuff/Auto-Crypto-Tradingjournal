@@ -432,9 +432,9 @@
   <!-- HEADER -->
   <div class="header">
     <div class="header-inner">
-      <div class="app-badge">📈 Self-Hosted · Open Source · Raspberry Pi</div>
+      <div class="app-badge">📈 Self-Hosted · Open Source · Raspberry Pi · v2.5</div>
       <div class="app-title">Crypto <span>Trading</span> Journal</div>
-      <div class="tagline">AI-powered analytics and trade decision platform for Bitget USDT-M Futures</div>
+      <div class="tagline">AI-powered analytics and trade decision platform for Bitget &amp; Blofin USDT-M Futures</div>
       <div class="header-stats">
         <div class="hstat">
           <div class="hstat-val green">+$8,432</div>
@@ -464,7 +464,12 @@
       <div class="mock-dot" style="background:#ffb300"></div>
       <div class="mock-dot" style="background:#26d96b"></div>
       <div class="mock-title">Trading Journal — Dashboard</div>
-      <div class="mock-badge">⚡ 12,847.50 USDT</div>
+      <div style="margin-left:auto;display:flex;gap:3px">
+        <span style="background:#6c63ff;color:#fff;border-radius:4px;padding:1px 7px;font-size:5.5pt;font-weight:700">All</span>
+        <span style="background:#22263a;color:#7986cb;border-radius:4px;padding:1px 7px;font-size:5.5pt">Bitget</span>
+        <span style="background:#22263a;color:#7986cb;border-radius:4px;padding:1px 7px;font-size:5.5pt">Blofin</span>
+      </div>
+      <div class="mock-badge" style="margin-left:8px">⚡ 12,847.50 USDT</div>
     </div>
     <div class="mock-body">
       <div class="kpi-row">
@@ -555,32 +560,32 @@
     <div class="feat-card">
       <span class="feat-icon">📡</span>
       <div class="feat-title">AI Call Analyzer</div>
-      <div class="feat-desc">Paste any analyst call — Claude extracts entry/SL/TP, scores the setup 1-10, checks ATR noise, portfolio correlation, and your personal rulebook.</div>
+      <div class="feat-desc">Paste any analyst call — Claude extracts entry/SL/TP, scores 1-10, checks ATR noise, portfolio correlation, and your personal rulebook. Links call to Bitget or Blofin position.</div>
     </div>
     <div class="feat-card g">
       <span class="feat-icon">⭐</span>
       <div class="feat-title">Setup Scanner</div>
-      <div class="feat-desc">Scans 100 USDT-M symbols every 30 min. 3-stage pipeline: confluence → quality gate → AI scoring. Sends Telegram alerts for 6+/10 setups.</div>
+      <div class="feat-desc">Scans 100 USDT-M symbols every 30 min. 3-stage pipeline: confluence → quality gate → AI scoring. Sends Telegram alerts for 6+/10 setups with entry/SL/TP.</div>
     </div>
     <div class="feat-card b">
       <span class="feat-icon">⚡</span>
       <div class="feat-title">Live Trade AI</div>
-      <div class="feat-desc">Real-time AI analysis on every open Bitget position: risk rating, Hold/Close/Adjust recommendation, SL/TP suggestions, historical context.</div>
+      <div class="feat-desc">Real-time AI on every open position across Bitget &amp; Blofin: risk rating, Hold/Close/Adjust recommendation, SL/TP suggestions, historical context.</div>
     </div>
     <div class="feat-card y">
       <span class="feat-icon">🔮</span>
       <div class="feat-title">Hindsight Analysis</div>
-      <div class="feat-desc">Retroactively scores your last 50-100 trades using historical candle data. Shows how your P&amp;L would differ following AI recommendations.</div>
+      <div class="feat-desc">Retroactively scores your last 50-100 trades using historical candles. Shows how your P&amp;L would differ following AI recommendations — filterable by exchange.</div>
     </div>
     <div class="feat-card r">
       <span class="feat-icon">🔬</span>
       <div class="feat-title">Edge Lab</div>
-      <div class="feat-desc">Self-learning Trader Rulebook synthesised from your own trade history. Pattern detector finds win/loss patterns by setup, session, weekday, and direction.</div>
+      <div class="feat-desc">Self-learning Trader Rulebook from your own trade history. Pattern detector finds win/loss patterns by setup, session, weekday, and direction — per exchange or combined.</div>
     </div>
     <div class="feat-card" style="border-left-color:#8b5cf6;background:#faf5ff">
       <span class="feat-icon">📊</span>
       <div class="feat-title">Chart Explorer</div>
-      <div class="feat-desc">Any Bitget symbol, any timeframe. Multi-TF trendlines, S/R boxes, full indicator panel. Opens detached chart with entry/SL/TP levels pre-drawn.</div>
+      <div class="feat-desc">Any symbol, any timeframe. VMC Cipher B oscillator, auto-Fibonacci retracements, weekly S/R zones, volume histogram, ATR-adaptive trendlines with at-risk flagging.</div>
     </div>
   </div>
 
@@ -601,7 +606,7 @@
       <div class="p2-title">Crypto <span>Trading</span> Journal</div>
       <div class="p2-subtitle">AI modules · Automated scanner · Telegram alerts · Open source</div>
     </div>
-    <div class="p2-badge">📈 v2.2 · May 2026</div>
+    <div class="p2-badge">📈 v2.5 · May 2026</div>
   </div>
 
   <!-- HOW IT WORKS PIPELINE -->
@@ -780,18 +785,18 @@
           <div class="spec-row"><span class="spec-key">Backend</span><span class="spec-val">Python 3.13 / Flask 3.1</span></div>
           <div class="spec-row"><span class="spec-key">Database</span><span class="spec-val">SQLite 3 (WAL mode)</span></div>
           <div class="spec-row"><span class="spec-key">Frontend</span><span class="spec-val">Vanilla JS SPA</span></div>
-          <div class="spec-row"><span class="spec-key">Charts</span><span class="spec-val">LightweightCharts v4</span></div>
-          <div class="spec-row"><span class="spec-key">AI</span><span class="spec-val">Claude Sonnet 4.6</span></div>
-          <div class="spec-row"><span class="spec-key">Exchange</span><span class="spec-val">Bitget USDT-M REST v2</span></div>
-          <div class="spec-row"><span class="spec-key">TA Engine</span><span class="spec-val">pandas-ta (RSI, MACD…)</span></div>
+          <div class="spec-row"><span class="spec-key">Charts</span><span class="spec-val">LightweightCharts v4 + VMC Cipher B</span></div>
+          <div class="spec-row"><span class="spec-key">AI</span><span class="spec-val">Claude Sonnet 4.6 / Haiku 4.5</span></div>
+          <div class="spec-row"><span class="spec-key">Exchanges</span><span class="spec-val">Bitget v2 · Blofin v1 (both)</span></div>
+          <div class="spec-row"><span class="spec-key">TA Engine</span><span class="spec-val">pandas-ta + WaveTrend (VMC)</span></div>
           <div class="spec-row"><span class="spec-key">Alerts</span><span class="spec-val">Telegram Bot API</span></div>
           <div class="spec-row"><span class="spec-key">Hardware</span><span class="spec-val">Raspberry Pi 5 (8GB)</span></div>
           <div class="spec-row"><span class="spec-key">Deployment</span><span class="spec-val">systemd service</span></div>
         </div>
         <div style="margin-top:8px;padding-top:6px;border-top:1px solid #e5e7f0">
-          <div style="font-size:7pt;font-weight:700;color:#1a1a2e;margin-bottom:4px">13 Navigation Pages</div>
+          <div style="font-size:7pt;font-weight:700;color:#1a1a2e;margin-bottom:4px">14 Navigation Pages</div>
           <div style="font-size:6.5pt;color:#6b7280;line-height:1.7">
-            Dashboard · Journal · Deep Dive · Edge Lab · AI Advisor · Call Analyzer · Live Trades · Chart Explorer · Pending Orders · Import · Live Sync · ⭐ Setup Scanner · 🔮 Hindsight
+            Dashboard · Journal · Deep Dive · Edge Lab · AI Advisor · Call Analyzer · Live Trades · Chart Explorer · Pending Orders · Import · Live Sync · ⭐ Setup Scanner · 🔮 Hindsight · ⚙️ Settings
           </div>
         </div>
       </div>
