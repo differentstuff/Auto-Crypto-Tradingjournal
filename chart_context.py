@@ -625,9 +625,49 @@ def get_chart_context(symbol: str, timeframes: list = None) -> dict:
     return result
 
 
+def _rsi_weight(rsi_val: float) -> float:
+    """RSI contribution: ±1 at extremes, 0 at 50. Dead-band ±5 around 50."""
+    if rsi_val > 55:   return min((rsi_val - 50) / 30.0,  1.0)
+    if rsi_val < 45:   return max((rsi_val - 50) / 30.0, -1.0)
+    return 0.0
+
+
+def _macd_weight(macd: dict) -> float:
+    """MACD contribution: full ±1 when aligned + growing, ±0.5 when aligned but fading."""
+    trend    = macd.get("trend", "")
+    hist_dir = macd.get("histogram_trend", "")
+    if trend == "bullish":
+        return 1.0 if hist_dir == "growing" else 0.5
+    if trend == "bearish":
+        return -1.0 if hist_dir == "growing" else -0.5
+    return 0.0
+
+
+def _ema_weight(ema: dict) -> float:
+    """EMA contribution: ±1 fully aligned stack + price, ±0.5 partial."""
+    al = ema.get("alignment", "")
+    sk = ema.get("stack", "")
+    if "fully bullish" in al and "bullish" in sk: return  1.0
+    if "fully bearish" in al and "bearish" in sk: return -1.0
+    if "bullish" in sk or "fully bullish" in al:  return  0.5
+    if "bearish" in sk or "fully bearish" in al:  return -0.5
+    return 0.0
+
+
+def _adx_weight(adx: dict) -> float:
+    """ADX contribution: direction × trend strength (ADX value / 50, capped at 1)."""
+    direction = adx.get("direction", "")
+    adx_val   = adx.get("value", 0)
+    strength  = min(adx_val / 50.0, 1.0)
+    if "bullish" in direction:  return  strength
+    if "bearish" in direction:  return -strength
+    return 0.0
+
+
 def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> dict:
     """
-    Aggregate RSI/MACD/EMA/ADX direction signals across timeframes.
+    Aggregate RSI/MACD/EMA/ADX direction signals across timeframes with
+    magnitude weighting — strong signals contribute more than weak ones.
     Returns {score, max, bullish, bearish, label, details}.
     Pass ctx to reuse an already-computed get_chart_context() result.
     """
@@ -635,46 +675,30 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
     if ctx is None:
         ctx = get_chart_context(symbol, tfs)
 
-    total_bull = 0
-    total_bear = 0
-    details    = []
+    total_score = 0.0
+    details     = []
 
     for tf in tfs:
         inds = ctx.get(tf, {}).get("indicators", {})
         if not inds.get("ok"):
             continue
 
-        bull = bear = 0
+        rsi_w  = _rsi_weight(inds.get("rsi",  {}).get("value", 50))
+        macd_w = _macd_weight(inds.get("macd", {}))
+        ema_w  = _ema_weight(inds.get("ema",   {}))
+        adx_w  = _adx_weight(inds.get("adx",   {}))
 
-        rsi = inds.get("rsi", {})
-        rsi_val = rsi.get("value", 50)
-        if rsi_val > 55:   bull += 1
-        elif rsi_val < 45: bear += 1
+        tf_score = rsi_w + macd_w + ema_w + adx_w
+        total_score += tf_score
 
-        macd = inds.get("macd", {})
-        if macd.get("trend") == "bullish":   bull += 1
-        elif macd.get("trend") == "bearish": bear += 1
+        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w) if w > 0), 1)
+        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w) if w < 0), 1)
+        details.append(f"{tf}: +{pos}/{neg}")
 
-        ema = inds.get("ema", {})
-        al  = ema.get("alignment", "")
-        sk  = ema.get("stack", "")
-        if "fully bullish" in al or "bullish" in sk:  bull += 1
-        elif "fully bearish" in al or "bearish" in sk: bear += 1
+    max_val = float(len(tfs) * 4)   # 4 signals × max weight 1.0 per TF
+    pct     = total_score / max_val if max_val else 0.0
 
-        adx = inds.get("adx", {})
-        if "bullish" in adx.get("direction", ""):  bull += 1
-        elif "bearish" in adx.get("direction", ""): bear += 1
-
-        total_bull += bull
-        total_bear += bear
-        details.append(f"{tf}: {bull}↑/{bear}↓")
-
-    score   = total_bull - total_bear
-    max_val = len(tfs) * 4  # 4 signals per TF
-    pct     = score / max_val if max_val else 0
-
-    # Thresholds: ±0.33 = net 1/3 of signals aligned (e.g. 6/8 bullish = "Bullish")
-    #             ±0.60 = net 3/5 of signals strongly aligned
+    # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
     if pct >= 0.60:
         label = "Strong Bullish"
     elif pct >= 0.33:
@@ -686,14 +710,34 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
     else:
         label = "Neutral"
 
+    bull_total = round(sum(w for tf in tfs
+                           for inds_w in [_get_tf_weights(ctx, tf)]
+                           for w in inds_w if w > 0), 1)
+    bear_total = round(abs(sum(w for tf in tfs
+                               for inds_w in [_get_tf_weights(ctx, tf)]
+                               for w in inds_w if w < 0)), 1)
+
     return {
-        "score":   score,
+        "score":   round(total_score, 2),
         "max":     max_val,
-        "bullish": total_bull,
-        "bearish": total_bear,
+        "bullish": bull_total,
+        "bearish": bear_total,
         "label":   label,
         "details": details,
     }
+
+
+def _get_tf_weights(ctx: dict, tf: str) -> list:
+    """Return the four signal weights for a single timeframe."""
+    inds = ctx.get(tf, {}).get("indicators", {})
+    if not inds.get("ok"):
+        return []
+    return [
+        _rsi_weight(inds.get("rsi",  {}).get("value", 50)),
+        _macd_weight(inds.get("macd", {})),
+        _ema_weight(inds.get("ema",   {})),
+        _adx_weight(inds.get("adx",   {})),
+    ]
 
 
 def format_multi_tf_for_prompt(symbol: str, timeframes: list = None) -> str:
