@@ -811,6 +811,24 @@ High accuracy means the setup scoring system genuinely predicts your outcomes. I
 
 ---
 
+## New in v2.6.1.1 (current)
+
+**CodeQL security fix** — GitHub code scanning flagged dynamic UPDATE queries in 3 route files. Column names were always from a hardcoded whitelist (not a vulnerability), but static analysis couldn't verify this. Fixed by pre-building a lookup dict so SQL fragments are provably untainted.
+
+---
+
+## New in v2.6.1
+
+**Bug fixes from full code review:**
+- `get_deep_stats` duration query crashed when any filter was active (double WHERE clause)
+- `get_accuracy_trend` applied wrong column filters to `analyzed_calls` table
+- `get_ev_by_setup` JOIN had ambiguous column names
+- Rolling stats had unused dead-code variables
+- Scanner custom criteria were ignored in the batch fallback path
+- Rolling 30-day stats bar was always visible on load regardless of data
+
+---
+
 ## New in v2.6.0
 
 A summary of the most user-visible changes:
@@ -818,9 +836,10 @@ A summary of the most user-visible changes:
 - **Dashboard** — Sharpe ratio and Calmar ratio KPI cards. Rolling 30-day stats strip. Drawdown overlay on wallet chart.
 - **Deep Dive** — Expected Value per setup type. MFE/MAE tracking (max favourable/adverse excursion). Market regime tags on positions (bull/bear/range). Cross-pattern combos (e.g. "NY session + Breakout").
 - **Call Analyzer** — Chain-of-thought reasoning field stored per analysis. Setup-type rubrics (Breakout/Reversal/Continuation/Range criteria). Positive pattern injection in prompt ("you win 78% on NY breakouts").
-- **Scanner** — Single batched Sonnet prompt for all top-N symbols (~40% token saving). BTC market regime context injected. `/api/scanner/calibrate` endpoint to auto-adjust threshold.
+- **Scanner** — Single batched Sonnet prompt for all top-N symbols (~40% token saving). BTC market regime context injected. `/api/scanner/calibrate` endpoint to auto-adjust threshold. **Custom criteria configurator** — 11 toggleable scoring checks (RSI, MACD, EMA, ADX, S/R, WaveTrend, Volume, Funding, Fear & Greed, ATR SL, R:R) with presets (Full / Trend Momentum / Structure-only / Meme). Live 3-stage progress bar while scanning.
 - **Rulebook** — Regen guard (needs 5+ new trades). Stale rules annotated after 30 days.
 - **Settings** — Token usage dashboard.
+- **Telegram Community** — Announcement channel [@autocryptotradingjournal](https://t.me/autocryptotradingjournal) and discussion forum [@autotradingjournal](https://t.me/autotradingjournal) with 5 topics: Welcome, Updates, Feature Requests, Bug Reports, General. GitHub releases auto-post to both.
 
 ---
 

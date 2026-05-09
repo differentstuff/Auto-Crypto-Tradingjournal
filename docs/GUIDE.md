@@ -1,6 +1,6 @@
 # Crypto Trading Journal — Full Technical Reference
 
-**Version:** v2.6.0  
+**Version:** v2.6.1.1  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
 **Project path:** `/home/<your-user>/trading-journal/`
@@ -818,16 +818,18 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/scanner/run` | Start background scan (default watchlist, 100 symbols) |
+| POST | `/api/scanner/run` | Start scan. Body: `{force, min_score, criteria}` |
 | POST | `/api/scanner/run?force=1` | Force re-scan even if cache < 30 min old |
-| GET | `/api/scanner/status` | Poll state: `{status, scanned, after_filter, setups, duration_sec}` |
+| GET | `/api/scanner/status` | Poll state: `{status, stage, stage_label, stage_detail, stage_progress, scanned, after_filter, setups, duration_sec}` |
 | GET | `/api/scanner/watchlist` | Return default 100-symbol watchlist |
-| POST | `/api/scanner/calibrate` | Analyse last 30 days of calls vs outcomes and suggest adjusted ENTER_THRESHOLD. Add `?apply=1` to persist to settings |
+| GET | `/api/scanner/criteria-defaults` | Return the 11 default criteria flags |
+| POST | `/api/scanner/calibrate` | Analyse last 30 days vs outcomes, suggest adjusted threshold. `?apply=1` to persist |
 
-Scan runs in a background thread. Poll `/status` every 2.5s until `status !== "running"`.
-Results cached for 30 minutes. `setups` is a list of scored setups (6-10/10) with full entry/SL/TP detail.
+**Criteria system (v2.6.0):** POST body accepts `criteria` dict with 11 boolean flags: `rsi`, `macd`, `ema_stack`, `adx`, `sr_anchor`, `wavetrend`, `volume`, `funding`, `fear_greed`, `atr_sl`, `rr_minimum`. Disabled criteria are skipped in both the stage-2 quality gate and the Claude prompt. Persisted in browser localStorage. Presets: Full / Trend Momentum / Structure-only / Meme.
 
-**Stage 3 batching (v2.6.0):** All top-N finalists are scored in a single Sonnet prompt (`_batch_ai_score()`), reducing API calls from N to 1. Falls back to parallel individual calls if the batched response is malformed.
+**Progress state:** `/status` now includes `stage` (1-3), `stage_label`, `stage_detail`, `stage_progress` (0-100) updated live during the scan.
+
+**Stage 3 batching (v2.6.0):** All top-N finalists scored in a single Sonnet prompt (`_batch_ai_score()`), ~40% token saving. Falls back to parallel individual calls if batch response is malformed or incomplete.
 
 ### Hindsight Analysis (routes/hindsight.py)
 
@@ -858,6 +860,25 @@ Configuration in `.env`:
 | `SCANNER_INTERVAL` | No | Seconds between scans (default: 1800 = 30 min) |
 | `SCANNER_FIRST_DELAY` | No | Seconds before first scan after startup (default: 300 = 5 min) |
 | `SCANNER_SCHEDULER` | No | Set to `off` to disable the scheduler entirely |
+
+### Telegram Community (GitHub Actions)
+
+Automatic release announcements via `.github/workflows/telegram-release.yml` + `.github/scripts/telegram_release.py`.
+
+Add these as GitHub repository secrets (Settings → Secrets → Actions):
+
+| Secret | Value |
+|--------|-------|
+| `TELEGRAM_BOT_TOKEN` | Bot token (same as `.env`) |
+| `TELEGRAM_CHANNEL_ID` | `-1003763955901` (@autocryptotradingjournal) |
+| `TELEGRAM_GROUP_ID` | `-1003889940179` (@autotradingjournal forum group) |
+| `TELEGRAM_UPDATES_TOPIC_ID` | `14` (🚀 Updates topic thread_id) |
+
+**Community links:**
+- Announcement channel: https://t.me/autocryptotradingjournal
+- Discussion forum: https://t.me/autotradingjournal (topics: Welcome/Updates/Feature Requests/Bug Reports/General)
+
+**Bot:** @myopen99_bot — admin of both channel and forum group.
 
 ---
 
