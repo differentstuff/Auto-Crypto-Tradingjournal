@@ -7,13 +7,12 @@ portfolio correlation risk, and overall recommendation (Keep / Adjust / Cancel).
 
 import json
 import os
-from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
+from constants import MODEL, FAST_MODEL
 from concurrent.futures import ThreadPoolExecutor
 
-import anthropic
-
+from ai_client import send as ai_send
 from database import db_conn
-from helpers import strip_fence, log_token_usage
+from helpers import strip_fence
 import market_context
 import prompt_builder
 import trade_utils
@@ -142,16 +141,12 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
         )
 
     prompt = _build_prompt(lim, equity, ctx_str, atr_warn, corr_warn, total_other)
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    message = client.messages.create(
-        model=MODEL, max_tokens=768,
-        messages=[{"role": "user", "content": prompt}]
+    raw_text, _cached = ai_send(
+        "limit_analyzer", MODEL,
+        [{"role": "user", "content": prompt}],
+        max_tokens=768,
     )
-    cached = getattr(message.usage, "cache_read_input_tokens", 0) or 0
-    log_token_usage("limit_analyzer", MODEL,
-                    message.usage.input_tokens, message.usage.output_tokens, cached)
-
-    raw = strip_fence(message.content[0].text.strip())
+    raw = strip_fence(raw_text.strip())
 
     try:
         result = json.loads(raw)

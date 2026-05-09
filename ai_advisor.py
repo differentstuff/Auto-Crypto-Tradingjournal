@@ -12,12 +12,12 @@ your ZEN positions lost $45 on average — consider tighter stops there").
 
 import json
 import os
-from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
-import anthropic
+from constants import MODEL, FAST_MODEL
 
+from ai_client import send as ai_send
 from analytics import get_dashboard_kpis, get_deep_stats
 from database  import db_conn
-from helpers   import strip_fence, log_token_usage
+from helpers   import strip_fence
 import market_context
 
 
@@ -109,16 +109,12 @@ def analyze(filters: dict = None) -> dict:
     mkt_str = market_context.format_for_prompt(ctx)
     prompt  = _build_prompt(kpis, deep, mkt_str, filters=safe_filters)
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    message = client.messages.create(
-        model=MODEL,
+    raw_text, _cached = ai_send(
+        "advisor", MODEL,
+        [{"role": "user", "content": prompt}],
         max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
     )
-
-    log_token_usage("advisor", MODEL, message.usage.input_tokens, message.usage.output_tokens)
-    raw = strip_fence(message.content[0].text.strip())
+    raw = strip_fence(raw_text.strip())
 
     try:
         result = json.loads(raw)

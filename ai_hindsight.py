@@ -26,15 +26,14 @@ Signal accuracy verdicts (relative to score ≥ 7 as "ENTER" threshold):
 import datetime
 import json
 import os
-from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
+from constants import MODEL, FAST_MODEL
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import anthropic
-
+from ai_client import send as ai_send
 from database import db_conn
-from helpers import strip_fence, log_token_usage
+from helpers import strip_fence
 import chart_context
 import ai_rulebook
 
@@ -193,16 +192,12 @@ def _analyze_one(trade: dict, rulebook_str: str) -> dict | None:
             hist = _symbol_history_before(trade["symbol"], trade["open_time"], conn)
 
         prompt  = _build_prompt(trade, ctx, conf, hist, rulebook_str)
-        client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        message = client.messages.create(
-            model=MODEL, max_tokens=512,
-            messages=[{"role": "user", "content": prompt}]
+        raw_text, _cached = ai_send(
+            "hindsight", MODEL,
+            [{"role": "user", "content": prompt}],
+            max_tokens=512,
         )
-        log_token_usage("hindsight", MODEL,
-                        message.usage.input_tokens, message.usage.output_tokens)
-        result = json.loads(strip_fence(message.content[0].text.strip()))
-        result["_input_tokens"]  = message.usage.input_tokens
-        result["_output_tokens"] = message.usage.output_tokens
+        result = json.loads(strip_fence(raw_text.strip()))
         return result
     except Exception:
         return None

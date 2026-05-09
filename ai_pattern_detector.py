@@ -12,7 +12,7 @@ Returns a list of findings:
 import json
 import traceback
 
-import anthropic
+from ai_client import send as ai_send
 from database import get_conn
 
 
@@ -268,13 +268,12 @@ def _ask_claude(stats: dict, total_trades: int) -> list:
         '[{"type":"warning|insight|strength","title":"...","finding":"...","recommendation":"...","confidence":"high|medium|low"}]'
     )
 
-    client   = anthropic.Anthropic()
-    response = client.messages.create(
-        model      = "claude-sonnet-4-6",
-        max_tokens = 1200,
-        messages   = [{"role": "user", "content": prompt}],
+    raw_text, _cached = ai_send(
+        "pattern_detector", "claude-sonnet-4-6",
+        [{"role": "user", "content": prompt}],
+        max_tokens=1200,
     )
-    raw = response.content[0].text.strip()
+    raw = raw_text.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

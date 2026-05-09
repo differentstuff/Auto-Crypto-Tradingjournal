@@ -12,14 +12,13 @@ New vs v2.2:
 import json
 import os
 from prompt_fragments import LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES
-from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
+from constants import MODEL, FAST_MODEL
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-import anthropic
-
+from ai_client import send as ai_send
 from database import db_conn
-from helpers import strip_fence, build_cached_messages, log_token_usage
+from helpers import strip_fence, build_cached_messages
 import market_context
 import prompt_builder
 import trade_utils
@@ -338,17 +337,9 @@ def analyze_call(call_text: str, account_equity: float,
                               atr_warning=atr_warn, corr_warning=corr_warn,
                               rubric=rubric)
     messages = build_cached_messages(ctx_str, prompt, image_b64, image_type)
-    client   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    message  = client.messages.create(
-        model=MODEL, max_tokens=4096,
-        messages=messages,
-    )
+    raw_text, cached = ai_send("call_analyzer", MODEL, messages, max_tokens=4096)
 
-    cached = getattr(message.usage, "cache_read_input_tokens", 0) or 0
-    log_token_usage("call_analyzer", MODEL,
-                    message.usage.input_tokens, message.usage.output_tokens, cached)
-
-    raw = strip_fence(message.content[0].text.strip())
+    raw = strip_fence(raw_text.strip())
 
     try:
         result = json.loads(raw)

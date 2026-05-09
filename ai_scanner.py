@@ -24,17 +24,16 @@ Results cached for 30 minutes. Scan runs in a background thread.
 import json
 import os
 from prompt_fragments import SCORING_SCALE, LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES
-from constants import (ANTHROPIC_API_KEY, MODEL, FAST_MODEL,
+from constants import (MODEL, FAST_MODEL,
     SCANNER_MIN_SCORE, SCANNER_FULL_DETAIL_TOP_N, SCANNER_CACHE_TTL,
     SCANNER_MAX_WORKERS, PROMPT_CACHE_MIN_CHARS)
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import anthropic
-
+from ai_client import send as ai_send
 from database import db_conn
-from helpers import strip_fence, build_cached_messages, log_token_usage
+from helpers import strip_fence, build_cached_messages
 import chart_context
 import market_context
 import ai_rulebook
@@ -432,26 +431,21 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
     )
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        msg = client.messages.create(
-            model=FAST_MODEL, max_tokens=120,
-            messages=[{"role": "user", "content": [
+        msg_text, _cached = ai_send(
+            "scanner_quick", FAST_MODEL,
+            [{"role": "user", "content": [
                 {"type": "text", "text": shared_prefix},
                 {"type": "text", "text": variable},
-            ]}]
+            ]}],
+            max_tokens=120,
         )
-        r = json.loads(strip_fence(msg.content[0].text.strip()))
+        r = json.loads(strip_fence(msg_text.strip()))
         if r.get("score", 0) < min_score:
             return None
-        cached = getattr(msg.usage, "cache_read_input_tokens", 0) or 0
-        log_token_usage("scanner_quick", FAST_MODEL,
-                        msg.usage.input_tokens, msg.usage.output_tokens, cached)
         return {
             "score":     r["score"],
             "direction": r.get("direction", direction),
             "reason":    r.get("reason", ""),
-            "_input_tokens":  msg.usage.input_tokens,
-            "_output_tokens": msg.usage.output_tokens,
         }
     except Exception as e:
         logger.warning("quick-score failed for %s: %s", symbol, e)
@@ -464,17 +458,15 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str,
         cr     = criteria or CRITERIA_DEFAULTS
         shared = _build_shared_prefix(mkt_str, rulebook_str, min_score, criteria=cr)
         prompt = _build_prompt(symbol, ctx, conf, direction, "", history, rulebook_str, min_score)
-        client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        message = client.messages.create(
-            model=MODEL, max_tokens=1200,
-            messages=build_cached_messages(shared, prompt),
+        raw_text, _cached = ai_send(
+            "scanner_batch", MODEL,
+            build_cached_messages(shared, prompt),
+            max_tokens=1200,
         )
-        result = json.loads(strip_fence(message.content[0].text.strip()))
+        result = json.loads(strip_fence(raw_text.strip()))
         if result.get("setup_score", 0) < min_score:
             return None
-        result["_symbol"]        = symbol
-        result["_input_tokens"]  = message.usage.input_tokens
-        result["_output_tokens"] = message.usage.output_tokens
+        result["_symbol"] = symbol
         return result
     except Exception as e:
         logger.warning("quick-score API call failed for %s: %s", symbol, e)
@@ -555,34 +547,24 @@ def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
     user_prompt = _build_batch_prompt(finalists, histories, min_score, criteria=cr,
                                       nansen_signals=nansen_signals)
     try:
-        client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        message = client.messages.create(
-            model=MODEL, max_tokens=min(4096, 1200 * len(finalists)),
-            messages=build_cached_messages(shared, user_prompt),
+        raw_text, _cached = ai_send(
+            "scanner_batch", MODEL,
+            build_cached_messages(shared, user_prompt),
+            max_tokens=min(4096, 1200 * len(finalists)),
         )
-        raw = strip_fence(message.content[0].text.strip())
+        raw = strip_fence(raw_text.strip())
         results = json.loads(raw)
         if not isinstance(results, list) or len(results) < len(finalists):
             raise ValueError("incomplete batch response")
-
-        total_in  = message.usage.input_tokens
-        total_out = message.usage.output_tokens
-        per_in    = total_in  // len(finalists)
-        per_out   = total_out // len(finalists)
 
         out = []
         for i, (symbol, ctx, conf, direction, _score, _reason) in enumerate(finalists):
             r = results[i] if i < len(results) else {}
             if r.get("setup_score", 0) < min_score:
                 continue
-            r["_symbol"]        = symbol
-            r["_input_tokens"]  = per_in
-            r["_output_tokens"] = per_out
+            r["_symbol"] = symbol
             out.append(r)
-        cached = getattr(message.usage, "cache_read_input_tokens", 0) or 0
-        log_token_usage("scanner_batch", MODEL, total_in, total_out, cached)
-        print(f"[scanner] batch scored {len(finalists)} symbols → {len(out)} setups "
-              f"({total_in} in / {total_out} out tokens)", flush=True)
+        print(f"[scanner] batch scored {len(finalists)} symbols → {len(out)} setups", flush=True)
         return out
     except Exception as e:
         print(f"[scanner] batch call failed ({e}), falling back to individual calls", flush=True)

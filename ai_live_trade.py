@@ -14,8 +14,8 @@ Response is structured JSON, rendered as a card in the Live Trades module.
 
 import json
 import os
-from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
-import anthropic
+from constants import MODEL, FAST_MODEL
+from ai_client import send as ai_send
 from database import db_conn
 from helpers import strip_fence
 import market_context
@@ -113,14 +113,12 @@ def analyze_position(position: dict) -> dict:
         )
 
     prompt  = _build_prompt(position, history, ctx_str)
-    client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    message = client.messages.create(
-        model=MODEL,
+    raw_text, _cached = ai_send(
+        "live_trade", MODEL,
+        [{"role": "user", "content": prompt}],
         max_tokens=768,
-        messages=[{"role": "user", "content": prompt}]
     )
-
-    raw = strip_fence(message.content[0].text.strip())
+    raw = strip_fence(raw_text.strip())
 
     try:
         result = json.loads(raw)

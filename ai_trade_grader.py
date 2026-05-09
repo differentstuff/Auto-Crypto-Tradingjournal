@@ -14,9 +14,8 @@ comparison for richer grading. Works on standalone trades too.
 
 import json
 
-import anthropic
+from ai_client import send as ai_send
 from database import get_conn
-from helpers import log_token_usage
 import market_context
 
 
@@ -138,16 +137,12 @@ def _ask_claude(pos: dict, call: dict | None, fg: dict | None = None) -> dict:
         '{"grade": "A|B|C|D", "reason": "2-3 sentences citing specific numbers that justify the grade."}'
     )
 
-    client = anthropic.Anthropic()
-    resp   = client.messages.create(
-        model      = MODEL,
-        max_tokens = 350,
-        messages   = [{"role": "user", "content": prompt}],
+    raw_text, _cached = ai_send(
+        "trade_grader", MODEL,
+        [{"role": "user", "content": prompt}],
+        max_tokens=350,
     )
-    cached = getattr(resp.usage, "cache_read_input_tokens", 0) or 0
-    log_token_usage("trade_grader", MODEL,
-                    resp.usage.input_tokens, resp.usage.output_tokens, cached)
-    raw = resp.content[0].text.strip()
+    raw = raw_text.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

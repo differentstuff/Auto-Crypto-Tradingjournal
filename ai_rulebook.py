@@ -20,9 +20,9 @@ Minimum 15 trades required before generating a rulebook.
 import json
 from datetime import datetime, timezone
 
-import anthropic
+from ai_client import send as ai_send
 from database import get_conn
-from helpers  import strip_fence, log_token_usage
+from helpers  import strip_fence
 
 MIN_TRADES   = 15
 MAX_SIMILAR  = 8
@@ -381,13 +381,12 @@ def _ask_claude(stats: dict, total: int) -> list:
         '"rule":"1-2 sentences with specific numbers","confidence":"high|medium|low","data_points":0}]'
     )
 
-    client = anthropic.Anthropic()
-    resp = client.messages.create(
-        model=MODEL, max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
+    raw_text, _cached = ai_send(
+        "rulebook", MODEL,
+        [{"role": "user", "content": prompt}],
+        max_tokens=2048,
     )
-    log_token_usage("rulebook", MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
-    raw = strip_fence(resp.content[0].text.strip())
+    raw = strip_fence(raw_text.strip())
     return json.loads(raw)
 
 
