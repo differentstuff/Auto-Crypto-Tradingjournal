@@ -2,10 +2,10 @@
 
 ## Project Overview
 Self-hosted crypto futures trading journal. Flask 3.1 / Python 3.13 / SQLite WAL.
-Runs as a systemd service on a Raspberry Pi 5 (192.168.1.21). Accessible from any browser on the local network.
+Runs as a systemd service on a Raspberry Pi 5 (<Pi-IP>). Accessible from any browser on the local network.
 
 ## Deployment
-- **Pi SSH:** `fbauer@192.168.1.21` password `REDACTED` (use expect — no BatchMode)
+- **Pi SSH:** `fbauer@<Pi-IP>` password `REDACTED` (use expect — no BatchMode)
 - **Service:** `sudo systemctl restart trading-journal`
 - **Pi path:** `/home/fbauer/trading-journal`
 - **Dev path:** `/Users/fbauer/Documents/ClaudeAIData/Trading-Journal`

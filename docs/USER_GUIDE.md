@@ -1,6 +1,6 @@
 # Crypto Trading Journal — User Guide
 
-**Version:** v2.8.0  
+**Version:** v2.8.1  
 **App URL:** http://`<your-host>`:8082  
 **Exchanges:** Bitget USDT-M Futures · Blofin USDT-M Futures
 

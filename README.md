@@ -265,23 +265,29 @@ trading-journal.service systemd unit file
 
 ## Changelog
 
-### v2.8.0 — UI Polish, Call Linking, Architecture Review (2026-05-09)
+### v2.8.x — Architecture Optimisation + UI Polish (2026-05-10)
 
-**Call Analyzer formatting:**
-- All AI text fields now render markdown: `**bold**`, `*italic*`, bullet lists, numbered lists. `mdToHtml()` in `01-utils.js` handles this without any library dependency.
-- Call result is now split into named sections (📈 Chart Analysis, ⏱ Entry Timing, 📋 Overall Assessment, 💡 Optimizations, ⚠ Risks) each in a visually distinct card.
-- Claude's chain-of-thought (`cot_reasoning`) now surfaces as a collapsible "🧠 Claude's Reasoning" section.
+**Architecture refactoring (all backward-compatible, no API changes):**
+- `constants.py` — all models, cache TTLs, and thresholds centralised (was duplicated across 12+ files)
+- `prompt_fragments.py` — shared scoring scale extracted from 3 AI prompts (~240 token savings per call)
+- `ai_client.py` — singleton Anthropic wrapper; eliminates 7 duplicate client instantiations across AI modules
+- `trade_history.py` — `get_recent_trades/get_trade_stats/get_symbol_summary` consolidates 4 private `_symbol_history()` copies
+- `chart_indicators.py` — pure RSI/EMA/MACD/ADX computation (no API calls, testable in isolation)
+- `chart_sr.py` — pure S/R pivot detection + cluster merging
+- `database.py` — `schema_version` table + numbered `_apply()` migration runner replaces `try/except ALTER TABLE`
+- `trade_utils.py` — `normalize_symbol()` / `normalize_direction()` centralised
+- 8 silent `except Exception: pass` blocks replaced with typed catches + `logger.warning()`
+- `tests/` — pytest scaffold with 20 passing tests (conftest.py with db/sample_positions fixtures)
+- `CLAUDE.md` — full project context file for AI subagents
 
-**Call ↔ Trade Linking:**
-- Auto-detection now normalises symbol format (`BTC/USDT` → `BTCUSDT`) and direction casing before comparing — fixes silent mismatches.
-- `🔗 Link Call` button on every unmatched live position card opens a picker modal showing all saved calls with matching symbol/direction highlighted.
-- New `/api/calls/linkable` endpoint powers the modal.
+### v2.8.0 — UI Polish, Call Linking (2026-05-09)
 
-**KPI widgets:**
-- Every KPI card with a description now opens an inline info panel on click explaining how to read the metric with context. Closes on second click or click-outside.
-
-**Reliability fixes:**
-- `notify()` toast function added to `01-utils.js` (was called throughout but never defined — caused silent async crashes in the call-linking flow).
+- Call analyzer output split into labelled sections with mdToHtml() markdown rendering
+- `🔗 Link Call` button on live position cards; auto-detection normalises symbol/direction format
+- KPI widgets: click-to-info popup on every dashboard and live trades card
+- `notify()` toast added (was called everywhere but never defined)
+- `max_tokens` raised to 4096 for call analyzer, advisor, rulebook (was 2048 → truncated JSON)
+- `Cache-Control: no-store` on index route (browser was serving stale JS)
 - `max_tokens` raised from 2048 → 4096 for call analyzer, advisor, and rulebook — truncated JSON was the root cause of "unformatted output" and duplicate saves.
 - `index()` route now sends `Cache-Control: no-store` so browsers always fetch fresh HTML and JS.
 - Try-catch added to all async link-call functions with visible error toasts.

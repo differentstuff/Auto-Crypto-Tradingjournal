@@ -46,8 +46,13 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_live_trade.py        ← Per-trade Claude analysis (uses prompt_builder)
     ├── ai_call.py              ← Core call analysis logic (split from ai_call_analyzer v2.1)
     ├── ai_limit.py             ← Pending limit analysis (split from ai_call_analyzer v2.1)
-    ├── ai_call_analyzer.py     ← Re-export shim: from ai_call import …; from ai_limit import …
-    ├── trade_utils.py          ← Shared trading utilities: SECTORS dict, atr_sl_warning() (v2.1)
+    ├── constants.py            ← All shared constants: models, cache TTLs, thresholds (v2.8)
+    ├── prompt_fragments.py      ← Shared AI prompt text blocks (v2.8)
+    ├── ai_client.py              ← Singleton Anthropic wrapper + auto token logging (v2.8)
+    ├── trade_history.py          ← Unified symbol history: get_recent_trades/get_trade_stats (v2.8)
+    ├── chart_indicators.py       ← Pure RSI/EMA/MACD/ADX computation (v2.8)
+    ├── chart_sr.py               ← Pure S/R pivot detection (v2.8)
+    ├── trade_utils.py            ← normalize_symbol/direction, SECTORS, atr_sl_warning()
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
