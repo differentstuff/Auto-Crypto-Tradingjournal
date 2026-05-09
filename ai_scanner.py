@@ -33,6 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ai_client import send as ai_send
 from database import db_conn
+from trade_history import get_symbol_summary
 from helpers import strip_fence, build_cached_messages
 import chart_context
 import market_context
@@ -587,21 +588,6 @@ def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
 
 # ── Symbol history helper ───────────────────────────────────────────────────────
 
-def _symbol_history(symbol: str, conn) -> dict:
-    rows = conn.execute("""
-        SELECT realized_pnl FROM positions
-        WHERE symbol = ? ORDER BY close_time DESC LIMIT 20
-    """, (symbol,)).fetchall()
-    if not rows:
-        return {"trades": 0}
-    pnls = [r[0] for r in rows if r[0] is not None]
-    wins = [p for p in pnls if p > 0]
-    return {
-        "trades":       len(rows),
-        "win_rate_pct": round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
-        "total_pnl":    round(sum(pnls), 2),
-    }
-
 
 # ── Background scan thread ─────────────────────────────────────────────────────
 
@@ -659,7 +645,7 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
             logger.warning("scoring failed: %s", e)
         with db_conn() as conn:
             rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
-            histories = {s: _symbol_history(s, conn) for s, _, _, _ in finalists}
+            histories = {s: get_symbol_summary(s, conn) for s, _, _, _ in finalists}
 
         # Nansen smart money signals — one API call for all finalists combined
         nansen_signals = {}

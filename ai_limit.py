@@ -141,7 +141,7 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
         )
 
     prompt = _build_prompt(lim, equity, ctx_str, atr_warn, corr_warn, total_other)
-    raw_text, _cached = ai_send(
+    raw_text, cached = ai_send(
         "limit_analyzer", MODEL,
         [{"role": "user", "content": prompt}],
         max_tokens=768,
@@ -160,8 +160,6 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
             "adjustments":    [],
         }
 
-    result["_atr_warning"]   = atr_warn
-    result["_corr_warning"]  = corr_warn
-    result["_input_tokens"]  = message.usage.input_tokens
-    result["_output_tokens"] = message.usage.output_tokens
+    result["_atr_warning"]  = atr_warn
+    result["_corr_warning"] = corr_warn
     return result

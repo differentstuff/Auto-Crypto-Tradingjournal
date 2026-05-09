@@ -31,17 +31,17 @@ def db(tmp_path, monkeypatch):
 def sample_positions(db):
     """5 closed positions across BTCUSDT and ETHUSDT for history tests."""
     rows = [
-        ("BTCUSDT", "Long",   100.0, "2026-01-01T00:00:00", "2026-01-02T00:00:00"),
-        ("BTCUSDT", "Long",   -50.0, "2026-01-03T00:00:00", "2026-01-04T00:00:00"),
-        ("BTCUSDT", "Long",    80.0, "2026-01-05T00:00:00", "2026-01-06T00:00:00"),
-        ("ETHUSDT", "Long",    40.0, "2026-01-07T00:00:00", "2026-01-08T00:00:00"),
-        ("BTCUSDT", "Short",  -20.0, "2026-01-09T00:00:00", "2026-01-10T00:00:00"),
+        ("BTCUSDT", "BTC", "Long",   100.0, "2026-01-01T00:00:00", "2026-01-02T00:00:00"),
+        ("BTCUSDT", "BTC", "Long",   -50.0, "2026-01-03T00:00:00", "2026-01-04T00:00:00"),
+        ("BTCUSDT", "BTC", "Long",    80.0, "2026-01-05T00:00:00", "2026-01-06T00:00:00"),
+        ("ETHUSDT", "ETH", "Long",    40.0, "2026-01-07T00:00:00", "2026-01-08T00:00:00"),
+        ("BTCUSDT", "BTC", "Short",  -20.0, "2026-01-09T00:00:00", "2026-01-10T00:00:00"),
     ]
-    for sym, direction, pnl, open_t, close_t in rows:
+    for sym, base, direction, pnl, open_t, close_t in rows:
         db.execute(
-            "INSERT INTO positions (symbol, direction, realized_pnl, "
-            "open_time, close_time, exchange) VALUES (?,?,?,?,?,'bitget')",
-            (sym, direction, pnl, open_t, close_t),
+            "INSERT INTO positions (symbol, base_asset, direction, realized_pnl, "
+            "open_time, close_time, exchange) VALUES (?,?,?,?,?,?,'bitget')",
+            (sym, base, direction, pnl, open_t, close_t),
         )
     db.commit()
     return db

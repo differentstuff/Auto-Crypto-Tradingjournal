@@ -17,47 +17,12 @@ import os
 from constants import MODEL, FAST_MODEL
 from ai_client import send as ai_send
 from database import db_conn
+from trade_history import get_symbol_summary
 from helpers import strip_fence
 import market_context
 import prompt_builder
 
 
-
-def _get_symbol_history(symbol: str, conn) -> dict:
-    rows = conn.execute("""
-        SELECT realized_pnl, duration_minutes, entry_price, close_price,
-               direction, open_time, close_time
-        FROM positions
-        WHERE symbol = ?
-        ORDER BY close_time DESC
-        LIMIT 30
-    """, (symbol,)).fetchall()
-
-    if not rows:
-        return {"trades": 0}
-
-    pnls      = [r[0] for r in rows if r[0] is not None]
-    wins      = [p for p in pnls if p > 0]
-    losses    = [p for p in pnls if p < 0]
-    durations = [r[1] for r in rows if r[1] is not None]
-
-    return {
-        "trades":         len(rows),
-        "win_rate_pct":   round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
-        "total_pnl":      round(sum(pnls), 2),
-        "avg_win":        round(sum(wins) / len(wins), 2) if wins else 0,
-        "avg_loss":       round(sum(losses) / len(losses), 2) if losses else 0,
-        "avg_duration_h": round(sum(durations) / len(durations) / 60, 1) if durations else 0,
-        "recent_pnls":    [round(p, 2) for p in pnls[:10]],
-    }
-
-
-_POS_FIELDS = [
-    "symbol", "direction", "leverage", "margin_mode", "size_usdt",
-    "entry_price", "mark_price", "unrealized_pnl", "unrealized_pct",
-    "take_profit", "stop_loss", "liquidation_price", "break_even_price",
-    "duration_minutes", "achieved_profits", "total_fee",
-]
 
 
 def _build_prompt(position: dict, history: dict, context_str: str = "") -> str:
@@ -103,7 +68,7 @@ def analyze_position(position: dict) -> dict:
     mkt_str = market_context.get_market_str([position["symbol"]])
 
     with db_conn() as conn:
-        history = _get_symbol_history(position["symbol"], conn)
+        history = get_symbol_summary(position["symbol"], conn)
         ctx_str = prompt_builder.build_context(
             conn            = conn,
             symbol          = position["symbol"],

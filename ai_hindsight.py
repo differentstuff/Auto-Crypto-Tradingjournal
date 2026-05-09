@@ -33,6 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ai_client import send as ai_send
 from database import db_conn
+from trade_history import get_symbol_summary
 from helpers import strip_fence
 import chart_context
 import ai_rulebook
@@ -71,25 +72,6 @@ def _to_ms(iso_str: str) -> int:
         dt = dt.replace(tzinfo=datetime.timezone.utc)
     return int(dt.timestamp() * 1000)
 
-
-def _symbol_history_before(symbol: str, before_iso: str, conn) -> dict:
-    """Closed-trade stats on this symbol BEFORE the given date (no lookahead).
-    Both open_time and close_time must be before the entry date to prevent
-    any data from overlapping trades leaking into the analysis."""
-    rows = conn.execute("""
-        SELECT realized_pnl FROM positions
-        WHERE symbol = ? AND open_time < ? AND close_time < ?
-        ORDER BY close_time DESC LIMIT 20
-    """, (symbol, before_iso, before_iso)).fetchall()
-    if not rows:
-        return {"trades": 0}
-    pnls = [r[0] for r in rows if r[0] is not None]
-    wins = [p for p in pnls if p > 0]
-    return {
-        "trades":       len(rows),
-        "win_rate_pct": round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
-        "total_pnl":    round(sum(pnls), 2),
-    }
 
 
 # ── Prompt ─────────────────────────────────────────────────────────────────────
@@ -189,7 +171,7 @@ def _analyze_one(trade: dict, rulebook_str: str) -> dict | None:
         conf   = chart_context.confluence_score(trade["symbol"], ["4H", "1D"], ctx=ctx)
 
         with db_conn() as conn:
-            hist = _symbol_history_before(trade["symbol"], trade["open_time"], conn)
+            hist = get_symbol_summary(trade["symbol"], conn, before_iso=trade["open_time"])
 
         prompt  = _build_prompt(trade, ctx, conf, hist, rulebook_str)
         raw_text, _cached = ai_send(

@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ai_client import send as ai_send
 from database import db_conn
+from trade_history import get_symbol_summary
 from helpers import strip_fence, build_cached_messages
 import market_context
 import prompt_builder
@@ -43,25 +44,6 @@ LEVERAGE = 10
 
 
 # ── Sizing ─────────────────────────────────────────────────────────────────────
-
-def _symbol_history(symbol: str, conn, exchange: str = None) -> dict:
-    exch_clause = " AND COALESCE(exchange,'bitget')=?" if exchange in ('bitget','blofin') else ""
-    params      = [symbol] + ([exchange] if exch_clause else [])
-    rows = conn.execute(
-        f"SELECT realized_pnl, duration_minutes, direction FROM positions "
-        f"WHERE symbol=?{exch_clause} ORDER BY close_time DESC LIMIT 20",
-        params
-    ).fetchall()
-    if not rows:
-        return {"trades": 0}
-    pnls = [r[0] for r in rows if r[0] is not None]
-    wins = [p for p in pnls if p > 0]
-    return {
-        "trades":       len(rows),
-        "win_rate_pct": round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
-        "total_pnl":    round(sum(pnls), 2),
-        "avg_pnl":      round(sum(pnls) / len(pnls), 2) if pnls else 0,
-    }
 
 
 def _calc_sizing(account_equity: float, entry: float, sl: float,
@@ -322,7 +304,7 @@ def analyze_call(call_text: str, account_equity: float,
     rubric = prompt_builder.get_setup_rubric(detected_type or "")
 
     with db_conn() as conn:
-        history = _symbol_history(symbol, conn)
+        history = get_symbol_summary(symbol, conn, exchange=exchange)
         ctx_str = prompt_builder.build_context(
             conn          = conn,
             symbol        = symbol,
