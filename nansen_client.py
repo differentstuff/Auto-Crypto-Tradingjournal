@@ -14,7 +14,7 @@ Configuration:
 
 import json
 import os
-from constants import NANSEN_NANSEN_CACHE_TTL
+from constants import NANSEN_CACHE_TTL
 import threading
 import time
 import urllib.request
