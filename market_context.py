@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 market_context.py — Real-time market context from three free sources.
 
@@ -38,7 +40,8 @@ def get_market_str(symbols: list, fallback: str = "") -> str:
     """Fetch market context and format it as a prompt string. Returns fallback on error."""
     try:
         return format_for_prompt(get_market_context(symbols))
-    except Exception:
+    except Exception as e:
+        logger.warning("get_market_str failed: %s", e)
         return fallback
 
 
@@ -183,7 +186,8 @@ def get_economic_calendar() -> list:
                     "when":     "today" if ev_date == today else "tomorrow",
                 })
             return result
-        except Exception:
+        except Exception as e:
+            logger.warning("market context call failed: %s", e)
             return []
     return _cached("eco_calendar", _fetch, ttl=3600)   # 1-hour cache
 
@@ -225,10 +229,9 @@ def _fetch_url(url: str, timeout: int = 8) -> dict:
         req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
-    except Exception:
+    except Exception as e:
+        logger.warning("fetch failed: %s", e)
         return {}
-
-
 def get_bybit_funding(symbol: str) -> dict:
     base = symbol.replace("USDT", "")
     sym  = f"{base}USDT"
@@ -268,15 +271,15 @@ def get_multi_exchange_funding(symbol: str) -> dict:
         bg = get_funding_rate(symbol)
         if bg.get("ok"):
             sources["bitget"] = bg["rate_pct"]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("market_context fetch failed: %s", e)
     for fn, key in [(get_bybit_funding, "bybit"), (get_binance_funding, "binance"), (get_okx_funding, "okx")]:
         try:
             r = fn(symbol)
             if r.get("ok"):
                 sources[key] = r["rate_pct"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("market_context fetch failed: %s", e)
     if not sources:
         return {"ok": False}
     avg = round(sum(sources.values()) / len(sources), 4)
@@ -381,8 +384,8 @@ def _fred_series(series_id: str) -> float | None:
             if obs:
                 val = obs[0].get("value", ".")
                 return float(val) if val not in (".", "") else None
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("market_context fetch failed: %s", e)
         return None
     return _cached(f"fred_{series_id}", _fetch, ttl=3600 * 12)
 
@@ -431,7 +434,8 @@ def get_btc_regime(as_of_ts: str = None) -> str:
             else:
                 return "range"
         return "range"
-    except Exception:
+    except Exception as e:
+        logger.warning("market context call failed: %s", e)
         return "range"
 
 

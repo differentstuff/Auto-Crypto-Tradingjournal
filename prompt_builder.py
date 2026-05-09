@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 prompt_builder.py — Shared context assembler for all AI modules.
 
@@ -160,8 +162,8 @@ def build_context(
                 ns_block = f"NANSEN SMART MONEY: {ns['prompt_line']}"
                 sections.append(ns_block)
                 remaining -= len(ns_block)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Nansen signal fetch failed for %s: %s", symbol, e)
 
     # ── 7. Similar past trades ────────────────────────────────────────────────
     if include_similar and conn is not None and symbol:

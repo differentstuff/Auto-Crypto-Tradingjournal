@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 ai_scanner.py — Proactive setup scanner.
 
@@ -165,7 +167,8 @@ def _fetch_one(symbol: str):
         ctx  = chart_context.get_chart_context(symbol, tfs)
         conf = chart_context.confluence_score(symbol, tfs, ctx=ctx)
         return symbol, ctx, conf
-    except Exception:
+    except Exception as e:
+        logger.warning("chart context fetch failed for %s: %s", symbol, e)
         return symbol, None, None
 
 
@@ -450,7 +453,8 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
             "_input_tokens":  msg.usage.input_tokens,
             "_output_tokens": msg.usage.output_tokens,
         }
-    except Exception:
+    except Exception as e:
+        logger.warning("quick-score failed for %s: %s", symbol, e)
         return None
 
 
@@ -472,7 +476,8 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str,
         result["_input_tokens"]  = message.usage.input_tokens
         result["_output_tokens"] = message.usage.output_tokens
         return result
-    except Exception:
+    except Exception as e:
+        logger.warning("quick-score API call failed for %s: %s", symbol, e)
         return None
 
 
@@ -657,7 +662,8 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 [s for s, _, _, _ in finalists[:5]]
             )
             mkt_str = market_context.format_for_prompt(mkt_ctx)
-        except Exception:
+        except Exception as e:
+            logger.warning("market context fetch failed in scan: %s", e)
             mkt_str = ""
 
         # Append BTC market regime
@@ -667,9 +673,8 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                           "bear": "📉 BTC is in a BEAR regime (EMA50 < EMA200) — favour short setups",
                           "range": "↔ BTC is in a RANGE/transition — both directions valid, be selective"}
             mkt_str = (mkt_str + "\n" if mkt_str else "") + f"BTC MARKET REGIME: {regime_map[regime]}"
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.warning("scoring failed: %s", e)
         with db_conn() as conn:
             rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
             histories = {s: _symbol_history(s, conn) for s, _, _, _ in finalists}
