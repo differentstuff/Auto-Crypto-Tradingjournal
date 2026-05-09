@@ -1,3 +1,4 @@
+from constants import MODEL
 """
 ai_rulebook.py — Personalised trader rulebook derived from trade history.
 
@@ -17,7 +18,6 @@ Minimum 15 trades required before generating a rulebook.
 """
 
 import json
-import traceback
 from datetime import datetime, timezone
 
 import anthropic

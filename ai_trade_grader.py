@@ -1,3 +1,4 @@
+from constants import MODEL
 """
 ai_trade_grader.py — Auto-grade trade execution quality using Claude.
 

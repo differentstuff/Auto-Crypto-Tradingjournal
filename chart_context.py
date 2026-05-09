@@ -17,6 +17,7 @@ Timeframe granularity strings (Bitget):
 
 import threading
 import time
+from constants import CHART_CACHE_TTL
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
