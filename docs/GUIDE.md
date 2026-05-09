@@ -1,6 +1,6 @@
 # Crypto Trading Journal — Full Technical Reference
 
-**Version:** v2.7.0  
+**Version:** v2.7.2  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
 **Project path:** `/home/<your-user>/trading-journal/`
@@ -879,6 +879,59 @@ Add these as GitHub repository secrets (Settings → Secrets → Actions):
 - Discussion forum: https://t.me/autotradingjournal (topics: Welcome/Updates/Feature Requests/Bug Reports/General)
 
 **Bot:** @myopen99_bot — admin of both channel and forum group.
+
+---
+
+### Nansen.ai Smart Money (routes/scanner.py)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/nansen/movers` | Top smart money accumulators + distributors (cached 30 min) |
+| GET | `/api/nansen/signal/<symbol>` | Single-symbol smart money signal (from cached screener) |
+
+**`nansen_client.py`** — module wrapping the Nansen token screener:
+- `get_smart_money_signal(symbol)` — returns `ok`, `direction`, `strength`, `netflow_usd`, `nof_traders`, `prompt_line`
+- `get_top_movers(min_traders=5)` — top accumulators + distributors for the widget
+- `get_signals_for_symbols(symbols)` — bulk lookup from a single cached screener call
+- `refresh_cache()` — force-refresh; called once at scan start
+
+**Integration points:**
+- Scanner `_scan_thread()`: `get_signals_for_symbols(finalist_syms)` after stage 2 — 1 API call for all
+- `prompt_builder.py` section 6: Nansen signal for call analysis token
+- `14-scanner.js`: Smart Money panel + badge on setup detail cards
+
+**Cloudflare:** Nansen blocks Python-urllib (error 1010). Uses browser User-Agent + Origin/Referer headers.  
+**Valid chains:** `ethereum`, `solana`, `base` (`bsc` → 422 Unprocessable Entity)  
+**Min traders:** Signal only surfaced when `nof_traders >= 5` (configurable via `MIN_TRADERS`)  
+**Cache TTL:** 1800s (matches scanner interval)
+
+**Env vars:**
+```
+NANSEN_API_KEY=nsn_...
+```
+
+---
+
+### Market Context — New Sources (market_context.py, v2.7.0)
+
+| Function | Source | Cache TTL | Returns |
+|----------|--------|-----------|---------|
+| `get_multi_exchange_funding(sym)` | Bybit + Binance + OKX (public) | 5 min | avg rate, per-exchange breakdown, spread |
+| `get_open_interest(sym)` | Binance futures (public) | 5 min | OI in USD millions, 24h change %, trend |
+| `get_sentiment_divergence(sym)` | Binance futures (public) | 5 min | retail vs top-trader L/S ratio + divergence |
+| `get_fred_macro()` | St. Louis Fed JSON API | 6h | Fed rate, 10Y yield, CPI, M2 |
+
+`get_btc_regime()` — EMA50/EMA200 cross on BTC 1D candles → `bull` / `bear` / `range`
+
+**CVD (Cumulative Volume Delta)** — computed in `chart_context.py` `compute_indicators()`:
+- Formula: `delta = volume * (2*close - low - high) / (high - low)` per bar
+- Running cumulative sum → `cvd["trend"]` = rising/falling/flat
+- Added as 7th confluence signal (`_cvd_weight()` ±0.4), shown in prompt_text as CVD↑/↓
+- Zero extra API calls — uses existing OHLCV data
+
+**Chart NaN fix (v2.7.2):**
+- `app.py` `SafeEncoder` — Flask-wide fallback converting `float('nan')`/`Inf` to JSON `null`
+- `chart_context.py` `_f()` — NaN/Inf guard in wavetrend serialization
 
 ---
 

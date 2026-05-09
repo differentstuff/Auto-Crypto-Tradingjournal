@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.7.1">🚀 Release v2.7.1</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.7.2">🚀 Release v2.7.2</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
   &nbsp;·&nbsp;
@@ -264,6 +264,18 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.7.2 — Bug Fix: Chart window "Network error"
+
+`NaN` in wavetrend data broke the chart popup for all coins. Python's `json.dumps()` silently emits the bare token `NaN` for `float('nan')` — valid Python, but **invalid JSON** per spec. JavaScript's `response.json()` threw a `SyntaxError` caught as "Network error" in chart.html.
+
+**Fix (two layers):**
+- `chart_context.py` — `_f()` helper converts all NaN/Inf wavetrend values to `null` at source (wavetrend signal is NaN during MA warmup)
+- `app.py` — Flask-wide `SafeEncoder` converts any remaining NaN/Inf float in any API response to JSON `null`
+
+**Self-test:** 32/32 endpoints passing after fix. 817 trades, 69.4% win rate on live data.
+
+---
 
 ### v2.7.1 — Nansen.ai Smart Money Intelligence
 

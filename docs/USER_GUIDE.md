@@ -811,7 +811,36 @@ High accuracy means the setup scoring system genuinely predicts your outcomes. I
 
 ---
 
-## New in v2.6.1.1 (current)
+## New in v2.7.2 (current)
+
+**Bug fix:** Chart window showed "Network error" for all coins — NaN in wavetrend JSON was invalid and caused JavaScript's `response.json()` to throw. Fixed app-wide with a SafeEncoder on Flask and a null-guard in chart_context.py.
+
+---
+
+## New in v2.7.1
+
+**Nansen.ai smart money intelligence** — on-chain smart money signals from Nansen:
+- Scanner finalists automatically checked (1 API credit per scan, not per symbol)
+- Signal only shown when 5+ smart money wallets are active
+- Injected into Claude's scoring prompt: *"Nansen smart money (15 wallets): accumulating — netflow +$39k (strong)"*
+- Smart Money panel on the Scanner page: top accumulators + distributors
+- Call analyzer: Nansen signal for the specific token in every prompt
+- `NANSEN_API_KEY` in `.env`
+
+---
+
+## New in v2.7.0
+
+**5 free market data sources** — all injected into every AI prompt:
+- **Multi-exchange funding rates** — Bybit + Binance + OKX + Bitget aggregated avg with per-exchange breakdown
+- **Open Interest + 24h change** (Binance) — OI in USD millions, expanding/contracting trend
+- **Smart money vs retail sentiment divergence** (Binance) — top trader L/S vs retail L/S; divergence >5% flagged
+- **CVD (Cumulative Volume Delta)** — computed from existing candles (zero extra API calls), 7th confluence signal
+- **FRED macro data** — Fed Funds Rate, 10Y yield, CPI, M2 in every AI prompt (`FRED_API_KEY` in `.env`)
+
+---
+
+## New in v2.6.1.1
 
 **CodeQL security fix** — GitHub code scanning flagged dynamic UPDATE queries in 3 route files. Column names were always from a hardcoded whitelist (not a vulnerability), but static analysis couldn't verify this. Fixed by pre-building a lookup dict so SQL fragments are provably untainted.
 
