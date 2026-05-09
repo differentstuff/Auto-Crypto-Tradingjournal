@@ -350,7 +350,7 @@ def analyze_call(call_text: str, account_equity: float,
     messages = build_cached_messages(ctx_str, prompt, image_b64, image_type)
     client   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message  = client.messages.create(
-        model=MODEL, max_tokens=2048,
+        model=MODEL, max_tokens=4096,
         messages=messages,
     )
 

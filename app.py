@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, render_template
+from flask import Flask, render_template, make_response
 
 from database import init_db, get_conn
 from importer import import_folder
@@ -62,7 +62,10 @@ app.register_blueprint(settings_bp)
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 # ── startup ────────────────────────────────────────────────────────────────────
