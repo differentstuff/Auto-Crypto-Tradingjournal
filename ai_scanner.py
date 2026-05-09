@@ -396,10 +396,10 @@ def _build_shared_prefix(mkt_str: str, rulebook_str: str,
 
     return (
         f"{mkt_block}{rb_block}"
-        SCORING_SCALE + "\n"
-        "5=Moderate(borderline), 6=Acceptable(tradeable,R:R≥1.5), 7=Good(R:R≥2:1), "
-        "8=Strong(≥3 signals,R:R≥2.5:1), 9=Excellent(multi-TF,R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
-        f"Score <{min_score} if: {cap_str}.{dis_part}"
+        + SCORING_SCALE + "\n"
+        + "5=Mod(borderline), 6=Accept(R:R≥1.5), 7=Good(R:R≥2:1), "
+        + "8=Strong(R:R≥2.5:1), 9=Excellent(multi-TF,R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
+        + f"Score <{min_score} if: {cap_str}.{dis_part}"
     )
 
 
