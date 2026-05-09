@@ -34,10 +34,43 @@ def db_conn():
         conn.close()
 
 
+import logging
+_log = logging.getLogger(__name__)
+
+
 def init_db():
     """Create all tables if they do not exist yet. Safe to call on every startup."""
     conn = get_conn()
     cur = conn.cursor()
+
+    # ── schema_version ─────────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version    INTEGER PRIMARY KEY,
+            name       TEXT    NOT NULL,
+            applied_at TEXT    DEFAULT (datetime('now'))
+        )
+    """)
+    conn.commit()
+
+    def _applied(ver: int) -> bool:
+        return conn.execute(
+            "SELECT 1 FROM schema_version WHERE version=?", (ver,)
+        ).fetchone() is not None
+
+    def _apply(ver: int, name: str, sql: str):
+        if _applied(ver):
+            return
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                _log.error("Migration %d (%s) failed: %s", ver, name, e, exc_info=True)
+                raise
+            _log.debug("Migration %d: column already exists (%s)", ver, name)
+        conn.execute("INSERT INTO schema_version (version, name) VALUES (?,?)", (ver, name))
+        conn.commit()
+        _log.info("Applied migration %d: %s", ver, name)
 
     # ── positions ──────────────────────────────────────────────────────────────
     # Primary trade table. One row = one closed futures position.
@@ -149,23 +182,8 @@ def init_db():
     """)
 
     # ── analyzed_calls column migrations ──────────────────────────────────────────
-    _new_cols = [
-        ("analyst",         "TEXT DEFAULT ''"),
-        ("outcome",         "TEXT DEFAULT NULL"),
-        ("outcome_pnl",     "REAL DEFAULT NULL"),
-        ("hit_tp1",         "INTEGER DEFAULT 0"),
-        ("hit_tp2",         "INTEGER DEFAULT 0"),
-        ("hit_sl",          "INTEGER DEFAULT 0"),
-        ("outcome_at",      "TEXT DEFAULT NULL"),
-        ("actual_notional", "REAL DEFAULT NULL"),
-        ("exchange",        "TEXT DEFAULT NULL"),   # 'bitget' | 'blofin' — set at confirm-match
-        ("cot_reasoning",   "TEXT DEFAULT NULL"),   # chain-of-thought reasoning from Claude
-    ]
-    for _col, _typedef in _new_cols:
-        try:
-            cur.execute(f"ALTER TABLE analyzed_calls ADD COLUMN {_col} {_typedef}")
-        except sqlite3.OperationalError:
-            pass
+    _apply(1, "analyzed_calls.exchange",     "ALTER TABLE analyzed_calls ADD COLUMN exchange TEXT DEFAULT 'bitget'")
+    _apply(2, "analyzed_calls.cot_reasoning", "ALTER TABLE analyzed_calls ADD COLUMN cot_reasoning TEXT DEFAULT NULL")
 
     # ── pending_limits ─────────────────────────────────────────────────────────
     # Limit orders the user has placed on exchange but not yet triggered.
@@ -191,33 +209,22 @@ def init_db():
             created_at      TEXT DEFAULT (datetime('now'))
         )
     """)
-    # Safe migration for bitget_order_id on existing tables
-    try:
-        cur.execute("ALTER TABLE pending_limits ADD COLUMN bitget_order_id TEXT")
-    except sqlite3.OperationalError:
-        pass
+    _apply(3, "pending_limits.bitget_order_id", "ALTER TABLE pending_limits ADD COLUMN bitget_order_id TEXT")
 
     # ── positions column migrations ────────────────────────────────────────────
-    _pos_new_cols = [
-        ("analyst",                "TEXT DEFAULT ''"),
-        ("execution_grade",        "TEXT DEFAULT NULL"),
-        ("execution_grade_reason", "TEXT DEFAULT NULL"),
-        ("setup_type",             "TEXT DEFAULT ''"),
-        ("call_id",                "INTEGER DEFAULT NULL"),
-        ("external_id",            "TEXT DEFAULT NULL"),  # exchange positionId (dedup key)
-        ("exchange",               "TEXT DEFAULT 'bitget'"),  # 'bitget' | 'blofin'
-        ("leverage",               "INTEGER DEFAULT NULL"),
-        ("market_regime",          "TEXT DEFAULT NULL"),   # 'bull' | 'bear' | 'range' at trade open
-        ("mfe_price",              "REAL DEFAULT NULL"),   # max favorable excursion price
-        ("mae_price",              "REAL DEFAULT NULL"),   # max adverse excursion price
-        ("mfe_pct",                "REAL DEFAULT NULL"),   # MFE as % of entry
-        ("mae_pct",                "REAL DEFAULT NULL"),   # MAE as % of entry
-    ]
-    for _col, _typedef in _pos_new_cols:
-        try:
-            cur.execute(f"ALTER TABLE positions ADD COLUMN {_col} {_typedef}")
-        except sqlite3.OperationalError:
-            pass
+    _apply(4,  "positions.analyst",                "ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
+    _apply(5,  "positions.execution_grade",        "ALTER TABLE positions ADD COLUMN execution_grade TEXT DEFAULT NULL")
+    _apply(6,  "positions.execution_grade_reason", "ALTER TABLE positions ADD COLUMN execution_grade_reason TEXT DEFAULT NULL")
+    _apply(7,  "positions.setup_type",             "ALTER TABLE positions ADD COLUMN setup_type TEXT DEFAULT ''")
+    _apply(8,  "positions.call_id",                "ALTER TABLE positions ADD COLUMN call_id INTEGER DEFAULT NULL")
+    _apply(9,  "positions.external_id",            "ALTER TABLE positions ADD COLUMN external_id TEXT DEFAULT NULL")
+    _apply(10, "positions.exchange",               "ALTER TABLE positions ADD COLUMN exchange TEXT DEFAULT 'bitget'")
+    _apply(11, "positions.leverage",               "ALTER TABLE positions ADD COLUMN leverage INTEGER DEFAULT NULL")
+    _apply(12, "positions.market_regime",          "ALTER TABLE positions ADD COLUMN market_regime TEXT DEFAULT NULL")
+    _apply(13, "positions.mfe_price",              "ALTER TABLE positions ADD COLUMN mfe_price REAL DEFAULT NULL")
+    _apply(14, "positions.mae_price",              "ALTER TABLE positions ADD COLUMN mae_price REAL DEFAULT NULL")
+    _apply(15, "positions.mfe_pct",                "ALTER TABLE positions ADD COLUMN mfe_pct REAL DEFAULT NULL")
+    _apply(16, "positions.mae_pct",                "ALTER TABLE positions ADD COLUMN mae_pct REAL DEFAULT NULL")
 
     # ── trader_rulebook ────────────────────────────────────────────────────────
     # Personalised rules synthesised by Claude from trade history.
