@@ -5,7 +5,7 @@ from flask import Blueprint, request
 
 from database import db_conn
 from helpers import _ok, _err
-import ai_call_analyzer
+import ai_limit as ai_call_analyzer
 import bitget_client
 
 bp = Blueprint("limits", __name__)
