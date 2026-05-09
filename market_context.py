@@ -13,7 +13,7 @@ All results are cached for 5 minutes to avoid rate-limiting.
 
 import json
 import os
-from constants import MARKET_MARKET_CACHE_TTL
+from constants import MARKET_CACHE_TTL
 import time
 import urllib.request
 from typing import Optional
