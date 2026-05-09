@@ -1081,14 +1081,22 @@ def get_candles_for_chart(symbol: str, timeframe: str = "4H", limit: int = 200) 
     # WaveTrend series for the oscillator pane
     try:
         wt_df      = compute_wavetrend(df)
+        import math as _math
+        def _f(v):
+            """Float safe for JSON — NaN/Inf become None."""
+            try:
+                fv = float(v)
+                return None if _math.isnan(fv) or _math.isinf(fv) else round(fv, 2)
+            except Exception:
+                return None
         wt_series  = [
             {
                 "time":      int(row["timestamp"] // 1000),
-                "wt1":       round(float(wt_df["wt1"].iloc[i]),  2),
-                "wt2":       round(float(wt_df["wt2"].iloc[i]),  2),
-                "histogram": round(float(wt_df["histogram"].iloc[i]), 2),
-                "mfi":       round(float(wt_df["mfi"].iloc[i]),  2),
-                "signal":    wt_df["signal"].iloc[i],
+                "wt1":       _f(wt_df["wt1"].iloc[i]),
+                "wt2":       _f(wt_df["wt2"].iloc[i]),
+                "histogram": _f(wt_df["histogram"].iloc[i]),
+                "mfi":       _f(wt_df["mfi"].iloc[i]),
+                "signal":    _f(wt_df["signal"].iloc[i]),
             }
             for i, (_, row) in enumerate(df.iterrows())
         ]

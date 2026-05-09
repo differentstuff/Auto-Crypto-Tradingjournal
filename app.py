@@ -29,6 +29,25 @@ os.makedirs(DATA_DIR, exist_ok=True)
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB upload limit
 
+# NaN / Infinity are valid Python but invalid JSON — Flask's default encoder
+# silently emits `NaN` which causes `response.json()` to throw in browsers.
+# This encoder converts them to null.
+import json as _json, math as _math
+class _SafeEncoder(_json.JSONEncoder):
+    def iterencode(self, o, _one_shot=False):
+        return super().iterencode(self._sanitize(o), _one_shot)
+    def _sanitize(self, obj):
+        if isinstance(obj, float):
+            if _math.isnan(obj) or _math.isinf(obj):
+                return None
+            return obj
+        if isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._sanitize(v) for v in obj]
+        return obj
+app.json_encoder = _SafeEncoder
+
 app.register_blueprint(journal_bp)
 app.register_blueprint(analytics_bp)
 app.register_blueprint(market_bp)
