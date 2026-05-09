@@ -125,19 +125,20 @@ function _normSym(s) { return (s || '').toUpperCase().replace(/[/\-_ ]/g, ''); }
 function _normDir(s) { return (s || '').toLowerCase(); }
 
 async function openLinkCallModal(symbol, direction, posId, exchange) {
-  const res = await api('/api/calls/linkable');
-  if (!res.ok) { notify('Could not load saved calls', 'err'); return; }
-  const calls = res.data;
-  if (!calls.length) {
-    notify('No saved or matched calls found. Analyze and save a call first.', 'err');
-    return;
-  }
+  try {
+    const res = await api('/api/calls/linkable');
+    if (!res || !res.ok) { notify('Could not load saved calls', 'err'); return; }
+    const calls = res.data || [];
+    if (!calls.length) {
+      notify('No saved calls found. Run a call analysis first, then save it.', 'err');
+      return;
+    }
 
-  document.getElementById('link-call-modal')?.remove();
+    document.getElementById('link-call-modal')?.remove();
 
-  const overlay = document.createElement('div');
-  overlay.id = 'link-call-modal';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const overlay = document.createElement('div');
+    overlay.id = 'link-call-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
 
   const box = document.createElement('div');
   box.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto';
@@ -195,27 +196,34 @@ async function openLinkCallModal(symbol, direction, posId, exchange) {
     box.appendChild(row);
   });
 
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  } catch(err) {
+    notify('Error opening link modal: ' + err.message, 'err');
+  }
 }
 
 async function confirmLinkCall(callId, symbol, direction, posId, exchange) {
-  const res = await api('/api/calls/' + callId + '/confirm-match', 'POST', {
-    position_id: posId || null,
-    exchange: exchange || 'bitget',
-  });
-  document.getElementById('link-call-modal')?.remove();
-  if (!res.ok) { notify('Link failed: ' + (res.error || 'server error'), 'err'); return; }
+  try {
+    const res = await api('/api/calls/' + callId + '/confirm-match', 'POST', {
+      position_id: posId || null,
+      exchange: exchange || 'bitget',
+    });
+    document.getElementById('link-call-modal')?.remove();
+    if (!res || !res.ok) { notify('Link failed: ' + ((res && res.error) || 'server error'), 'err'); return; }
 
-  const savedRes = await api('/api/calls/saved');
-  if (savedRes.ok) {
-    const call = savedRes.data.find(c => c.id === callId);
-    if (call) liveCallMatches[symbol + '_' + direction] = call;
+    const savedRes = await api('/api/calls/saved');
+    if (savedRes && savedRes.ok) {
+      const call = savedRes.data.find(c => c.id === callId);
+      if (call) liveCallMatches[symbol + '_' + direction] = call;
+    }
+    const exchF = (typeof _globalExchange !== 'undefined') ? _globalExchange : 'all';
+    const disp  = exchF === 'all' ? livePositionsCache
+      : livePositionsCache.filter(p => (p.exchange || 'bitget') === exchF);
+    renderPositionCards(disp, liveWaitingLimits);
+    notify('Call linked — targets panel updated', 'ok');
+  } catch(err) {
+    notify('Link error: ' + err.message, 'err');
   }
-  const exchF = (typeof _globalExchange !== 'undefined') ? _globalExchange : 'all';
-  const disp  = exchF === 'all' ? livePositionsCache
-    : livePositionsCache.filter(p => (p.exchange || 'bitget') === exchF);
-  renderPositionCards(disp, liveWaitingLimits);
-  notify('Call linked — targets panel updated', 'ok');
 }

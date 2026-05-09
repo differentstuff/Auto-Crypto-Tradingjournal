@@ -2,6 +2,34 @@
 const charts = {};
 let currentPage = 'dashboard';
 
+// ── Notification toast ────────────────────────────────────────────────────────
+let _notifyTimer = null;
+function notify(msg, type) {
+  let bar = document.getElementById('_notify_bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = '_notify_bar';
+    bar.style.cssText = [
+      'position:fixed;bottom:24px;left:50%;transform:translateX(-50%)',
+      'padding:10px 20px;border-radius:8px;font-size:.85rem;font-weight:600',
+      'z-index:99999;pointer-events:none;transition:opacity .3s',
+      'box-shadow:0 4px 16px rgba(0,0,0,.4)',
+    ].join(';');
+    document.body.appendChild(bar);
+  }
+  bar.textContent = msg;
+  bar.style.opacity = '1';
+  if (type === 'err') {
+    bar.style.background = 'rgba(239,83,80,.9)';
+    bar.style.color = '#fff';
+  } else {
+    bar.style.background = 'rgba(38,217,107,.9)';
+    bar.style.color = '#000';
+  }
+  clearTimeout(_notifyTimer);
+  _notifyTimer = setTimeout(() => { bar.style.opacity = '0'; }, 3000);
+}
+
 // ── Global exchange filter ────────────────────────────────────────────────────
 // 'all' | 'bitget' | 'blofin' — persisted in localStorage, applied to every
 // stats/analytics API call so every page shows data for the selected exchange.
