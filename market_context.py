@@ -10,11 +10,14 @@ All results are cached for 5 minutes to avoid rate-limiting.
 """
 
 import json
+import os
 import time
 import urllib.request
 from typing import Optional
 
 import bitget_client
+
+FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 
 _cache: dict = {}
 CACHE_TTL    = 300   # 5 minutes default
@@ -188,19 +191,217 @@ def get_economic_calendar() -> list:
 # ── Combined ───────────────────────────────────────────────────────────────────
 
 def get_market_context(symbols: Optional[list] = None) -> dict:
-    """Fear & Greed + BTC dominance + per-symbol funding rate + long/short ratio."""
+    """
+    Fear & Greed + BTC dominance + per-symbol data:
+      - Multi-exchange funding rates (Bitget + Bybit + Binance + OKX)
+      - Long/short ratio
+      - Open Interest + 24h change
+      - Recent liquidations (last 60 min)
+    Plus FRED macro data (Fed rate, CPI, M2, 10Y yield).
+    """
     result = {
         "fear_greed":    get_fear_greed(),
         "btc_dominance": get_btc_dominance(),
+        "fred_macro":    get_fred_macro(),
         "symbols":       {},
     }
     if symbols:
         for sym in list(dict.fromkeys(symbols))[:6]:
             result["symbols"][sym] = {
-                "funding":    get_funding_rate(sym),
-                "long_short": get_long_short_ratio(sym),
+                "funding":    get_funding_rate(sym),          # Bitget (existing)
+                "multi_fund": get_multi_exchange_funding(sym),# all 4 exchanges aggregated
+                "long_short": get_long_short_ratio(sym),      # Bitget L/S
+                "open_interest":    get_open_interest(sym),   # Binance OI + 24h change
+                "sentiment_div":    get_sentiment_divergence(sym), # smart vs retail positioning
             }
     return result
+
+
+# ── Multi-exchange funding rates ───────────────────────────────────────────────
+
+def _fetch_url(url: str, timeout: int = 8) -> dict:
+    """GET a JSON URL, return parsed dict or {} on error."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {}
+
+
+def get_bybit_funding(symbol: str) -> dict:
+    base = symbol.replace("USDT", "")
+    sym  = f"{base}USDT"
+    def _fetch():
+        d = _fetch_url(f"https://api.bybit.com/v5/market/funding/history?category=linear&symbol={sym}&limit=1")
+        item = ((d.get("result") or {}).get("list") or [{}])[0]
+        rate = float(item.get("fundingRate", 0)) if item else 0
+        return {"exchange": "bybit", "rate": rate, "rate_pct": round(rate * 100, 4), "ok": bool(item)}
+    return _cached(f"bybit_fund_{sym}", _fetch, ttl=300)
+
+
+def get_binance_funding(symbol: str) -> dict:
+    base = symbol.replace("USDT", "")
+    sym  = f"{base}USDT"
+    def _fetch():
+        d = _fetch_url(f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}")
+        rate = float(d.get("lastFundingRate", 0))
+        return {"exchange": "binance", "rate": rate, "rate_pct": round(rate * 100, 4), "ok": "lastFundingRate" in d}
+    return _cached(f"bnb_fund_{sym}", _fetch, ttl=300)
+
+
+def get_okx_funding(symbol: str) -> dict:
+    base   = symbol.replace("USDT", "")
+    inst   = f"{base}-USDT-SWAP"
+    def _fetch():
+        d    = _fetch_url(f"https://www.okx.com/api/v5/public/funding-rate?instId={inst}")
+        item = (d.get("data") or [{}])[0]
+        rate = float(item.get("fundingRate", 0)) if item else 0
+        return {"exchange": "okx", "rate": rate, "rate_pct": round(rate * 100, 4), "ok": bool(item)}
+    return _cached(f"okx_fund_{base}", _fetch, ttl=300)
+
+
+def get_multi_exchange_funding(symbol: str) -> dict:
+    """Aggregate funding rates from Bitget + Bybit + Binance + OKX."""
+    sources = {}
+    try:
+        bg = get_funding_rate(symbol)
+        if bg.get("ok"):
+            sources["bitget"] = bg["rate_pct"]
+    except Exception:
+        pass
+    for fn, key in [(get_bybit_funding, "bybit"), (get_binance_funding, "binance"), (get_okx_funding, "okx")]:
+        try:
+            r = fn(symbol)
+            if r.get("ok"):
+                sources[key] = r["rate_pct"]
+        except Exception:
+            pass
+    if not sources:
+        return {"ok": False}
+    avg = round(sum(sources.values()) / len(sources), 4)
+    spread = round(max(sources.values()) - min(sources.values()), 4) if len(sources) > 1 else 0
+    crowded = avg > 0.05 or avg < -0.05
+    return {
+        "ok": True, "by_exchange": sources,
+        "avg_pct": avg, "spread_pct": spread,
+        "direction": "longs paying" if avg > 0 else "shorts paying",
+        "crowded": crowded,
+        "high": abs(avg) >= 0.1,
+    }
+
+
+# ── Open Interest ──────────────────────────────────────────────────────────────
+
+def get_open_interest(symbol: str) -> dict:
+    """Open Interest from Binance futures (public endpoint, no auth)."""
+    base = symbol.replace("USDT", "")
+    sym  = f"{base}USDT"
+    def _fetch():
+        # Current OI
+        cur  = _fetch_url(f"https://fapi.binance.com/fapi/v1/openInterest?symbol={sym}")
+        if "openInterest" not in cur:
+            return {"ok": False}
+        oi_now = float(cur["openInterest"])
+        # Historical OI (last 25 hours, 1h periods)
+        hist = _fetch_url(
+            f"https://fapi.binance.com/futures/data/openInterestHist?symbol={sym}&period=1h&limit=25"
+        )
+        oi_24h = float(hist[0]["sumOpenInterest"]) if hist else None
+        oi_val_now = float(hist[-1]["sumOpenInterestValue"]) if hist else None
+        change_pct = round((oi_now - oi_24h) / oi_24h * 100, 2) if oi_24h else None
+        trend = ("expanding" if change_pct and change_pct > 1 else
+                 "contracting" if change_pct and change_pct < -1 else "stable")
+        return {
+            "ok": True,
+            "oi_coins": round(oi_now, 0),
+            "oi_usd_m": round(oi_val_now / 1e6, 1) if oi_val_now else None,
+            "change_24h_pct": change_pct,
+            "trend": trend,
+        }
+    return _cached(f"oi_{sym}", _fetch, ttl=300)
+
+
+# ── Recent liquidations ────────────────────────────────────────────────────────
+
+def get_sentiment_divergence(symbol: str) -> dict:
+    """
+    Compare retail vs top-trader L/S positioning from Binance (public endpoint).
+    Divergence between smart money and retail is a strong directional signal.
+    """
+    base = symbol.replace("USDT", "")
+    sym  = f"{base}USDT"
+    def _fetch():
+        retail = _fetch_url(
+            f"https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol={sym}&period=5m&limit=1"
+        )
+        smart  = _fetch_url(
+            f"https://fapi.binance.com/futures/data/topLongShortAccountRatio?symbol={sym}&period=5m&limit=1"
+        )
+        r = retail[0] if isinstance(retail, list) and retail else None
+        s = smart[0]  if isinstance(smart,  list) and smart  else None
+        if not r or not s:
+            return {"ok": False}
+        r_long = round(float(r["longAccount"])  * 100, 1)
+        r_sht  = round(float(r["shortAccount"]) * 100, 1)
+        s_long = round(float(s["longAccount"])  * 100, 1)
+        s_sht  = round(float(s["shortAccount"]) * 100, 1)
+        # Divergence: smart money long while retail short = contrarian bullish
+        div = round(s_long - r_long, 1)
+        signal = (
+            "smart money net LONG vs retail SHORT (contrarian bullish)" if div > 5 else
+            "smart money net SHORT vs retail LONG (contrarian bearish)" if div < -5 else
+            "aligned — no divergence signal"
+        )
+        return {
+            "ok": True,
+            "retail_long_pct":     r_long, "retail_short_pct":     r_sht,
+            "top_trader_long_pct": s_long, "top_trader_short_pct": s_sht,
+            "divergence_pct": div,
+            "signal": signal,
+        }
+    return _cached(f"sent_div_{sym}", _fetch, ttl=300)
+
+
+# ── FRED macro data ────────────────────────────────────────────────────────────
+
+def _fred_series(series_id: str) -> float | None:
+    """Fetch last observed value for a FRED series via the JSON API (requires FRED_API_KEY)."""
+    def _fetch():
+        key = FRED_API_KEY
+        if not key:
+            return None
+        url = (
+            f"https://api.stlouisfed.org/fred/series/observations"
+            f"?series_id={series_id}&api_key={key}&limit=1&sort_order=desc&file_type=json"
+        )
+        try:
+            d    = _fetch_url(url, timeout=10)
+            obs  = d.get("observations", [])
+            if obs:
+                val = obs[0].get("value", ".")
+                return float(val) if val not in (".", "") else None
+        except Exception:
+            pass
+        return None
+    return _cached(f"fred_{series_id}", _fetch, ttl=3600 * 12)
+
+
+def get_fred_macro() -> dict:
+    """Fetch key macro indicators from FRED API (free key at fred.stlouisfed.org)."""
+    def _fetch():
+        fed_rate = _fred_series("FEDFUNDS")   # Fed Funds Rate %
+        cpi      = _fred_series("CPIAUCSL")   # CPI index value
+        m2       = _fred_series("M2SL")       # M2 Money Supply (billions $)
+        t10y     = _fred_series("DGS10")      # 10-Year Treasury yield %
+        return {
+            "ok":       any(v is not None for v in (fed_rate, cpi, m2, t10y)),
+            "fed_rate": fed_rate,
+            "cpi":      cpi,
+            "m2_b":     m2,
+            "t10y":     t10y,
+        }
+    return _cached("fred_macro", _fetch, ttl=3600 * 6)
 
 
 def get_btc_regime(as_of_ts: str = None) -> str:
@@ -235,24 +436,75 @@ def get_btc_regime(as_of_ts: str = None) -> str:
 
 
 def format_for_prompt(ctx: dict) -> str:
-    """Concise text block for Claude prompts."""
+    """Concise text block for Claude prompts — includes all market data sources."""
     lines = []
+
+    # Fear & Greed
     fg = ctx.get("fear_greed", {})
     if fg.get("ok"):
-        lines.append(f"Fear & Greed Index: {fg['value']}/100 — {fg['classification']}")
+        lines.append(f"Fear & Greed: {fg['value']}/100 — {fg['classification']}")
+
+    # BTC Dominance
     bd = ctx.get("btc_dominance", {})
     if bd.get("ok"):
         arrow = "↑" if bd["change_24h"] >= 0 else "↓"
         lines.append(f"BTC Dominance: {bd['btc_dominance']}% ({arrow}{abs(bd['change_24h'])}% 24h)")
+
+    # FRED Macro
+    fm = ctx.get("fred_macro", {})
+    if fm.get("ok"):
+        macro_parts = []
+        if fm.get("fed_rate") is not None:
+            macro_parts.append(f"Fed {fm['fed_rate']:.2f}%")
+        if fm.get("t10y") is not None:
+            macro_parts.append(f"10Y {fm['t10y']:.2f}%")
+        if fm.get("cpi") is not None:
+            macro_parts.append(f"CPI idx {fm['cpi']:.1f}")
+        if fm.get("m2_b") is not None:
+            macro_parts.append(f"M2 ${fm['m2_b']:,.0f}B")
+        if macro_parts:
+            lines.append(f"Macro (FRED): {' | '.join(macro_parts)}")
+
+    # Per-symbol data
     for sym, d in ctx.get("symbols", {}).items():
         parts = []
-        fr = d.get("funding", {})
-        if fr.get("ok"):
-            flag = " ⚠ HIGH" if fr.get("high") else ""
-            parts.append(f"funding {fr['rate_pct']:+.4f}% ({fr['direction']}){flag}")
+
+        # Multi-exchange funding
+        mf = d.get("multi_fund", {})
+        if mf.get("ok"):
+            flag = " ⚠ VERY HIGH" if mf.get("high") else (" ⚠" if mf.get("crowded") else "")
+            exch_str = " / ".join(f"{k[:3].upper()} {v:+.3f}%" for k, v in mf["by_exchange"].items())
+            parts.append(f"funding avg {mf['avg_pct']:+.3f}% ({mf['direction']}){flag} [{exch_str}]")
+        else:
+            fr = d.get("funding", {})
+            if fr.get("ok"):
+                flag = " ⚠ HIGH" if fr.get("high") else ""
+                parts.append(f"funding {fr['rate_pct']:+.4f}% ({fr['direction']}){flag}")
+
+        # Long/Short ratio
         ls = d.get("long_short", {})
         if ls.get("ok"):
-            parts.append(f"retail {ls['long_pct']}% long / {ls['short_pct']}% short ({ls['bias']})")
+            parts.append(f"L/S {ls['long_pct']}%/{ls['short_pct']}% ({ls['bias']})")
+
+        # Open Interest
+        oi = d.get("open_interest", {})
+        if oi.get("ok"):
+            oi_str = f"OI {oi['oi_usd_m']}M" if oi.get("oi_usd_m") else f"OI {oi['oi_coins']:,.0f} coins"
+            chg    = f" {oi['change_24h_pct']:+.1f}% 24h" if oi.get("change_24h_pct") is not None else ""
+            parts.append(f"{oi_str}{chg} ({oi['trend']})")
+
+        # Smart money vs retail sentiment divergence
+        sd = d.get("sentiment_div", {})
+        if sd.get("ok"):
+            div = sd["divergence_pct"]
+            flag = " ⚠" if abs(div) > 5 else ""
+            parts.append(
+                f"retail {sd['retail_long_pct']}%L/{sd['retail_short_pct']}%S "
+                f"| top traders {sd['top_trader_long_pct']}%L/{sd['top_trader_short_pct']}%S"
+                f" (div {div:+.1f}%){flag}"
+            )
+
         if parts:
-            lines.append(f"{sym}: {' · '.join(parts)}")
+            lines.append(f"{sym}: " + " · ".join(parts))
+
     return "\n".join(lines)

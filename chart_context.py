@@ -619,6 +619,37 @@ def compute_indicators(df: pd.DataFrame) -> dict:
     except Exception:
         pass  # WaveTrend is non-critical; degrade gracefully
 
+    # ── CVD (Cumulative Volume Delta) ──────────────────────────────────────────
+    # Money Flow Multiplier approximation: delta per bar = volume * (2C - L - H) / (H - L)
+    # Positive CVD = net buy pressure; negative = net sell pressure.
+    try:
+        h_arr  = df["high"].values.astype(float)
+        l_arr  = df["low"].values.astype(float)
+        c_arr  = df["close"].values.astype(float)
+        v_arr  = df["volume"].values.astype(float)
+        deltas = []
+        for i in range(len(h_arr)):
+            denom = h_arr[i] - l_arr[i]
+            delta = v_arr[i] * (2 * c_arr[i] - l_arr[i] - h_arr[i]) / denom if denom > 0 else 0.0
+            deltas.append(delta)
+        cvd_series = []
+        running = 0.0
+        for d in deltas:
+            running += d
+            cvd_series.append(running)
+        # Last 3 bars: rising or falling?
+        cvd_now   = cvd_series[-1]
+        cvd_prev  = cvd_series[-4] if len(cvd_series) >= 4 else cvd_series[0]
+        cvd_trend = "rising" if cvd_now > cvd_prev * 1.001 else ("falling" if cvd_now < cvd_prev * 0.999 else "flat")
+        result["cvd"] = {
+            "value":  round(cvd_now, 2),
+            "trend":  cvd_trend,
+            "signal": "bullish (net buy pressure)" if cvd_trend == "rising" else
+                      ("bearish (net sell pressure)" if cvd_trend == "falling" else "neutral"),
+        }
+    except Exception:
+        pass
+
     # ── Support / Resistance ───────────────────────────────────────────────────
     sr = detect_support_resistance(df)
     if sr:
@@ -714,6 +745,11 @@ def format_for_prompt(symbol: str, indicators: dict, timeframe: str) -> str:
             parts.append(f"S:{sups[0]['price']}")
         if ress:
             parts.append(f"R:{ress[0]['price']}")
+
+    if "cvd" in indicators:
+        c = indicators["cvd"]
+        arrow = "↑" if c["trend"] == "rising" else ("↓" if c["trend"] == "falling" else "→")
+        parts.append(f"CVD{arrow}")
 
     return (f"{symbol} {timeframe}: " + " | ".join(parts)) if parts else ""
 
@@ -918,17 +954,18 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         ema_w  = _ema_weight(inds.get("ema",   {}))
         adx_w  = _adx_weight(inds.get("adx",   {}))
         wt_w   = _wt_weight(inds.get("wavetrend", {}))
-        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w
+        cvd_w  = _cvd_weight(inds.get("cvd", {}))
+        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + cvd_w
         vol_w  = _volume_weight(inds, base_score)
 
         tf_score = base_score + vol_w
         total_score += tf_score
 
-        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, vol_w) if w > 0), 1)
-        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, vol_w) if w < 0), 1)
+        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, cvd_w, vol_w) if w > 0), 1)
+        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, cvd_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
-    max_val = float(len(tfs) * 5.5)  # 5 directional signals (max 1.0) + volume bonus (max 0.5)
+    max_val = float(len(tfs) * 5.9)  # 6 directional signals (max 1.0 each, CVD 0.4) + vol (0.5)
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
@@ -994,8 +1031,14 @@ def _volume_weight(inds: dict, directional_score: float) -> float:
     return 0.0
 
 
+def _cvd_weight(cvd: dict) -> float:
+    """CVD rising = bullish signal (+0.4), falling = bearish (-0.4), flat = 0."""
+    trend = cvd.get("trend", "flat")
+    return 0.4 if trend == "rising" else (-0.4 if trend == "falling" else 0.0)
+
+
 def _get_tf_weights(ctx: dict, tf: str) -> list:
-    """Return the six signal weights for a single timeframe (RSI/MACD/EMA/ADX/WT/Vol)."""
+    """Return signal weights for a single timeframe (RSI/MACD/EMA/ADX/WT/CVD/Vol)."""
     inds = ctx.get(tf, {}).get("indicators", {})
     if not inds.get("ok"):
         return []
@@ -1005,6 +1048,7 @@ def _get_tf_weights(ctx: dict, tf: str) -> list:
         _ema_weight(inds.get("ema",   {})),
         _adx_weight(inds.get("adx",   {})),
         _wt_weight(inds.get("wavetrend", {})),
+        _cvd_weight(inds.get("cvd", {})),
     ]
     base.append(_volume_weight(inds, sum(base)))
     return base

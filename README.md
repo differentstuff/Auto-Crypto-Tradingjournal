@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.6.1.1">🚀 Release v2.6.1.1</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.7.0">🚀 Release v2.7.0</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
   &nbsp;·&nbsp;
@@ -264,6 +264,22 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.7.0 — Free Market Data Sources (5 new inputs)
+
+**Multi-exchange funding rates** — aggregates Bitget + Bybit + Binance + OKX funding rates into a single averaged signal with per-exchange breakdown. Spread between exchanges reveals divergence in positioning.
+
+**Open Interest + 24h change** (Binance public API) — OI expanding with price = trend confirmation; OI contracting = exhaustion or squeeze. Shown per-symbol in every AI prompt.
+
+**Smart money vs retail sentiment divergence** (Binance public API) — compares top-trader L/S ratio vs retail L/S ratio. When top traders are net long while retail is net short (or vice versa), this contrarian signal is injected into the scanner and call analyzer prompts.
+
+**CVD (Cumulative Volume Delta)** — computed from existing OHLCV candles (zero extra API calls). Money Flow Multiplier formula measures net buy/sell pressure per bar. Added as a 7th confluence signal in `chart_context.py`, shown in prompt text and included in confluence scoring.
+
+**FRED macro context** (St. Louis Fed API, free key) — injects current Fed Funds Rate, 10-Year Treasury yield, CPI index, and M2 Money Supply into every AI prompt. Provides macro environment context for long/short bias. Free API key at fred.stlouisfed.org.
+
+All sources are cached (2–12h depending on update frequency) and fail gracefully — the journal works normally if any external source is unavailable.
+
+---
 
 ### v2.6.1.1 — Security: CodeQL SQL injection false-positive fixes
 
