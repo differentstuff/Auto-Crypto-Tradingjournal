@@ -7,6 +7,7 @@ portfolio correlation risk, and overall recommendation (Keep / Adjust / Cancel).
 
 import json
 import os
+from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
 from concurrent.futures import ThreadPoolExecutor
 
 import anthropic
@@ -17,8 +18,6 @@ import market_context
 import prompt_builder
 import trade_utils
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-haiku-4-5-20251001"   # Haiku sufficient for limit order assessment
 
 
 def _correlation_warning(symbol: str, direction: str, open_positions: list,

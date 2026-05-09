@@ -21,6 +21,9 @@ Results cached for 30 minutes. Scan runs in a background thread.
 
 import json
 import os
+from constants import (ANTHROPIC_API_KEY, MODEL, FAST_MODEL,
+    SCANNER_SCANNER_MIN_SCORE, SCANNER_SCANNER_FULL_DETAIL_TOP_N, SCANNER_SCANNER_CACHE_TTL,
+    SCANNER_MAX_WORKERS, PROMPT_CACHE_MIN_CHARS)
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,12 +37,6 @@ import market_context
 import ai_rulebook
 import nansen_client
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL      = "claude-sonnet-4-6"          # full detail pass
-FAST_MODEL = "claude-haiku-4-5-20251001"  # quick score pass
-MIN_SCORE  = 6
-FULL_DETAIL_TOP_N = 12   # max symbols that get the expensive full-detail prompt
-CACHE_TTL  = 1800  # 30 min between scans
 
 # ── Watchlist ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +141,7 @@ _state: dict = {
     "scanned":         0,
     "after_filter":    0,
     "error":           None,
-    "min_score":       MIN_SCORE,
+    "min_score":       SCANNER_MIN_SCORE,
 }
 _state_lock = threading.Lock()
 
@@ -171,7 +168,7 @@ def _fetch_one(symbol: str):
         return symbol, None, None
 
 
-def _stage1(symbols: list, min_score: int = MIN_SCORE) -> list:
+def _stage1(symbols: list, min_score: int = SCANNER_MIN_SCORE) -> list:
     """Return [(symbol, ctx, conf, direction)] with enough aligned signals.
     Emits live progress via _update() as futures complete."""
     threshold = 1 if min_score <= 3 else 2
@@ -199,7 +196,7 @@ def _stage1(symbols: list, min_score: int = MIN_SCORE) -> list:
 
 # ── Stage 2: technical quality gate ────────────────────────────────────────────
 
-def _stage2(candidates: list, min_score: int = MIN_SCORE,
+def _stage2(candidates: list, min_score: int = SCANNER_MIN_SCORE,
              criteria: dict = None) -> list:
     """
     Technical quality gate — no AI, no network calls.
@@ -280,7 +277,7 @@ def _stage2(candidates: list, min_score: int = MIN_SCORE,
 
 # ── Stage 3: AI scoring ─────────────────────────────────────────────────────────
 
-def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=MIN_SCORE):
+def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=SCANNER_MIN_SCORE):
     inds_4h = ctx.get("4H", {}).get("indicators", {})
     ema     = inds_4h.get("ema", {}) or {}
     price   = ema.get("current_price", 0)
@@ -394,7 +391,7 @@ Respond with ONLY valid JSON — no markdown, no code fences."""
 
 
 def _build_shared_prefix(mkt_str: str, rulebook_str: str,
-                          min_score: int = MIN_SCORE, criteria: dict = None) -> str:
+                          min_score: int = SCANNER_MIN_SCORE, criteria: dict = None) -> str:
     """Shared context block — identical for all finalists in a scan, caches across calls."""
     cr        = criteria or CRITERIA_DEFAULTS
     mkt_block = f"MARKET CONTEXT:\n{mkt_str}\n\n" if mkt_str else ""
@@ -419,7 +416,7 @@ def _build_shared_prefix(mkt_str: str, rulebook_str: str,
 
 
 def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
-                 shared_prefix: str, min_score: int = MIN_SCORE) -> dict | None:
+                 shared_prefix: str, min_score: int = SCANNER_MIN_SCORE) -> dict | None:
     """
     Pass 1 — cheap Haiku call returning only a score (0-10) and confirmed direction.
     Returns None if score < min_score or on any error.
@@ -473,7 +470,7 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
 
 
 def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str,
-              min_score=MIN_SCORE, criteria=None):
+              min_score=SCANNER_MIN_SCORE, criteria=None):
     try:
         cr     = criteria or CRITERIA_DEFAULTS
         shared = _build_shared_prefix(mkt_str, rulebook_str, min_score, criteria=cr)
@@ -494,7 +491,7 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str,
         return None
 
 
-def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE, criteria=None,
+def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, criteria=None,
                         nansen_signals=None):
     """Build a single prompt for all top-N symbols. Returns (system_prefix, user_prompt)."""
     parts = []
@@ -556,7 +553,7 @@ def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE, criteria=None
 
 
 def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
-                    min_score=MIN_SCORE, criteria=None, nansen_signals=None):
+                    min_score=SCANNER_MIN_SCORE, criteria=None, nansen_signals=None):
     """
     Single Claude (Sonnet) call for all top-N finalists.
     Falls back to individual calls if the batch response is malformed or incomplete.
@@ -636,7 +633,7 @@ def _symbol_history(symbol: str, conn) -> dict:
 
 # ── Background scan thread ─────────────────────────────────────────────────────
 
-def _scan_thread(symbols: list, min_score: int = MIN_SCORE, criteria: dict = None):
+def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: dict = None):
     cr = criteria or CRITERIA_DEFAULTS
     t0 = time.time()
     _update(
@@ -732,8 +729,8 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE, criteria: dict = Non
 
         # Sort by quick score, take top N for expensive full-detail pass
         quick_results.sort(key=lambda x: -x[4])
-        top_finalists  = quick_results[:FULL_DETAIL_TOP_N]
-        rest_finalists = quick_results[FULL_DETAIL_TOP_N:]
+        top_finalists  = quick_results[:SCANNER_FULL_DETAIL_TOP_N]
+        rest_finalists = quick_results[SCANNER_FULL_DETAIL_TOP_N:]
 
         # Stage 3b — Full detail with Sonnet: single batched call for all top-N
         _update(
@@ -788,18 +785,18 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE, criteria: dict = Non
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def start_scan(symbols: list = None, min_score: int = MIN_SCORE,
+def start_scan(symbols: list = None, min_score: int = SCANNER_MIN_SCORE,
                criteria: dict = None) -> bool:
     """
     Start a background scan. Returns False if already running or results are still
-    fresh (< CACHE_TTL seconds old) AND the min_score hasn't changed.
+    fresh (< SCANNER_CACHE_TTL seconds old) AND the min_score hasn't changed.
     """
     with _state_lock:
         if _state["status"] == "running":
             return False
         completed_at   = _state.get("completed_at")
-        score_unchanged = _state.get("min_score", MIN_SCORE) == min_score
-        if completed_at and (time.time() - completed_at) < CACHE_TTL and score_unchanged:
+        score_unchanged = _state.get("min_score", SCANNER_MIN_SCORE) == min_score
+        if completed_at and (time.time() - completed_at) < SCANNER_CACHE_TTL and score_unchanged:
             return False  # still fresh with same threshold
 
     syms = symbols or DEFAULT_WATCHLIST
@@ -809,7 +806,7 @@ def start_scan(symbols: list = None, min_score: int = MIN_SCORE,
     return True
 
 
-def force_scan(symbols: list = None, min_score: int = MIN_SCORE,
+def force_scan(symbols: list = None, min_score: int = SCANNER_MIN_SCORE,
                criteria: dict = None) -> bool:
     """Start a scan regardless of cache TTL. Returns False if already running."""
     with _state_lock:

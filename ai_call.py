@@ -11,6 +11,7 @@ New vs v2.2:
 
 import json
 import os
+from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
 import re
 from concurrent.futures import ThreadPoolExecutor
 
@@ -38,8 +39,6 @@ def _has_tech_levels(text: str) -> bool:
     lower = text.lower()
     return any(t in lower for t in _TECH_TERMS)
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL    = "claude-sonnet-4-6"
 LEVERAGE = 10
 
 

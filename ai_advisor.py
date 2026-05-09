@@ -12,6 +12,7 @@ your ZEN positions lost $45 on average — consider tighter stops there").
 
 import json
 import os
+from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
 import anthropic
 
 from analytics import get_dashboard_kpis, get_deep_stats
@@ -19,12 +20,7 @@ from database  import db_conn
 from helpers   import strip_fence, log_token_usage
 import market_context
 
-ANTHROPIC_API_KEY = os.environ.get(
-    "ANTHROPIC_API_KEY",
-    ""
-)
 
-MODEL = "claude-sonnet-4-6"
 
 
 def _prune_stats(deep: dict) -> dict:

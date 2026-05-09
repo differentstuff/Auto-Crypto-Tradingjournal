@@ -24,7 +24,6 @@ import anthropic
 from database import get_conn
 from helpers  import strip_fence, log_token_usage
 
-MODEL        = "claude-sonnet-4-6"
 MIN_TRADES   = 15
 MAX_SIMILAR  = 8
 

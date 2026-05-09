@@ -1,3 +1,4 @@
+from constants import PROMPT_CACHE_MIN_CHARS
 from flask import jsonify, request
 from database import db_conn
 
@@ -41,7 +42,7 @@ def build_cached_messages(context: str, prompt: str,
     content = []
     if context:
         block = {"type": "text", "text": context}
-        if len(context) >= 4096:          # ~1024 tokens — Sonnet minimum
+        if len(context) >= PROMPT_CACHE_MIN_CHARS:          # ~1024 tokens — Sonnet minimum
             block["cache_control"] = {"type": "ephemeral"}
         content.append(block)
     if image_b64:

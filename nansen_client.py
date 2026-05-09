@@ -14,6 +14,7 @@ Configuration:
 
 import json
 import os
+from constants import NANSEN_NANSEN_CACHE_TTL
 import threading
 import time
 import urllib.request
@@ -22,7 +23,6 @@ from typing import Optional
 NANSEN_API_KEY = os.environ.get("NANSEN_API_KEY", "")
 NANSEN_BASE    = "https://api.nansen.ai/api/v1"
 MIN_TRADERS    = 5     # minimum smart money wallets to surface a signal
-CACHE_TTL      = 1800  # 30 minutes — matches scanner cycle
 CHAINS         = ["ethereum", "solana", "base"]
 
 _cache_lock  = threading.Lock()
@@ -84,7 +84,7 @@ def _get_cached_screener() -> list:
     global _cache_ts, _cache_data
     now = time.time()
     with _cache_lock:
-        if now - _cache_ts < CACHE_TTL and _cache_data:
+        if now - _cache_ts < NANSEN_CACHE_TTL and _cache_data:
             return _cache_data
     # Fetch outside the lock (can take a few seconds)
     rows = _fetch_screener()

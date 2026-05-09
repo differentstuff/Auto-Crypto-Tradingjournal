@@ -14,14 +14,13 @@ Response is structured JSON, rendered as a card in the Live Trades module.
 
 import json
 import os
+from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
 import anthropic
 from database import db_conn
 from helpers import strip_fence
 import market_context
 import prompt_builder
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-haiku-4-5-20251001"   # Haiku sufficient for routine position assessment
 
 
 def _get_symbol_history(symbol: str, conn) -> dict:

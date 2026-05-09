@@ -29,12 +29,11 @@ import bitget_client
 
 _cache: dict = {}
 _cache_lock  = threading.Lock()
-CACHE_TTL    = 600  # 10 minutes
 
 PRICE_TOLERANCE = 0.004  # 0.4% — shared by S/R clustering and trendline validation
 
 
-def _cached(key: str, fn, ttl: int = CACHE_TTL):
+def _cached(key: str, fn, ttl: int = CHART_CACHE_TTL):
     now = time.time()
     with _cache_lock:
         if key in _cache:

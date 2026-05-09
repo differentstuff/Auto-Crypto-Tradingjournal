@@ -11,6 +11,7 @@ All results are cached for 5 minutes to avoid rate-limiting.
 
 import json
 import os
+from constants import MARKET_MARKET_CACHE_TTL
 import time
 import urllib.request
 from typing import Optional
@@ -20,10 +21,9 @@ import bitget_client
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 
 _cache: dict = {}
-CACHE_TTL    = 300   # 5 minutes default
 
 
-def _cached(key: str, fn, ttl: int = CACHE_TTL):
+def _cached(key: str, fn, ttl: int = MARKET_CACHE_TTL):
     now = time.time()
     if key in _cache:
         ts, data = _cache[key]

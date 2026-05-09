@@ -26,6 +26,7 @@ Signal accuracy verdicts (relative to score ≥ 7 as "ENTER" threshold):
 import datetime
 import json
 import os
+from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -37,8 +38,6 @@ from helpers import strip_fence, log_token_usage
 import chart_context
 import ai_rulebook
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-haiku-4-5-20251001"
 ENTER_THRESHOLD = 6   # score ≥ 6 = ENTER; score 5 = NEUTRAL borderline; score < 5 = SKIP
 
 # ── Batch scan state ───────────────────────────────────────────────────────────
