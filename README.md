@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.7.2">🚀 Release v2.7.2</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.7.2">🚀 Latest: v2.8.0</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
   &nbsp;·&nbsp;
@@ -264,6 +264,34 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.8.0 — UI Polish, Call Linking, Architecture Review (2026-05-09)
+
+**Call Analyzer formatting:**
+- All AI text fields now render markdown: `**bold**`, `*italic*`, bullet lists, numbered lists. `mdToHtml()` in `01-utils.js` handles this without any library dependency.
+- Call result is now split into named sections (📈 Chart Analysis, ⏱ Entry Timing, 📋 Overall Assessment, 💡 Optimizations, ⚠ Risks) each in a visually distinct card.
+- Claude's chain-of-thought (`cot_reasoning`) now surfaces as a collapsible "🧠 Claude's Reasoning" section.
+
+**Call ↔ Trade Linking:**
+- Auto-detection now normalises symbol format (`BTC/USDT` → `BTCUSDT`) and direction casing before comparing — fixes silent mismatches.
+- `🔗 Link Call` button on every unmatched live position card opens a picker modal showing all saved calls with matching symbol/direction highlighted.
+- New `/api/calls/linkable` endpoint powers the modal.
+
+**KPI widgets:**
+- Every KPI card with a description now opens an inline info panel on click explaining how to read the metric with context. Closes on second click or click-outside.
+
+**Reliability fixes:**
+- `notify()` toast function added to `01-utils.js` (was called throughout but never defined — caused silent async crashes in the call-linking flow).
+- `max_tokens` raised from 2048 → 4096 for call analyzer, advisor, and rulebook — truncated JSON was the root cause of "unformatted output" and duplicate saves.
+- `index()` route now sends `Cache-Control: no-store` so browsers always fetch fresh HTML and JS.
+- Try-catch added to all async link-call functions with visible error toasts.
+
+**Architecture review:**
+- Full 65-endpoint, 38-file architecture audit completed.
+- 4-phase optimisation plan written to `docs/superpowers/specs/2026-05-09-architecture-review-and-optimisation.md`.
+- Issues catalogued: P0 (critical), P1 (significant debt), P2 (quality), with dependency-ordered implementation plan.
+
+---
 
 ### v2.7.2 — Bug Fix: Chart window "Network error"
 

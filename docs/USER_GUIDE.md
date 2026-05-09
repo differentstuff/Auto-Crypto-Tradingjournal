@@ -1,5 +1,6 @@
 # Crypto Trading Journal — User Guide
 
+**Version:** v2.8.0  
 **App URL:** http://`<your-host>`:8082  
 **Exchanges:** Bitget USDT-M Futures · Blofin USDT-M Futures
 
@@ -257,7 +258,7 @@ Below the legend: 9 indicator cards for the selected timeframe:
 | Volume | Ratio vs 20-period average + signal |
 | Key S/R | Nearest support and resistance levels |
 
-**Hover any indicator card** to see a tooltip explaining the metric, thresholds, and how to act on the value.
+**Click any KPI card** to open an inline info panel explaining the metric, thresholds, and how to act on it. Click again to close.
 
 ### Pop-out Chart
 
@@ -317,12 +318,13 @@ Click **Analyze Call**. Wait ~10-15 seconds. Claude processes the call, chart (i
 
 ### Analysis Output
 
+The result is split into clearly labelled sections:
+
 - **Quality Score** (1-10 with label: Poor/Weak/Moderate/Good/Strong/Excellent)
-- **Chart Analysis** — what Claude sees in the chart: pattern, key levels, support/resistance
+- **📈 Chart Analysis** — what Claude sees in the chart: pattern, key levels, support/resistance
 - **Risk:Reward** — computed ratio with exact entry/SL/TP prices
-- **Pattern Flags** — personal warnings from your trading history
-  - Examples: "Friday trade — your worst day", "BOME net loser for you"
-- **Drawdown Warning** — if your account is down significantly from its peak, sizing is automatically reduced (25% of normal at -20%, 50% at -10%)
+- **⚠ Pattern Flags** — personal warnings from your trading history (e.g. "Friday trade — your worst day")
+- **Drawdown Warning** — if your account is significantly below peak, sizing is automatically reduced
 - **Bitget Settings** — exact settings to enter in Bitget:
   - Symbol, Direction, Margin Mode, Leverage
   - Order 1 (and Order 2 if DCA): type, notional USDT, notes
@@ -333,9 +335,11 @@ Click **Analyze Call**. Wait ~10-15 seconds. Claude processes the call, chart (i
   - Risk Amount USDT: what you lose if SL hits
   - Total Notional USDT: full position size
   - Margin Needed USDT: how much collateral to put up
-- **Entry Timing** — market order now vs wait for retest vs set limit
-- **Optimizations** — specific improvements to the analyst's setup
-- **Risks** — what could go wrong
+- **⏱ Entry Timing** — market order now vs wait for retest vs set limit
+- **📋 Overall Assessment** — 2-3 sentence honest verdict on the call quality
+- **💡 Optimizations** — specific improvements to the analyst's setup
+- **⚠ Risks to Watch** — what could go wrong
+- **🧠 Claude's Reasoning** (collapsible) — the step-by-step chain-of-thought behind the score
 
 ### Saving a Call
 
@@ -399,7 +403,7 @@ Five cards at the top of the page:
 - **Account Equity** — total account value including unrealized PnL, with available balance shown below
 - **Open Position Risk** — maximum loss if all stop-losses trigger at once (SL-based calculation)
 
-**Tip:** Hover any KPI card for a tooltip explanation of what the value means and how it is calculated.
+**Tip:** Click any KPI card to open an inline info panel explaining the metric, thresholds, and how it is calculated. Click again to close.
 
 ### Position Cards
 
@@ -429,6 +433,19 @@ Click **📊 Chart** on any position card to open a full candlestick chart for t
 | Liquidation | Dashed | Yellow |
 
 Each level also shows a legend chip at the bottom of the chart with the exact price and % distance from the current mark price — so you can see at a glance how far away each target is.
+
+### Linking a Saved Call to a Position
+
+The journal automatically detects when an open position matches a saved call (same symbol + direction). When detected, a yellow banner appears at the top of the page — confirm the match to activate the **Linked Call Panel** on that position card.
+
+If no auto-match appears (e.g. you entered before running the call analyzer), use the **🔗 Link Call** button on any unmatched position card. A modal shows all your saved calls with matching symbol/direction highlighted — click any row to link it instantly.
+
+Once linked, the **Linked Call Panel** shows:
+- Take Profit 1 / Take Profit 2 — price + % distance from current mark
+- Stop Loss — price + % distance
+- Call Avg Entry — vs current mark
+- TP1 crossed alert with move-to-breakeven suggestion
+- Entry timing note from the original analysis
 
 ### AI Analysis Per Position
 

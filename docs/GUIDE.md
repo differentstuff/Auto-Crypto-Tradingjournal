@@ -1,6 +1,6 @@
 # Crypto Trading Journal — Full Technical Reference
 
-**Version:** v2.7.2  
+**Version:** v2.8.0  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
 **Project path:** `/home/<your-user>/trading-journal/`
