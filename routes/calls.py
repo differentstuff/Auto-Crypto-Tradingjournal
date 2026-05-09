@@ -134,14 +134,20 @@ def api_calls_check_matches():
             FROM analyzed_calls WHERE status = 'saved'
         """).fetchall()]
 
+    def _ns(s):  # normalize symbol: BTCUSDT, BTC/USDT, btc-usdt → btcusdt
+        return (s or "").upper().replace("/", "").replace("-", "").replace("_", "").strip()
+    def _nd(s):  # normalize direction: long/Long/BUY → Long
+        d = (s or "").strip().lower()
+        return "Long" if d in ("long", "buy", "open_long") else "Short" if d in ("short", "sell", "open_short") else s
+
     matches = []
     for pos in positions:
         for call in calls:
-            if call["symbol"] == pos["symbol"] and call["direction"] == pos["direction"]:
+            if _ns(call["symbol"]) == _ns(pos["symbol"]) and _nd(call["direction"]) == _nd(pos["direction"]):
                 matches.append({
                     "call":     call,
                     "position": pos,
-                    "exchange": pos.get("exchange", "bitget"),  # passed to confirm-match
+                    "exchange": pos.get("exchange", "bitget"),
                 })
     return _ok(matches)
 
@@ -163,6 +169,19 @@ def api_calls_confirm_match(call_id):
             conn.execute("UPDATE positions SET call_id=? WHERE id=?", (call_id, pos_id))
         conn.commit()
     return _ok({"matched": call_id, "position_id": pos_id, "exchange": exchange})
+
+
+@bp.route("/api/calls/linkable")
+def api_calls_linkable():
+    """Return all saved/matched calls that can be manually linked to a position."""
+    with db_conn() as conn:
+        rows = [dict(r) for r in conn.execute("""
+            SELECT id, symbol, direction, trade_type, setup_score, setup_label,
+                   rr_ratio, sl_price, tp1_price, tp2_price, entry_price, status, created_at
+            FROM analyzed_calls WHERE status IN ('saved','matched')
+            ORDER BY created_at DESC LIMIT 50
+        """).fetchall()]
+    return _ok(rows)
 
 
 @bp.route("/api/calls/<int:call_id>/dismiss", methods=["POST"])

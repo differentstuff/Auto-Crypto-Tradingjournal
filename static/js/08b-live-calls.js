@@ -118,3 +118,104 @@ function renderCallTargetsPanel(call, pos) {
       </div>
     </div>`;
 }
+
+// ── Manual call linking ───────────────────────────────────────────────────────
+
+function _normSym(s) { return (s || '').toUpperCase().replace(/[/\-_ ]/g, ''); }
+function _normDir(s) { return (s || '').toLowerCase(); }
+
+async function openLinkCallModal(symbol, direction, posId, exchange) {
+  const res = await api('/api/calls/linkable');
+  if (!res.ok) { notify('Could not load saved calls', 'err'); return; }
+  const calls = res.data;
+  if (!calls.length) {
+    notify('No saved or matched calls found. Analyze and save a call first.', 'err');
+    return;
+  }
+
+  document.getElementById('link-call-modal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'link-call-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto';
+
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px';
+  const title = document.createElement('strong');
+  title.textContent = '🔗 Link Saved Call to ' + symbol + ' ' + direction;
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer';
+  closeBtn.onclick = () => overlay.remove();
+  hdr.appendChild(title);
+  hdr.appendChild(closeBtn);
+
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:.78rem;color:var(--muted);margin-bottom:12px';
+  hint.textContent = 'Calls matching this symbol/direction are highlighted. Click any row to link it.';
+
+  box.appendChild(hdr);
+  box.appendChild(hint);
+
+  calls.forEach(c => {
+    const symMatch = _normSym(c.symbol) === _normSym(symbol);
+    const dirMatch = _normDir(c.direction) === _normDir(direction);
+    const row = document.createElement('div');
+    row.style.cssText = [
+      'display:flex;align-items:center;gap:10px;padding:8px 10px',
+      'border:1px solid ' + (symMatch && dirMatch ? 'rgba(108,99,255,.4)' : 'var(--border)'),
+      'border-radius:6px;margin-bottom:6px;cursor:pointer',
+      'background:' + (symMatch && dirMatch ? 'rgba(108,99,255,.12)' : 'transparent'),
+    ].join(';');
+    row.onclick = () => confirmLinkCall(c.id, symbol, direction, posId, exchange);
+
+    const sym = document.createElement('span');
+    sym.style.cssText = 'font-weight:700;font-size:.85rem';
+    sym.textContent = (c.symbol || '') + ' ' + (c.direction || '');
+
+    const meta = document.createElement('span');
+    meta.style.cssText = 'font-size:.75rem;color:var(--muted)';
+    meta.textContent = (c.trade_type || '') + ' · ' + (c.setup_score || '?') + '/10';
+
+    const date = document.createElement('span');
+    date.style.cssText = 'font-size:.72rem;color:var(--muted);margin-left:auto';
+    date.textContent = (c.created_at || '').slice(0, 10);
+
+    const badge = document.createElement('span');
+    badge.style.cssText = 'font-size:.7rem;padding:2px 7px;border-radius:10px;background:rgba(121,134,203,.1);color:var(--muted)';
+    badge.textContent = c.status || '';
+
+    row.appendChild(sym);
+    row.appendChild(meta);
+    row.appendChild(date);
+    row.appendChild(badge);
+    box.appendChild(row);
+  });
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function confirmLinkCall(callId, symbol, direction, posId, exchange) {
+  const res = await api('/api/calls/' + callId + '/confirm-match', 'POST', {
+    position_id: posId || null,
+    exchange: exchange || 'bitget',
+  });
+  document.getElementById('link-call-modal')?.remove();
+  if (!res.ok) { notify('Link failed: ' + (res.error || 'server error'), 'err'); return; }
+
+  const savedRes = await api('/api/calls/saved');
+  if (savedRes.ok) {
+    const call = savedRes.data.find(c => c.id === callId);
+    if (call) liveCallMatches[symbol + '_' + direction] = call;
+  }
+  const exchF = (typeof _globalExchange !== 'undefined') ? _globalExchange : 'all';
+  const disp  = exchF === 'all' ? livePositionsCache
+    : livePositionsCache.filter(p => (p.exchange || 'bitget') === exchF);
+  renderPositionCards(disp, liveWaitingLimits);
+  notify('Call linked — targets panel updated', 'ok');
+}

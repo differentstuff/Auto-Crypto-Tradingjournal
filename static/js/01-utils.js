@@ -330,6 +330,55 @@ function makeChart(id, type, data, extraOpts={}) {
     options: Object.assign({}, chartDefaults, extraOpts) });
 }
 
+// KPI click-to-info popup — attaches once on DOMContentLoaded.
+// Any element with [data-tip] gets a clickable info panel below it.
+(function() {
+  let _openPopup = null;
+
+  function _closeOpen() {
+    if (_openPopup) { _openPopup.remove(); _openPopup = null; }
+  }
+
+  document.addEventListener('click', function(e) {
+    // Close if clicking outside any popup or tip target
+    if (_openPopup && !_openPopup.contains(e.target)) {
+      const host = _openPopup._host;
+      if (!host || !host.contains(e.target)) { _closeOpen(); return; }
+    }
+
+    const el = e.target.closest('[data-tip]');
+    if (!el) return;
+
+    // Toggle: clicking the same card closes it
+    if (_openPopup && _openPopup._host === el) { _closeOpen(); return; }
+    _closeOpen();
+
+    const tip = el.getAttribute('data-tip');
+    if (!tip) return;
+    e.stopPropagation();
+
+    const popup = document.createElement('div');
+    popup.className = 'kpi-tip-popup';
+    popup._host = el;
+
+    const closeX = document.createElement('span');
+    closeX.textContent = '✕';
+    closeX.style.cssText = 'float:right;cursor:pointer;opacity:.6;margin-left:8px;font-size:.9em';
+    closeX.onclick = _closeOpen;
+
+    const body = document.createElement('span');
+    body.textContent = tip;
+
+    popup.appendChild(closeX);
+    popup.appendChild(body);
+
+    // Insert after the host element
+    el.style.position = 'relative';
+    el.insertAdjacentElement('afterend', popup);
+    _openPopup = popup;
+  }, true);
+})();
+
 // Lightweight markdown → HTML for AI text fields.
 // Escapes HTML first, then applies inline formatting and list detection.
 function mdToHtml(text) {

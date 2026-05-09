@@ -251,6 +251,8 @@ function renderPositionCards(positions, waitingLimits) {
                   onclick="event.stopPropagation();analyzePosition(${i})">
             ${hadAnalysis ? '🔄 Re-analyze' : '🤖 AI Analysis'}
           </button>
+          ${!liveCallMatches[key] ? `<button class="btn-chart-sm" style="background:rgba(108,99,255,.12);color:var(--accent);border:1px solid rgba(108,99,255,.3)"
+                  onclick="event.stopPropagation();openLinkCallModal('${p.symbol}','${p.direction}',${p.id||'null'},'${p.exchange||'bitget'}')">🔗 Link Call</button>` : ''}
         </div>
       </div>
       <!-- Expandable detail row -->

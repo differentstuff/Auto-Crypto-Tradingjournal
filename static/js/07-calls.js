@@ -174,7 +174,10 @@ function renderCallResult(d) {
 
   // Chart analysis (if available)
   if (d.chart_analysis) {
-    html += `<div class="ai-overall" style="margin-bottom:16px;line-height:1.6">${mdToHtml(d.chart_analysis)}</div>`;
+    html += `<div class="call-section">
+      <div class="call-section-hdr">📈 Chart Analysis</div>
+      <div class="ai-overall" style="margin:0;line-height:1.6">${mdToHtml(d.chart_analysis)}</div>
+    </div>`;
   }
 
   // Position sizing grid
@@ -291,27 +294,34 @@ function renderCallResult(d) {
 
   // Entry timing
   if (d.entry_timing) {
-    html += `<div style="margin:12px 0;font-size:.83rem">
-      <span style="color:var(--muted);text-transform:uppercase;font-size:.72rem;font-weight:700">Entry Timing</span><br>
-      <span style="margin-top:4px;display:block;line-height:1.6">${mdToHtml(d.entry_timing)}</span>
+    html += `<div class="call-section">
+      <div class="call-section-hdr">⏱ Entry Timing</div>
+      <div style="line-height:1.6;font-size:.85rem">${mdToHtml(d.entry_timing)}</div>
     </div>`;
   }
 
   // Summary
   if (d.summary) {
-    html += `<div class="ai-overall" style="margin:14px 0;line-height:1.6">${mdToHtml(d.summary)}</div>`;
+    html += `<div class="call-section">
+      <div class="call-section-hdr">📋 Overall Assessment</div>
+      <div class="ai-overall" style="margin:0;line-height:1.6">${mdToHtml(d.summary)}</div>
+    </div>`;
   }
 
   // Optimizations
   if (d.optimizations?.length) {
-    html += `<div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:14px 0 6px">Optimizations</div>
-    <ul class="call-list">${d.optimizations.map(o => `<li><span>💡</span>${mdToHtml(o)}</li>`).join('')}</ul>`;
+    html += `<div class="call-section">
+      <div class="call-section-hdr">💡 Optimizations</div>
+      <ul class="call-list">${d.optimizations.map(o => `<li><span>💡</span>${mdToHtml(o)}</li>`).join('')}</ul>
+    </div>`;
   }
 
   // Risks
   if (d.risks?.length) {
-    html += `<div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:14px 0 6px">Risks</div>
-    <ul class="call-list">${d.risks.map(r => `<li><span>⚠</span>${mdToHtml(r)}</li>`).join('')}</ul>`;
+    html += `<div class="call-section">
+      <div class="call-section-hdr">⚠ Risks to Watch</div>
+      <ul class="call-list">${d.risks.map(r => `<li><span>⚠</span>${mdToHtml(r)}</li>`).join('')}</ul>
+    </div>`;
   }
 
   // Historical context
