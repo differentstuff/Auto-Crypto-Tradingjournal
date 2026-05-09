@@ -5,11 +5,11 @@ name: Telegram Release Notification
 #   1. The Telegram channel  (@autocryptotradingjournal or numeric ID)
 #   2. The Updates topic in the linked discussion group (optional)
 #
-# Setup — add these in GitHub → Settings → Secrets → Actions:
-#   TELEGRAM_BOT_TOKEN        (required) — bot token from @BotFather
-#   TELEGRAM_CHANNEL_ID       (required) — @autocryptotradingjournal or numeric ID
-#   TELEGRAM_GROUP_ID         (optional) — numeric ID of the linked Forum Group
-#   TELEGRAM_UPDATES_TOPIC_ID (optional) — thread ID of the Updates topic
+# Configured values (add as GitHub Secrets in Settings → Secrets → Actions):
+#   TELEGRAM_BOT_TOKEN        = (from .env — @myopen99_bot token)
+#   TELEGRAM_CHANNEL_ID       = -1003763955901  (@autocryptotradingjournal)
+#   TELEGRAM_GROUP_ID         = -1003889940179  (@autotradingjournal forum group)
+#   TELEGRAM_UPDATES_TOPIC_ID = 14              (🚀 Updates topic thread_id)
 
 on:
   release:

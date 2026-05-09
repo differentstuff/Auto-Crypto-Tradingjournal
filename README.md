@@ -4,7 +4,7 @@
 
 A self-hosted crypto futures trading journal with live Bitget and Blofin API sync, AI-powered trade call analysis, and deep performance analytics. Runs on a Raspberry Pi (or any Linux box) and is accessible from any browser on your local network.
 
-**Community:** [t.me/autocryptotradingjournal](https://t.me/autocryptotradingjournal) — release announcements, feature requests, bug reports
+**Community:** [📢 t.me/autocryptotradingjournal](https://t.me/autocryptotradingjournal) — announcements &nbsp;·&nbsp; [💬 t.me/autotradingjournal](https://t.me/autotradingjournal) — discussion group (Welcome · Updates · Feature Requests · Bug Reports · General)
 
 <p align="center">
   <img src="docs/images/factsheet-preview.png" alt="Crypto Trading Journal — 2-page fact sheet" width="720">
@@ -15,7 +15,9 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
   &nbsp;·&nbsp;
-  <a href="https://t.me/autocryptotradingjournal">💬 Telegram Channel</a>
+  <a href="https://t.me/autocryptotradingjournal">📢 Telegram Channel</a>
+  &nbsp;·&nbsp;
+  <a href="https://t.me/autotradingjournal">💬 Community Group</a>
 </p>
 
 ---
