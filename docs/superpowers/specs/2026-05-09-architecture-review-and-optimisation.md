@@ -211,4 +211,51 @@ Phase 4 done when:
 
 ---
 
+## 9. Future Integration: Hyblock Capital (Liquidation Levels)
+
+**Decision: evaluate after Phase 1. Free plan only.**
+
+### What Hyblock offers
+Hyblock Capital is a crypto derivatives analytics platform with an API providing liquidation level estimates — price zones where clusters of highly-leveraged positions (25×/50×/100×) would get wiped if price reaches them. These zones act as price magnets and are not available from any free public source.
+
+### Key endpoint: `GET /cumulative-liq-level`
+```
+Base: https://api.hyblockcapital.com/v2
+Params: coin (e.g. "BTC"), exchange, leverage ("low"|"medium"|"high"), timestamp
+Returns:
+  totalLongLiquidationSize   — total USD value of long liquidations predicted at this level
+  totalShortLiquidationSize  — same for shorts
+  totalSizeLiquidationDelta  — long minus short (positive = more long exposure = bearish if broken)
+  totalLongLiquidationCount  — number of positions
+  totalShortLiquidationCount
+Auth: OAuth2 client credentials (bearer token) + x-api-key header
+```
+
+### Free plan scope (confirmed)
+- Authentication required (OAuth2 + API key) — register at hyblockcapital.com
+- Free plan exists; exact rate limits not published but "429 Too Many Requests" implies they exist
+- Paid tiers (Professional/Advanced) unlock higher limits and more exchanges
+- **Strategy:** use free plan, cache aggressively (30 min), only fetch for scanner finalists + call analyzer symbols
+
+### Value to the journal
+| Where | How it helps |
+|-------|-------------|
+| **Call analyzer** | Inject nearest long/short liquidation cluster into prompt — Claude can flag if TP2 sits just below a $200M short liquidation wall (strong magnet) or if SL is above a long cluster (extra stop-hunt risk) |
+| **Scanner confluence** | Add as 8th confluence signal: +0.4 if short liquidation cluster within 2% above entry (fuel for breakout), −0.3 if long cluster below entry (stops hunt risk) |
+| **Chart context** | Show liquidation delta as a horizontal band overlay on the chart popup |
+
+### Implementation plan (when ready)
+1. Create `hyblock_client.py` — OAuth2 token fetch + cache + `get_liq_levels(symbol, exchange="binance")` returning the delta
+2. Add to `market_context.py` `format_for_prompt()` — one line: "Liq delta at nearest level: +$45M short exposure (bullish fuel if broken)"
+3. Add to `chart_context.py` confluence scoring as signal 8
+4. Store `HYBLOCK_API_KEY` + `HYBLOCK_CLIENT_ID` + `HYBLOCK_CLIENT_SECRET` in `.env`
+5. Cache TTL: 30 min (same as Nansen). Only fetch for symbols actively in scanner or being analyzed.
+
+### Risk / caveat
+- Free plan rate limits unknown — may need to limit to top-5 scanner finalists only
+- OAuth2 token expiry requires refresh logic (same pattern as any OAuth2 client credentials flow)
+- Data is an *estimate* — Hyblock's liquidation levels are modelled, not sourced from exchange data directly
+
+---
+
 *Next session: start with Phase 0 items in order. Reference this doc at session start.*
