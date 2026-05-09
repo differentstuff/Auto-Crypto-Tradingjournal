@@ -38,3 +38,16 @@ def atr_sl_warning(symbol: str, entry: float, sl: float) -> str:
     except Exception:
         pass
     return ""
+
+
+def normalize_symbol(s: str) -> str:
+    """BTC/USDT, btc-usdt → BTCUSDT.""",
+    return (s or '').upper().replace('/', '').replace('-', '').replace('_', '').strip()
+
+
+def normalize_direction(s: str) -> str:
+    """long/buy/open_long → Long; short/sell → Short.""",
+    d = (s or '').strip().lower()
+    if d in ('long', 'buy', 'open_long'):  return 'Long'
+    if d in ('short', 'sell', 'open_short'): return 'Short'
+    return s

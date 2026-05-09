@@ -4,9 +4,10 @@ import traceback
 from flask import Blueprint, request
 
 from database import db_conn
+from trade_utils import normalize_symbol, normalize_direction
 from helpers import _ok, _err
 from analytics import get_deep_stats
-import ai_call_analyzer
+import ai_call as ai_call_analyzer
 import bitget_client
 import blofin_client
 
@@ -134,16 +135,11 @@ def api_calls_check_matches():
             FROM analyzed_calls WHERE status = 'saved'
         """).fetchall()]
 
-    def _ns(s):  # normalize symbol: BTCUSDT, BTC/USDT, btc-usdt → btcusdt
-        return (s or "").upper().replace("/", "").replace("-", "").replace("_", "").strip()
-    def _nd(s):  # normalize direction: long/Long/BUY → Long
-        d = (s or "").strip().lower()
-        return "Long" if d in ("long", "buy", "open_long") else "Short" if d in ("short", "sell", "open_short") else s
 
     matches = []
     for pos in positions:
         for call in calls:
-            if _ns(call["symbol"]) == _ns(pos["symbol"]) and _nd(call["direction"]) == _nd(pos["direction"]):
+            if normalize_symbol(call["symbol"]) == normalize_symbol(pos["symbol"]) and normalize_direction(call["direction"]) == normalize_direction(pos["direction"]):
                 matches.append({
                     "call":     call,
                     "position": pos,
