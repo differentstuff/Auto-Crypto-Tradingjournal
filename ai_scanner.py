@@ -21,6 +21,7 @@ Results cached for 30 minutes. Scan runs in a background thread.
 
 import json
 import os
+from prompt_fragments import SCORING_SCALE, LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES
 from constants import (ANTHROPIC_API_KEY, MODEL, FAST_MODEL,
     SCANNER_SCANNER_MIN_SCORE, SCANNER_SCANNER_FULL_DETAIL_TOP_N, SCANNER_SCANNER_CACHE_TTL,
     SCANNER_MAX_WORKERS, PROMPT_CACHE_MIN_CHARS)
@@ -328,27 +329,11 @@ TRADER HISTORY ON {symbol}:
 {hist_text}
 {rb_block}
 ─────────────────────────────────────────
-MARKET CONTEXT WEIGHTING:
-- Funding rate > 0.05% in trade direction → reduce score by 1 point (crowd is already on-side, squeeze risk)
-- Funding rate > 0.1% in trade direction → reduce score by 2 points (extremely crowded)
-- Funding rate negative/opposite direction → slight tailwind, can note as positive
-- Fear & Greed < 20 (Extreme Fear): longs get +0.5 adjustment; shorts get −0.5
-- Fear & Greed > 80 (Extreme Greed): longs get −0.5; shorts get +0.5
+{MARKET_CONTEXT_RULES}
 
-SCORING SCALE:
-5 — Moderate: mixed signals, borderline — not worth entering without improvement
-6 — Acceptable: clear bias + valid level, SL structural, R:R ≥ 1.5:1 — tradeable
-7 — Good: multiple aligned signals, structural entry + SL, R:R ≥ 2:1
-8 — Strong: ≥3 signals aligned, clean S/R entry, structural SL, R:R ≥ 2.5:1
-9 — Excellent: near-ideal — all criteria met, multi-TF alignment, R:R ≥ 3:1
-10 — Perfect: textbook chart pattern, volume confirmation, ideal entry timing, R:R ≥ 4:1
+{SCORING_SCALE}
 
-LEVEL PROXIMITY DEFINITIONS (use these when rating entry quality):
-- Entry ≤ 0.5× ATR from the structural level → strong anchor, no penalty
-- Entry 0.5–1.0× ATR from the structural level → acceptable, note in rationale
-- Entry > 1.0× ATR from nearest level → structural anchor missing → reduce score 1–2 points
-- SL ≥ 1.0× ATR from entry → adequate; SL < 1.0× ATR → inside noise floor → score cannot exceed 6
-- R:R below 1.5:1 → score cannot exceed 6; R:R ≥ 2:1 → required for score ≥ 7; R:R ≥ 3:1 for score ≥ 9
+{LEVEL_PROXIMITY_RULES}
 
 REQUIREMENTS for any score ≥ {min_score}:
 - A specific entry zone anchored to a named structural level (S/R, EMA, trendline) with exact prices
@@ -408,7 +393,7 @@ def _build_shared_prefix(mkt_str: str, rulebook_str: str,
 
     return (
         f"{mkt_block}{rb_block}"
-        "SCORING SCALE:\n"
+        SCORING_SCALE + "\n"
         "5=Moderate(borderline), 6=Acceptable(tradeable,R:R≥1.5), 7=Good(R:R≥2:1), "
         "8=Strong(≥3 signals,R:R≥2.5:1), 9=Excellent(multi-TF,R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
         f"Score <{min_score} if: {cap_str}.{dis_part}"
@@ -536,7 +521,7 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
         f"Analyze these {len(finalists)} crypto futures setups. "
         f"Return a JSON ARRAY of exactly {len(finalists)} objects — one per setup, in the same order.\n\n"
         f"{setups_text}\n\n"
-        f"SCORING SCALE: 6=Acceptable(R:R≥1.5), 7=Good(R:R≥2:1), 8=Strong(R:R≥2.5), "
+        SCORING_SCALE[:60] + " ... "
         f"9=Excellent(R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
         f"{level_str}{dis_part}\n"
         f"For setups scoring >= {min_score}, use this structure:\n"

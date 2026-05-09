@@ -11,6 +11,7 @@ New vs v2.2:
 
 import json
 import os
+from prompt_fragments import LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES
 from constants import ANTHROPIC_API_KEY, MODEL, FAST_MODEL
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -202,19 +203,9 @@ Respond with ONLY a valid JSON object (no markdown, no code fences):
   "summary": "2-3 sentence honest overall assessment of this call"
 }}
 
-Level proximity definitions (use when scoring setup quality):
-- Entry ≤ 0.5× ATR from structural level → strong anchor, no penalty
-- Entry 0.5–1.0× ATR from structural level → acceptable, note it
-- Entry > 1.0× ATR from nearest level → structural anchor missing → score ≤ 6
-- SL < 1.0× ATR from entry → inside noise → score ≤ 6
-- R:R < 1.5:1 → score ≤ 6; R:R ≥ 2:1 for score 7+; R:R ≥ 3:1 for score 9+
+{LEVEL_PROXIMITY_RULES}
 
-Market context weighting (apply to setup_quality score):
-- Funding rate > 0.05% in trade direction → reduce score by 1 (crowd already on-side, squeeze risk)
-- Funding rate > 0.1% in trade direction → reduce score by 2 (extremely crowded)
-- Funding rate opposite direction → slight tailwind, can note as positive factor
-- Fear & Greed < 20 (Extreme Fear): long bias gets +0.5; short bias gets −0.5
-- Fear & Greed > 80 (Extreme Greed): long bias gets −0.5; short bias gets +0.5
+{MARKET_CONTEXT_RULES}
 
 Rules:
 - Use the pre-calculated position sizing numbers EXACTLY — do not change them
