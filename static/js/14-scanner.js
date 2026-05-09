@@ -197,11 +197,91 @@ function _toggleCriteriaPanel() {
 
 async function loadScanner() {
   _loadScannerWatchlist();
-  const state = await api('/api/scanner/status');
+  const [state] = await Promise.all([
+    api('/api/scanner/status'),
+    _loadNansenPanel(),
+  ]);
   if (!state.ok) return;
   renderScannerPage(state.data);
   if (state.data.status === 'running') _startScanPoller();
   _renderCriteriaPanel();
+}
+
+// ── Nansen Smart Money Panel ──────────────────────────────────────────────────
+
+async function _loadNansenPanel() {
+  const panel = document.getElementById('nansen-panel');
+  if (!panel) return;
+  const res = await api('/api/nansen/movers');
+  if (!res.ok || !res.data.configured) return;
+  const d = res.data;
+  if (!d.accumulators.length && !d.distributors.length) return;
+
+  panel.style.display = 'block';
+
+  const inner = document.createElement('div');
+  inner.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px';
+
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:10px';
+  const title = document.createElement('span');
+  title.style.cssText = 'font-weight:700;font-size:.88rem;color:var(--text)';
+  title.textContent = '🐋 Nansen Smart Money';
+  const sub = document.createElement('span');
+  sub.style.cssText = 'font-size:.72rem;color:var(--muted)';
+  sub.textContent = `${d.total_screened} tokens screened · ${d.eligible} with 5+ wallets · ${d.cached_at}`;
+  hdr.appendChild(title);
+  hdr.appendChild(sub);
+  inner.appendChild(hdr);
+
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:12px';
+
+  // Accumulators
+  const accCol = document.createElement('div');
+  const accTitle = document.createElement('div');
+  accTitle.style.cssText = 'font-size:.72rem;font-weight:700;color:var(--accent3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px';
+  accTitle.textContent = '↑ Accumulating';
+  accCol.appendChild(accTitle);
+  d.accumulators.slice(0, 6).forEach(t => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;font-size:.77rem;padding:2px 0;border-bottom:1px solid var(--border)';
+    const sym = document.createElement('span');
+    sym.style.fontWeight = '600';
+    sym.textContent = t.symbol + ' (' + t.chain.slice(0,3).toUpperCase() + ')';
+    const nf = document.createElement('span');
+    nf.style.color = 'var(--accent3)';
+    nf.textContent = '$' + (t.netflow_usd / 1000).toFixed(0) + 'k · ' + t.nof_traders + ' wallets';
+    row.appendChild(sym);
+    row.appendChild(nf);
+    accCol.appendChild(row);
+  });
+  grid.appendChild(accCol);
+
+  // Distributors
+  const distCol = document.createElement('div');
+  const distTitle = document.createElement('div');
+  distTitle.style.cssText = 'font-size:.72rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px';
+  distTitle.textContent = '↓ Distributing';
+  distCol.appendChild(distTitle);
+  d.distributors.slice(0, 5).forEach(t => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;font-size:.77rem;padding:2px 0;border-bottom:1px solid var(--border)';
+    const sym = document.createElement('span');
+    sym.style.fontWeight = '600';
+    sym.textContent = t.symbol + ' (' + t.chain.slice(0,3).toUpperCase() + ')';
+    const nf = document.createElement('span');
+    nf.style.color = 'var(--red)';
+    nf.textContent = '$' + (Math.abs(t.netflow_usd) / 1000).toFixed(0) + 'k · ' + t.nof_traders + ' wallets';
+    row.appendChild(sym);
+    row.appendChild(nf);
+    distCol.appendChild(row);
+  });
+  grid.appendChild(distCol);
+
+  inner.appendChild(grid);
+  panel.textContent = '';
+  panel.appendChild(inner);
 }
 
 async function startScan(force) {
@@ -574,6 +654,12 @@ function buildDetailPanel(s, i) {
       </div>` : ''}
 
     ${s.confluence_summary ? `<div class="scan-dp-confluence">${s.confluence_summary}</div>` : ''}
+    ${s.nansen ? (() => {
+      const acc = s.nansen.direction === 'accumulating';
+      const cls = acc ? 'nansen-acc' : 'nansen-dist';
+      const nf  = (Math.abs(s.nansen.netflow_usd) / 1000).toFixed(0);
+      return `<div class="nansen-badge ${cls}">🐋 Smart money <strong>${s.nansen.direction}</strong> — netflow $${nf}k · ${s.nansen.nof_traders} wallets (${s.nansen.strength})</div>`;
+    })() : ''}
 
     ${s.summary ? `<div class="scan-dp-summary">${s.summary}</div>` : ''}
 

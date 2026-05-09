@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.7.0">🚀 Release v2.7.0</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.7.1">🚀 Release v2.7.1</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
   &nbsp;·&nbsp;
@@ -264,6 +264,29 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.7.1 — Nansen.ai Smart Money Intelligence
+
+Adds on-chain smart money signals from Nansen.ai to improve trade hit rate.
+
+**How it integrates:**
+- **Scanner finalists** — after the quality gate, one Nansen API call screens all finalist symbols for smart money activity. Results injected into the Claude batch prompt alongside technical data.
+- **Call analyzer** — Nansen signal for the specific token injected via `prompt_builder.py` into every call analysis prompt.
+- **Smart Money panel** — top accumulators + distributors shown on the Scanner page (DOM-built, refreshes when page opens).
+
+**Signal design (Q1:C, Q2:B):**
+- Called only for scanner finalists (1 credit per scan, not per symbol)
+- Signal shown/used only when **5+ smart money wallets** are active (higher confidence)
+- Gracefully silent when data is thin (BTC/ETH on-chain = 1 wallet → no signal)
+- Most powerful for altcoins where smart money moves on DEX before CEX price discovery
+
+**Implementation:**
+- `nansen_client.py` — new module. Fetches full screener once, caches 30 min, all symbol lookups are in-memory
+- Cloudflare bypass: Nansen blocks Python-urllib — uses browser User-Agent + Origin/Referer headers
+- Valid chains: `ethereum`, `solana`, `base` (bsc/arbitrum return 422)
+- `NANSEN_API_KEY` in `.env`
+
+---
 
 ### v2.7.0 — Free Market Data Sources (5 new inputs)
 

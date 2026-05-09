@@ -16,6 +16,7 @@ Priority order (highest signal density first):
 import chart_context
 import ai_rulebook
 import ai_pattern_detector
+import nansen_client
 
 # ~1 400 tokens of context at 4 chars/token — leaves plenty for the main prompt
 MAX_CONTEXT_CHARS = 5_600
@@ -151,7 +152,18 @@ def build_context(
                 sections.append(strengths)
                 remaining -= len(strengths)
 
-    # ── 6. Similar past trades ────────────────────────────────────────────────
+    # ── 6. Nansen smart money signal ─────────────────────────────────────────
+    if symbol and nansen_client.is_configured() and remaining > 100:
+        try:
+            ns = nansen_client.get_smart_money_signal(symbol)
+            if ns.get("ok"):
+                ns_block = f"NANSEN SMART MONEY: {ns['prompt_line']}"
+                sections.append(ns_block)
+                remaining -= len(ns_block)
+        except Exception:
+            pass
+
+    # ── 7. Similar past trades ────────────────────────────────────────────────
     if include_similar and conn is not None and symbol:
         if remaining > 200:
             sim = ai_rulebook.get_similar_trades_for_prompt(

@@ -464,6 +464,11 @@ select:focus,input:focus{border-color:var(--accent)}
   border-radius:3px;transition:width .4s ease}
 .prog-detail{font-size:.78rem;color:var(--accent2);text-align:center;margin-top:4px}
 
+/* ── Nansen smart money badges ──────────────────────────────────────────── */
+.nansen-badge{padding:6px 10px;border-radius:6px;font-size:.78rem;margin-bottom:8px;line-height:1.4}
+.nansen-acc{background:rgba(38,217,107,.08);border:1px solid rgba(38,217,107,.25);color:var(--accent3)}
+.nansen-dist{background:rgba(239,83,80,.08);border:1px solid rgba(239,83,80,.25);color:var(--red)}
+
 /* ── Call Analyzer Legend ────────────────────────────────────────────────── */
 .legend-section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;
   letter-spacing:.08em;color:var(--accent);margin-bottom:5px;padding-bottom:3px;

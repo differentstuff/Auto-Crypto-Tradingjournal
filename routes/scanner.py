@@ -12,6 +12,7 @@ from flask import Blueprint, request
 from helpers import _ok, _err
 from database import db_conn
 import ai_scanner
+import nansen_client
 
 bp = Blueprint("scanner", __name__)
 
@@ -42,6 +43,38 @@ def api_scanner_run():
         if not started and state["status"] == "completed":
             return _ok({"message": "Returning cached results (< 30 min old). Use force=1 to rescan.", **state})
         return _ok({"message": "Scan started", **state})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/nansen/movers")
+def api_nansen_movers():
+    """
+    GET /api/nansen/movers
+    Returns top smart money accumulators and distributors from Nansen screener.
+    Cached for 30 minutes — no extra API credit used if scanner already ran.
+    """
+    try:
+        if not nansen_client.is_configured():
+            return _ok({"configured": False, "accumulators": [], "distributors": []})
+        data = nansen_client.get_top_movers()
+        return _ok({**data, "configured": True})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/nansen/signal/<symbol>")
+def api_nansen_signal(symbol):
+    """
+    GET /api/nansen/signal/BTCUSDT
+    Returns smart money signal for a single symbol.
+    """
+    try:
+        if not nansen_client.is_configured():
+            return _ok({"configured": False, "ok": False})
+        return _ok({**nansen_client.get_smart_money_signal(symbol), "configured": True})
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)

@@ -32,6 +32,7 @@ from helpers import strip_fence, build_cached_messages, log_token_usage
 import chart_context
 import market_context
 import ai_rulebook
+import nansen_client
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL      = "claude-sonnet-4-6"          # full detail pass
@@ -493,7 +494,8 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str,
         return None
 
 
-def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE, criteria=None):
+def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE, criteria=None,
+                        nansen_signals=None):
     """Build a single prompt for all top-N symbols. Returns (system_prefix, user_prompt)."""
     parts = []
     for i, (symbol, ctx, conf, direction, score, _reason) in enumerate(finalists, 1):
@@ -510,12 +512,15 @@ def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE, criteria=None
         ) or "none"
         hist = histories.get(symbol, {"trades": 0})
         conf_line = f"{conf['label']} ({conf['bullish']}↑/{conf['bearish']}↓)"
+        # Nansen smart money line (only when 5+ traders — already filtered in client)
+        ns      = (nansen_signals or {}).get(symbol, {})
+        ns_line = f"\n{ns['prompt_line']}" if ns.get("ok") else ""
         parts.append(
             f"--- SETUP {i}: {symbol} ({direction.upper()}) ---\n"
             f"{pt_4h}\n{pt_1d}\n"
             f"Confluence: {conf_line}  |  Price: {price:.6g}  |  ATR: {atr_val:.4g}\n"
             f"S/R: {sr_text}\n"
-            f"History: {json.dumps(hist)}"
+            f"History: {json.dumps(hist)}{ns_line}"
         )
 
     cr = criteria or CRITERIA_DEFAULTS
@@ -551,7 +556,7 @@ def _build_batch_prompt(finalists, histories, min_score=MIN_SCORE, criteria=None
 
 
 def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
-                    min_score=MIN_SCORE, criteria=None):
+                    min_score=MIN_SCORE, criteria=None, nansen_signals=None):
     """
     Single Claude (Sonnet) call for all top-N finalists.
     Falls back to individual calls if the batch response is malformed or incomplete.
@@ -560,7 +565,8 @@ def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
         return []
     cr = criteria or CRITERIA_DEFAULTS
     shared = _build_shared_prefix(mkt_str, rulebook_str, min_score, criteria=cr)
-    user_prompt = _build_batch_prompt(finalists, histories, min_score, criteria=cr)
+    user_prompt = _build_batch_prompt(finalists, histories, min_score, criteria=cr,
+                                      nansen_signals=nansen_signals)
     try:
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
@@ -686,6 +692,18 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE, criteria: dict = Non
             rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
             histories = {s: _symbol_history(s, conn) for s, _, _, _ in finalists}
 
+        # Nansen smart money signals — one API call for all finalists combined
+        nansen_signals = {}
+        if nansen_client.is_configured():
+            _update(stage_detail="Fetching Nansen smart money signals…")
+            try:
+                finalist_syms  = [s for s, _, _, _ in finalists]
+                nansen_signals = nansen_client.get_signals_for_symbols(finalist_syms)
+                active = sum(1 for v in nansen_signals.values() if v.get("ok"))
+                print(f"[Nansen] {active}/{len(finalist_syms)} finalists have smart money signal", flush=True)
+            except Exception as e:
+                print(f"[Nansen] Signal fetch failed: {e}", flush=True)
+
         # Stage 3a — Quick score all finalists with Haiku (cheap pre-filter pass)
         _update(
             stage=3, stage_label="Stage 3a — Haiku quick-score",
@@ -724,7 +742,7 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE, criteria: dict = Non
             stage_progress= 0,
         )
         setups = _batch_ai_score(top_finalists, mkt_str, histories, rulebook_str,
-                                  min_score, criteria=cr)
+                                  min_score, criteria=cr, nansen_signals=nansen_signals)
         _update(stage_progress=100)
 
         # Add non-top-N setups with Haiku score + one-sentence rationale
@@ -741,6 +759,19 @@ def _scan_thread(symbols: list, min_score: int = MIN_SCORE, criteria: dict = Non
                 "confluence":        conf.get("label", ""),
                 "current_price":     price,
             })
+
+        # Attach Nansen smart money signal to each setup
+        for setup in setups:
+            sym = setup.get("_symbol") or setup.get("symbol", "")
+            ns  = nansen_signals.get(sym, {})
+            if ns.get("ok"):
+                setup["nansen"] = {
+                    "direction":   ns["direction"],
+                    "strength":    ns["strength"],
+                    "netflow_usd": ns["netflow_usd"],
+                    "nof_traders": ns["nof_traders"],
+                    "chain":       ns.get("chain", ""),
+                }
 
         setups.sort(key=lambda x: -x.get("setup_score", 0))
         _update(
