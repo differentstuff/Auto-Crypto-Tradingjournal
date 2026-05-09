@@ -32,14 +32,14 @@ function renderAI(d) {
       <div class="ai-score-num" style="color:${scoreColor}">${d.score?.value ?? '—'}/10</div>
       <div class="ai-score-label">${d.score?.label ?? ''} Trader</div>
     </div>
-    <div class="ai-overall">${d.overall_status || ''}</div>`;
+    <div class="ai-overall" style="line-height:1.6">${mdToHtml(d.overall_status || '')}</div>`;
 
   if (d.strengths?.length) {
     html += `<div class="ai-section"><h3>💪 Strengths</h3>` +
       d.strengths.map(s => `
         <div class="ai-item">
-          <div class="ai-item-title">${s.title}</div>
-          <div class="ai-item-detail">${s.detail}</div>
+          <div class="ai-item-title">${mdToHtml(s.title)}</div>
+          <div class="ai-item-detail" style="line-height:1.6">${mdToHtml(s.detail)}</div>
         </div>`).join('') + `</div>`;
   }
 
@@ -47,8 +47,8 @@ function renderAI(d) {
     html += `<div class="ai-section"><h3>⚠️ Areas to Improve</h3>` +
       d.weaknesses.map(w => `
         <div class="ai-item">
-          <div class="ai-item-title">${w.title}</div>
-          <div class="ai-item-detail">${w.detail}</div>
+          <div class="ai-item-title">${mdToHtml(w.title)}</div>
+          <div class="ai-item-detail" style="line-height:1.6">${mdToHtml(w.detail)}</div>
         </div>`).join('') + `</div>`;
   }
 
@@ -60,8 +60,8 @@ function renderAI(d) {
             <span class="priority-${r.priority?.toLowerCase()}">${r.priority}</span>
             <span class="ai-item-title">${r.title}</span>
           </div>
-          <div class="ai-item-detail"><strong>Action:</strong> ${r.action}</div>
-          <div class="ai-item-detail"><strong>Expected:</strong> ${r.expected_impact}</div>
+          <div class="ai-item-detail" style="line-height:1.6"><strong>Action:</strong> ${mdToHtml(r.action)}</div>
+          <div class="ai-item-detail" style="line-height:1.6"><strong>Expected:</strong> ${mdToHtml(r.expected_impact)}</div>
         </div>`).join('') + `</div>`;
   }
 
@@ -70,19 +70,19 @@ function renderAI(d) {
       d.symbol_insights.map(s => `
         <div class="ai-item">
           <div class="ai-item-title">${s.symbol}</div>
-          <div class="ai-item-detail">${s.insight}</div>
+          <div class="ai-item-detail" style="line-height:1.6">${mdToHtml(s.insight)}</div>
         </div>`).join('') + `</div>`;
   }
 
   if (d.risk_management) {
     html += `<div class="ai-section"><h3>🛡 Risk Management</h3>
-      <div class="ai-item-detail" style="line-height:1.7">${d.risk_management}</div></div>`;
+      <div class="ai-item-detail" style="line-height:1.6">${mdToHtml(d.risk_management)}</div></div>`;
   }
 
   if (d.mindset_note) {
     html += `<div class="ai-section" style="border-color:var(--accent);background:rgba(108,99,255,.05)">
       <h3>🧠 Mindset</h3>
-      <div class="ai-item-detail" style="line-height:1.7">${d.mindset_note}</div></div>`;
+      <div class="ai-item-detail" style="line-height:1.6">${mdToHtml(d.mindset_note)}</div></div>`;
   }
 
   document.getElementById('ai-results').innerHTML = html;

@@ -330,3 +330,56 @@ function makeChart(id, type, data, extraOpts={}) {
     options: Object.assign({}, chartDefaults, extraOpts) });
 }
 
+// Lightweight markdown → HTML for AI text fields.
+// Escapes HTML first, then applies inline formatting and list detection.
+function mdToHtml(text) {
+  if (!text) return '';
+
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function fmt(s) {
+    return esc(s)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*\n]+?)\*/g, '<em>$1</em>')
+      .replace(/`([^`\n]+)`/g, '<code style="background:var(--border);padding:1px 4px;border-radius:3px;font-family:monospace;font-size:.85em">$1</code>');
+  }
+
+  const lines = text.split('\n');
+  const parts = [];
+  let inUl = false, inOl = false, prevBlank = false;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    const blank = line === '';
+    const ulM   = !blank && line.match(/^[-*•] (.+)/);
+    const olM   = !blank && line.match(/^\d+[.)]\s+(.+)/);
+
+    if (ulM) {
+      if (inOl) { parts.push('</ol>'); inOl = false; }
+      if (!inUl) { parts.push('<ul style="margin:4px 0 4px 18px;padding:0;list-style:disc">'); inUl = true; }
+      parts.push(`<li style="margin-bottom:2px">${fmt(ulM[1])}</li>`);
+      prevBlank = false;
+    } else if (olM) {
+      if (inUl) { parts.push('</ul>'); inUl = false; }
+      if (!inOl) { parts.push('<ol style="margin:4px 0 4px 18px;padding:0">'); inOl = true; }
+      parts.push(`<li style="margin-bottom:2px">${fmt(olM[1])}</li>`);
+      prevBlank = false;
+    } else if (blank) {
+      if (inUl) { parts.push('</ul>'); inUl = false; }
+      if (inOl) { parts.push('</ol>'); inOl = false; }
+      if (!prevBlank) parts.push('<br>');
+      prevBlank = true;
+    } else {
+      if (inUl) { parts.push('</ul>'); inUl = false; }
+      if (inOl) { parts.push('</ol>'); inOl = false; }
+      if (parts.length && !prevBlank) parts.push('<br>');
+      parts.push(fmt(line));
+      prevBlank = false;
+    }
+  }
+  if (inUl) parts.push('</ul>');
+  if (inOl) parts.push('</ol>');
+  while (parts.length && parts[0] === '<br>') parts.shift();
+  while (parts.length && parts[parts.length-1] === '<br>') parts.pop();
+  return parts.join('');
+}
+

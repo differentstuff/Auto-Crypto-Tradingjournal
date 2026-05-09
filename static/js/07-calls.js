@@ -168,13 +168,13 @@ function renderCallResult(d) {
   if (d.pattern_flags?.length) {
     html += `<div class="pattern-flag-box">
       <div class="pf-title">⚠ Personal Pattern Warnings</div>
-      ${d.pattern_flags.map(f => `<div style="margin-bottom:4px;color:var(--text)">• ${f}</div>`).join('')}
+      ${d.pattern_flags.map(f => `<div style="margin-bottom:4px;color:var(--text)">• ${mdToHtml(f)}</div>`).join('')}
     </div>`;
   }
 
   // Chart analysis (if available)
   if (d.chart_analysis) {
-    html += `<div class="ai-overall" style="margin-bottom:16px">${d.chart_analysis}</div>`;
+    html += `<div class="ai-overall" style="margin-bottom:16px;line-height:1.6">${mdToHtml(d.chart_analysis)}</div>`;
   }
 
   // Position sizing grid
@@ -286,37 +286,50 @@ function renderCallResult(d) {
 
   // Candle-close SL warning
   if (d.has_candle_close_sl && d.sl_warning) {
-    html += `<div class="warn-box"><strong>⚠ Candle-Close Stop Loss</strong>${d.sl_warning}</div>`;
+    html += `<div class="warn-box"><strong>⚠ Candle-Close Stop Loss</strong><div style="margin-top:4px">${mdToHtml(d.sl_warning)}</div></div>`;
   }
 
   // Entry timing
   if (d.entry_timing) {
     html += `<div style="margin:12px 0;font-size:.83rem">
       <span style="color:var(--muted);text-transform:uppercase;font-size:.72rem;font-weight:700">Entry Timing</span><br>
-      <span style="margin-top:4px;display:block">${d.entry_timing}</span>
+      <span style="margin-top:4px;display:block;line-height:1.6">${mdToHtml(d.entry_timing)}</span>
     </div>`;
   }
 
   // Summary
   if (d.summary) {
-    html += `<div class="ai-overall" style="margin:14px 0">${d.summary}</div>`;
+    html += `<div class="ai-overall" style="margin:14px 0;line-height:1.6">${mdToHtml(d.summary)}</div>`;
   }
 
   // Optimizations
   if (d.optimizations?.length) {
     html += `<div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:14px 0 6px">Optimizations</div>
-    <ul class="call-list">${d.optimizations.map(o => `<li><span>💡</span>${o}</li>`).join('')}</ul>`;
+    <ul class="call-list">${d.optimizations.map(o => `<li><span>💡</span>${mdToHtml(o)}</li>`).join('')}</ul>`;
   }
 
   // Risks
   if (d.risks?.length) {
     html += `<div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin:14px 0 6px">Risks</div>
-    <ul class="call-list">${d.risks.map(r => `<li><span>⚠</span>${r}</li>`).join('')}</ul>`;
+    <ul class="call-list">${d.risks.map(r => `<li><span>⚠</span>${mdToHtml(r)}</li>`).join('')}</ul>`;
   }
 
   // Historical context
   if (d.historical_context) {
-    html += `<div class="call-history-note">📊 ${d.historical_context}</div>`;
+    html += `<div class="call-history-note">📊 ${mdToHtml(d.historical_context)}</div>`;
+  }
+
+  // Chain-of-thought reasoning (collapsible)
+  if (d.cot_reasoning || d.thinking) {
+    const cot = d.cot_reasoning || d.thinking;
+    html += `<details style="margin-top:14px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      <summary style="padding:8px 12px;cursor:pointer;font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
+        <span>▶</span> 🧠 Claude's Reasoning
+      </summary>
+      <div style="padding:10px 14px;font-size:.8rem;line-height:1.65;color:var(--text);border-top:1px solid var(--border);background:rgba(108,99,255,.03)">
+        ${mdToHtml(cot)}
+      </div>
+    </details>`;
   }
 
   // Token usage

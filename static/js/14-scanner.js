@@ -613,7 +613,7 @@ function buildDetailPanel(s, i) {
     return `<div class="scan-dp-level">
       <div class="scan-dp-lbl" style="color:${color}">${title}</div>
       <div class="scan-dp-price" style="color:${color}">${fmtSP(price)}</div>
-      <div class="scan-dp-rat">${rationale||''}</div>
+      <div class="scan-dp-rat">${mdToHtml(rationale||'')}</div>
     </div>`;
   }
 
@@ -650,10 +650,10 @@ function buildDetailPanel(s, i) {
     ${s.why_this_score ? `
       <div class="scan-dp-score-reason">
         <span style="font-size:.7rem;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:.04em">Why ${s.setup_score}/10</span>
-        <div style="margin-top:4px;font-size:.8rem;color:var(--text);line-height:1.55">${s.why_this_score}</div>
+        <div style="margin-top:4px;font-size:.8rem;color:var(--text);line-height:1.55">${mdToHtml(s.why_this_score)}</div>
       </div>` : ''}
 
-    ${s.confluence_summary ? `<div class="scan-dp-confluence">${s.confluence_summary}</div>` : ''}
+    ${s.confluence_summary ? `<div class="scan-dp-confluence">${mdToHtml(s.confluence_summary)}</div>` : ''}
     ${s.nansen ? (() => {
       const acc = s.nansen.direction === 'accumulating';
       const cls = acc ? 'nansen-acc' : 'nansen-dist';
@@ -661,13 +661,13 @@ function buildDetailPanel(s, i) {
       return `<div class="nansen-badge ${cls}">🐋 Smart money <strong>${s.nansen.direction}</strong> — netflow $${nf}k · ${s.nansen.nof_traders} wallets (${s.nansen.strength})</div>`;
     })() : ''}
 
-    ${s.summary ? `<div class="scan-dp-summary">${s.summary}</div>` : ''}
+    ${s.summary ? `<div class="scan-dp-summary" style="line-height:1.6">${mdToHtml(s.summary)}</div>` : ''}
 
     <div class="scan-dp-levels">
       <div class="scan-dp-level">
         <div class="scan-dp-lbl" style="color:${entryColor}">ENTRY ZONE</div>
         <div class="scan-dp-price" style="color:${entryColor}">${entText}</div>
-        <div class="scan-dp-rat">${ent.rationale||''}</div>
+        <div class="scan-dp-rat">${mdToHtml(ent.rationale||'')}</div>
       </div>
       ${lvl('STOP LOSS', s.sl_price, s.sl_rationale, 'var(--red)')}
       ${lvl('TAKE PROFIT 1', s.tp1_price, s.tp1_rationale, 'var(--accent3)')}
