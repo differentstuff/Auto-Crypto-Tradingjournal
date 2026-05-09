@@ -61,11 +61,10 @@ def api_limits_bulk_update():
         return _err("ids list is required")
 
     editable = ["status", "sl_price", "tp1_price", "tp2_price", "call_id", "analyst", "notes"]
-    sets, vals = [], []
-    for key in editable:
-        if key in d:
-            sets.append(f"{key} = ?")
-            vals.append(d[key])
+    # Pre-built fragments — column names are hardcoded, never from request data.
+    _set_sql = {k: k + " = ?" for k in editable}
+    sets = [_set_sql[k] for k in editable if k in d]
+    vals = [d[k]         for k in editable if k in d]
     if d.get("status") == "triggered":
         sets.append("triggered_at = datetime('now')")
     if not sets:
@@ -74,7 +73,7 @@ def api_limits_bulk_update():
     placeholders = ",".join(["?"] * len(ids))
     with db_conn() as conn:
         conn.execute(
-            f"UPDATE pending_limits SET {', '.join(sets)} WHERE id IN ({placeholders})",
+            "UPDATE pending_limits SET " + ", ".join(sets) + " WHERE id IN (" + placeholders + ")",
             vals + ids,
         )
         conn.commit()
@@ -104,18 +103,17 @@ def api_limits_update(lim_id):
     editable = ["status", "limit_price", "size_usdt", "leverage", "sl_price",
                 "tp1_price", "tp2_price", "analyst", "notes", "analysis_json",
                 "call_id", "bitget_order_id"]
-    sets, vals = [], []
-    for key in editable:
-        if key in d:
-            sets.append(f"{key} = ?")
-            vals.append(d[key])
+    # Pre-built fragments — column names are hardcoded, never from request data.
+    _set_sql = {k: k + " = ?" for k in editable}
+    sets = [_set_sql[k] for k in editable if k in d]
+    vals = [d[k]         for k in editable if k in d]
     if d.get("status") == "triggered":
         sets.append("triggered_at = datetime('now')")
     if not sets:
         return _err("No updatable fields")
     vals.append(lim_id)
     with db_conn() as conn:
-        conn.execute(f"UPDATE pending_limits SET {', '.join(sets)} WHERE id = ?", vals)
+        conn.execute("UPDATE pending_limits SET " + ", ".join(sets) + " WHERE id = ?", vals)
         conn.commit()
     return _ok({"updated": lim_id})
 

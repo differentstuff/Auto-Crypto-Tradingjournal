@@ -185,16 +185,15 @@ def api_calls_close(call_id):
 def api_calls_patch(call_id):
     d        = request.get_json(force=True)
     editable = ["analyst", "notes"]
-    sets, vals = [], []
-    for key in editable:
-        if key in d:
-            sets.append(f"{key} = ?")
-            vals.append(d[key])
+    # Pre-built fragments — column names are hardcoded, never from request data.
+    _set_sql = {k: k + " = ?" for k in editable}
+    sets = [_set_sql[k] for k in editable if k in d]
+    vals = [d[k]         for k in editable if k in d]
     if not sets:
         return _err("No updatable fields")
     vals.append(call_id)
     with db_conn() as conn:
-        conn.execute(f"UPDATE analyzed_calls SET {', '.join(sets)} WHERE id = ?", vals)
+        conn.execute("UPDATE analyzed_calls SET " + ", ".join(sets) + " WHERE id = ?", vals)
         conn.commit()
     return _ok({"updated": call_id})
 

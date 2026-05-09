@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget and Blofin API syn
 </p>
 
 <p align="center">
-  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.6.1">🚀 Release v2.6.1</a>
+  <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/tag/v2.6.1.1">🚀 Release v2.6.1.1</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet (PDF)</a>
   &nbsp;·&nbsp;
@@ -264,6 +264,21 @@ trading-journal.service systemd unit file
 ---
 
 ## Changelog
+
+### v2.6.1.1 — Security: CodeQL SQL injection false-positive fixes
+
+**GitHub CodeQL** flagged the dynamic UPDATE pattern in 3 route files as potential SQL injection. The code was safe (column names always came from a hardcoded `editable` whitelist), but CodeQL's static taint analysis couldn't verify this because the SQL fragments were built inside a loop that also reads request data.
+
+**Fix:** Pre-build a `{col: "col = ?"}` dict from the whitelist before the loop. SQL fragments now provably come from hardcoded strings, making the data-flow path clear to static analysis.
+
+Files fixed:
+- `routes/journal.py` — `api_position_update` UPDATE positions
+- `routes/calls.py` — `api_calls_patch` UPDATE analyzed_calls
+- `routes/limits.py` — `api_limits_bulk_update` + `api_limits_update` UPDATE pending_limits
+
+No behaviour change — functionally identical, same whitelist enforcement.
+
+---
 
 ### v2.6.1 — Bug Fixes (code review pass)
 
