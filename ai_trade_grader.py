@@ -12,10 +12,10 @@ comparison for richer grading. Works on standalone trades too.
 """
 
 import json
-import traceback
 
 import anthropic
 from database import get_conn
+from helpers import log_token_usage
 import market_context
 
 
@@ -139,10 +139,13 @@ def _ask_claude(pos: dict, call: dict | None, fg: dict | None = None) -> dict:
 
     client = anthropic.Anthropic()
     resp   = client.messages.create(
-        model      = "claude-sonnet-4-6",
+        model      = MODEL,
         max_tokens = 350,
         messages   = [{"role": "user", "content": prompt}],
     )
+    cached = getattr(resp.usage, "cache_read_input_tokens", 0) or 0
+    log_token_usage("trade_grader", MODEL,
+                    resp.usage.input_tokens, resp.usage.output_tokens, cached)
     raw = resp.content[0].text.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]

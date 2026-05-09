@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import anthropic
 
 from database import db_conn
-from helpers import strip_fence
+from helpers import strip_fence, log_token_usage
 import market_context
 import prompt_builder
 import trade_utils
@@ -147,6 +147,9 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
         model=MODEL, max_tokens=768,
         messages=[{"role": "user", "content": prompt}]
     )
+    cached = getattr(message.usage, "cache_read_input_tokens", 0) or 0
+    log_token_usage("limit_analyzer", MODEL,
+                    message.usage.input_tokens, message.usage.output_tokens, cached)
 
     raw = strip_fence(message.content[0].text.strip())
 
