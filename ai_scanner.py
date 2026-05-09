@@ -522,12 +522,12 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
     level_str = ". ".join(level_rules) + "." if level_rules else ""
 
     setups_text = "\n\n".join(parts)
+    scoring_hint = SCORING_SCALE[:60] + " ... 9=Excellent(R:R≥3:1), 10=Perfect(R:R≥4:1)"
     user_prompt = (
         f"Analyze these {len(finalists)} crypto futures setups. "
         f"Return a JSON ARRAY of exactly {len(finalists)} objects — one per setup, in the same order.\n\n"
         f"{setups_text}\n\n"
-        SCORING_SCALE[:60] + " ... "
-        f"9=Excellent(R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
+        f"{scoring_hint}\n"
         f"{level_str}{dis_part}\n"
         f"For setups scoring >= {min_score}, use this structure:\n"
         '{"symbol":"X","direction":"Long","setup_score":7,"setup_label":"Good",'
