@@ -177,12 +177,12 @@ def api_calls_confirm_match(call_id):
 
 @bp.route("/api/calls/linkable")
 def api_calls_linkable():
-    """Return all saved/matched calls that can be manually linked to a position."""
+    """Return calls that can be manually linked to a position (saved, matched, or closed)."""
     with db_conn() as conn:
         rows = [dict(r) for r in conn.execute("""
             SELECT id, symbol, direction, trade_type, setup_score, setup_label,
                    rr_ratio, sl_price, tp1_price, tp2_price, entry_price, status, created_at
-            FROM analyzed_calls WHERE status IN ('saved','matched')
+            FROM analyzed_calls WHERE status IN ('saved','matched','closed')
             ORDER BY created_at DESC LIMIT 50
         """).fetchall()]
     return _ok(rows)

@@ -70,6 +70,7 @@ function renderCallTargetsPanel(call, pos) {
     (pos.direction === 'Long'  && mark >= tp1p) ||
     (pos.direction === 'Short' && mark <= tp1p)
   );
+  const callKey = call.symbol + '_' + call.direction;
 
   function distRow(label, price, cls) {
     if (!price) return '';
@@ -91,6 +92,16 @@ function renderCallTargetsPanel(call, pos) {
 
   return `
     <div class="call-targets-panel">
+      ${call.status === 'closed' ? `
+      <div style="font-size:.75rem;padding:6px 10px 6px 12px;margin-bottom:10px;
+                  background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.25);
+                  border-radius:6px;color:var(--yellow);display:flex;align-items:center;gap:10px">
+        <span>⟳ Previously linked — position may have reopened</span>
+        <button class="btn btn-secondary btn-sm" style="flex-shrink:0"
+                onclick="confirmMatch(${call.id},'${callKey}',${pos.id||'null'},'${pos.exchange||'bitget'}')">
+          Re-activate
+        </button>
+      </div>` : ''}
       <h4>📡 Linked Call — ${call.trade_type || ''} · ${call.setup_score || '?'}/10 ${call.setup_label || ''} · R:R ${call.rr_ratio || '—'}</h4>
       <div class="targets-grid">
         ${call.tp1_price ? distRow('Take Profit 1', call.tp1_price, 'target-tp') : ''}
@@ -119,6 +130,19 @@ function renderCallTargetsPanel(call, pos) {
     </div>`;
 }
 
+// ── Navigate to call analyzer with a symbol pre-filled ───────────────────────
+
+function prefillCallAnalyzer(symbol, direction) {
+  showPage('calls');
+  const el = document.getElementById('call-text');
+  if (el && !el.value.trim()) {
+    const dir = direction || 'Long';
+    el.value = `${dir.toUpperCase()} ${symbol} — paste the analyst's call text here`;
+    el.focus();
+    el.select();
+  }
+}
+
 // ── Manual call linking ───────────────────────────────────────────────────────
 
 function _normSym(s) { return (s || '').toUpperCase().replace(/[/\-_ ]/g, ''); }
@@ -130,7 +154,7 @@ async function openLinkCallModal(symbol, direction, posId, exchange) {
     if (!res || !res.ok) { notify('Could not load saved calls', 'err'); return; }
     const calls = res.data || [];
     if (!calls.length) {
-      notify('No saved calls found. Run a call analysis first, then save it.', 'err');
+      notify('No saved calls found. Paste an analyst call in the Call Analyzer tab to create one.', 'err');
       return;
     }
 
@@ -159,6 +183,37 @@ async function openLinkCallModal(symbol, direction, posId, exchange) {
   hint.textContent = 'Calls matching this symbol/direction are highlighted. Click any row to link it.';
 
   box.appendChild(hdr);
+
+  // When there's no analyzed call for this symbol at all, show a prompt to create one.
+  // This covers Telegram calls or any trade opened without running the call analyzer first.
+  const hasSymCall = calls.some(c => _normSym(c.symbol) === _normSym(symbol));
+  if (!hasSymCall) {
+    const noCallBanner = document.createElement('div');
+    noCallBanner.style.cssText = [
+      'padding:10px 12px;margin-bottom:12px',
+      'background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.25)',
+      'border-radius:6px;font-size:.8rem;color:var(--yellow)',
+      'display:flex;align-items:center;gap:10px;flex-wrap:wrap',
+    ].join(';');
+    const noCallText = document.createElement('span');
+    noCallText.textContent = 'No call analyzed for ' + symbol + ' yet (e.g. from Telegram).';
+    const analyzeBtn = document.createElement('button');
+    analyzeBtn.style.cssText = [
+      'flex-shrink:0;padding:4px 10px',
+      'border:1px solid rgba(255,179,0,.4)',
+      'background:rgba(255,179,0,.15);color:var(--yellow)',
+      'border-radius:4px;cursor:pointer;font-size:.75rem',
+    ].join(';');
+    analyzeBtn.textContent = '📝 Analyze First';
+    analyzeBtn.onclick = () => {
+      overlay.remove();
+      prefillCallAnalyzer(symbol, direction);
+    };
+    noCallBanner.appendChild(noCallText);
+    noCallBanner.appendChild(analyzeBtn);
+    box.appendChild(noCallBanner);
+  }
+
   box.appendChild(hint);
 
   calls.forEach(c => {

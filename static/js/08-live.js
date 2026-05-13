@@ -7,8 +7,9 @@ let livePositionsCache  = [];
 let liveWaitingLimits   = [];   // cached so confirm-match can re-render without losing badges
 let liveAnalysisCache   = {};   // key: "SYMBOL_direction" → analysis result dict
 let liveOpenPanels      = new Set();  // indices of cards with open AI panels
-let liveCallMatches     = {};   // key: "SYMBOL_direction" → saved call data
+let liveCallMatches     = {};   // key: "SYMBOL_direction" → saved call data (matched or closed)
 let liveMarketCtx       = {};   // key: symbol → {funding, long_short}
+let liveSymbolHasCalls  = new Set(); // symbols with ANY call (including closed/dismissed)
 
 async function loadLiveTrades() {
   document.getElementById('trades-refresh-label').textContent = 'Refreshing…';
@@ -68,12 +69,24 @@ async function loadLiveTrades() {
         else                             pendingMatches[key]   = m.call;
       });
     }
-    // Also fetch already-confirmed matches (status=matched)
+    // Fetch all calls to build match map and symbol-coverage index
     const savedRes = await api('/api/calls/saved');
+    liveSymbolHasCalls.clear();
     if (savedRes.ok) {
-      savedRes.data.filter(c => c.status === 'matched').forEach(c => {
-        confirmedMatches[c.symbol + '_' + c.direction] = c;
-      });
+      // Track every symbol that has any call (for smarter "Link" vs "Analyze" button)
+      savedRes.data.forEach(c => { if (c.symbol) liveSymbolHasCalls.add(c.symbol.toUpperCase()); });
+
+      // Include matched AND closed calls in the targets panel.
+      // Closed = previously linked position that closed; may have reopened.
+      // matched beats closed for the same key so a fresh link always wins.
+      savedRes.data
+        .filter(c => c.status === 'matched' || c.status === 'closed')
+        .forEach(c => {
+          const key = c.symbol + '_' + c.direction;
+          if (!confirmedMatches[key] || c.status === 'matched') {
+            confirmedMatches[key] = c;
+          }
+        });
     }
 
     liveCallMatches = { ...confirmedMatches };
@@ -251,8 +264,12 @@ function renderPositionCards(positions, waitingLimits) {
                   onclick="event.stopPropagation();analyzePosition(${i})">
             ${hadAnalysis ? '🔄 Re-analyze' : '🤖 AI Analysis'}
           </button>
-          ${!liveCallMatches[key] ? `<button class="btn-chart-sm" style="background:rgba(108,99,255,.12);color:var(--accent);border:1px solid rgba(108,99,255,.3)"
-                  onclick="event.stopPropagation();openLinkCallModal('${p.symbol}','${p.direction}',${p.id||'null'},'${p.exchange||'bitget'}')">🔗 Link Call</button>` : ''}
+          ${!liveCallMatches[key] ? (liveSymbolHasCalls.has(p.symbol.toUpperCase())
+              ? `<button class="btn-chart-sm" style="background:rgba(108,99,255,.12);color:var(--accent);border:1px solid rgba(108,99,255,.3)"
+                    onclick="event.stopPropagation();openLinkCallModal('${p.symbol}','${p.direction}',${p.id||'null'},'${p.exchange||'bitget'}')">🔗 Link Call</button>`
+              : `<button class="btn-chart-sm" style="background:rgba(255,179,0,.12);color:var(--yellow);border:1px solid rgba(255,179,0,.3)"
+                    onclick="event.stopPropagation();prefillCallAnalyzer('${p.symbol}','${p.direction}')">📝 Analyze First</button>`)
+            : ''}
         </div>
       </div>
       <!-- Expandable detail row -->
