@@ -9,7 +9,7 @@
 We are continuing work on a self-hosted crypto futures trading journal.
 
 **Project:** `/Users/fbauer/Documents/ClaudeAIData/Trading-Journal/`
-**Version:** v1.1.0 (commit `6e70a9d`, deployed to Pi at 192.168.1.21:8082)
+**Version:** v1.1.0 (commit `7ba827d`, deployed to Pi at 192.168.1.21:8082)
 **Stack:** Python 3.13 / Flask 3.1 / SQLite WAL / Raspberry Pi 5
 **GitHub:** https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal
 
@@ -17,7 +17,7 @@ We are continuing work on a self-hosted crypto futures trading journal.
 
 ## What is built (v1.1.0 complete)
 
-### 7-Agent Pipeline (NEW in v1.1.0)
+### 7-Agent Pipeline
 
 All TypedDicts live in `agent_types.py`. Agents communicate via typed return values only.
 
@@ -28,7 +28,7 @@ DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewe
                                              TradeMonitor (background, every 10 min)
 ```
 
-**New files:**
+**New files (v1.1.0):**
 - `agent_types.py` — all TypedDict contracts
 - `agent_data_collector.py` — parallel fetch (OHLCV, funding, OI, F&G, FRED, Nansen, Grok)
 - `agent_data_interpreter.py` — pure indicator transforms
@@ -42,14 +42,16 @@ DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewe
 
 **Modified files (same external API):**
 - `agent_orchestrator.py` — gained `run_call_analysis()`, `run_scanner_prep()`, `run_monitor()`
-- `ai_call.py` — delegates to `run_call_analysis()`
+- `ai_call.py` — delegates to `run_call_analysis()`; explicitly maps symbol, direction, tp1_price
 - `ai_scanner.py` — Stage 3b calls `run_scanner_prep()` per finalist
 - `ai_live_trade.py` — delegates to `run_monitor()`
 - `telegram_notify.py` — gained `send_photo()` + chart attachment to scanner alerts
+- `static/js/01-utils.js` — `api()` handles non-JSON server responses (no more cryptic Safari errors)
+- `static/js/07-calls.js` — `saveCurrentCall()` strips `chart_png_b64` before POST
 
 **DB migrations 29-31:** `analyzed_calls` has `risk_verdict_json`, `monitor_alert`, `chart_png_b64`
 
-### Consensus Logic (from v1.0.1)
+### Consensus Logic
 ```
 |Claude - Gemini| ≤ 1 → ✓ Confirmed
 |Claude - Gemini| ≤ 2 → ~ Aligned
@@ -57,7 +59,7 @@ DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewe
 |Claude - Gemini| > 3 → ⚡ REVIEW (skip trade)
 ```
 
-### Prompt Caching (from v1.0.1)
+### Prompt Caching
 - `build_stable_prefix()` → rulebook + calibration → `cache_control: ephemeral`
 - `build_context()` → backtest + market + chart + Nansen + Grok → not cached
 - Expected savings: 40–60% on repeated calls
@@ -87,7 +89,7 @@ docs/architecture_detailed.pdf  11-section PDF
 
 ### Known issues / gotchas
 - Pi must have `matplotlib>=3.7.0` installed (`pip3 install matplotlib --break-system-packages`)
-- `plt.switch_backend("Agg")` is called inside `draw()` — must be after imports, not at module level
+- `plt.switch_backend("Agg")` called inside `draw()` — must be after imports, not at module level
 - Claude returns `"tp1"` key (not `"tp1_price"`) — `ai_call.py` reads `result.get("tp1")` as fallback
 - `analyzed_calls.symbol` and `.direction` are NOT NULL — always explicitly set in `ai_call.analyze_call()`
 
@@ -96,7 +98,7 @@ docs/architecture_detailed.pdf  11-section PDF
 ## Deployment
 - Pi IP: 192.168.1.21, credentials in memory `feedback_pi_ssh.md`
 - After any push: SSH via expect + password, `git reset --hard origin/main`, restart service
-- Service runs via `python app.py` (not gunicorn)
+- Service runs via `python app.py` (not gunicorn) — monitor thread starts in `__main__` block
 
 ---
 
