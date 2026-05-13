@@ -33,8 +33,8 @@ def draw(
     """Returns base64-encoded PNG or "" on failure."""
     try:
         import matplotlib
-        matplotlib.use("Agg")          # non-interactive backend — safe for threads
         import matplotlib.pyplot as plt
+        plt.switch_backend("Agg")      # works even after pyplot already imported
         import matplotlib.patches as mpatches
         from matplotlib.patches import Rectangle
         from matplotlib.lines import Line2D
