@@ -19,6 +19,7 @@ import chart_context
 import ai_rulebook
 import ai_pattern_detector
 import nansen_client
+import grok_client
 
 # ~1 400 tokens of context at 4 chars/token — leaves plenty for the main prompt
 MAX_CONTEXT_CHARS = 5_600
@@ -165,7 +166,32 @@ def build_context(
         except Exception as e:
             logger.warning("Nansen signal fetch failed for %s: %s", symbol, e)
 
-    # ── 7. Similar past trades ────────────────────────────────────────────────
+    # ── 7. Grok social intelligence (weight scales with market cap) ──────────────
+    if symbol and grok_client.is_configured() and remaining > 150:
+        try:
+            grok_text, g_weight = grok_client.get_coin_context(
+                symbol, direction or "Long"
+            )
+            if grok_text and g_weight >= 0.10:
+                weight_pct = int(g_weight * 100)
+                cap_label  = (
+                    "micro-cap — social signals are primary driver"
+                    if g_weight >= 0.70 else
+                    "small-cap — balance with technical analysis"
+                    if g_weight >= 0.35 else
+                    "mid-cap — supplementary social context"
+                )
+                grok_block = (
+                    f"GROK SOCIAL INTELLIGENCE ({weight_pct}% weight, {cap_label}):\n"
+                    f"{grok_text}"
+                )
+                if len(grok_block) <= remaining:
+                    sections.append(grok_block)
+                    remaining -= len(grok_block)
+        except Exception as exc:
+            logger.warning("Grok context fetch failed for %s: %s", symbol, exc)
+
+    # ── 8. Similar past trades ────────────────────────────────────────────────
     if include_similar and conn is not None and symbol:
         if remaining > 200:
             sim = ai_rulebook.get_similar_trades_for_prompt(

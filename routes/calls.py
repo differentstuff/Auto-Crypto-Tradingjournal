@@ -127,25 +127,48 @@ def api_calls_check_matches():
         pass
 
     with db_conn() as conn:
+        # Include 'saved' (needs confirmation) AND 'closed' (position may have reopened)
         calls = [dict(r) for r in conn.execute("""
             SELECT id, symbol, direction, trade_type, setup_score, setup_label,
                    rr_ratio, sl_price, tp1_price, tp2_price, entry_price, avg_entry,
                    has_dca, has_candle_close_sl, sl_warning, entry_timing,
-                   risk_pct, total_notional, status, created_at
-            FROM analyzed_calls WHERE status = 'saved'
+                   risk_pct, total_notional, status, created_at, analyst
+            FROM analyzed_calls WHERE status IN ('saved', 'closed')
         """).fetchall()]
 
+    pending   = []   # needs user confirmation
+    auto_ids  = []   # (call_id, exchange) — auto-confirm without prompting
 
-    matches = []
     for pos in positions:
         for call in calls:
-            if normalize_symbol(call["symbol"]) == normalize_symbol(pos["symbol"]) and normalize_direction(call["direction"]) == normalize_direction(pos["direction"]):
-                matches.append({
-                    "call":     call,
-                    "position": pos,
-                    "exchange": pos.get("exchange", "bitget"),
-                })
-    return _ok(matches)
+            if (normalize_symbol(call["symbol"])  == normalize_symbol(pos["symbol"]) and
+                    normalize_direction(call["direction"]) == normalize_direction(pos["direction"])):
+
+                # Auto-confirm if: (a) scanner-generated signal, or (b) position closed+reopened
+                is_scanner = (call.get("analyst") or "") == "scanner"
+                is_closed  = call["status"] == "closed"
+                if is_scanner or is_closed:
+                    auto_ids.append((call["id"], (pos.get("exchange") or "bitget")))
+                else:
+                    pending.append({
+                        "call":     call,
+                        "position": pos,
+                        "exchange": pos.get("exchange", "bitget"),
+                    })
+
+    # Persist auto-confirmations to DB so the frontend finds them in /api/calls/saved
+    if auto_ids:
+        with db_conn() as conn:
+            for call_id, exchange in auto_ids:
+                conn.execute(
+                    "UPDATE analyzed_calls "
+                    "SET status='matched', matched_at=datetime('now'), exchange=? "
+                    "WHERE id=?",
+                    (exchange, call_id),
+                )
+            conn.commit()
+
+    return _ok(pending)
 
 
 @bp.route("/api/calls/<int:call_id>/confirm-match", methods=["POST"])
