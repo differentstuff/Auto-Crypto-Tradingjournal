@@ -33,21 +33,45 @@ def _ok(data):
 
 
 def build_cached_messages(context: str, prompt: str,
-                          image_b64: str = None, image_type: str = "image/png") -> list:
+                          image_b64: str = None, image_type: str = "image/png",
+                          stable_prefix: str = None) -> list:
     """
-    Build Anthropic messages with prompt caching on the shared context block.
-    Cache only activates when context >= 1024 tokens (~4096 chars) for Sonnet.
-    Context must come before the image so it forms a stable cache key.
+    Build Anthropic messages with split-context prompt caching.
+
+    stable_prefix (optional): rulebook + calibration + scoring rules — changes
+      weekly at most. Gets cache_control=ephemeral so it is cached across calls.
+
+    context: market data, chart indicators, similar trades — changes every 5-30 min.
+      NOT cached (cache key would differ on nearly every call, wasting write credits).
+
+    prompt: per-call variable content (call text, sizing, etc.). Never cached.
+
+    The cache checkpoint is placed at the END of stable_prefix so Anthropic's
+    cache key covers exactly the stable portion and nothing more.
     """
     content = []
+
+    # Stable block — cache this (rulebook, calibration, prompt fragments)
+    if stable_prefix and len(stable_prefix) >= PROMPT_CACHE_MIN_CHARS:
+        content.append({
+            "type":          "text",
+            "text":          stable_prefix,
+            "cache_control": {"type": "ephemeral"},
+        })
+    elif stable_prefix:
+        # Too short for caching minimum — still include it, just uncached
+        content.append({"type": "text", "text": stable_prefix})
+
+    # Dynamic block — market/chart/similar trades (no cache_control)
     if context:
-        block = {"type": "text", "text": context}
-        if len(context) >= PROMPT_CACHE_MIN_CHARS:          # ~1024 tokens — Sonnet minimum
-            block["cache_control"] = {"type": "ephemeral"}
-        content.append(block)
+        content.append({"type": "text", "text": context})
+
+    # Image (call analyzer chart screenshot)
     if image_b64:
         content.append({"type": "image",
-                         "source": {"type": "base64", "media_type": image_type, "data": image_b64}})
+                         "source": {"type": "base64", "media_type": image_type,
+                                    "data": image_b64}})
+
     content.append({"type": "text", "text": prompt})
     return [{"role": "user", "content": content}]
 

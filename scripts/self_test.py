@@ -14,7 +14,7 @@ Modes:
 
 Usage:
   python3 scripts/self_test.py                          # against localhost:8082
-  python3 scripts/self_test.py --host 192.168.1.21:8082 # against Pi
+  python3 scripts/self_test.py --host <pi-ip>:8082       # against Pi
   python3 scripts/self_test.py --write                  # include write tests
   python3 scripts/self_test.py --ai                     # include AI tests
 

@@ -312,14 +312,20 @@ def analyze_call(call_text: str, account_equity: float,
 
     with db_conn() as conn:
         history = get_symbol_summary(symbol, conn)
+        # Stable prefix (rulebook + calibration + strengths) — cached by Anthropic
+        stable  = prompt_builder.build_stable_prefix(conn)
+        # Dynamic context (backtest insights + market + chart) — not cached
         ctx_str = prompt_builder.build_context(
-            conn          = conn,
-            symbol        = symbol,
-            direction     = direction,
-            setup_type    = setup_type,
-            market_str    = mkt_str,
-            include_chart = use_chart,
-            timeframes    = ["4H", "1D"],
+            conn              = conn,
+            symbol            = symbol,
+            direction         = direction,
+            setup_type        = setup_type,
+            market_str        = mkt_str,
+            include_chart     = use_chart,
+            include_rulebook  = False,      # already in stable_prefix
+            include_calibration = False,    # already in stable_prefix
+            include_strengths = False,      # already in stable_prefix
+            timeframes        = ["4H", "1D"],
         )
         # CoT reuse: inject prior reasoning for same symbol to enable learning loop
         row = conn.execute(
@@ -333,7 +339,8 @@ def analyze_call(call_text: str, account_equity: float,
     prompt   = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
                               atr_warning=atr_warn, corr_warning=corr_warn,
                               rubric=rubric, prior_cot=prior_cot)
-    messages = build_cached_messages(ctx_str, prompt, image_b64, image_type)
+    messages = build_cached_messages(ctx_str, prompt, image_b64, image_type,
+                                     stable_prefix=stable)
     raw_text, cached = ai_send("call_analyzer", MODEL, messages, max_tokens=4096)
 
     raw = strip_fence(raw_text.strip())

@@ -722,6 +722,98 @@ def get_sharpe_calmar(conn=None, filters=None) -> dict:
     }
 
 
+def get_backtest_context(conn, symbol: str = None, direction: str = None,
+                         setup_type: str = None) -> str:
+    """
+    Compact historical performance summary for injection into AI prompts.
+
+    Returns a ~200-400 char block that gives Claude pattern insights from
+    actual trade history: setup accuracy, symbol-specific WR, timing warnings.
+    The caller decides whether to include this in the cached or dynamic section.
+    Empty string if fewer than 5 historical trades exist.
+    """
+    try:
+        lines = []
+
+        # 1. Overall recent performance (last 20 closed trades)
+        recent = _rows(conn, """
+            SELECT realized_pnl FROM positions
+            WHERE realized_pnl IS NOT NULL
+            ORDER BY close_time DESC LIMIT 20
+        """)
+        if len(recent) < 5:
+            return ""
+
+        pnl_list = [r["realized_pnl"] for r in recent]
+        recent_wins = sum(1 for p in pnl_list if p > 0)
+        recent_wr   = round(recent_wins / len(pnl_list) * 100)
+        recent_avg  = round(sum(pnl_list) / len(pnl_list), 2)
+        streak_last5 = "".join("W" if p > 0 else "L" for p in pnl_list[:5])
+        lines.append(f"Recent form: {recent_wr}% WR last {len(pnl_list)} · streak {streak_last5} · avg ${recent_avg:+.2f}")
+
+        # 2. Setup-type performance (if known)
+        if setup_type:
+            st_rows = _rows(conn, """
+                SELECT realized_pnl FROM positions
+                WHERE setup_type = ? AND realized_pnl IS NOT NULL
+            """, (setup_type,))
+            if len(st_rows) >= 3:
+                st_wins = sum(1 for r in st_rows if r["realized_pnl"] > 0)
+                st_wr   = round(st_wins / len(st_rows) * 100)
+                st_avg  = round(sum(r["realized_pnl"] for r in st_rows) / len(st_rows), 2)
+                lines.append(f"{setup_type}: {st_wr}% WR ({len(st_rows)} trades) avg ${st_avg:+.2f}")
+
+        # 3. Symbol+direction history (if provided)
+        if symbol:
+            sym_rows = _rows(conn, """
+                SELECT realized_pnl FROM positions
+                WHERE symbol = ? AND direction = ? AND realized_pnl IS NOT NULL
+                ORDER BY close_time DESC LIMIT 15
+            """, (symbol, direction or "Long"))
+            if len(sym_rows) >= 2:
+                sw = sum(1 for r in sym_rows if r["realized_pnl"] > 0)
+                sw_wr  = round(sw / len(sym_rows) * 100)
+                sw_avg = round(sum(r["realized_pnl"] for r in sym_rows) / len(sym_rows), 2)
+                lines.append(f"{symbol} {direction or 'Long'}: {sw_wr}% WR ({len(sym_rows)} trades) avg ${sw_avg:+.2f}")
+
+        # 4. Worst weekday / hour warnings (only if meaningfully bad)
+        import datetime as _dt
+        now       = _dt.datetime.utcnow()
+        weekdays  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+        today_str = weekdays[now.weekday()]
+
+        day_row = conn.execute("""
+            SELECT SUM(realized_pnl) AS total, COUNT(*) AS n,
+                   AVG(CASE WHEN realized_pnl > 0 THEN 1.0 ELSE 0.0 END) * 100 AS wr
+            FROM positions
+            WHERE strftime('%w', close_time) = ? AND realized_pnl IS NOT NULL
+        """, (str((now.weekday() + 1) % 7),)).fetchone()  # SQLite %w: 0=Sun
+        if day_row and day_row["n"] and day_row["n"] >= 5:
+            day_pnl = round(day_row["total"] or 0, 2)
+            day_wr  = round(day_row["wr"] or 0)
+            if day_pnl < -100 or day_wr < 55:
+                lines.append(f"⚠ {today_str}: caution ({day_wr}% WR, ${day_pnl:+.0f} total)")
+
+        hour_row = conn.execute("""
+            SELECT SUM(realized_pnl) AS total, COUNT(*) AS n,
+                   AVG(CASE WHEN realized_pnl > 0 THEN 1.0 ELSE 0.0 END) * 100 AS wr
+            FROM positions
+            WHERE CAST(strftime('%H', close_time) AS INTEGER) = ? AND realized_pnl IS NOT NULL
+        """, (now.hour,)).fetchone()
+        if hour_row and hour_row["n"] and hour_row["n"] >= 5:
+            hr_pnl = round(hour_row["total"] or 0, 2)
+            hr_wr  = round(hour_row["wr"] or 0)
+            if hr_pnl < -100 or hr_wr < 55:
+                lines.append(f"⚠ {now.hour:02d}:00 UTC: weak hour ({hr_wr}% WR, ${hr_pnl:+.0f} total)")
+
+        if not lines:
+            return ""
+        return "BACKTEST INSIGHTS:\n" + "\n".join(f"  {l}" for l in lines)
+
+    except Exception:
+        return ""
+
+
 def _calc_streaks(pnl_series):
     max_win = cur_win = max_loss = cur_loss = 0
     for pnl in pnl_series:

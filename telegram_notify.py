@@ -6,7 +6,7 @@ No external dependencies — uses only urllib.request (stdlib).
 Configuration (add to .env):
   TELEGRAM_BOT_TOKEN  — from @BotFather on Telegram
   TELEGRAM_CHAT_ID    — your personal chat or group ID
-  APP_URL             — journal URL for the deep-link (default: http://192.168.1.21:8082)
+  APP_URL             — journal URL for the deep-link (default: http://localhost:8082)
 
 Getting your Chat ID:
   1. Message @userinfobot on Telegram — it replies with your numeric ID.
@@ -21,7 +21,7 @@ import urllib.request
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
-APP_URL        = os.environ.get("APP_URL", "http://192.168.1.21:8082")
+APP_URL        = os.environ.get("APP_URL", "http://localhost:8082")
 
 
 def is_configured() -> bool:

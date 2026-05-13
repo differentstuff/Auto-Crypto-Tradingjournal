@@ -12,7 +12,7 @@ Target: consensus accuracy ≥ 85%
 
 Usage:
   python3 scripts/backtest_consensus.py                    # against localhost:8082
-  python3 scripts/backtest_consensus.py --host 192.168.1.21:8082
+  python3 scripts/backtest_consensus.py --host <pi-ip>:8082
   python3 scripts/backtest_consensus.py --live             # re-score with Gemini live
 """
 

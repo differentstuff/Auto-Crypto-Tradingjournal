@@ -20,6 +20,7 @@ import ai_rulebook
 import ai_pattern_detector
 import nansen_client
 import grok_client
+from analytics import get_backtest_context
 
 # ~1 400 tokens of context at 4 chars/token — leaves plenty for the main prompt
 MAX_CONTEXT_CHARS = 5_600
@@ -60,6 +61,39 @@ def get_setup_rubric(setup_type: str) -> str:
     return ""
 
 
+def build_stable_prefix(conn, exchange_filter: str = None) -> str:
+    """
+    Return the cacheable portion of the Claude context block.
+
+    Contains only content that changes at most weekly (rulebook, calibration,
+    pattern strengths, scoring fragments). This goes into the stable_prefix
+    argument of build_cached_messages() so Anthropic can cache it across calls.
+
+    Dynamic content (market data, chart, Nansen, Grok, similar trades) lives
+    in build_context() below and must NOT be cached.
+    """
+    sections   = []
+    remaining  = MAX_CONTEXT_CHARS
+
+    rb = ai_rulebook.get_rulebook_for_prompt(conn)
+    if rb:
+        sections.append(rb)
+        remaining -= len(rb)
+
+    if remaining > 300:
+        cal = ai_rulebook.get_calibration_for_prompt(conn, exchange=exchange_filter)
+        if cal:
+            sections.append(cal)
+            remaining -= len(cal)
+
+    if remaining > 150:
+        strengths = ai_pattern_detector.get_top_strengths_for_prompt(conn)
+        if strengths:
+            sections.append(strengths[:remaining])
+
+    return "\n\n".join(sections)
+
+
 def build_context(
     conn,
     symbol: str = None,
@@ -91,13 +125,25 @@ def build_context(
     remaining  = MAX_CONTEXT_CHARS
     _truncated = []   # sections skipped or cut due to budget
 
-    # ── 1. Market context (caller provides pre-fetched string) ────────────────
+    # ── 1. Backtest insights (dynamic — specific to symbol/setup/time) ────────
+    # Rulebook + calibration + strengths now live in build_stable_prefix() so
+    # they can be cached. Here we inject live backtest context instead.
+    if conn is not None and remaining > 200:
+        try:
+            bt = get_backtest_context(conn, symbol, direction, setup_type)
+            if bt:
+                sections.append(bt)
+                remaining -= len(bt)
+        except Exception as exc:
+            logger.warning("backtest context failed: %s", exc)
+
+    # ── 2. Market context (caller provides pre-fetched string) ───────────────
     if market_str and remaining > 0:
         block = f"CURRENT MARKET CONTEXT:\n{market_str}"
         sections.append(block)
         remaining -= len(block)
 
-    # ── 2. Rulebook ───────────────────────────────────────────────────────────
+    # ── 3. Rulebook (kept here for callers that don't use build_stable_prefix) ─
     if include_rulebook and conn is not None:
         if remaining > 500:
             rb = ai_rulebook.get_rulebook_for_prompt(conn)
@@ -107,7 +153,7 @@ def build_context(
         else:
             _truncated.append(f"rulebook (budget={remaining})")
 
-    # ── 3. Calibration — filtered by exchange when active ─────────────────────
+    # ── 4. Calibration ────────────────────────────────────────────────────────
     if include_calibration and conn is not None:
         if remaining > 300:
             cal = ai_rulebook.get_calibration_for_prompt(conn, exchange=exchange_filter)
@@ -117,7 +163,7 @@ def build_context(
         else:
             _truncated.append(f"calibration (budget={remaining})")
 
-    # ── 4. Chart context (compact single-line-per-TF format) ─────────────────
+    # ── 5. Chart context (compact single-line-per-TF format) ─────────────────
     if include_chart and symbol:
         if remaining > 400:
             tfs = timeframes or ["4H", "1D"]
@@ -145,7 +191,7 @@ def build_context(
         else:
             _truncated.append(f"chart (budget={remaining})")
 
-    # ── 5. Positive pattern strengths (anti-pattern injection) ───────────────
+    # ── 6. Positive pattern strengths (anti-pattern injection) ───────────────
     if include_strengths and conn is not None:
         if remaining > 150:
             strengths = ai_pattern_detector.get_top_strengths_for_prompt(conn)
@@ -155,7 +201,7 @@ def build_context(
                 sections.append(strengths)
                 remaining -= len(strengths)
 
-    # ── 6. Nansen smart money signal ─────────────────────────────────────────
+    # ── 7. Nansen smart money signal ─────────────────────────────────────────
     if symbol and nansen_client.is_configured() and remaining > 100:
         try:
             ns = nansen_client.get_smart_money_signal(symbol)

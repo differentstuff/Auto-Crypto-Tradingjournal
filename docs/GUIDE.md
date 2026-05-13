@@ -861,7 +861,7 @@ Configuration in `.env`:
 |----------|----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Yes | Token from @BotFather |
 | `TELEGRAM_CHAT_ID` | Yes | Numeric chat ID (get from @userinfobot) |
-| `APP_URL` | No | Deep-link URL in alerts (default: `http://192.168.1.21:8082`) |
+| `APP_URL` | No | Deep-link URL in alerts (default: `http://localhost:8082`) |
 | `SCANNER_INTERVAL` | No | Seconds between scans (default: 1800 = 30 min) |
 | `SCANNER_FIRST_DELAY` | No | Seconds before first scan after startup (default: 300 = 5 min) |
 | `SCANNER_SCHEDULER` | No | Set to `off` to disable the scheduler entirely |
