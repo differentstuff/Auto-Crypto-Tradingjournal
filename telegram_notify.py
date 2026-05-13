@@ -50,6 +50,53 @@ def send_message(text: str) -> bool:
         return False
 
 
+def send_photo(caption: str, png_b64: str) -> bool:
+    """
+    Send a PNG chart image with a caption to the Telegram channel.
+    Falls back to send_message(caption) if the photo send fails.
+    Returns True on success.
+    """
+    if not is_configured() or not png_b64:
+        return send_message(caption)
+    try:
+        import base64
+        img_bytes = base64.b64decode(png_b64)
+        boundary  = "TJFormBoundary"
+        def _field(name: str, value: str) -> bytes:
+            return (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode()
+
+        body = (
+            _field("chat_id", TELEGRAM_CHAT)
+            + _field("parse_mode", "HTML")
+            + (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="caption"\r\n\r\n'
+                f"{caption[:1024]}\r\n"
+            ).encode()
+            + (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="photo"; filename="chart.png"\r\n'
+                f"Content-Type: image/png\r\n\r\n"
+            ).encode()
+            + img_bytes
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        with urllib.request.urlopen(req, timeout=15):
+            return True
+    except Exception as e:
+        print(f"[Telegram] send_photo failed ({e}), falling back to text")
+        return send_message(caption)
+
+
 # ── Formatters ─────────────────────────────────────────────────────────────────
 
 def _fp(v) -> str:
@@ -107,7 +154,11 @@ def send_setup_alert(setups: list) -> bool:
         lines.append(f"<i>…and {n - 6} more setup(s)</i>\n")
 
     lines.append(f'<a href="{APP_URL}">📊 Open Journal → Setup Scanner</a>')
-    return send_message("\n".join(lines))
+    msg = "\n".join(lines)
+    top_chart = (setups[0].get("chart_png_b64") or "") if setups else ""
+    if top_chart:
+        return send_photo(msg, top_chart)
+    return send_message(msg)
 
 
 def send_test_message() -> bool:
