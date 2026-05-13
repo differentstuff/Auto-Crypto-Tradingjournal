@@ -1,4 +1,4 @@
-from constants import MODEL
+from constants import MODEL, FAST_MODEL
 """
 ai_trade_grader.py — Auto-grade trade execution quality using Claude.
 
@@ -138,7 +138,7 @@ def _ask_claude(pos: dict, call: dict | None, fg: dict | None = None) -> dict:
     )
 
     raw_text, _cached = ai_send(
-        "trade_grader", MODEL,
+        "trade_grader", FAST_MODEL,   # A/B/C/D rubric classification = Haiku task
         [{"role": "user", "content": prompt}],
         max_tokens=350,
     )

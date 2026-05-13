@@ -81,14 +81,16 @@ def api_calls_save():
 
     with db_conn() as conn:
         cur = conn.cursor()
+        con = d.get("_consensus") or {}
         cur.execute("""
             INSERT INTO analyzed_calls
               (symbol, direction, call_text, entry_price, dca_price, sl_price,
                tp1_price, tp2_price, avg_entry, total_notional, margin_needed,
                risk_pct, risk_amount, leverage, has_dca, has_candle_close_sl,
                setup_score, setup_label, rr_ratio, trade_type,
-               sl_warning, entry_timing, analysis_json, analyst, cot_reasoning)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               sl_warning, entry_timing, analysis_json, analyst, cot_reasoning,
+               gemini_score, consensus_score, consensus_flag)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             d.get("symbol"), d.get("direction"),
             d.get("_call_text", ""),
@@ -106,6 +108,9 @@ def api_calls_save():
             json.dumps(d),
             (d.get("_analyst") or "").strip(),
             d.get("thinking"),
+            sq.get("gemini_score"),
+            con.get("consensus_score"),
+            con.get("flag"),
         ))
         new_id = cur.lastrowid
         conn.commit()

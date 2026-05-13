@@ -38,6 +38,8 @@ from helpers import strip_fence, build_cached_messages
 import chart_context
 import market_context
 import ai_rulebook
+import gemini_client
+import agent_orchestrator
 import nansen_client
 
 
@@ -732,6 +734,17 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 }
 
         setups.sort(key=lambda x: -x.get("setup_score", 0))
+
+        # Stage 3c — Gemini consensus for top-5 finalists (parallel, non-blocking)
+        if setups and gemini_client.is_configured():
+            _update(stage_detail="Stage 3c — Gemini consensus scoring top 5…")
+            # Build symbol → chart_ctx map from top_finalists (sym, ctx, conf, dir_, score, reason)
+            ctx_map = {sym: ctx for sym, ctx, _conf, _dir, _sc, _r in top_finalists}
+            try:
+                setups = agent_orchestrator.add_gemini_consensus(setups, ctx_map, max_setups=5)
+            except Exception as e:
+                logger.warning("Gemini consensus step failed: %s", e)
+
         _update(
             status="completed", setups=setups,
             completed_at=time.time(), duration_sec=round(time.time() - t0, 1),

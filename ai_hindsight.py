@@ -175,7 +175,7 @@ def _analyze_one(trade: dict, rulebook_str: str) -> dict | None:
 
         prompt  = _build_prompt(trade, ctx, conf, hist, rulebook_str)
         raw_text, _cached = ai_send(
-            "hindsight", MODEL,
+            "hindsight", FAST_MODEL,   # retroactive blind scoring = classification task
             [{"role": "user", "content": prompt}],
             max_tokens=512,
         )

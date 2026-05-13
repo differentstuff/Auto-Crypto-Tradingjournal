@@ -79,7 +79,7 @@ def analyze_position(position: dict) -> dict:
 
     prompt  = _build_prompt(position, history, ctx_str)
     raw_text, _cached = ai_send(
-        "live_trade", MODEL,
+        "live_trade", FAST_MODEL,   # quick action recommendation = low-latency priority
         [{"role": "user", "content": prompt}],
         max_tokens=768,
     )

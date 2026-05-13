@@ -23,6 +23,8 @@ from helpers import strip_fence, build_cached_messages
 import market_context
 import prompt_builder
 import trade_utils
+import gemini_client
+import agent_orchestrator
 
 _TECH_TERMS = (
     "support", "resistance", "sr", "s/r", "trendline", "trend line",
@@ -276,22 +278,23 @@ def analyze_call(call_text: str, account_equity: float,
 
     corr_warn = _correlation_warning(symbol, direction, open_positions or [])
 
-    # ATR check and market context are independent — fetch in parallel
-    mkt_str  = market_regime or ""
-    atr_warn = ""
-    need_atr = bool(entry_price and sl_price)
-    need_mkt = not mkt_str
+    # ATR check, market context, and Gemini pre-proof run in parallel
+    mkt_str   = market_regime or ""
+    atr_warn  = ""
+    gem_pre   = None
+    need_atr  = bool(entry_price and sl_price)
+    need_mkt  = not mkt_str
+    need_gem  = gemini_client.is_configured()
 
-    if need_atr and need_mkt:
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            f_atr = ex.submit(trade_utils.atr_sl_warning, symbol, entry_price, sl_price)
-            f_mkt = ex.submit(market_context.get_market_str, [symbol])
-        atr_warn = f_atr.result()
-        mkt_str  = f_mkt.result()
-    elif need_atr:
-        atr_warn = trade_utils.atr_sl_warning(symbol, entry_price, sl_price)
-    elif need_mkt:
-        mkt_str = market_context.get_market_str([symbol])
+    workers = sum([need_atr, need_mkt, need_gem])
+    if workers > 0:
+        with ThreadPoolExecutor(max_workers=max(workers, 1)) as ex:
+            f_atr = ex.submit(trade_utils.atr_sl_warning, symbol, entry_price, sl_price) if need_atr else None
+            f_mkt = ex.submit(market_context.get_market_str, [symbol]) if need_mkt else None
+            f_gem = ex.submit(gemini_client.score_call, call_text, symbol, direction) if need_gem else None
+        atr_warn = f_atr.result() if f_atr else ""
+        mkt_str  = f_mkt.result() if f_mkt else mkt_str
+        gem_pre  = f_gem.result() if f_gem else None
 
     use_chart = _has_tech_levels(call_text)
 
@@ -350,4 +353,19 @@ def analyze_call(call_text: str, account_equity: float,
     result["_call_text"] = call_text
     result["_sizing"]    = sizing
     result["_history"]   = history
+
+    # Gemini pre-proof consensus
+    if gem_pre and isinstance(gem_pre.get("score"), (int, float)):
+        claude_score = (result.get("setup_quality") or {}).get("score", 0)
+        if claude_score:
+            consensus = agent_orchestrator.compute_consensus(claude_score, gem_pre["score"])
+            result["_gemini"]    = gem_pre
+            result["_consensus"] = consensus
+            # Amend the setup_quality label to show consensus flag inline
+            sq = result.setdefault("setup_quality", {})
+            sq["gemini_score"]     = gem_pre["score"]
+            sq["consensus_score"]  = consensus["consensus_score"]
+            sq["consensus_flag"]   = consensus["flag"]
+            sq["consensus_confidence"] = consensus["confidence"]
+
     return result

@@ -28,3 +28,14 @@ PROMPT_CACHE_MIN_CHARS   = 4_096   # Anthropic cache_control minimum
 
 # ── Chart S/R & trendline tolerance ──────────────────────────────────────────
 PRICE_TOLERANCE          = 0.004   # 0.4% — S/R clustering and trendline validation
+
+# ── Google Gemini ─────────────────────────────────────────────────────────────
+GEMINI_FAST_MODEL        = "gemini-2.0-flash"       # pre-proof, scanner consensus
+GEMINI_MODEL             = "gemini-2.5-flash"        # deep analysis (configurable)
+GEMINI_CACHE_TTL         = 1800    # 30 min — same as scanner cycle
+
+# ── Consensus scoring thresholds ─────────────────────────────────────────────
+CONSENSUS_HIGH_DELTA     = 1       # |claude - gemini| ≤ 1 → high confidence
+CONSENSUS_MED_DELTA      = 2       # ≤ 2 → medium
+CONSENSUS_LOW_DELTA      = 3       # ≤ 3 → low (Claude 60% weight)
+                                   # > 3 → very_low / REVIEW flag

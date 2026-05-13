@@ -192,6 +192,9 @@ def init_db():
     _apply(22, "analyzed_calls.hit_tp2",       "ALTER TABLE analyzed_calls ADD COLUMN hit_tp2 INTEGER DEFAULT 0")
     _apply(23, "analyzed_calls.hit_sl",        "ALTER TABLE analyzed_calls ADD COLUMN hit_sl INTEGER DEFAULT 0")
     _apply(24, "analyzed_calls.outcome_at",    "ALTER TABLE analyzed_calls ADD COLUMN outcome_at TEXT DEFAULT NULL")
+    _apply(26, "analyzed_calls.gemini_score",   "ALTER TABLE analyzed_calls ADD COLUMN gemini_score INTEGER DEFAULT NULL")
+    _apply(27, "analyzed_calls.consensus_score","ALTER TABLE analyzed_calls ADD COLUMN consensus_score REAL DEFAULT NULL")
+    _apply(28, "analyzed_calls.consensus_flag", "ALTER TABLE analyzed_calls ADD COLUMN consensus_flag TEXT DEFAULT NULL")
 
     # ── pending_limits ─────────────────────────────────────────────────────────
     # Limit orders the user has placed on exchange but not yet triggered.
