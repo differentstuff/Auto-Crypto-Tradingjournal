@@ -320,12 +320,17 @@ def analyze_call(call_text: str, account_equity: float,
     # Ensure NOT NULL DB columns and key fields are always populated
     result["symbol"]            = symbol
     result["direction"]         = result.get("direction") or direction
-    result["setup_score"]       = analysis.get("setup_score", 0)
-    result["entry_price"]       = analysis.get("entry_price") or 0.0
-    result["sl_price"]          = analysis.get("sl_price") or 0.0
-    result["tp1_price"]         = analysis.get("tp1_price") or 0.0
-    result["tp2_price"]         = analysis.get("tp2_price") or 0.0
-    result["rr_ratio"]          = analysis.get("rr_ratio") or 0.0
+    result["setup_score"]       = analysis.get("setup_score") or result.get("setup_score") or 0
+    result["entry_price"]       = analysis.get("entry_price") or result.get("entry_price") or 0.0
+    result["sl_price"]          = analysis.get("sl_price") or result.get("sl_price") or 0.0
+    # Claude returns "tp1"/"tp2" keys; map to tp1_price/tp2_price for routes/calls.py
+    result["tp1_price"]         = (analysis.get("tp1_price")
+                                   or result.get("tp1_price")
+                                   or result.get("tp1") or 0.0)
+    result["tp2_price"]         = (analysis.get("tp2_price")
+                                   or result.get("tp2_price")
+                                   or result.get("tp2") or 0.0)
+    result["rr_ratio"]          = analysis.get("rr_ratio") or result.get("rr_ratio") or 0.0
 
     result["_call_text"]        = call_text
     result["_history"]          = {}

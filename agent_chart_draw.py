@@ -180,5 +180,8 @@ def draw(
         buf.seek(0)
         return base64.b64encode(buf.read()).decode("utf-8")
 
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[ChartDraw] draw() failed: {e}", flush=True)
+        traceback.print_exc()
         return ""
