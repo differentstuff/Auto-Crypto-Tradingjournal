@@ -36,6 +36,7 @@ parser = argparse.ArgumentParser(description="Trading Journal API self-test")
 parser.add_argument("--host",    default="localhost:8082", help="host:port (default: localhost:8082)")
 parser.add_argument("--write",   action="store_true",      help="run write/mutation tests")
 parser.add_argument("--ai",      action="store_true",      help="run AI-calling tests (implies --write, costs API credits)")
+parser.add_argument("--agents",  action="store_true",      help="run agent pipeline smoke test (costs API credits)")
 parser.add_argument("--timeout", type=int, default=20,     help="per-request timeout in seconds")
 args = parser.parse_args()
 
@@ -294,6 +295,60 @@ _MINIMAL_LIMIT = {
     "sl_price":    0.9,
     "tp1_price":   1.2,
 }
+
+
+# ── Agent pipeline smoke tests ────────────────────────────────────────────────
+
+def run_agent_pipeline_tests(args):
+    """Smoke-test the full agent pipeline against a live host."""
+    base = f"http://{args.host}"
+    print("\n=== Agent Pipeline Smoke Tests ===")
+
+    # Test 1: Full call analysis pipeline
+    print("  Testing call analysis pipeline...", end=" ", flush=True)
+    r = POST(f"/api/calls/analyze", {
+        "call_text": "BTCUSDT Long breakout above 95000 resistance. Entry 95200, SL 94000, TP 98000.",
+        "account_equity": 500.0,
+    }, name="agent pipeline: call analysis")
+    if r.get("ok"):
+        data = r.get("data", {})
+        has_score    = "setup_quality" in data or "setup_score" in data
+        has_chart    = "chart_png_b64" in data
+        has_sizing   = "_sizing" in data or "sizing" in data
+        print(f"PASS (score={'yes' if has_score else 'missing'}, "
+              f"chart={'yes' if has_chart else 'no'}, "
+              f"sizing={'yes' if has_sizing else 'missing'})")
+    else:
+        print(f"FAIL — {r.get('error', r)}")
+        return 1
+
+    # Test 2: Live trade monitor (if positions exist)
+    print("  Testing trade monitor pipeline...", end=" ", flush=True)
+    positions_r = GET(f"/api/live/positions",
+                      name="agent pipeline: live positions")
+    if positions_r.get("ok"):
+        positions = (positions_r.get("data") or {}).get("positions", [])
+        if positions:
+            pos = positions[0]
+            r2 = POST(f"/api/live/analyze",
+                      {"symbol": pos["symbol"]},
+                      name="agent pipeline: live monitor")
+            if r2.get("ok"):
+                d2 = r2.get("data", {})
+                has_action = "action" in d2
+                has_risk   = "risk_rating" in d2
+                print(f"PASS ({pos['symbol']}: action={d2.get('action','?')}, "
+                      f"risk={d2.get('risk_rating',{}).get('value','?') if isinstance(d2.get('risk_rating'),dict) else d2.get('risk_rating','?')}/10)")
+            else:
+                print(f"FAIL — {r2.get('error', r2)}")
+                return 1
+        else:
+            print("SKIP (no open positions)")
+    else:
+        print(f"SKIP (can't fetch positions: {positions_r.get('error','')})")
+
+    print("=== Agent pipeline: ALL PASSED ===\n")
+    return 0
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -582,6 +637,11 @@ def main():
         for name, status, detail in _results:
             if status == "FAIL":
                 print(f"  ❌ {name}" + (f"  — {detail}" if detail else ""))
+
+    if args.agents:
+        agent_rc = run_agent_pipeline_tests(args)
+        if agent_rc != 0:
+            return 1
 
     print()
     return 0 if failed == 0 else 1
