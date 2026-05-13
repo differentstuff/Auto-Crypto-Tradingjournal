@@ -1,9 +1,23 @@
 import os
 import sys
+import types
+import unittest.mock
 import pytest
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Stub heavy optional deps so tests work without full pip install
+if "flask" not in sys.modules:
+    _flask = types.ModuleType("flask")
+    _flask.jsonify = lambda x: x
+    _flask.request = unittest.mock.MagicMock()
+    sys.modules["flask"] = _flask
+
+if "anthropic" not in sys.modules:
+    _anthropic = types.ModuleType("anthropic")
+    _anthropic.Anthropic = unittest.mock.MagicMock()
+    sys.modules["anthropic"] = _anthropic
 
 # Stub env vars before any project imports
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
