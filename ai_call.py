@@ -128,7 +128,7 @@ def _correlation_warning(symbol: str, direction: str, open_positions: list) -> s
 
 def _build_prompt(call_text: str, sizing: dict, history: dict,
                   has_image: bool, atr_warning: str = "", corr_warning: str = "",
-                  rubric: str = "") -> str:
+                  rubric: str = "", prior_cot: str = "") -> str:
     """Build the variable part of the call analysis prompt (context passed separately for caching)."""
     chart_note = (
         "A TradingView chart image is attached — analyse it carefully: "
@@ -139,11 +139,15 @@ def _build_prompt(call_text: str, sizing: dict, history: dict,
     atr_block    = f"\n⚠ ATR RISK: {atr_warning}\n" if atr_warning else ""
     corr_block   = f"\n⚠ PORTFOLIO CORRELATION: {corr_warning}\n" if corr_warning else ""
     rubric_block = f"\n{rubric}\n" if rubric else ""
+    cot_block    = (
+        f"\nPREVIOUS ANALYSIS OF THIS SYMBOL (your last call — check if setup conditions "
+        f"have changed before repeating the same assessment):\n{prior_cot}\n"
+    ) if prior_cot else ""
 
     return f"""You are an expert crypto futures trading analyst. A trade call from a crypto analyst has been submitted for analysis.
 
 {chart_note}
-{atr_block}{corr_block}{rubric_block}
+{atr_block}{corr_block}{rubric_block}{cot_block}
 TRADE CALL TEXT:
 {call_text}
 
@@ -314,10 +318,18 @@ def analyze_call(call_text: str, account_equity: float,
             include_chart = use_chart,
             timeframes    = ["4H", "1D"],
         )
+        # CoT reuse: inject prior reasoning for same symbol to enable learning loop
+        row = conn.execute(
+            "SELECT cot_reasoning FROM analyzed_calls "
+            "WHERE symbol = ? AND cot_reasoning IS NOT NULL AND cot_reasoning != '' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (symbol,)
+        ).fetchone()
+        prior_cot = row["cot_reasoning"] if row else ""
 
     prompt   = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
                               atr_warning=atr_warn, corr_warning=corr_warn,
-                              rubric=rubric)
+                              rubric=rubric, prior_cot=prior_cot)
     messages = build_cached_messages(ctx_str, prompt, image_b64, image_type)
     raw_text, cached = ai_send("call_analyzer", MODEL, messages, max_tokens=4096)
 

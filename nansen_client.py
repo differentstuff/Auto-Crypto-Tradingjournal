@@ -80,15 +80,19 @@ def _fetch_screener() -> list:
 
 
 def _get_cached_screener() -> list:
-    """Return cached screener data, refreshing if stale."""
+    """Return cached screener data, refreshing if stale. Thread-safe via double-checked locking."""
     global _cache_ts, _cache_data
+    # Fast path: check without lock
     now = time.time()
+    if _cache_data and (now - _cache_ts) < NANSEN_CACHE_TTL:
+        return _cache_data
+
     with _cache_lock:
-        if now - _cache_ts < NANSEN_CACHE_TTL and _cache_data:
+        # Second check under lock: another thread may have refreshed while we waited
+        now = time.time()
+        if _cache_data and (now - _cache_ts) < NANSEN_CACHE_TTL:
             return _cache_data
-    # Fetch outside the lock (can take a few seconds)
-    rows = _fetch_screener()
-    with _cache_lock:
+        rows = _fetch_screener()
         _cache_data = rows
         _cache_ts   = time.time()
     return rows

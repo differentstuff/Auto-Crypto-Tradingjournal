@@ -25,3 +25,6 @@ FALLBACK_EQUITY_USDT     = 1000.0  # only when ALL exchange equity calls fail
 # ── Prompt budget ─────────────────────────────────────────────────────────────
 MAX_CONTEXT_CHARS        = 5_600
 PROMPT_CACHE_MIN_CHARS   = 4_096   # Anthropic cache_control minimum
+
+# ── Chart S/R & trendline tolerance ──────────────────────────────────────────
+PRICE_TOLERANCE          = 0.004   # 0.4% — S/R clustering and trendline validation

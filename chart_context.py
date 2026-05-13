@@ -17,7 +17,7 @@ Timeframe granularity strings (Bitget):
 
 import threading
 import time
-from constants import CHART_CACHE_TTL
+from constants import CHART_CACHE_TTL, PRICE_TOLERANCE
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
@@ -25,26 +25,31 @@ import pandas as pd
 import pandas_ta as ta
 
 import bitget_client
+from chart_indicators import compute_all_indicators, compute_wavetrend
+from chart_sr import detect_support_resistance
 
 # ── Cache ──────────────────────────────────────────────────────────────────────
 
 _cache: dict = {}
 _cache_lock  = threading.Lock()
 
-PRICE_TOLERANCE = 0.004  # 0.4% — shared by S/R clustering and trendline validation
-
 
 def _cached(key: str, fn, ttl: int = CHART_CACHE_TTL):
-    now = time.time()
+    # Fast path: check without lock (GIL makes dict.get atomic in CPython)
+    now   = time.time()
+    entry = _cache.get(key)
+    if entry and (now - entry[0]) < ttl:
+        return entry[1]
+
     with _cache_lock:
-        if key in _cache:
-            ts, data = _cache[key]
-            if now - ts < ttl:
-                return data
-    result = fn()
-    with _cache_lock:
-        _cache[key] = (now, result)
-    return result
+        # Second check under lock: another thread may have populated cache
+        now   = time.time()
+        entry = _cache.get(key)
+        if entry and (now - entry[0]) < ttl:
+            return entry[1]
+        result = fn()
+        _cache[key] = (time.time(), result)
+        return result
 
 
 # ── Candle fetch ───────────────────────────────────────────────────────────────
@@ -81,101 +86,6 @@ def get_candles(symbol: str, timeframe: str = "4H", limit: int = 200) -> pd.Data
             return pd.DataFrame()
 
     return _cached(f"candles_{sym}_{timeframe}_{limit}", _fetch)
-
-
-# ── Support / Resistance detection ────────────────────────────────────────────
-
-def detect_support_resistance(df: pd.DataFrame, n_swing: int = 5,
-                               tolerance_pct: float = PRICE_TOLERANCE,
-                               max_levels: int = 8) -> list:
-    """
-    Swing-pivot S/R detection with clustering.
-    n_swing: candles each side of a pivot to qualify as local high/low.
-    tolerance_pct: prices within this % are merged into one level.
-    Returns list of {price, type, strength, touches} sorted ascending.
-    """
-    if len(df) < n_swing * 2 + 3:
-        return []
-
-    import math as _math
-    highs = df["high"].values.astype(float)
-    lows  = df["low"].values.astype(float)
-    close = float(df["close"].iloc[-1])
-
-    # ATR-relative clustering tolerance: use max(tolerance_pct, 0.3×ATR%)
-    # so cheap altcoins ($0.01) and BTC ($100k) both cluster with sensible precision
-    try:
-        _atr_s = ta.atr(df["high"], df["low"], df["close"], length=14)
-        _atr_v = float(_atr_s.iloc[-1]) if _atr_s is not None and not _atr_s.empty else 0
-        _atr_pct = _atr_v / close if close > 0 else 0
-        tolerance_pct = max(tolerance_pct, 0.3 * _atr_pct)
-    except Exception:
-        pass  # keep passed-in tolerance_pct
-    n_bars = len(highs)
-
-    # Decay constant: a candle ~35 bars ago carries ~50% the weight of the last bar.
-    DECAY = 0.02
-
-    # Collect (price, candle_index) tuples for pivots
-    pivot_highs, pivot_lows = [], []
-    for i in range(n_swing, n_bars - n_swing):
-        window_h = highs[i - n_swing : i + n_swing + 1]
-        window_l = lows[i  - n_swing : i + n_swing + 1]
-        if highs[i] >= window_h.max():
-            pivot_highs.append((highs[i], i))
-        if lows[i] <= window_l.min():
-            pivot_lows.append((lows[i], i))
-
-    def _cluster(pivots, level_type):
-        """Cluster (price, index) pivots; count touches with exponential recency decay."""
-        if not pivots:
-            return []
-        levels = []
-        for p, idx in sorted(pivots, key=lambda x: x[0]):
-            merged = False
-            for lvl in levels:
-                centroid = lvl["_sum"] / lvl["_n"]
-                if abs(p - centroid) / centroid < tolerance_pct:
-                    lvl["_sum"] += p
-                    lvl["_n"]   += 1
-                    merged = True
-                    break
-            if not merged:
-                levels.append({"_sum": p, "_n": 1, "type": level_type})
-
-        result = []
-        for lvl in levels:
-            price = lvl["_sum"] / lvl["_n"]
-            # Recency-weighted touch count: w = exp(-DECAY * bars_from_end)
-            weighted = 0.0
-            raw      = 0
-            for k in range(n_bars):
-                bars_ago = n_bars - 1 - k
-                if abs(highs[k] - price) / price < tolerance_pct or \
-                   abs(lows[k]  - price) / price < tolerance_pct:
-                    weighted += _math.exp(-DECAY * bars_ago)
-                    raw      += 1
-            result.append({
-                "price":    round(price, 8),
-                "type":     lvl["type"],
-                "strength": lvl["_n"],
-                "touches":  raw,                    # raw count shown in UI
-                "w_touches": round(weighted, 2),    # recency-weighted for ranking
-            })
-        return result
-
-    supports    = _cluster(pivot_lows,  "support")
-    resistances = _cluster(pivot_highs, "resistance")
-
-    # Keep only supports near/below price and resistances near/above
-    supports    = [l for l in supports    if l["price"] < close * 1.02]
-    resistances = [l for l in resistances if l["price"] > close * 0.98]
-
-    # Rank by recency-weighted touches so a recently-tested level outranks a stale one
-    supports    = sorted(supports,    key=lambda x: (-x["w_touches"], -x["strength"]))[:max_levels // 2]
-    resistances = sorted(resistances, key=lambda x: (-x["w_touches"], -x["strength"]))[:max_levels // 2]
-
-    return sorted(supports + resistances, key=lambda x: x["price"])
 
 
 # ── Trendline detection ────────────────────────────────────────────────────────
@@ -324,342 +234,23 @@ def detect_all_trendlines(symbol: str) -> list:
     return result
 
 
-# ── VMC Cipher A/B — WaveTrend Oscillator ─────────────────────────────────────
-#
-# Original indicator: VuManChu Cipher B by LazyBear / LuxAlgo (TradingView).
-# Formula reference: https://www.tradingview.com/script/2KE8wTuF-VuManChu-Cipher-B-Divergences/
-#
-# Cipher A  = WaveTrend oscillator only (WT1, WT2 lines + histogram).
-# Cipher B  = Cipher A + Money Flow (MFI) + divergence signals (buy/sell circles).
-#
-# Parameters (matching the original TradingView defaults):
-#   n1 = 10   channel_length  (EMA period for smoothing HLC3)
-#   n2 = 21   average_length  (second EMA — produces WT1)
-#   ob = 53   overbought      |  60 = strong OB  |  75 = extreme OB
-#   os = -53  oversold        | -60 = strong OS  | -80 = extreme OS (gold signal)
-#   mfi_period = 60           (RSI period for money flow)
-
-def compute_wavetrend(df: pd.DataFrame,
-                      n1: int = 10, n2: int = 21,
-                      ob: float = 53, os_: float = -53,
-                      mfi_period: int = 60) -> pd.DataFrame:
-    """
-    Compute WaveTrend (Cipher A core) and Money Flow (Cipher B addition).
-
-    Returns a DataFrame aligned to df with columns:
-      wt1, wt2, histogram, mfi,
-      cross_bull, cross_bear,   (bool: crossover on this bar)
-      signal                    ('gold_buy' | 'buy' | 'sell' | None)
-    """
-    hlc3   = (df["high"] + df["low"] + df["close"]) / 3.0
-    esa    = hlc3.ewm(span=n1, adjust=False).mean()
-    d      = (hlc3 - esa).abs().ewm(span=n1, adjust=False).mean()
-    # Guard against zero d (flat price)
-    ci     = (hlc3 - esa) / (0.015 * d.replace(0, float("nan"))).fillna(1e-9)
-    wt1    = ci.ewm(span=n2, adjust=False).mean()
-    wt2    = wt1.rolling(4, min_periods=1).mean()
-    hist   = wt1 - wt2
-
-    # Cipher B — Money Flow: RSI of (HLC3 × volume) normalised to ±100
-    mfi_src = hlc3 * df["volume"]
-    mfi_rsi = ta.rsi(mfi_src, length=mfi_period)
-    if mfi_rsi is not None and not mfi_rsi.empty:
-        # Rescale RSI [0,100] → [-100, 100] (centred at zero)
-        mfi = (mfi_rsi - 50.0) * 2.0
-    else:
-        mfi = pd.Series(0.0, index=df.index)
-
-    # Crossover detection (current bar WT1 crosses above/below WT2)
-    cross_bull = (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
-    cross_bear = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
-
-    # Signal dots (matching Cipher B visual logic)
-    signal = pd.Series(None, index=df.index, dtype=object)
-    gold_mask = cross_bull & (wt2 < -80)
-    buy_mask  = cross_bull & (wt2 < os_)  & ~gold_mask
-    sell_mask = cross_bear & (wt2 > ob)
-    signal[gold_mask] = "gold_buy"
-    signal[buy_mask]  = "buy"
-    signal[sell_mask] = "sell"
-
-    result = pd.DataFrame({
-        "wt1":       wt1.round(2),
-        "wt2":       wt2.round(2),
-        "histogram": hist.round(2),
-        "mfi":       mfi.round(2),
-        "cross_bull": cross_bull,
-        "cross_bear": cross_bear,
-        "signal":    signal,
-    }, index=df.index)
-    return result
-
-
 # ── Indicator computation ──────────────────────────────────────────────────────
 
 def compute_indicators(df: pd.DataFrame) -> dict:
     """
-    Compute a full indicator suite on a candle DataFrame.
-    Returns a structured dict with current values + trend descriptions.
+    Compute the full indicator suite for a candle DataFrame.
+
+    Delegates indicator computation to chart_indicators.compute_all_indicators,
+    then adds S/R levels (from chart_sr) and trendlines (detected locally).
     """
-    if df.empty or len(df) < 30:
-        return {"ok": False, "error": "Insufficient candle data"}
-
-    close  = df["close"]
-    high   = df["high"]
-    low    = df["low"]
-    volume = df["volume"]
-
-    result = {"ok": True, "candles_used": len(df)}
-
-    # ── RSI ────────────────────────────────────────────────────────────────────
-    rsi_s = ta.rsi(close, length=14)
-    if rsi_s is not None and not rsi_s.empty:
-        rsi_val = round(float(rsi_s.iloc[-1]), 1)
-        result["rsi"] = {
-            "value": rsi_val,
-            "signal": (
-                "overbought (>70)" if rsi_val > 70 else
-                "oversold (<30)"   if rsi_val < 30 else
-                "neutral"
-            ),
-        }
-
-    # ── Stochastic RSI ─────────────────────────────────────────────────────────
-    stochrsi = ta.stochrsi(close, length=14, rsi_length=14, k=3, d=3)
-    if stochrsi is not None and not stochrsi.empty:
-        k_col = [c for c in stochrsi.columns if "STOCHRSIk" in c]
-        d_col = [c for c in stochrsi.columns if "STOCHRSId" in c]
-        if k_col and d_col:
-            k = round(float(stochrsi[k_col[0]].iloc[-1]), 1)
-            d = round(float(stochrsi[d_col[0]].iloc[-1]), 1)
-            result["stoch_rsi"] = {
-                "k": k, "d": d,
-                "signal": (
-                    "overbought (K>80)" if k > 80 else
-                    "oversold (K<20)"   if k < 20 else
-                    "neutral"
-                ),
-            }
-
-    # ── MACD ───────────────────────────────────────────────────────────────────
-    macd_df = ta.macd(close, fast=12, slow=26, signal=9)
-    if macd_df is not None and not macd_df.empty:
-        macd_col = [c for c in macd_df.columns if c.startswith("MACD_")]
-        sig_col  = [c for c in macd_df.columns if c.startswith("MACDs_")]
-        hist_col = [c for c in macd_df.columns if c.startswith("MACDh_")]
-        if macd_col and sig_col and hist_col:
-            macd_v = round(float(macd_df[macd_col[0]].iloc[-1]), 4)
-            sig_v  = round(float(macd_df[sig_col[0]].iloc[-1]),  4)
-            hist_v = round(float(macd_df[hist_col[0]].iloc[-1]), 4)
-            hist_prev = float(macd_df[hist_col[0]].iloc[-2]) if len(macd_df) > 1 else hist_v
-            crossover = macd_v > sig_v and float(macd_df[macd_col[0]].iloc[-2] if len(macd_df) > 1 else macd_v) <= float(macd_df[sig_col[0]].iloc[-2] if len(macd_df) > 1 else sig_v)
-            crossunder = macd_v < sig_v and float(macd_df[macd_col[0]].iloc[-2] if len(macd_df) > 1 else macd_v) >= float(macd_df[sig_col[0]].iloc[-2] if len(macd_df) > 1 else sig_v)
-            result["macd"] = {
-                "macd":      macd_v,
-                "signal":    sig_v,
-                "histogram": hist_v,
-                "trend":     "bullish" if macd_v > sig_v else "bearish",
-                "histogram_trend": "growing" if hist_v > hist_prev else "shrinking",
-                "crossover":  crossover,
-                "crossunder": crossunder,
-            }
-
-    # ── EMAs ───────────────────────────────────────────────────────────────────
-    emas = {}
-    for length in [20, 50, 200]:
-        if len(df) >= length:
-            ema_s = ta.ema(close, length=length)
-            if ema_s is not None and not ema_s.empty:
-                emas[f"ema{length}"] = round(float(ema_s.iloc[-1]), 4)
-
-    if emas:
-        cur_price = round(float(close.iloc[-1]), 4)
-        ema_result = {**emas, "current_price": cur_price}
-
-        above = [f"EMA{k[3:]}" for k, v in emas.items() if cur_price > v]
-        below = [f"EMA{k[3:]}" for k, v in emas.items() if cur_price < v]
-
-        if len(above) == len(emas):
-            ema_result["alignment"] = "fully bullish — price above all EMAs"
-        elif len(below) == len(emas):
-            ema_result["alignment"] = "fully bearish — price below all EMAs"
-        else:
-            ema_result["alignment"] = (
-                f"mixed — above {', '.join(above)}; below {', '.join(below)}"
-                if above else f"below {', '.join(below)}"
-            )
-
-        # Check EMA order (20 > 50 > 200 = bullish stack)
-        if "ema20" in emas and "ema50" in emas and "ema200" in emas:
-            if emas["ema20"] > emas["ema50"] > emas["ema200"]:
-                ema_result["stack"] = "bullish (20 > 50 > 200)"
-            elif emas["ema20"] < emas["ema50"] < emas["ema200"]:
-                ema_result["stack"] = "bearish (20 < 50 < 200)"
-            else:
-                ema_result["stack"] = "mixed"
-
-        result["ema"] = ema_result
-
-    # ── Bollinger Bands ────────────────────────────────────────────────────────
-    bbands = ta.bbands(close, length=20, std=2)
-    if bbands is not None and not bbands.empty:
-        upper_col  = [c for c in bbands.columns if "BBU" in c]
-        lower_col  = [c for c in bbands.columns if "BBL" in c]
-        mid_col    = [c for c in bbands.columns if "BBM" in c]
-        bwidth_col = [c for c in bbands.columns if "BBB" in c]
-        if upper_col and lower_col and mid_col:
-            upper = float(bbands[upper_col[0]].iloc[-1])
-            lower = float(bbands[lower_col[0]].iloc[-1])
-            mid   = float(bbands[mid_col[0]].iloc[-1])
-            price = float(close.iloc[-1])
-            band_range = upper - lower
-            position_pct = round((price - lower) / band_range * 100, 1) if band_range > 0 else 50
-            bw = round(float(bbands[bwidth_col[0]].iloc[-1]), 4) if bwidth_col else None
-            result["bollinger"] = {
-                "upper":        round(upper, 4),
-                "mid":          round(mid, 4),
-                "lower":        round(lower, 4),
-                "position_pct": position_pct,
-                "band_width":   bw,
-                "signal": (
-                    "near upper band (overbought zone)" if position_pct > 80 else
-                    "near lower band (oversold zone)"   if position_pct < 20 else
-                    "mid-band area"
-                ),
-            }
-
-    # ── ATR ────────────────────────────────────────────────────────────────────
-    atr_s = ta.atr(high, low, close, length=14)
-    if atr_s is not None and not atr_s.empty:
-        atr_val   = round(float(atr_s.iloc[-1]), 4)
-        cur_price = float(close.iloc[-1])
-        atr_pct   = round(atr_val / cur_price * 100, 2) if cur_price else 0
-        result["atr"] = {
-            "value":   atr_val,
-            "pct":     atr_pct,
-            "comment": f"typical candle range {atr_pct}% of price — useful for SL sizing",
-        }
-
-    # ── ADX (trend strength) ───────────────────────────────────────────────────
-    adx_df = ta.adx(high, low, close, length=14)
-    if adx_df is not None and not adx_df.empty:
-        adx_col = [c for c in adx_df.columns if c.startswith("ADX_")]
-        dmp_col = [c for c in adx_df.columns if c.startswith("DMP_")]
-        dmn_col = [c for c in adx_df.columns if c.startswith("DMN_")]
-        if adx_col:
-            adx_val = round(float(adx_df[adx_col[0]].iloc[-1]), 1)
-            adx_result = {
-                "value": adx_val,
-                "strength": (
-                    "strong trend (>25)"  if adx_val > 25 else
-                    "trending (20–25)"    if adx_val > 20 else
-                    "weak/no trend (<20)"
-                ),
-            }
-            if dmp_col and dmn_col:
-                dmp = float(adx_df[dmp_col[0]].iloc[-1])
-                dmn = float(adx_df[dmn_col[0]].iloc[-1])
-                adx_result["direction"] = "bullish (+DI > -DI)" if dmp > dmn else "bearish (-DI > +DI)"
-            result["adx"] = adx_result
-
-    # ── Volume vs average ──────────────────────────────────────────────────────
-    if len(volume) >= 20:
-        vol_now = float(volume.iloc[-1])
-        vol_avg = float(volume.iloc[-20:].mean())
-        vol_ratio = round(vol_now / vol_avg, 2) if vol_avg else 1
-        result["volume"] = {
-            "current":      round(vol_now, 2),
-            "avg_20":       round(vol_avg, 2),
-            "ratio":        vol_ratio,
-            "signal": (
-                f"high volume ({vol_ratio}x avg)" if vol_ratio > 1.5 else
-                f"low volume ({vol_ratio}x avg)"  if vol_ratio < 0.7 else
-                f"average volume ({vol_ratio}x avg)"
-            ),
-        }
-
-    # ── Recent candle pattern (last 3 candles) ─────────────────────────────────
-    if len(df) >= 3:
-        candles = []
-        for i in range(-3, 0):
-            row = df.iloc[i]
-            o, c_p, h, l = float(row["open"]), float(row["close"]), float(row["high"]), float(row["low"])
-            body = abs(c_p - o)
-            full_range = h - l
-            body_pct = round(body / full_range * 100, 0) if full_range else 0
-            candle_type = "bullish" if c_p > o else "bearish"
-            if body_pct < 20:
-                candle_type = "doji"
-            candles.append(f"{candle_type} (body {body_pct:.0f}% of range)")
-        result["recent_candles"] = candles
-
-    # ── WaveTrend / VMC Cipher A+B ────────────────────────────────────────────
-    try:
-        wt_df    = compute_wavetrend(df)
-        wt1_last = float(wt_df["wt1"].iloc[-1])
-        wt2_last = float(wt_df["wt2"].iloc[-1])
-        mfi_last = float(wt_df["mfi"].iloc[-1])
-        sig_last = wt_df["signal"].iloc[-1]
-        cb_last  = bool(wt_df["cross_bull"].iloc[-1])
-        cs_last  = bool(wt_df["cross_bear"].iloc[-1])
-        wt_zone  = (
-            "overbought"  if wt1_last >  53 else
-            "oversold"    if wt1_last < -53 else
-            "neutral"
-        )
-        result["wavetrend"] = {
-            "wt1":       round(wt1_last, 2),
-            "wt2":       round(wt2_last, 2),
-            "histogram": round(wt1_last - wt2_last, 2),
-            "mfi":       round(mfi_last, 2),
-            "cross":     "bullish" if cb_last else ("bearish" if cs_last else None),
-            "zone":      wt_zone,
-            "signal":    sig_last,    # 'gold_buy' | 'buy' | 'sell' | None
-        }
-    except Exception:
-        pass  # WaveTrend is non-critical; degrade gracefully
-
-    # ── CVD (Cumulative Volume Delta) ──────────────────────────────────────────
-    # Money Flow Multiplier approximation: delta per bar = volume * (2C - L - H) / (H - L)
-    # Positive CVD = net buy pressure; negative = net sell pressure.
-    try:
-        h_arr  = df["high"].values.astype(float)
-        l_arr  = df["low"].values.astype(float)
-        c_arr  = df["close"].values.astype(float)
-        v_arr  = df["volume"].values.astype(float)
-        deltas = []
-        for i in range(len(h_arr)):
-            denom = h_arr[i] - l_arr[i]
-            delta = v_arr[i] * (2 * c_arr[i] - l_arr[i] - h_arr[i]) / denom if denom > 0 else 0.0
-            deltas.append(delta)
-        cvd_series = []
-        running = 0.0
-        for d in deltas:
-            running += d
-            cvd_series.append(running)
-        # Last 3 bars: rising or falling?
-        cvd_now   = cvd_series[-1]
-        cvd_prev  = cvd_series[-4] if len(cvd_series) >= 4 else cvd_series[0]
-        cvd_trend = "rising" if cvd_now > cvd_prev * 1.001 else ("falling" if cvd_now < cvd_prev * 0.999 else "flat")
-        result["cvd"] = {
-            "value":  round(cvd_now, 2),
-            "trend":  cvd_trend,
-            "signal": "bullish (net buy pressure)" if cvd_trend == "rising" else
-                      ("bearish (net sell pressure)" if cvd_trend == "falling" else "neutral"),
-        }
-    except Exception:
-        pass
-
-    # ── Support / Resistance ───────────────────────────────────────────────────
-    sr = detect_support_resistance(df)
-    if sr:
-        result["support_resistance"] = sr
-
-    # ── Trendlines ─────────────────────────────────────────────────────────────
-    tl = detect_trendlines(df)
-    if tl:
-        result["trendlines"] = tl
-
+    result = compute_all_indicators(df)
+    if result.get("ok"):
+        sr = detect_support_resistance(df)
+        if sr:
+            result["support_resistance"] = sr
+        tl = detect_trendlines(df)
+        if tl:
+            result["trendlines"] = tl
     return result
 
 
