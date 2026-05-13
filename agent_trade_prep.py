@@ -103,7 +103,7 @@ def run(inp: TradePrepInput, conn) -> TradePrepResult:
         symbol=symbol, direction=direction_out,
         entry=entry, sl=sl, tp1=tp1, tp2=tp2,
         criteria=[c for c in criteria if c],
-    ) if entry and sl and tp1 and candles_4h is not None else ""
+    ) if entry and sl and candles_4h is not None else ""
 
     return TradePrepResult(
         setup_score      = claude_score,

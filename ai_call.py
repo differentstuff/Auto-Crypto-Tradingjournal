@@ -317,9 +317,15 @@ def analyze_call(call_text: str, account_equity: float,
         "stop_loss":     {"price": analysis.get("sl_price")},
     })
 
-    # Ensure NOT NULL DB columns are always populated
+    # Ensure NOT NULL DB columns and key fields are always populated
     result["symbol"]            = symbol
     result["direction"]         = result.get("direction") or direction
+    result["setup_score"]       = analysis.get("setup_score", 0)
+    result["entry_price"]       = analysis.get("entry_price") or 0.0
+    result["sl_price"]          = analysis.get("sl_price") or 0.0
+    result["tp1_price"]         = analysis.get("tp1_price") or 0.0
+    result["tp2_price"]         = analysis.get("tp2_price") or 0.0
+    result["rr_ratio"]          = analysis.get("rr_ratio") or 0.0
 
     result["_call_text"]        = call_text
     result["_history"]          = {}
