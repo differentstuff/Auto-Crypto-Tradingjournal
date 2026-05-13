@@ -182,8 +182,16 @@ def init_db():
     """)
 
     # ── analyzed_calls column migrations ──────────────────────────────────────────
-    _apply(1, "analyzed_calls.exchange",     "ALTER TABLE analyzed_calls ADD COLUMN exchange TEXT DEFAULT 'bitget'")
-    _apply(2, "analyzed_calls.cot_reasoning", "ALTER TABLE analyzed_calls ADD COLUMN cot_reasoning TEXT DEFAULT NULL")
+    _apply(1,  "analyzed_calls.exchange",      "ALTER TABLE analyzed_calls ADD COLUMN exchange TEXT DEFAULT 'bitget'")
+    _apply(2,  "analyzed_calls.cot_reasoning", "ALTER TABLE analyzed_calls ADD COLUMN cot_reasoning TEXT DEFAULT NULL")
+    _apply(17, "analyzed_calls.analyst",       "ALTER TABLE analyzed_calls ADD COLUMN analyst TEXT DEFAULT ''")
+    _apply(18, "analyzed_calls.notes",         "ALTER TABLE analyzed_calls ADD COLUMN notes TEXT DEFAULT ''")
+    _apply(19, "analyzed_calls.outcome",       "ALTER TABLE analyzed_calls ADD COLUMN outcome TEXT DEFAULT NULL")
+    _apply(20, "analyzed_calls.outcome_pnl",   "ALTER TABLE analyzed_calls ADD COLUMN outcome_pnl REAL DEFAULT NULL")
+    _apply(21, "analyzed_calls.hit_tp1",       "ALTER TABLE analyzed_calls ADD COLUMN hit_tp1 INTEGER DEFAULT 0")
+    _apply(22, "analyzed_calls.hit_tp2",       "ALTER TABLE analyzed_calls ADD COLUMN hit_tp2 INTEGER DEFAULT 0")
+    _apply(23, "analyzed_calls.hit_sl",        "ALTER TABLE analyzed_calls ADD COLUMN hit_sl INTEGER DEFAULT 0")
+    _apply(24, "analyzed_calls.outcome_at",    "ALTER TABLE analyzed_calls ADD COLUMN outcome_at TEXT DEFAULT NULL")
 
     # ── pending_limits ─────────────────────────────────────────────────────────
     # Limit orders the user has placed on exchange but not yet triggered.
@@ -274,6 +282,18 @@ def init_db():
             analysis_json    TEXT,
             input_tokens     INTEGER,
             output_tokens    INTEGER
+        )
+    """)
+
+    # ── trader_rulebook_history ────────────────────────────────────────────────
+    # Keeps the last 3 rulebook versions so we can compare rule evolution.
+    _apply(25, "trader_rulebook_history", """
+        CREATE TABLE IF NOT EXISTS trader_rulebook_history (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            version     INTEGER NOT NULL,
+            rules_json  TEXT    NOT NULL,
+            trade_count INTEGER,
+            saved_at    TEXT    DEFAULT (datetime('now'))
         )
     """)
 

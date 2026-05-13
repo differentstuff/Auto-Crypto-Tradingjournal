@@ -1,4 +1,3 @@
-from constants import MODEL
 """
 ai_rulebook.py — Personalised trader rulebook derived from trade history.
 
@@ -18,8 +17,10 @@ Minimum 15 trades required before generating a rulebook.
 """
 
 import json
+import traceback
 from datetime import datetime, timezone
 
+from constants import MODEL
 from ai_client import send as ai_send
 from database import get_conn
 from helpers  import strip_fence
@@ -376,7 +377,7 @@ def _ask_claude(stats: dict, total: int) -> list:
         "  calibration — note about how accurate setup scores have been\n\n"
         "Only write rules supported by the data (min 5 trades per pattern). "
         "Skip categories with insufficient data.\n\n"
-        "Return ONLY valid JSON array:\n"
+        "Return ONLY valid JSON. No markdown. No prose outside the JSON array.\n"
         '[{"type":"warning|strength|habit|calibration","title":"max 7 words",'
         '"rule":"1-2 sentences with specific numbers","confidence":"high|medium|low","data_points":0}]'
     )
@@ -423,6 +424,23 @@ def update_rulebook(conn=None, force: bool = False) -> dict:
 
         stats = _collect_stats(conn)
         rules = _ask_claude(stats, total)
+
+        # Archive current rules before wiping (keep last 3 versions)
+        current_rules = [dict(r) for r in conn.execute(
+            "SELECT rule_type, title, rule, confidence, data_points FROM trader_rulebook"
+        ).fetchall()]
+        if current_rules:
+            last_ver = (conn.execute(
+                "SELECT MAX(version) FROM trader_rulebook_history"
+            ).fetchone()[0] or 0)
+            conn.execute(
+                "INSERT INTO trader_rulebook_history (version, rules_json, trade_count) VALUES (?,?,?)",
+                (last_ver + 1, json.dumps(current_rules), total)
+            )
+            conn.execute(
+                "DELETE FROM trader_rulebook_history WHERE version <= ?",
+                (last_ver + 1 - 3,)
+            )
 
         conn.execute("DELETE FROM trader_rulebook")
         for r in rules:

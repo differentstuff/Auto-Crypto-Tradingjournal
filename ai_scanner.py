@@ -660,6 +660,9 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 print(f"[Nansen] Signal fetch failed: {e}", flush=True)
 
         # Stage 3a — Quick score all finalists with Haiku (cheap pre-filter pass)
+        # Use a threshold 1 below min_score so Haiku false-negatives don't filter
+        # out setups that Sonnet would rate high enough (models score differently).
+        quick_threshold = max(min_score - 1, 4)
         _update(
             stage=3, stage_label="Stage 3a — Haiku quick-score",
             stage_detail=f"Fast-scoring {len(finalists)} finalist{'s' if len(finalists)!=1 else ''} with Haiku…",
@@ -671,7 +674,7 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
         qs_total = len(finalists)
         with ThreadPoolExecutor(max_workers=10) as ex:
             fq = {
-                ex.submit(_quick_score, sym, ctx, conf, dir_, shared_prefix, min_score): (sym, ctx, conf, dir_)
+                ex.submit(_quick_score, sym, ctx, conf, dir_, shared_prefix, quick_threshold): (sym, ctx, conf, dir_)
                 for sym, ctx, conf, dir_ in finalists
             }
             for f in as_completed(fq):

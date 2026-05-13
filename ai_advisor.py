@@ -130,7 +130,5 @@ def analyze(filters: dict = None) -> dict:
             "mindset_note":    "",
         }
 
-    result["_model"]        = MODEL
-    result["_input_tokens"] = message.usage.input_tokens
-    result["_output_tokens"]= message.usage.output_tokens
+    result["_model"] = MODEL
     return result

@@ -163,6 +163,14 @@ def api_calls_confirm_match(call_id):
         )
         if pos_id:
             conn.execute("UPDATE positions SET call_id=? WHERE id=?", (call_id, pos_id))
+            call_row = conn.execute(
+                "SELECT trade_type FROM analyzed_calls WHERE id=?", (call_id,)
+            ).fetchone()
+            if call_row and call_row["trade_type"]:
+                conn.execute(
+                    "UPDATE positions SET setup_type=? WHERE id=? AND (setup_type IS NULL OR setup_type='')",
+                    (call_row["trade_type"], pos_id)
+                )
         conn.commit()
     return _ok({"matched": call_id, "position_id": pos_id, "exchange": exchange})
 

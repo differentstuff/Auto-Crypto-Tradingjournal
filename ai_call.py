@@ -304,7 +304,7 @@ def analyze_call(call_text: str, account_equity: float,
     rubric = prompt_builder.get_setup_rubric(detected_type or "")
 
     with db_conn() as conn:
-        history = get_symbol_summary(symbol, conn, exchange=exchange)
+        history = get_symbol_summary(symbol, conn)
         ctx_str = prompt_builder.build_context(
             conn          = conn,
             symbol        = symbol,
@@ -335,9 +335,7 @@ def analyze_call(call_text: str, account_equity: float,
             "optimizations": [], "risks": [],
         }
 
-    result["_call_text"]     = call_text
-    result["_sizing"]        = sizing
-    result["_history"]       = history
-    result["_input_tokens"]  = message.usage.input_tokens
-    result["_output_tokens"] = message.usage.output_tokens
+    result["_call_text"] = call_text
+    result["_sizing"]    = sizing
+    result["_history"]   = history
     return result
