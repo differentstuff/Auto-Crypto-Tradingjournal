@@ -549,6 +549,64 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
     return user_prompt
 
 
+def _score_finalists_with_agents(finalists: list, conn) -> list:
+    """
+    Run the agent pipeline (DataCollector → Interpreter → Sentiment →
+    Reviewer → TradePrep) for each finalist. Replaces the inline Sonnet batch call.
+
+    finalists: list of (sym, ctx, conf, direction, quick_score, rationale) tuples
+    Returns list of setup dicts compatible with the scanner output format.
+    """
+    import agent_data_collector
+    import agent_data_interpreter
+    import agent_market_sentiment
+    import agent_data_reviewer
+    import agent_orchestrator
+
+    results = []
+    for sym, ctx, conf, direction, quick_score, rationale in finalists:
+        try:
+            collected = agent_data_collector.run({
+                "symbol": sym, "direction": direction, "timeframes": ["4H", "1D"],
+            })
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                f_i = ex.submit(agent_data_interpreter.run, {"collected": collected})
+                f_s = ex.submit(agent_market_sentiment.run,
+                                {"symbol": sym, "direction": direction,
+                                 "collected": collected})
+            interpreted = f_i.result()
+            sentiment   = f_s.result()
+            reviewed = agent_data_reviewer.run({
+                "interpreted": interpreted, "symbol": sym,
+                "direction": direction, "setup_type": "scanner",
+            }, conn)
+            prep = agent_orchestrator.run_scanner_prep(
+                sym, direction, collected, interpreted, reviewed, sentiment, conn,
+            )
+            score = prep.get("setup_score", 0)
+            if score < 1:
+                continue
+            results.append({
+                "_symbol":        sym,
+                "symbol":         sym,
+                "direction":      direction,
+                "setup_score":    score,
+                "entry_zone":     f"{prep.get('entry_price', 0):.4f}",
+                "sl_price":       prep.get("sl_price", 0),
+                "tp1":            prep.get("tp1_price", 0),
+                "tp2":            prep.get("tp2_price", 0),
+                "rr_ratio":       prep.get("rr_ratio", 0),
+                "key_conditions": prep.get("key_conditions", []),
+                "chart_png_b64":  prep.get("chart_png_b64", ""),
+                "_quick_score":   quick_score,
+                "_rationale":     rationale,
+                "confluence":     conf.get("label", ""),
+            })
+        except Exception as e:
+            print(f"[Scanner] agent scoring failed for {sym}: {e}", flush=True)
+    return results
+
+
 def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
                     min_score=SCANNER_MIN_SCORE, criteria=None, nansen_signals=None):
     """
@@ -716,8 +774,8 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
             stage_detail  = f"Batch-scoring top {len(top_finalists)} setup{'s' if len(top_finalists)!=1 else ''} with Sonnet…",
             stage_progress= 0,
         )
-        setups = _batch_ai_score(top_finalists, mkt_str, histories, rulebook_str,
-                                  min_score, criteria=cr, nansen_signals=nansen_signals)
+        with db_conn() as conn:
+            setups = _score_finalists_with_agents(top_finalists, conn)
         _update(stage_progress=100)
 
         # Add non-top-N setups with Haiku score + one-sentence rationale
