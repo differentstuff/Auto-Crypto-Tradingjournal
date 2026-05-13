@@ -226,7 +226,7 @@ def build_story(styles):
     story.append(Spacer(1, 0.4*cm))
     story.append(ColoredRule(C_ACCENT, 0.6))
     story.append(Spacer(1, 0.4*cm))
-    story.append(Paragraph("Multi-Model Intelligence Framework — v1.0.1", S["cover_meta"]))
+    story.append(Paragraph("Multi-Model Intelligence Framework — v1.1.0", S["cover_meta"]))
     story.append(Paragraph("Claude Sonnet · Claude Haiku · Google Gemini · xAI Grok · Nansen · CoinGecko", S["cover_meta"]))
     story.append(Spacer(1, 1*cm))
 
@@ -854,8 +854,111 @@ def build_story(styles):
         "last 20 calls with Gemini live (uses API credits).", S["body"]))
     story.append(PageBreak())
 
-    # ── SECTION 10: SUMMARY TABLE ─────────────────────────────────────────────
-    story.append(Paragraph("10. Complete Agent Reference", S["h1"]))
+    # ── SECTION 10: 7-AGENT PIPELINE (v1.1.0) ────────────────────────────────
+    story.append(Paragraph("10. Specialized Agent Pipeline (v1.1.0)", S["h1"]))
+    story.append(ColoredRule(C_ACCENT))
+    story.append(Spacer(1, 4))
+
+    story.append(Paragraph(
+        "In v1.1.0 the AI pipeline was refactored into 7 specialized agents with typed "
+        "input/output contracts (TypedDict). Each agent has one clear responsibility, "
+        "can be tested in isolation, and communicates only via return values — no shared "
+        "mutable state. All TypedDicts live in <code>agent_types.py</code>.",
+        S["body"]))
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("10.1  Pipeline Flow", S["h2"]))
+
+    pipeline_flow = """
+DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewer
+    → TradePrep (Claude + Gemini) → RiskMgmt → AnalysisResult
+
+After position opens:
+    TradeMonitor (background, every 10 min) runs:
+    DataCollector → DataInterpreter → MarketSentiment → Haiku verdict
+    On risk_rating ≥ 7 or action ≠ Hold: fires Telegram alert + sets UI badge
+    """
+    story.append(Paragraph(
+        "<pre>" + pipeline_flow.strip() + "</pre>",
+        ParagraphStyle("code_block", fontName="Courier", fontSize=8,
+                       textColor=C_ACCENT2, backColor=C_SURFACE,
+                       borderPadding=6, leading=12)))
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("10.2  Agent Contracts", S["h2"]))
+
+    agent_contracts = [
+        ["Agent", "Input", "Output", "AI call?", "DB access?"],
+        ["DataCollector",       "CollectorInput",   "CollectorResult",   "No",     "No"],
+        ["DataInterpreter",     "CollectorResult",  "InterpreterResult", "No",     "No"],
+        ["MarketSentiment",     "CollectorResult",  "SentimentResult",   "No",     "No"],
+        ["DataReviewer",        "InterpreterResult","ReviewerResult",    "No",     "Read-only"],
+        ["RiskManagement",      "TradePrepResult",  "RiskResult",        "No",     "No"],
+        ["TradePreparation",    "All 4 above",      "TradePrepResult",   "Sonnet+Gemini", "Read (stable prefix)"],
+        ["TradeMonitor",        "Position + Interp","MonitorResult",     "Haiku",  "Read"],
+        ["ChartDraw",           "Candles + levels", "PNG (base64)",      "No",     "No"],
+    ]
+    story.append(make_table(agent_contracts,
+        [3.2*cm, 3.0*cm, 3.0*cm, 2.5*cm, 2.5*cm],
+        header_bg=C_ACCENT, font_size=8.5))
+
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("10.3  New Capabilities", S["h2"]))
+
+    new_caps = [
+        (
+            "📊 Annotated Trade Charts  —  agent_chart_draw.py",
+            "When TradePrep produces a trade recommendation, agent_chart_draw.py "
+            "generates a dark-themed mplfinance candlestick chart annotated with "
+            "Entry (blue dashed), Stop Loss (red dashed), TP1 and TP2 (green) lines, "
+            "a level legend, and the decision criteria as text overlaid in the top-right. "
+            "The PNG is base64-encoded and stored in analyzed_calls.chart_png_b64. "
+            "Telegram scanner alerts attach this chart as a photo — you see the trade "
+            "setup visually, not just as numbers."
+        ),
+        (
+            "⚖️ Kelly Criterion Sizing  —  agent_risk_mgmt.py",
+            "Position sizing now includes a Kelly criterion fraction (0.05–0.25) derived "
+            "from the setup_score as an edge proxy. Kelly maps a score of 1-10 to a "
+            "win-rate estimate of 0.35–0.75, then computes f = (WR×R − (1−WR)) / R "
+            "where R = 2.0 (conservative 2:1 R:R baseline). Capped at 0.25 to prevent "
+            "overbetting. The sizing_breakdown and kelly_fraction are saved in "
+            "analyzed_calls.risk_verdict_json for review."
+        ),
+        (
+            "🔍 Proactive Position Monitor  —  monitor_scheduler.py",
+            "A background thread polls all open positions every 10 minutes. Positions "
+            "where unrealized_pct < -5% OR duration > 4 hours are checked with a "
+            "lightweight DataCollector → DataInterpreter → MarketSentiment → Haiku chain. "
+            "When risk_rating ≥ 7 or action ≠ Hold, the system fires a Telegram alert "
+            "and sets monitor_alert=1 in analyzed_calls for the UI badge — without "
+            "executing any trades (recommend-only)."
+        ),
+        (
+            "🔀 Contra Signal Detection  —  agent_market_sentiment.py",
+            "The MarketSentiment agent computes a contra_signal flag: True when the "
+            "crowd is heavily positioned against the proposed trade direction (>65% of "
+            "accounts long when you're going Long). Contrarian awareness is injected "
+            "into every TradePrep prompt, and the TradeMonitor uses it to raise risk "
+            "ratings on existing positions that are swimming against the crowd."
+        ),
+    ]
+    C_CHART = colors.HexColor("#f39c12")
+    cap_colors = [C_CHART, C_ACCENT3, C_SONNET, C_ACCENT2]
+    for (title, desc), color in zip(new_caps, cap_colors):
+        story.append(agent_card(
+            title, color, "v1.1.0",
+            "Automatic — triggered by TradePrep or monitor thread",
+            "See description",
+            "",
+            desc,
+            styles
+        ))
+
+    story.append(PageBreak())
+
+    # ── SECTION 11: SUMMARY TABLE ─────────────────────────────────────────────
+    story.append(Paragraph("11. Complete Agent Reference", S["h1"]))
     story.append(ColoredRule(C_ACCENT))
     story.append(Spacer(1, 4))
 
@@ -877,8 +980,17 @@ def build_story(styles):
         ["chart_context",    "Data",        "—",              "Per analysis",     "Bitget REST (cached)"],
         ["market_context",   "Data",        "—",              "Per analysis",     "4 exchanges + 2 APIs"],
         ["scanner_scheduler","Automation",  "—",              "Every 30 min",     "Spawns scanner + Telegram"],
+        ["monitor_scheduler","Automation",  "—",              "Every 10 min",     "Haiku per position"],
         ["bitget_sync",      "Automation",  "—",              "Every 5 min",      "Bitget REST cursor"],
         ["blofin_sync",      "Automation",  "—",              "Every 5 min",      "Blofin REST cursor"],
+        ["agent_data_collector","Agent",    "—",              "Per pipeline call","Parallel: 7 sources"],
+        ["agent_data_interpreter","Agent",  "—",              "Per pipeline call","Pure: indicators"],
+        ["agent_market_sentiment","Agent",  "—",              "Per pipeline call","Pure: macro bias"],
+        ["agent_data_reviewer","Agent",     "—",              "Per pipeline call","DB reads: KPIs"],
+        ["agent_risk_mgmt",  "Agent",       "—",              "Per pipeline call","Pure math: Kelly"],
+        ["agent_trade_prep", "Agent",       "Sonnet+Gemini",  "Per pipeline call","Main AI call"],
+        ["agent_trade_monitor","Agent",     "Haiku 4.5",      "Per monitor pass", "~800 in / 300 out"],
+        ["agent_chart_draw", "Agent",       "—",              "Per TradePrep",    "mplfinance PNG"],
     ]
     story.append(make_table(ref_data,
         [3.8*cm, 2.3*cm, 2.5*cm, 2.5*cm, 3.7*cm],
@@ -888,7 +1000,7 @@ def build_story(styles):
     story.append(ColoredRule(C_MUTED))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
-        "Trading Journal v1.0.1 · Self-hosted on Raspberry Pi 5 · "
+        "Trading Journal v1.1.0 · Self-hosted on Raspberry Pi 5 · "
         "Built with Claude Code · github.com/anvilfilbert/Auto-Crypto-Tradingjournal",
         ParagraphStyle("footer", fontSize=8, textColor=C_MUTED,
                       fontName="Helvetica", alignment=TA_CENTER)))
@@ -927,7 +1039,7 @@ def main():
         leftMargin=1.8*cm, rightMargin=1.8*cm,
         topMargin=1.6*cm,  bottomMargin=1.6*cm,
         title="Trading Journal — AI Agent Architecture",
-        author="Trading Journal v1.0.1",
+        author="Trading Journal v1.1.0",
         subject="Multi-Model Intelligence Framework",
     )
 

@@ -9,24 +9,47 @@
 We are continuing work on a self-hosted crypto futures trading journal.
 
 **Project:** `/Users/fbauer/Documents/ClaudeAIData/Trading-Journal/`
-**Version:** v1.0.1 (commit `9b07267`, deployed to Pi at 192.168.1.21:8082)
+**Version:** v1.1.0 (commit `080b408`, deployed to Pi at 192.168.1.21:8082)
 **Stack:** Python 3.13 / Flask 3.1 / SQLite WAL / Raspberry Pi 5
 **GitHub:** https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal
 
 ---
 
-## What is built (v1.0.1 complete)
+## What is built (v1.1.0 complete)
 
-### AI Agent Pipeline
-- **Master orchestrator:** `agent_orchestrator.py` — routes models, computes Claude vs Gemini consensus
-- **Call Analyzer:** `ai_call.py` — Claude Sonnet 4.6, parallel Gemini pre-proof + Grok social intel, CoT stored + reused
-- **Scanner:** `ai_scanner.py` — 3-stage: confluence filter → quality gate → Haiku quick-score → Sonnet batch → Gemini consensus top-5
-- **Advisor:** `ai_advisor.py` — portfolio coaching, cached stable prefix
-- **Hindsight / Trade Grader / Live Trade / Limit Analyzer:** Haiku (fast classification)
-- **Gemini:** `gemini_client.py` — independent pre-proof scoring (Gemini 2.0 Flash)
-- **Grok:** `grok_client.py` — xAI social intelligence, MC-weighted (micro-cap 80%, small 40%, mid 15%, large 0%)
+### 7-Agent Pipeline (NEW in v1.1.0)
 
-### Consensus Logic
+All TypedDicts live in `agent_types.py`. Agents communicate via typed return values only.
+
+```
+DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewer
+→ TradePrep (Claude + Gemini) → RiskMgmt → AnalysisResult
+                                                    ↓ [position opens]
+                                             TradeMonitor (background, every 10 min)
+```
+
+**New files:**
+- `agent_types.py` — all TypedDict contracts
+- `agent_data_collector.py` — parallel fetch (OHLCV, funding, OI, F&G, FRED, Nansen, Grok)
+- `agent_data_interpreter.py` — pure indicator transforms
+- `agent_market_sentiment.py` — pure sentiment: contra_signal, crowd_position, funding_bias
+- `agent_data_reviewer.py` — signal quality gate (0-10) + KPIs from DB
+- `agent_risk_mgmt.py` — pure math: sizing + Kelly criterion (0.05–0.25)
+- `agent_chart_draw.py` — mplfinance annotated PNG (entry/SL/TP + criteria)
+- `agent_trade_prep.py` — main Claude + Gemini call, assembles all agents
+- `agent_trade_monitor.py` — Haiku chain, fires Telegram + UI badge on risk_rating ≥ 7
+- `monitor_scheduler.py` — background thread (10 min, polls positions)
+
+**Modified files (same external API):**
+- `agent_orchestrator.py` — gained `run_call_analysis()`, `run_scanner_prep()`, `run_monitor()`
+- `ai_call.py` — delegates to `run_call_analysis()`
+- `ai_scanner.py` — Stage 3b calls `run_scanner_prep()` per finalist
+- `ai_live_trade.py` — delegates to `run_monitor()`
+- `telegram_notify.py` — gained `send_photo()` + chart attachment to scanner alerts
+
+**DB migrations 29-31:** `analyzed_calls` has `risk_verdict_json`, `monitor_alert`, `chart_png_b64`
+
+### Consensus Logic (from v1.0.1)
 ```
 |Claude - Gemini| ≤ 1 → ✓ Confirmed
 |Claude - Gemini| ≤ 2 → ~ Aligned
@@ -34,56 +57,45 @@ We are continuing work on a self-hosted crypto futures trading journal.
 |Claude - Gemini| > 3 → ⚡ REVIEW (skip trade)
 ```
 
-### Prompt Caching
-- `build_stable_prefix()` → rulebook + calibration → `cache_control: ephemeral` (changes weekly)
-- `build_context()` → backtest insights + market + chart + Nansen + Grok → not cached
+### Prompt Caching (from v1.0.1)
+- `build_stable_prefix()` → rulebook + calibration → `cache_control: ephemeral`
+- `build_context()` → backtest + market + chart + Nansen + Grok → not cached
 - Expected savings: 40–60% on repeated calls
 
-### Backtest Accuracy Loop
-- `analytics.get_backtest_context()` injects historical WR by symbol/setup/weekday/hour into every prompt
-- `scripts/backtest_consensus.py` measures H1/H2/H3 accuracy (need ~15–20 more outcomes for 85% target)
+---
 
-### Auto-Linking
-- Scanner alerts saved to `analyzed_calls` (analyst='scanner') by `_persist_setups()` in `scanner_scheduler.py`
-- `check-matches` auto-confirms scanner + closed calls against open positions
+## Key Files
 
-### Key Files
 ```
-constants.py          — MODEL, FAST_MODEL, GEMINI_*, VERSION, CONSENSUS_*_DELTA
-agent_orchestrator.py — compute_consensus(), route_model(), add_gemini_consensus()
-gemini_client.py      — score_call(), score_setup()
-grok_client.py        — get_coin_context(), grok_weight()
-prompt_builder.py     — build_stable_prefix() + build_context()
-helpers.py            — build_cached_messages() — places cache_control on stable block
-analytics.py          — get_backtest_context()
-ai_call.py            — full pipeline with parallel Gemini+Grok
-ai_scanner.py         — 3-stage + Gemini consensus
-routes/calls.py       — api_calls_linkable() includes status='closed'
-scanner_scheduler.py  — _persist_setups() → analyzed_calls
-database.py           — migrations 1–28; analyzed_calls has gemini_score, consensus_score, consensus_flag
-docs/architecture.md  — ASCII flow maps
-docs/architecture_detailed.pdf — 10-section PDF (beginners + experts)
-scripts/self_test.py  — 54-test smoke runner (--host, --write, --ai)
-scripts/backtest_consensus.py — accuracy measurement
+agent_types.py            All TypedDicts (CollectorResult, TradePrepResult, etc.)
+agent_orchestrator.py     compute_consensus() + 3 pipeline runners
+ai_call.py                analyze_call() → delegates to orchestrator
+ai_scanner.py             3-stage + agent pipeline Stage 3b
+monitor_scheduler.py      Background position monitor
+constants.py              MODEL, FAST_MODEL, GEMINI_*, VERSION="1.1.0", MONITOR_*
+database.py               Migrations 1–31
+routes/calls.py           api_calls_save() reads _sizing, risk_reward, bitget_settings from result
+scripts/self_test.py      54 tests + --agents pipeline smoke test
+scripts/generate_architecture_pdf.py  reportlab PDF generator
+docs/architecture.md      ASCII flow maps
+docs/architecture_detailed.pdf  10-section PDF
 ```
-
-### DB: migrations applied through #28
-`analyzed_calls` table has 3 new columns: `gemini_score INTEGER`, `consensus_score REAL`, `consensus_flag TEXT`
 
 ---
 
 ## Deployment
-- Pi IP: 192.168.1.21 — credentials in memory file `feedback_pi_ssh.md`
-- After any push: SSH with expect + password, git reset --hard origin/main, restart service
-- Service: `trading-journal` (systemd, always auto-restarts)
+- Pi IP: 192.168.1.21, credentials in memory `feedback_pi_ssh.md`
+- After any push: SSH via expect + password, `git reset --hard origin/main`, restart service
+- Service runs via `python app.py` (not gunicorn)
 
 ---
 
-## Next Work (pick up here)
+## Next Work (priority order)
 
-1. **Accuracy accumulation** — only 5 outcome-recorded calls exist; need ~15–20 more for 85% target. Run new calls through the analyzer and record outcomes.
-2. **Hyblock Capital integration** — liquidation levels as 8th confluence signal. Spec: `docs/superpowers/specs/2026-05-09-architecture-review-and-optimisation.md` §9. Register at hyblockcapital.com, get OAuth2 creds, build `hyblock_client.py`.
-3. **Phase 4 UI/UX** — stale-data badge on live trades, symbol autocomplete in call analyzer, scanner ETA display.
+1. **Accuracy accumulation** — need ~15–20 outcome-recorded calls for 85% target (currently ~5)
+2. **Hyblock Capital integration** — liquidation levels as 8th confluence signal. Spec: `docs/superpowers/specs/2026-05-09-architecture-review-and-optimisation.md` §9
+3. **Phase 4 UI/UX** — stale-data badge on live trades, symbol autocomplete, scanner ETA display
+4. **Architecture PDF regeneration** — `python3 scripts/generate_architecture_pdf.py` to update `docs/architecture_detailed.pdf` with v1.1.0 agent pipeline
 
 ---
 
@@ -95,14 +107,15 @@ scripts/backtest_consensus.py — accuracy measurement
 - `BLOFIN_*` — Blofin exchange
 - `NANSEN_*` — Nansen smart money
 - `TELEGRAM_BOT_TOKEN` — alerts
+- `FRED_API_KEY` — macro data (free)
 
 ---
 
 ## Versioning Policy
-- Bump only on significant feature milestones (not bug fixes)
-- v1.x = feature additions; v2.0 = major new capability (e.g. Hyblock integration + Phase 4 complete)
-- Current: v1.0.1
+- v1.0.x = bug fixes and minor additions (continuous)
+- v1.1 = 7-agent pipeline + TradeMonitor + charts + Kelly
+- v2.0 = major new capability (new exchange, auth layer, new data tier)
 
 ---
 
-*Memory files at `/Users/fbauer/.claude/projects/-Users-fbauer/memory/` contain full detail. Read `project_trading_journal.md` for the complete module map.*
+*Memory files at `/Users/fbauer/.claude/projects/-Users-fbauer/memory/` contain full detail.*
