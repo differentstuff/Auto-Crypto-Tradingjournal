@@ -219,9 +219,8 @@ def analyze_call(call_text: str, account_equity: float,
     open_positions: Open position list for correlation check
     """
     text_lower = call_text.lower()
-    setup_type = None  # resolved by Claude; None avoids NameError on similar-trades lookup
 
-    # Priority: $SYMBOL / #SYMBOL → explicit XXXUSDT → bare 3-6 uppercase ticker
+    # Symbol extraction (keep existing reliable logic)
     _NON_TICKERS = {"SL", "TP", "DCA", "USD", "ATR", "RSI", "ALL", "BUY", "ASK", "BID"}
     sym_match = (
         re.search(r'[\$#]([A-Z]{2,10})', call_text)
@@ -237,142 +236,65 @@ def analyze_call(call_text: str, account_equity: float,
         symbol = symbol[:-4]
 
     direction = "Short" if any(w in text_lower for w in ("short", "sell", "bearish")) else "Long"
-    has_dca   = "dca"   in text_lower
 
-    def _extract_price(keywords, text):
-        for kw in keywords:
-            # [^$\d]{0,20} — up to 20 non-price chars before the $ sign
-            m = re.search(rf'{kw}[^$\d]{{0,20}}\$(\d{{2,}}\.\d+)', text, re.IGNORECASE)
-            if m: return float(m.group(1))
-            m = re.search(rf'{kw}[^\d]{{0,20}}(\d{{2,}}\.\d+)', text, re.IGNORECASE)
-            if m: return float(m.group(1))
-        return None
-
-    entry_price = _extract_price(
-        ["entry at", "at \\$", "@ \\$", "price of \\$", "market \\$"], call_text)
-    dca_price   = _extract_price(["dca at", "dca:", "dca \\$"], call_text)
-    sl_price    = _extract_price(
-        ["sl.*?under", "sl.*?below", "stop.*?under", "stop.*?below",
-         "under \\$", "below \\$", "sl at", "sl:"], call_text)
-
-    all_prices = [float(x) for x in re.findall(r'\$(\d{2,}\.\d+)', call_text)]
-    if not entry_price and all_prices:
-        entry_price = max(all_prices) if direction == "Long" else min(all_prices)
-    if not sl_price and len(all_prices) >= 2:
-        sl_price = min(all_prices) if direction == "Long" else max(all_prices)
-    if not dca_price and has_dca and len(all_prices) >= 3:
-        sorted_p  = sorted(all_prices)
-        dca_price = sorted_p[1] if direction == "Long" else sorted_p[-2]
-
-    sizing = {}
-    if entry_price and sl_price and entry_price != sl_price:
-        sizing = _calc_sizing(account_equity, entry_price, sl_price,
-                              dca_price if has_dca else None, direction=direction)
-    else:
-        sizing = {
-            "note":             "Could not auto-extract prices — check call text",
-            "account_equity":   round(account_equity, 2),
-            "risk_pct":         2.0 if has_dca else 1.0,
-            "risk_amount_usdt": round(account_equity * (0.02 if has_dca else 0.01), 2),
-        }
-
-    corr_warn = _correlation_warning(symbol, direction, open_positions or [])
-
-    # ATR check, market context, and Gemini pre-proof run in parallel
-    mkt_str   = market_regime or ""
-    atr_warn  = ""
-    gem_pre   = None
-    need_atr  = bool(entry_price and sl_price)
-    need_mkt  = not mkt_str
-    need_gem  = gemini_client.is_configured()
-
-    workers = sum([need_atr, need_mkt, need_gem])
-    if workers > 0:
-        with ThreadPoolExecutor(max_workers=max(workers, 1)) as ex:
-            f_atr = ex.submit(trade_utils.atr_sl_warning, symbol, entry_price, sl_price) if need_atr else None
-            f_mkt = ex.submit(market_context.get_market_str, [symbol]) if need_mkt else None
-            f_gem = ex.submit(gemini_client.score_call, call_text, symbol, direction) if need_gem else None
-        atr_warn = f_atr.result() if f_atr else ""
-        mkt_str  = f_mkt.result() if f_mkt else mkt_str
-        gem_pre  = f_gem.result() if f_gem else None
-
-    use_chart = _has_tech_levels(call_text)
-
-    # Detect setup type from call text for rubric injection
-    _text_lower = call_text.lower()
-    detected_type = None
+    # Setup type detection
+    detected_type = ""
     for kw, st in (("breakout","breakout"),("breakdown","breakout"),("reversal","reversal"),
                    ("trend follow","continuation"),("continuation","continuation"),
                    ("range","range"),("scalp","range")):
-        if kw in _text_lower:
+        if kw in text_lower:
             detected_type = st
             break
 
-    rubric = prompt_builder.get_setup_rubric(detected_type or "")
-
     with db_conn() as conn:
-        history = get_symbol_summary(symbol, conn)
-        # Stable prefix (rulebook + calibration + strengths) — cached by Anthropic
-        stable  = prompt_builder.build_stable_prefix(conn)
-        # Dynamic context (backtest insights + market + chart) — not cached
-        ctx_str = prompt_builder.build_context(
-            conn              = conn,
-            symbol            = symbol,
-            direction         = direction,
-            setup_type        = setup_type,
-            market_str        = mkt_str,
-            include_chart     = use_chart,
-            include_rulebook  = False,      # already in stable_prefix
-            include_calibration = False,    # already in stable_prefix
-            include_strengths = False,      # already in stable_prefix
-            timeframes        = ["4H", "1D"],
+        analysis = agent_orchestrator.run_call_analysis(
+            call_text      = call_text,
+            symbol         = symbol,
+            direction      = direction,
+            account_equity = account_equity,
+            setup_type     = detected_type,
+            open_positions = open_positions or [],
+            conn           = conn,
         )
-        # CoT reuse: inject prior reasoning for same symbol to enable learning loop
-        row = conn.execute(
-            "SELECT cot_reasoning FROM analyzed_calls "
-            "WHERE symbol = ? AND cot_reasoning IS NOT NULL AND cot_reasoning != '' "
-            "ORDER BY created_at DESC LIMIT 1",
-            (symbol,)
-        ).fetchone()
-        prior_cot = row["cot_reasoning"] if row else ""
 
-    prompt   = _build_prompt(call_text, sizing, history, has_image=bool(image_b64),
-                              atr_warning=atr_warn, corr_warning=corr_warn,
-                              rubric=rubric, prior_cot=prior_cot)
-    messages = build_cached_messages(ctx_str, prompt, image_b64, image_type,
-                                     stable_prefix=stable)
-    raw_text, cached = ai_send("call_analyzer", MODEL, messages, max_tokens=4096)
+    if analysis.get("degraded"):
+        raise RuntimeError(analysis.get("error", "Agent pipeline failed"))
 
-    raw = strip_fence(raw_text.strip())
+    # Reconstruct return format from AnalysisResult
+    # raw_json is Claude's full response from TradePrep
+    result = dict(analysis.get("raw_json") or {})
 
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError:
-        result = {
-            "symbol":        symbol, "direction": direction,
-            "setup_quality": {"score": 0, "label": "Parse Error"},
-            "chart_analysis": raw[:500],
-            "summary":        raw,
-            "bitget_settings": {}, "risk_reward": {},
-            "optimizations": [], "risks": [],
-        }
+    # Ensure setup_quality exists with expected keys
+    if "setup_quality" not in result:
+        result["setup_quality"] = {}
+    sq = result["setup_quality"]
+    if not sq.get("score") and analysis.get("setup_score"):
+        sq["score"] = analysis["setup_score"]
 
-    result["_call_text"] = call_text
-    result["_sizing"]    = sizing
-    result["_history"]   = history
+    # Consensus fields into setup_quality (existing routes read from here)
+    if analysis.get("gemini_score"):
+        sq["gemini_score"]         = analysis["gemini_score"]
+        sq["consensus_score"]      = analysis.get("consensus", {}).get("consensus_score")
+        sq["consensus_flag"]       = analysis.get("consensus", {}).get("flag")
+        sq["consensus_confidence"] = analysis.get("consensus", {}).get("confidence")
 
-    # Gemini pre-proof consensus
-    if gem_pre and isinstance(gem_pre.get("score"), (int, float)):
-        claude_score = (result.get("setup_quality") or {}).get("score", 0)
-        if claude_score:
-            consensus = agent_orchestrator.compute_consensus(claude_score, gem_pre["score"])
-            result["_gemini"]    = gem_pre
-            result["_consensus"] = consensus
-            # Amend the setup_quality label to show consensus flag inline
-            sq = result.setdefault("setup_quality", {})
-            sq["gemini_score"]     = gem_pre["score"]
-            sq["consensus_score"]  = consensus["consensus_score"]
-            sq["consensus_flag"]   = consensus["flag"]
-            sq["consensus_confidence"] = consensus["confidence"]
+    # Legacy compatibility keys
+    result["_gemini"]    = {"score": analysis.get("gemini_score", 0)}
+    result["_consensus"] = analysis.get("consensus", {})
+    result["_sizing"]    = {
+        "position_size_usdt": analysis.get("position_size_usdt", 0.0),
+        "margin_usdt":        analysis.get("margin_usdt", 0.0),
+        "kelly_fraction":     analysis.get("kelly_fraction", 0.05),
+        "risk_approved":      analysis.get("risk_approved", False),
+        "account_equity":     round(account_equity, 2),
+        "risk_pct":           1.0,
+    }
+    result["_call_text"]        = call_text
+    result["_history"]          = {}
+    result["_signal_quality"]   = analysis.get("signal_quality", 0.0)
+    result["_reviewer_warnings"] = analysis.get("reviewer_warnings", [])
+    result["_contra_signal"]    = analysis.get("contra_signal", False)
+    result["_model"]            = MODEL
+    result["chart_png_b64"]     = analysis.get("chart_png_b64", "")
 
     return result
