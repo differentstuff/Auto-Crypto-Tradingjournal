@@ -81,7 +81,7 @@ def analyze_position(position: dict) -> dict:
                 analysis = _json.loads(row["analysis_json"])
                 original_prep = {
                     "sl_price":  analysis.get("sl_price"),
-                    "tp1_price": analysis.get("tp1"),
+                    "tp1_price": analysis.get("tp1_price") or analysis.get("tp1") or (analysis.get("risk_reward", {}) or {}).get("tp1"),
                 }
     except Exception:
         pass

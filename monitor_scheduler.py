@@ -42,7 +42,10 @@ def _get_original_prep(conn, symbol: str) -> dict:
         if row and row["analysis_json"]:
             import json
             d = json.loads(row["analysis_json"])
-            return {"sl_price": d.get("sl_price"), "tp1_price": d.get("tp1")}
+            return {
+                "sl_price":  d.get("sl_price"),
+                "tp1_price": d.get("tp1_price") or d.get("tp1") or (d.get("risk_reward", {}) or {}).get("tp1"),
+            }
     except Exception:
         pass
     return {}

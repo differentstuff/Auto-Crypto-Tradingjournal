@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import base64
 import pytest
+mpf = pytest.importorskip("mplfinance", reason="mplfinance not installed")
 import agent_chart_draw as cd
 
 

@@ -270,6 +270,10 @@ def analyze_call(call_text: str, account_equity: float,
     sq = result["setup_quality"]
     if not sq.get("score") and analysis.get("setup_score"):
         sq["score"] = analysis["setup_score"]
+    if not sq.get("label") and sq.get("score"):
+        score = int(sq.get("score", 0))
+        sq["label"] = ("Strong" if score >= 9 else "Good" if score >= 7 else
+                       "Monitor" if score >= 5 else "Avoid")
 
     # Consensus fields into setup_quality (existing routes read from here)
     if analysis.get("gemini_score"):
@@ -282,13 +286,37 @@ def analyze_call(call_text: str, account_equity: float,
     result["_gemini"]    = {"score": analysis.get("gemini_score", 0)}
     result["_consensus"] = analysis.get("consensus", {})
     result["_sizing"]    = {
-        "position_size_usdt": analysis.get("position_size_usdt", 0.0),
-        "margin_usdt":        analysis.get("margin_usdt", 0.0),
-        "kelly_fraction":     analysis.get("kelly_fraction", 0.05),
-        "risk_approved":      analysis.get("risk_approved", False),
-        "account_equity":     round(account_equity, 2),
-        "risk_pct":           1.0,
+        "position_size_usdt":   analysis.get("position_size_usdt", 0.0),
+        "total_notional_usdt":  analysis.get("position_size_usdt", 0.0),
+        "margin_usdt":          analysis.get("margin_usdt", 0.0),
+        "margin_needed_usdt":   analysis.get("margin_usdt", 0.0),
+        "kelly_fraction":       analysis.get("kelly_fraction", 0.05),
+        "risk_approved":        analysis.get("risk_approved", False),
+        "account_equity":       round(account_equity, 2),
+        "risk_pct":             1.0,
+        "risk_amount_usdt":     round(account_equity * 0.01, 2),
+        "leverage":             10,
+        "entry_price":          analysis.get("entry_price"),
+        "sl_price":             analysis.get("sl_price"),
+        "avg_entry":            analysis.get("entry_price"),
     }
+
+    # routes/calls.py reads rr.get("ratio") for rr_ratio column
+    result.setdefault("risk_reward", {
+        "ratio": analysis.get("rr_ratio"),
+        "entry": analysis.get("entry_price"),
+        "sl":    analysis.get("sl_price"),
+        "tp1":   analysis.get("tp1_price"),
+        "tp2":   analysis.get("tp2_price"),
+    })
+
+    # routes/calls.py reads tp1/tp2 prices from bitget_settings
+    result.setdefault("bitget_settings", {
+        "take_profit_1": {"price": analysis.get("tp1_price")},
+        "take_profit_2": {"price": analysis.get("tp2_price")},
+        "stop_loss":     {"price": analysis.get("sl_price")},
+    })
+
     result["_call_text"]        = call_text
     result["_history"]          = {}
     result["_signal_quality"]   = analysis.get("signal_quality", 0.0)

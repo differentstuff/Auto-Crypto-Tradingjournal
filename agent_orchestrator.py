@@ -212,8 +212,8 @@ def run_call_analysis(
             f_sent   = ex.submit(agent_market_sentiment.run,
                                  {"symbol": symbol, "direction": direction,
                                   "collected": collected})
-        interpreted = f_interp.result()
-        sentiment   = f_sent.result()
+            interpreted = f_interp.result()
+            sentiment   = f_sent.result()
     except Exception:
         interpreted = _empty_interp(symbol)
         sentiment   = _empty_sent()
@@ -226,17 +226,23 @@ def run_call_analysis(
     except Exception:
         reviewed = _empty_review()
 
-    prep = agent_trade_prep.run(TradePrepInput(
-        collected=collected, interpreted=interpreted,
-        reviewed=reviewed, sentiment=sentiment,
-        call_text=call_text, account_equity=account_equity,
-        setup_type=setup_type,
-    ), conn)
+    try:
+        prep = agent_trade_prep.run(TradePrepInput(
+            collected=collected, interpreted=interpreted,
+            reviewed=reviewed, sentiment=sentiment,
+            call_text=call_text, account_equity=account_equity,
+            setup_type=setup_type,
+        ), conn)
+    except Exception as e:
+        return _degraded(f"TradePrep failed: {e}")
 
-    risk = agent_risk_mgmt.run(RiskInput(
-        trade_prep=prep, account_equity=account_equity,
-        open_positions=open_positions,
-    ), conn)
+    try:
+        risk = agent_risk_mgmt.run(RiskInput(
+            trade_prep=prep, account_equity=account_equity,
+            open_positions=open_positions,
+        ), conn)
+    except Exception as e:
+        risk = agent_risk_mgmt._blocked([f"RiskMgmt error: {e}"])
 
     return AnalysisResult(
         setup_score=prep["setup_score"], direction=prep["direction"],
