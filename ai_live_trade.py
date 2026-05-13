@@ -61,47 +61,46 @@ Rules:
 
 def analyze_position(position: dict) -> dict:
     """
-    Run AI analysis on a single open position.
-    position: dict from bitget_client.get_open_positions()
-    Returns structured dict with recommendation.
+    Run AI analysis on a single open position. Delegates to agent_trade_monitor
+    via agent_orchestrator.run_monitor(). External API unchanged.
     """
-    mkt_str = market_context.get_market_str([position["symbol"]])
+    import agent_orchestrator
 
-    with db_conn() as conn:
-        history = get_symbol_summary(position["symbol"], conn)
-        ctx_str = prompt_builder.build_context(
-            conn            = conn,
-            symbol          = position["symbol"],
-            market_str      = mkt_str,
-            timeframes      = ["4H", "1D"],
-            include_similar = False,
-        )
-
-    prompt  = _build_prompt(position, history, ctx_str)
-    raw_text, _cached = ai_send(
-        "live_trade", FAST_MODEL,   # quick action recommendation = low-latency priority
-        [{"role": "user", "content": prompt}],
-        max_tokens=768,
-    )
-    raw = strip_fence(raw_text.strip())
-
+    # Look up original TradePrepResult if an analyzed_call exists for this symbol
+    original_prep = {}
     try:
-        result = json.loads(raw)
-    except json.JSONDecodeError:
-        result = {
-            "risk_rating":        {"value": 0, "label": "Unknown"},
-            "action":             "Review manually",
-            "action_reason":      raw[:200],
-            "tp_recommendation":  {"price": "", "rationale": ""},
-            "sl_recommendation":  {"price": "", "rationale": ""},
-            "key_risks":          [],
-            "historical_context": "",
-            "time_urgency":       "Unknown",
-            "summary":            raw,
-        }
+        with db_conn() as conn:
+            row = conn.execute(
+                """SELECT analysis_json FROM analyzed_calls
+                   WHERE symbol=? AND status IN ('matched','saved')
+                   ORDER BY created_at DESC LIMIT 1""",
+                (position["symbol"],),
+            ).fetchone()
+            if row and row["analysis_json"]:
+                import json as _json
+                analysis = _json.loads(row["analysis_json"])
+                original_prep = {
+                    "sl_price":  analysis.get("sl_price"),
+                    "tp1_price": analysis.get("tp1"),
+                }
+    except Exception:
+        pass
 
-    result["_symbol"]        = position["symbol"]
-    result["_input_tokens"]  = message.usage.input_tokens
-    result["_output_tokens"] = message.usage.output_tokens
-    result["_history"]       = history
-    return result
+    result = agent_orchestrator.run_monitor(position, original_prep)
+
+    # Reshape MonitorResult to existing return format that routes/live.py expects
+    return {
+        "risk_rating":        {"value": result["risk_rating"],
+                               "label": result["alert_level"].title()},
+        "action":             result["action"],
+        "action_reason":      result["action_reason"],
+        "tp_recommendation":  result["tp_recommendation"],
+        "sl_recommendation":  result["sl_recommendation"],
+        "key_risks":          result["key_risks"],
+        "summary":            result["summary"],
+        "historical_context": "",
+        "time_urgency":       ("Immediate" if result["risk_rating"] >= 8 else
+                               "Today" if result["risk_rating"] >= 6 else "No rush"),
+        "_symbol":            result["_symbol"],
+        "_model":             FAST_MODEL,
+    }
