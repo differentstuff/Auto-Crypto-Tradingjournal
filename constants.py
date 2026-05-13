@@ -41,3 +41,8 @@ CONSENSUS_HIGH_DELTA     = 1       # |claude - gemini| ≤ 1 → high confidence
 CONSENSUS_MED_DELTA      = 2       # ≤ 2 → medium
 CONSENSUS_LOW_DELTA      = 3       # ≤ 3 → low (Claude 60% weight)
                                    # > 3 → very_low / REVIEW flag
+
+# ── Trade monitor background thread ──────────────────────────────────────────
+MONITOR_INTERVAL           = int(os.environ.get("MONITOR_INTERVAL",   "600"))   # 10 min
+MONITOR_THRESHOLD_PCT      = float(os.environ.get("MONITOR_THRESHOLD_PCT", "-5.0"))
+MONITOR_THRESHOLD_DURATION = int(os.environ.get("MONITOR_THRESHOLD_DURATION", "240"))
