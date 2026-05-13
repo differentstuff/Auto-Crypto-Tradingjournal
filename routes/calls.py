@@ -70,14 +70,21 @@ def api_calls_saved():
 
 @bp.route("/api/calls/save", methods=["POST"])
 def api_calls_save():
-    d   = request.get_json(force=True)
-    sz  = d.get("_sizing", {})
-    sq  = d.get("setup_quality", {})
-    rr  = d.get("risk_reward", {})
-    bs  = d.get("bitget_settings", {})
-    sl_b = bs.get("stop_loss", {})
-    tp1  = bs.get("take_profit_1", {})
-    tp2  = bs.get("take_profit_2", {})
+    d    = request.get_json(force=True)
+    sz   = d.get("_sizing", {}) or {}
+    sq   = d.get("setup_quality", {}) or {}
+    rr   = d.get("risk_reward", {}) or {}
+    bs   = d.get("bitget_settings", {}) or {}
+    sl_b = bs.get("stop_loss", {}) or {}
+    tp1  = bs.get("take_profit_1", {}) or {}
+    tp2  = bs.get("take_profit_2", {}) or {}
+
+    # Extract chart PNG before storing JSON (keeps analysis_json lean)
+    chart_b64 = d.pop("chart_png_b64", None) or ""
+
+    # Guard NOT NULL columns — symbol/direction must always be present
+    symbol    = (d.get("symbol") or "").strip() or "UNKNOWN"
+    direction = (d.get("direction") or "Long").strip()
 
     with db_conn() as conn:
         cur = conn.cursor()
@@ -89,10 +96,10 @@ def api_calls_save():
                risk_pct, risk_amount, leverage, has_dca, has_candle_close_sl,
                setup_score, setup_label, rr_ratio, trade_type,
                sl_warning, entry_timing, analysis_json, analyst, cot_reasoning,
-               gemini_score, consensus_score, consensus_flag)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               gemini_score, consensus_score, consensus_flag, chart_png_b64)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
-            d.get("symbol"), d.get("direction"),
+            symbol, direction,
             d.get("_call_text", ""),
             sz.get("entry_price"), sz.get("dca_price"),
             sz.get("sl_price") or (float(sl_b.get("price") or 0) or None),
@@ -107,10 +114,11 @@ def api_calls_save():
             d.get("sl_warning"), d.get("entry_timing"),
             json.dumps(d),
             (d.get("_analyst") or "").strip(),
-            d.get("thinking"),
+            d.get("thinking") or d.get("cot_reasoning"),
             sq.get("gemini_score"),
             con.get("consensus_score"),
             con.get("flag"),
+            chart_b64 or None,
         ))
         new_id = cur.lastrowid
         conn.commit()

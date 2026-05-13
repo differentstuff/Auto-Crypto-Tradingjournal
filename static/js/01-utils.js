@@ -339,7 +339,12 @@ async function api(path, method='GET', body=null) {
   const opts = { method, headers: {'Content-Type':'application/json'} };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);
-  return r.json();
+  const text = await r.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, error: `Server error (HTTP ${r.status})` };
+  }
 }
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────

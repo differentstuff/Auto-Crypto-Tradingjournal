@@ -374,6 +374,7 @@ async function saveCurrentCall() {
   try {
     const analyst = (document.getElementById('call-analyst')?.value || '').trim();
     const payload = Object.assign({}, _lastCallResult, { _analyst: analyst });
+    delete payload.chart_png_b64;  // sent separately, keeps POST body small
     const res = await api('/api/calls/save', 'POST', payload);
     if (res.ok) {
       btn.textContent = '✅ Saved';

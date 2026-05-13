@@ -317,6 +317,10 @@ def analyze_call(call_text: str, account_equity: float,
         "stop_loss":     {"price": analysis.get("sl_price")},
     })
 
+    # Ensure NOT NULL DB columns are always populated
+    result["symbol"]            = symbol
+    result["direction"]         = result.get("direction") or direction
+
     result["_call_text"]        = call_text
     result["_history"]          = {}
     result["_signal_quality"]   = analysis.get("signal_quality", 0.0)
