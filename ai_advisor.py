@@ -17,8 +17,9 @@ from constants import MODEL, FAST_MODEL
 from ai_client import send as ai_send
 from analytics import get_dashboard_kpis, get_deep_stats
 from database  import db_conn
-from helpers   import strip_fence
+from helpers   import strip_fence, build_cached_messages
 import market_context
+import prompt_builder
 
 
 
@@ -102,8 +103,9 @@ def analyze(filters: dict = None) -> dict:
         safe_filters = filters if "exchange" in cols else {
             k: v for k, v in filters.items() if k != "exchange"
         }
-        kpis = get_dashboard_kpis(filters=safe_filters, conn=conn)
-        deep = get_deep_stats(filters=safe_filters, conn=conn)
+        kpis   = get_dashboard_kpis(filters=safe_filters, conn=conn)
+        deep   = get_deep_stats(filters=safe_filters, conn=conn)
+        stable = prompt_builder.build_stable_prefix(conn)
 
     ctx     = market_context.get_market_context(["BTCUSDT"])
     mkt_str = market_context.format_for_prompt(ctx)
@@ -111,7 +113,7 @@ def analyze(filters: dict = None) -> dict:
 
     raw_text, _cached = ai_send(
         "advisor", MODEL,
-        [{"role": "user", "content": prompt}],
+        build_cached_messages("", prompt, stable_prefix=stable),
         max_tokens=4096,
     )
     raw = strip_fence(raw_text.strip())

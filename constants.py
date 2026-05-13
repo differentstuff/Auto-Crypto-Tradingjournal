@@ -1,5 +1,7 @@
 import os
 
+VERSION                = "1.0.1"
+
 # ── Anthropic models ──────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY      = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL                  = "claude-sonnet-4-6"

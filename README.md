@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget/Blofin sync, AI-po
 </p>
 
 <p align="center">
-  <strong>v1.0</strong>
+  <strong>v1.0.1</strong>
   &nbsp;·&nbsp;
   <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/releases/download/v2.5/trading-journal-factsheet.pdf">📄 Fact Sheet</a>
   &nbsp;·&nbsp;

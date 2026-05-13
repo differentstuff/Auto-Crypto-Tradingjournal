@@ -102,7 +102,7 @@ def _get_market_cap(base: str) -> Optional[float]:
             "https://api.coingecko.com/api/v3/simple/price"
             f"?ids={cg_id}&vs_currencies=usd&include_market_cap=true"
         )
-        req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0.1"})
         with urllib.request.urlopen(req, timeout=8) as r:
             data = json.loads(r.read())
         mc = data.get(cg_id, {}).get("usd_market_cap")

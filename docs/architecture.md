@@ -1,6 +1,6 @@
 # Trading Journal — Architecture & Data Flow
 
-*v1.0 · Updated 2026-05-13*
+*v1.0.1 · Updated 2026-05-13*
 
 ---
 

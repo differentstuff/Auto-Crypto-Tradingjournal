@@ -52,7 +52,7 @@ def get_fear_greed() -> dict:
         try:
             req = urllib.request.Request(
                 "https://api.alternative.me/fng/?limit=1",
-                headers={"User-Agent": "TradingJournal/1.0"},
+                headers={"User-Agent": "TradingJournal/1.0.1"},
             )
             with urllib.request.urlopen(req, timeout=10) as r:
                 d = json.loads(r.read())
@@ -131,7 +131,7 @@ def get_btc_dominance() -> dict:
         try:
             req = urllib.request.Request(
                 "https://api.coingecko.com/api/v3/global",
-                headers={"User-Agent": "TradingJournal/1.0"},
+                headers={"User-Agent": "TradingJournal/1.0.1"},
             )
             with urllib.request.urlopen(req, timeout=10) as r:
                 d = json.loads(r.read())
@@ -155,7 +155,7 @@ def get_economic_calendar() -> list:
         try:
             req = urllib.request.Request(
                 "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                headers={"User-Agent": "TradingJournal/1.0"},
+                headers={"User-Agent": "TradingJournal/1.0.1"},
             )
             with urllib.request.urlopen(req, timeout=10) as r:
                 events = json.loads(r.read())
@@ -226,7 +226,7 @@ def get_market_context(symbols: Optional[list] = None) -> dict:
 def _fetch_url(url: str, timeout: int = 8) -> dict:
     """GET a JSON URL, return parsed dict or {} on error."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0.1"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except Exception as e:

@@ -381,23 +381,35 @@ Respond with ONLY valid JSON — no markdown, no code fences."""
 
 
 def _build_shared_prefix(mkt_str: str, rulebook_str: str,
-                          min_score: int = SCANNER_MIN_SCORE, criteria: dict = None) -> str:
-    """Shared context block — identical for all finalists in a scan, caches across calls."""
-    cr        = criteria or CRITERIA_DEFAULTS
-    mkt_block = f"MARKET CONTEXT:\n{mkt_str}\n\n" if mkt_str else ""
-    rb_block  = f"TRADER RULEBOOK:\n{rulebook_str}\n\n" if rulebook_str else ""
+                          min_score: int = SCANNER_MIN_SCORE,
+                          criteria: dict = None) -> str:
+    """
+    Full shared prefix (legacy path — used when stable_prefix is not passed separately).
+    For caching-aware callers use _build_scanner_stable() + mkt_block separately.
+    """
+    stable   = _build_scanner_stable(rulebook_str, min_score, criteria)
+    mkt_part = f"MARKET CONTEXT:\n{mkt_str}\n\n" if mkt_str else ""
+    return mkt_part + stable
+
+
+def _build_scanner_stable(rulebook_str: str, min_score: int = SCANNER_MIN_SCORE,
+                           criteria: dict = None) -> str:
+    """
+    Cacheable scanner prefix: rulebook + scoring scale + criteria.
+    No market data — stable across scan runs (changes only when rulebook updates).
+    Pass as stable_prefix to build_cached_messages() so Anthropic caches it.
+    """
+    cr       = criteria or CRITERIA_DEFAULTS
+    rb_block = f"TRADER RULEBOOK:\n{rulebook_str}\n\n" if rulebook_str else ""
     dis_block = _disabled_criteria_block(cr)
     dis_part  = f"\n{dis_block}\n" if dis_block else ""
-
-    # Build dynamic score cap line based on enabled criteria
     caps = []
     if cr.get("sr_anchor", True): caps.append("no structural entry")
     if cr.get("atr_sl",    True): caps.append("SL inside ATR noise")
     if cr.get("rr_minimum",True): caps.append("R:R below 1.5:1")
     cap_str = " or ".join(caps) if caps else "no valid setup"
-
     return (
-        f"{mkt_block}{rb_block}"
+        f"{rb_block}"
         + SCORING_SCALE + "\n"
         + "5=Mod(borderline), 6=Accept(R:R≥1.5), 7=Good(R:R≥2:1), "
         + "8=Strong(R:R≥2.5:1), 9=Excellent(multi-TF,R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
@@ -546,13 +558,16 @@ def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
     if not finalists:
         return []
     cr = criteria or CRITERIA_DEFAULTS
-    shared = _build_shared_prefix(mkt_str, rulebook_str, min_score, criteria=cr)
+    # Stable prefix (rulebook + scoring scale) cached by Anthropic across scan runs.
+    # Market context goes in the dynamic block — changes every scan cycle.
+    stable_pfx  = _build_scanner_stable(rulebook_str, min_score, criteria=cr)
+    mkt_dynamic = f"MARKET CONTEXT:\n{mkt_str}\n\n" if mkt_str else ""
     user_prompt = _build_batch_prompt(finalists, histories, min_score, criteria=cr,
                                       nansen_signals=nansen_signals)
     try:
         raw_text, _cached = ai_send(
             "scanner_batch", MODEL,
-            build_cached_messages(shared, user_prompt),
+            build_cached_messages(mkt_dynamic, user_prompt, stable_prefix=stable_pfx),
             max_tokens=min(4096, 1200 * len(finalists)),
         )
         raw = strip_fence(raw_text.strip())
