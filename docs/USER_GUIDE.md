@@ -1,6 +1,6 @@
 # Crypto Trading Journal — User Guide
 
-**Version:** v2.8.1  
+**Version:** v1.1.0  
 **App URL:** http://`<your-host>`:8082  
 **Exchanges:** Bitget USDT-M Futures · Blofin USDT-M Futures
 
@@ -625,7 +625,7 @@ Shows the Bitget API connection status and lets you trigger a manual sync.
 
 ### Sync Details
 
-- Automatic sync runs every 15 minutes in the background
+- Automatic sync runs every 5 minutes in the background
 - **Sync Now** triggers an immediate sync
 - First sync after a fresh install picks up from the latest trade in the DB — so old history comes from CSV import, not the API
 
@@ -651,10 +651,13 @@ The bottom of the Live Sync page shows the Telegram alert status. When configure
 
 **What the alerts look like:**
 - Symbol, direction, score/10, entry zone, SL, TP1, R:R
+- **Annotated chart image** (v1.1.0+) — dark-theme candlestick chart with Entry, SL, TP1, TP2 lines drawn and the decision criteria as text overlay
 - Chart pattern name if identifiable
 - Urgency (Now / 1-4h / Today / 1-3 days)
 - Brief summary from Claude
 - Link back to the journal
+
+**Monitor alerts** (v1.1.0+) — A second background thread checks your open positions every 10 minutes. If any position has `unrealized P&L < -5%` or has been open more than 4 hours, the AI evaluates it. If risk_rating ≥ 7 or action ≠ Hold, you get an immediate Telegram alert with the recommended action (Hold / Adjust SL / Partial Close / Close Now). No automatic trades are executed — these are recommendations only.
 
 If no setups are found in a scan cycle, no message is sent — alerts are signal-only, not noise.
 
@@ -828,7 +831,31 @@ High accuracy means the setup scoring system genuinely predicts your outcomes. I
 
 ---
 
-## New in v2.7.2 (current)
+## New in v1.1.0 (current)
+
+**7-Agent AI Pipeline** — the AI stack is now built from 7 specialized agents with typed contracts. Each agent has one job and can be tested independently:
+
+| Agent | What it does |
+|-------|-------------|
+| DataCollector | Fetches all data in parallel: candles, funding rate, open interest, Fear & Greed, FRED macro, Nansen, Grok |
+| DataInterpreter | Computes RSI/MACD/EMA/ADX/WaveTrend/S&R/confluence — pure math, no AI |
+| MarketSentiment | Produces a macro verdict including `contra_signal` (crowd positioned against your trade) |
+| DataReviewer | Quality-gates the technical picture (0-10 score) and pulls your personal backtest context |
+| RiskManagement | Sizes the position with Kelly criterion (0.05–0.25) and checks correlation/SL validity |
+| TradePrep | Main Claude + Gemini call — assembles all upstream outputs into one prompt |
+| TradeMonitor | Haiku-powered background monitor for open positions |
+
+**Annotated trade charts** — every call analysis generates a dark-theme candlestick chart with Entry (blue), SL (red), TP1/TP2 (green) lines drawn and the decision criteria annotated. The chart is stored with the call and attached to Telegram scanner alerts as a photo.
+
+**Proactive Trade Monitor** — a background thread watches your open positions every 10 minutes. On risk_rating ≥ 7 or action ≠ Hold: Telegram alert fired, UI badge set on the call.
+
+**Kelly criterion sizing** — position size recommendation now includes a Kelly fraction alongside the fixed-risk calculation.
+
+**Consensus scoring improved** — Claude vs Gemini delta thresholds: |Δ|≤1 = ✓ Confirmed, |Δ|≤2 = ~ Aligned, |Δ|≤3 = ⚠ Divergent, |Δ|>3 = ⚡ REVIEW.
+
+---
+
+## New in v2.7.2
 
 **Bug fix:** Chart window showed "Network error" for all coins — NaN in wavetrend JSON was invalid and caused JavaScript's `response.json()` to throw. Fixed app-wide with a SafeEncoder on Flask and a null-guard in chart_context.py.
 

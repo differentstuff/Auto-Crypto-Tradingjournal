@@ -9,7 +9,7 @@
 We are continuing work on a self-hosted crypto futures trading journal.
 
 **Project:** `/Users/fbauer/Documents/ClaudeAIData/Trading-Journal/`
-**Version:** v1.1.0 (commit `080b408`, deployed to Pi at 192.168.1.21:8082)
+**Version:** v1.1.0 (commit `6e70a9d`, deployed to Pi at 192.168.1.21:8082)
 **Stack:** Python 3.13 / Flask 3.1 / SQLite WAL / Raspberry Pi 5
 **GitHub:** https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal
 
@@ -35,7 +35,7 @@ DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewe
 - `agent_market_sentiment.py` — pure sentiment: contra_signal, crowd_position, funding_bias
 - `agent_data_reviewer.py` — signal quality gate (0-10) + KPIs from DB
 - `agent_risk_mgmt.py` — pure math: sizing + Kelly criterion (0.05–0.25)
-- `agent_chart_draw.py` — mplfinance annotated PNG (entry/SL/TP + criteria)
+- `agent_chart_draw.py` — pure matplotlib annotated PNG (entry/SL/TP + criteria) — no mplfinance dep
 - `agent_trade_prep.py` — main Claude + Gemini call, assembles all agents
 - `agent_trade_monitor.py` — Haiku chain, fires Telegram + UI badge on risk_rating ≥ 7
 - `monitor_scheduler.py` — background thread (10 min, polls positions)
@@ -69,17 +69,27 @@ DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewe
 ```
 agent_types.py            All TypedDicts (CollectorResult, TradePrepResult, etc.)
 agent_orchestrator.py     compute_consensus() + 3 pipeline runners
+agent_chart_draw.py       Pure matplotlib chart — plt.switch_backend("Agg") inside draw()
 ai_call.py                analyze_call() → delegates to orchestrator
+                          result["symbol"], ["direction"], ["tp1_price"] etc. explicitly mapped
 ai_scanner.py             3-stage + agent pipeline Stage 3b
 monitor_scheduler.py      Background position monitor
 constants.py              MODEL, FAST_MODEL, GEMINI_*, VERSION="1.1.0", MONITOR_*
-database.py               Migrations 1–31
-routes/calls.py           api_calls_save() reads _sizing, risk_reward, bitget_settings from result
+database.py               Migrations 1–31 (29=risk_verdict_json, 30=monitor_alert, 31=chart_png_b64)
+routes/calls.py           api_calls_save(): guards NOT NULL; saves chart_png_b64 to own column
+static/js/01-utils.js     api() handles non-JSON server errors (no more cryptic Safari exceptions)
+static/js/07-calls.js     saveCurrentCall() strips chart_png_b64 from POST payload
 scripts/self_test.py      54 tests + --agents pipeline smoke test
-scripts/generate_architecture_pdf.py  reportlab PDF generator
+requirements.txt          matplotlib>=3.7.0 (replaced mplfinance)
 docs/architecture.md      ASCII flow maps
-docs/architecture_detailed.pdf  10-section PDF
+docs/architecture_detailed.pdf  11-section PDF
 ```
+
+### Known issues / gotchas
+- Pi must have `matplotlib>=3.7.0` installed (`pip3 install matplotlib --break-system-packages`)
+- `plt.switch_backend("Agg")` is called inside `draw()` — must be after imports, not at module level
+- Claude returns `"tp1"` key (not `"tp1_price"`) — `ai_call.py` reads `result.get("tp1")` as fallback
+- `analyzed_calls.symbol` and `.direction` are NOT NULL — always explicitly set in `ai_call.analyze_call()`
 
 ---
 
@@ -95,7 +105,6 @@ docs/architecture_detailed.pdf  10-section PDF
 1. **Accuracy accumulation** — need ~15–20 outcome-recorded calls for 85% target (currently ~5)
 2. **Hyblock Capital integration** — liquidation levels as 8th confluence signal. Spec: `docs/superpowers/specs/2026-05-09-architecture-review-and-optimisation.md` §9
 3. **Phase 4 UI/UX** — stale-data badge on live trades, symbol autocomplete, scanner ETA display
-4. **Architecture PDF regeneration** — `python3 scripts/generate_architecture_pdf.py` to update `docs/architecture_detailed.pdf` with v1.1.0 agent pipeline
 
 ---
 

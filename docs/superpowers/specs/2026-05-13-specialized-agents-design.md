@@ -1,6 +1,6 @@
 # Specialized Agent Infrastructure — Design Spec
 
-*v1.0 · 2026-05-13*
+*v1.0 · 2026-05-13 · **IMPLEMENTED** in commits d01741c–6e70a9d*
 
 ---
 

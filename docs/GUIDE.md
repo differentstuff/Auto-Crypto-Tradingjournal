@@ -1,6 +1,6 @@
 # Crypto Trading Journal — Full Technical Reference
 
-**Version:** v2.8.0  
+**Version:** v1.1.0  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
 **Project path:** `/home/<your-user>/trading-journal/`
@@ -12,7 +12,7 @@
 A full-stack web application for Bitget USDT-M Futures traders:
 
 1. **Imports** Bitget CSV history (positions, orders, transactions)
-2. **Syncs live** new closed trades every 15 minutes via Bitget API
+2. **Syncs live** new closed trades every 5 minutes via Bitget API
 3. **Analyzes** every open position with Claude AI on demand
 4. **Analyzes** analyst trade calls before entering — with chart image vision, position sizing, scoring
 5. **Tracks** pending limit orders as shadow trades (risk + correlation analysis)
@@ -44,8 +44,8 @@ Browser (http://<your-pi-ip>:8082)
     ├── prompt_builder.py       ← Shared context assembler for all AI modules (v2.1)
     ├── ai_advisor.py           ← Full-portfolio Claude analysis
     ├── ai_live_trade.py        ← Per-trade Claude analysis (uses prompt_builder)
-    ├── ai_call.py              ← Core call analysis logic (split from ai_call_analyzer v2.1)
-    ├── ai_limit.py             ← Pending limit analysis (split from ai_call_analyzer v2.1)
+    ├── ai_call.py              ← Core call analysis logic (delegates to agent pipeline (v1.1.0))
+    ├── ai_limit.py             ← Pending limit analysis (delegates to agent pipeline (v1.1.0))
     ├── constants.py            ← All shared constants: models, cache TTLs, thresholds (v2.8)
     ├── prompt_fragments.py      ← Shared AI prompt text blocks (v2.8)
     ├── ai_client.py              ← Singleton Anthropic wrapper + auto token logging (v2.8)
@@ -56,14 +56,28 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_trade_grader.py      ← Auto-grade closed trade execution via Claude
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
-    ├── ai_scanner.py           ← Proactive setup scanner: 3-stage pipeline, 100 symbols, scores 6-10/10
+    ├── ai_scanner.py           ← Proactive setup scanner: 3-stage pipeline + agent pipeline Stage 3b
+    ├── gemini_client.py        ← Google Gemini 2.0 Flash pre-proof consensus scoring
+    ├── grok_client.py          ← xAI Grok social intelligence, MC-weighted (micro-cap 80%, large 0%)
+    ├── agent_orchestrator.py   ← Consensus scoring + pipeline runners (run_call_analysis, run_monitor)
     ├── ai_hindsight.py         ← Retroactive blind scoring + P&L comparison (historical candles)
     ├── scanner_scheduler.py    ← Background daemon: force_scan() every 30 min + Telegram alert on findings
-    ├── telegram_notify.py      ← Telegram Bot API client (stdlib only); send_setup_alert(), send_test_message()
+    ├── monitor_scheduler.py    ← Background daemon: polls open positions every 10 min, Telegram alert on risk≥7
+    ├── telegram_notify.py      ← Telegram Bot API client (stdlib only); send_setup_alert(), send_photo(), send_message()
     ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache) + get_market_str()
     ├── chart_context.py        ← OHLCV candles + historical snapshots + pandas-ta + confluence_score()
     ├── bitget_client.py        ← Authenticated Bitget REST API v2 client
-    ├── bitget_sync.py          ← Background sync thread (every 15 min)
+    ├── bitget_sync.py          ← Background sync thread (every 5 min)
+    │
+    ├── agent_types.py          ← All TypedDict contracts for 7 specialized agents (v1.1.0)
+    ├── agent_data_collector.py ← DataCollector: parallel fetch OHLCV+funding+OI+F&G+FRED+Nansen+Grok
+    ├── agent_data_interpreter.py ← DataInterpreter: pure indicator transforms, S/R, confluence
+    ├── agent_market_sentiment.py ← MarketSentiment: macro verdict, contra_signal, crowd_position
+    ├── agent_data_reviewer.py  ← DataReviewer: signal quality gate (0-10) + KPIs from DB
+    ├── agent_risk_mgmt.py      ← RiskManagement: sizing + Kelly criterion (pure math, no AI)
+    ├── agent_chart_draw.py     ← ChartDraw: annotated trade PNG via matplotlib (entry/SL/TP + criteria)
+    ├── agent_trade_prep.py     ← TradePrep: main Claude + Gemini call, assembles all agents
+    ├── agent_trade_monitor.py  ← TradeMonitor: Haiku position monitor, fires Telegram on risk≥7
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
 templates/index.html            ← Frontend: HTML structure only (~910 lines)
@@ -342,7 +356,7 @@ Headers: ACCESS-KEY, ACCESS-SIGN, ACCESS-TIMESTAMP, ACCESS-PASSPHRASE
 
 ## `bitget_sync.py` — Background Sync
 
-Daemon thread, runs inside Flask, syncs every 15 minutes.
+Daemon thread, runs inside Flask, syncs every 5 minutes.
 
 **First-run logic:** Uses timestamp of most recent DB position as sync start point → no redundant 85-day backfill.
 

@@ -7,7 +7,7 @@ This document describes every scoring, grading, and rating system used by Claude
 ## 1. Setup Quality Score — Call Analyzer
 
 **Where:** Call Analyzer → analyze a new call  
-**File:** `ai_call_analyzer.py`  
+**File:** `agent_trade_prep.py` (via `ai_call.py`)  
 **Scale:** 1–10 integer, with a label
 
 | Score | Label |
