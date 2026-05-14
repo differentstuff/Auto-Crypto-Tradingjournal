@@ -63,8 +63,8 @@ def get_open_positions() -> list:
         return []
 
 
-def get_position_history(symbol: str = None, limit: int = 50) -> list:
-    """Return list of closed order dicts. Empty list on error."""
+def get_position_history(symbol: str = None, limit: int = 100, after: str = None) -> list:
+    """Return list of closed order dicts. Empty list on error. 'after' accepted for backward compat."""
     try:
         exchange = get_blofin_exchange()
         sym_ccxt = (symbol.removesuffix("USDT") + "/USDT:USDT" if symbol else None)
