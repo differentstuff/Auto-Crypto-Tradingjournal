@@ -77,9 +77,58 @@ class BacktestResult:
 
 
 def _fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
-    """Fetch OHLCV data using the journal's existing get_candles() function."""
-    from chart_context import get_candles
-    return get_candles(symbol, timeframe, limit=limit)
+    """
+    Fetch OHLCV data from Bitget with pagination (API caps at 200 per call).
+    Walks backwards using endTime cursor until limit candles are collected.
+    """
+    import bitget_client
+    MAX_PER_CALL = 200
+    sym = symbol.upper()
+    if not sym.endswith("USDT"):
+        sym += "USDT"
+
+    frames = []
+    end_time = None
+    remaining = limit
+
+    while remaining > 0:
+        params = {
+            "symbol":      sym,
+            "productType": "USDT-FUTURES",
+            "granularity": timeframe,
+            "limit":       str(min(remaining, MAX_PER_CALL)),
+        }
+        if end_time is not None:
+            params["endTime"] = str(end_time)
+
+        try:
+            raw = bitget_client._get("/api/v2/mix/market/candles", params)
+        except Exception:
+            break
+
+        if not raw or not isinstance(raw, list) or len(raw) == 0:
+            break
+
+        chunk = pd.DataFrame(raw, columns=[
+            "timestamp", "open", "high", "low", "close", "volume", "quote_volume"
+        ])
+        for col in ["open", "high", "low", "close", "volume", "quote_volume"]:
+            chunk[col] = pd.to_numeric(chunk[col], errors="coerce")
+        chunk["timestamp"] = pd.to_numeric(chunk["timestamp"])
+        frames.append(chunk)
+
+        remaining -= len(raw)
+        end_time = int(chunk["timestamp"].min()) - 1  # cursor: one ms before oldest
+
+        if len(raw) < MAX_PER_CALL:
+            break
+
+    if not frames:
+        return pd.DataFrame()
+
+    df = pd.concat(frames, ignore_index=True)
+    df = df.sort_values("timestamp").drop_duplicates("timestamp").reset_index(drop=True)
+    return df
 
 
 def _compute_signals(df: pd.DataFrame, params: BacktestParams) -> pd.DataFrame:
