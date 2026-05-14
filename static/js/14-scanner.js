@@ -486,6 +486,27 @@ function _buildProgressBlock(state) {
     wrap.appendChild(det);
   }
 
+  // ETA estimation (shown only between 5% and 95% overall progress)
+  if (state.started_at && state.status === 'running') {
+    const elapsed    = Date.now() / 1000 - state.started_at;
+    const overallPct = stage === 1 ? pct * 0.40
+                     : stage === 2 ? 40 + pct * 0.20
+                     : stage === 3 ? 60 + pct * 0.40
+                     : 0;
+    const frac = overallPct / 100;
+    if (frac > 0.05 && frac < 0.95 && elapsed > 5) {
+      const totalEst  = elapsed / frac;
+      const remaining = Math.max(0, Math.round(totalEst - elapsed));
+      const etaText   = remaining < 60
+        ? '~' + remaining + 's remaining'
+        : '~' + Math.ceil(remaining / 60) + 'm remaining';
+      const eta = document.createElement('div');
+      eta.style.cssText = 'font-size:.75rem;color:var(--muted);margin-top:4px';
+      eta.textContent = etaText;
+      wrap.appendChild(eta);
+    }
+  }
+
   return wrap;
 }
 
