@@ -840,7 +840,7 @@ expect -c "
   expect \"password:\"
   send \"raspberry\r\"
   expect \"\\\$\"
-  send \"cd /home/fbauer/trading-journal && git pull && pkill -f 'python app.py'; sleep 1; nohup python app.py > /tmp/app.log 2>&1 &\r\"
+  send \"cd /home/fbauer/trading-journal && git fetch origin && git reset --hard origin/main && sudo systemctl restart trading-journal\r\"
   expect \"\\\$\"
   send \"exit\r\"
   expect eof

@@ -97,8 +97,9 @@ docs/architecture_detailed.pdf  11-section PDF
 
 ## Deployment
 - Pi IP: 192.168.1.21, credentials in memory `feedback_pi_ssh.md`
-- After any push: SSH via expect + password, `git reset --hard origin/main`, restart service
-- Service runs via `python app.py` (not gunicorn) — monitor thread starts in `__main__` block
+- After any push: SSH via expect + password, `git reset --hard origin/main`, then `sudo systemctl restart trading-journal`
+- **NEVER use `nohup python app.py`** — the systemd service loads `.env` via `EnvironmentFile=`; running directly leaves all API keys empty
+- Service: `trading-journal.service` (systemd), `ExecStart=/usr/bin/python3 app.py`
 
 ---
 
