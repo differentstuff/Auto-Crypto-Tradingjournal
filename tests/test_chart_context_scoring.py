@@ -48,7 +48,7 @@ def test_mfi_weight_boundary_above_10():
 
 
 def test_confluence_score_max_val_updated():
-    """max_val in confluence_score must equal len(tfs) * 6.2 when MFI included."""
+    """max_val in confluence_score must equal len(tfs) * 6.35 when SMT included."""
     from chart_context import confluence_score
     import unittest.mock as mock
 
@@ -60,8 +60,8 @@ def test_confluence_score_max_val_updated():
     }
     with mock.patch("chart_context.get_chart_context", return_value=mock_ctx):
         result = confluence_score("BTCUSDT", ["4H", "1D"], ctx=mock_ctx)
-    assert result["max"] == pytest.approx(2 * 6.2, rel=1e-3), \
-        f"Expected max=12.4, got {result['max']}"
+    assert result["max"] == pytest.approx(2 * 6.35, rel=1e-3), \
+        f"Expected max=12.7, got {result['max']}"
 
 
 def test_confluence_score_mfi_raises_bullish_score():
@@ -84,3 +84,36 @@ def test_confluence_score_mfi_raises_bullish_score():
 
     assert score_with_mfi["score"] > score_neutral["score"], \
         "Bullish MFI should increase confluence score"
+
+
+# --- SMT Divergence tests ---
+
+def test_smt_weight_btc_prices_in_sync():
+    """Bitget and Binance prices within 0.5% -> +0.15 confirmation weight."""
+    from unittest.mock import patch
+    import chart_context
+
+    inds = {"ema": {"current_price": 60000.0}}
+    with patch("chart_context.get_binance_price", return_value=60200.0):
+        result = chart_context._smt_weight(inds, "BTCUSDT")
+    assert result == 0.15
+
+
+def test_smt_weight_divergence_neutral():
+    """Bitget and Binance prices differ > 0.5% -> 0.0 (no reward, no penalty)."""
+    from unittest.mock import patch
+    import chart_context
+
+    inds = {"ema": {"current_price": 60000.0}}
+    with patch("chart_context.get_binance_price", return_value=62000.0):
+        result = chart_context._smt_weight(inds, "BTCUSDT")
+    assert result == 0.0
+
+
+def test_smt_weight_non_smt_symbol():
+    """Non-SMT symbols (e.g. AAVEUSDT) always return 0.0."""
+    import chart_context
+
+    inds = {"ema": {"current_price": 100.0}}
+    result = chart_context._smt_weight(inds, "AAVEUSDT")
+    assert result == 0.0

@@ -27,6 +27,7 @@ import pandas_ta as ta
 import bitget_client
 from chart_indicators import compute_all_indicators, compute_wavetrend
 from chart_sr import detect_support_resistance
+from ccxt_client import get_binance_price
 
 # ── Cache ──────────────────────────────────────────────────────────────────────
 
@@ -547,17 +548,18 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         wt_w   = _wt_weight(inds.get("wavetrend", {}))
         mfi_w  = _mfi_weight(inds.get("wavetrend", {}))
         cvd_w  = _cvd_weight(inds.get("cvd", {}))
-        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + mfi_w + cvd_w
+        smt_w  = _smt_weight(inds, symbol)
+        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + mfi_w + cvd_w + smt_w
         vol_w  = _volume_weight(inds, base_score)
 
         tf_score = base_score + vol_w
         total_score += tf_score
 
-        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, vol_w) if w > 0), 1)
-        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, vol_w) if w < 0), 1)
+        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, vol_w) if w > 0), 1)
+        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
-    max_val = float(len(tfs) * 6.2)  # 7 directional signals: RSI+MACD+EMA+ADX+WT(1.0 each) + MFI(0.3) + CVD(0.4) + vol(0.5)
+    max_val = float(len(tfs) * 6.35)  # adds SMT max +0.15 per TF -> 6.2 + 0.15
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
@@ -573,10 +575,10 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         label = "Neutral"
 
     bull_total = round(sum(w for tf in tfs
-                           for inds_w in [_get_tf_weights(ctx, tf)]
+                           for inds_w in [_get_tf_weights(ctx, tf, symbol)]
                            for w in inds_w if w > 0), 1)
     bear_total = round(abs(sum(w for tf in tfs
-                               for inds_w in [_get_tf_weights(ctx, tf)]
+                               for inds_w in [_get_tf_weights(ctx, tf, symbol)]
                                for w in inds_w if w < 0)), 1)
 
     return {
@@ -629,6 +631,32 @@ def _cvd_weight(cvd: dict) -> float:
     return 0.4 if trend == "rising" else (-0.4 if trend == "falling" else 0.0)
 
 
+SMT_SYMBOLS = {"BTCUSDT", "ETHUSDT"}
+
+
+def _smt_weight(inds: dict, symbol: str) -> float:
+    """
+    SMT Divergence: compare Bitget and Binance prices.
+    +0.15 when both exchanges agree within 0.5% (no divergence = confirmation).
+    0.0 when prices diverge > 0.5% or symbol not in SMT_SYMBOLS.
+    """
+    if symbol not in SMT_SYMBOLS:
+        return 0.0
+    bitget_price = (inds.get("ema") or {}).get("current_price")
+    if not bitget_price:
+        return 0.0
+    try:
+        binance_price = get_binance_price(symbol)
+    except Exception:
+        return 0.0
+    if binance_price is None:
+        return 0.0
+    delta_pct = abs(bitget_price - binance_price) / bitget_price
+    if delta_pct < 0.005:
+        return 0.15
+    return 0.0
+
+
 def _mfi_weight(wt: dict) -> float:
     """
     MFI (Money Flow) contribution from WaveTrend data.
@@ -641,8 +669,8 @@ def _mfi_weight(wt: dict) -> float:
     return 0.0
 
 
-def _get_tf_weights(ctx: dict, tf: str) -> list:
-    """Return signal weights for a single timeframe (RSI/MACD/EMA/ADX/WT/CVD/Vol)."""
+def _get_tf_weights(ctx: dict, tf: str, symbol: str = "") -> list:
+    """Return signal weights for a single timeframe."""
     inds = ctx.get(tf, {}).get("indicators", {})
     if not inds.get("ok"):
         return []
@@ -654,6 +682,7 @@ def _get_tf_weights(ctx: dict, tf: str) -> list:
         _wt_weight(inds.get("wavetrend", {})),
         _mfi_weight(inds.get("wavetrend", {})),
         _cvd_weight(inds.get("cvd", {})),
+        _smt_weight(inds, symbol),
     ]
     base.append(_volume_weight(inds, sum(base)))
     return base
