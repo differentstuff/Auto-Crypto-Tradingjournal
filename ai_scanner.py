@@ -618,7 +618,11 @@ def _score_finalists_with_agents(finalists: list, conn,
             score = prep.get("setup_score", 0)
             if score < min_score:
                 continue
-            entry_p = prep.get("entry_price", 0) or 0
+            entry_p = float(prep.get("entry_price", 0) or 0)
+            if not entry_p:
+                # Fallback: use current price from already-computed 4H chart context
+                ema_4h = ctx.get("4H", {}).get("indicators", {}).get("ema") or {}
+                entry_p = float(ema_4h.get("current_price") or 0)
             results.append({
                 "_symbol":        sym,
                 "symbol":         sym,

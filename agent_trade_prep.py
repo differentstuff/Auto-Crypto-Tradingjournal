@@ -127,13 +127,23 @@ def run(inp: TradePrepInput, conn) -> TradePrepResult:
 
 
 def _build_prompt(call_text: str, equity: float, setup_type: str) -> str:
-    return f"""You are a professional crypto futures trading analyst. Analyze the trade call below.
+    if call_text:
+        trade_section = call_text
+    else:
+        trade_section = (
+            "Scanner-generated signal — no analyst call text. "
+            "Using technical context above: derive a precise entry_price from the current price "
+            "and nearest S/R level, set sl_price at the structural support/resistance below (long) "
+            "or above (short) the entry, and set tp1/tp2 at the next liquidity levels. "
+            "entry_price MUST be non-zero."
+        )
+    return f"""You are a professional crypto futures trading analyst. Analyze the trade setup below.
 
 ACCOUNT EQUITY: ${equity:.2f}
 SETUP TYPE: {setup_type or "unspecified"}
 
 TRADE CALL:
-{call_text}
+{trade_section}
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {{"setup_score":1,"direction":"Long","entry_price":0.0,"sl_price":0.0,"tp1":0.0,"tp2":0.0,"rr_ratio":0.0,"key_conditions":["condition 1"],"pattern_warnings":[],"sizing_hint":"one sentence","cot_reasoning":"2-3 sentence chain of thought"}}
@@ -141,8 +151,9 @@ Respond with ONLY valid JSON (no markdown, no code fences):
 Rules:
 - setup_score: 1-4=avoid, 5-6=monitor, 7-8=good, 9-10=strong conviction
 - Long: sl_price MUST be below entry_price. Short: sl_price MUST be above entry_price.
+- entry_price, sl_price, tp1, tp2 MUST all be non-zero real prices
 - tp1 = conservative target (1.5:1 R:R min), tp2 = full target (2.5:1+ R:R)
-- Reference the context provided above (backtest WR, sentiment, indicators)
+- Reference the context provided above (backtest WR, sentiment, indicators, S/R levels)
 - cot_reasoning: state the 2-3 strongest reasons for your score"""
 
 
