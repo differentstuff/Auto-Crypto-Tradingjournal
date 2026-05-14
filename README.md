@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget/Blofin sync, a 7-a
 </p>
 
 <p align="center">
-  <strong>v1.3.0</strong>
+  <strong>v1.4.0</strong>
   &nbsp;·&nbsp;
   <a href="docs/architecture_detailed.pdf">📐 Architecture PDF</a>
   &nbsp;·&nbsp;
@@ -57,7 +57,7 @@ Each stage has a typed input/output contract and can be tested independently:
 - Setup-type rubrics (Breakout / Reversal / Continuation / Range), ATR-aware SL check, portfolio correlation check
 
 ### 🔭 Setup Scanner
-- Scans 100 USDT-M symbols every 30 min: confluence filter → technical quality gate → Haiku quick-score → per-symbol agent pipeline
+- Scans **100+ USDT-M symbols** every 30 min (Bitget watchlist + Binance top-100 by volume merged): confluence filter → quality gate → Haiku quick-score → per-symbol agent pipeline
 - Telegram alerts with annotated chart + entry/SL/TP for setups ≥ 6/10
 - **Auto-saves alerted setups to journal** — positions auto-link to the scanner signal that triggered them
 - Nansen smart money signals for scanner finalists
@@ -73,7 +73,13 @@ Each stage has a typed input/output contract and can be tested independently:
 ### 📈 Chart Explorer
 - Interactive candlestick charts (LightweightCharts) with S/R zones, trendlines, Fibonacci retracements
 - VMC Cipher A/B (WaveTrend oscillator) in a synced lower pane
-- Weekly S/R overlay, liquidation level lines, full indicator card suite
+- Weekly S/R overlay, liquidation level lines, compact indicator panel
+- **Layer toggles**: Volume · WT Pane · S/R · Trendlines · Fibonacci · Legend — show/hide any overlay live
+
+### 📉 Embedded Backtester + Optimizer
+- `POST /api/backtest/run` — vectorized 4H backtester using journal's own indicators; walk-forward SL/TP simulation (Freqtrade-inspired, GPL-3.0)
+- `GET /api/backtest/optimize` — Optuna Bayesian optimizer (100 trials, maximises Sharpe); returns best entry/risk params
+- Backtest card on Analysis tab: symbol input, Run + Optimize buttons, live results (Trades · Win% · PF · Sharpe · Max DD)
 
 ### 🧠 AI Learning System
 - **Personalised Rulebook**: Claude synthesises 5–10 rules from your trade history; staleness decay; regen guard
@@ -105,7 +111,7 @@ Each stage has a typed input/output contract and can be tested independently:
 | On-chain signals | Nansen.ai smart money screener |
 | Market data | Bitget · Bybit · Binance · OKX funding · FRED macro |
 | Prompt caching | Anthropic ephemeral `cache_control` |
-| Exchange APIs | Bitget REST v2 · Blofin REST v1 (HMAC-SHA256) |
+| Exchange APIs | Bitget REST v2 · Blofin via CCXT (HMAC replaced in v1.4) |
 | Alerts | Telegram Bot API (stdlib only, photo + text) |
 | Process manager | systemd |
 
@@ -242,6 +248,7 @@ docs/architecture_detailed.pdf  10-section PDF for beginners + experts
 | v1.1.0 | 7-agent pipeline + TradeMonitor + annotated charts + Kelly criterion |
 | v1.2.0 | Phase 4 UI/UX + retroactive outcome recorder + accuracy progress tracker |
 | **v1.3.0** | **SMC/ICT + VMC Cipher signal improvements: MFI signal, kill zone annotation, raised R:R thresholds, premium/discount zone, BOS/CHoCH rubric, 1H entry timeframe** |
+| **v1.4.0** | **CCXT integration (Blofin HMAC replaced), Binance watchlist expansion, SMT Divergence 9th signal, embedded backtester + Optuna optimizer, chart layer toggles** |
 | v2.0 | Major new capability (e.g. exchange, auth layer, new data source tier) |
 
 ---
