@@ -99,7 +99,11 @@ def _sync_positions(conn) -> int:
 
     Returns number of new rows inserted.
     """
-    rows = bc.get_recent_positions(max_pages=3)
+    try:
+        rows = bc.get_recent_positions(max_pages=3)
+    except bc.BitgetAPIError as e:
+        print(f"[Sync] positions fetch failed (non-fatal): {e}", flush=True)
+        return 0
     if not rows:
         return 0
 
