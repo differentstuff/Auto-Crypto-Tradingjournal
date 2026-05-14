@@ -422,6 +422,63 @@ function renderScannerMeta(state) {
   sub.style.cssText = 'font-size:.78rem;color:var(--muted);margin-top:6px';
   sub.textContent = (window._scannerWatchlistCount||100) + ' symbols · scores ' + activeMins + '–10 · results cached 30 min · click a row for details';
   el.appendChild(sub);
+
+  // ── Single-coin scan row ──────────────────────────────────────────────────
+  const singleRow = document.createElement('div');
+  singleRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:10px';
+
+  const symInput = document.createElement('input');
+  symInput.type = 'text';
+  symInput.id = 'scan-single-symbol';
+  symInput.placeholder = 'Symbol e.g. BTC';
+  symInput.style.cssText = [
+    'padding:5px 10px', 'font-size:.82rem', 'background:var(--bg2)',
+    'border:1px solid var(--border)', 'border-radius:6px', 'color:var(--text)',
+    'width:130px', 'text-transform:uppercase',
+  ].join(';');
+  symInput.addEventListener('input', () => {
+    symInput.value = symInput.value.toUpperCase();
+    const b = document.getElementById('btn-scan-single');
+    if (b) b.disabled = !symInput.value.trim() || !!_pendingSingleScan;
+  });
+  symInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-scan-single')?.click();
+  });
+
+  const singleBtn = document.createElement('button');
+  singleBtn.className = 'btn btn-secondary btn-sm';
+  singleBtn.id = 'btn-scan-single';
+  singleBtn.disabled = true;
+  singleBtn.textContent = _pendingSingleScan ? '⏳ Queued…' : '🔍 Scan Symbol';
+  singleBtn.onclick = _startSingleScan;
+
+  singleRow.appendChild(symInput);
+  singleRow.appendChild(singleBtn);
+  el.appendChild(singleRow);
+
+  // Attach symbol autocomplete after the input is in the DOM
+  if (typeof _attachSymbolPicker === 'function') _attachSymbolPicker('scan-single-symbol');
+
+  // Queue badge — shown when a single-coin scan is waiting
+  if (_pendingSingleScan) {
+    const badge = document.createElement('div');
+    badge.id = 'scan-queue-badge';
+    badge.style.cssText = [
+      'display:flex', 'align-items:center', 'gap:8px',
+      'padding:6px 12px', 'margin-top:6px',
+      'background:rgba(255,179,0,.1)', 'border:1px solid rgba(255,179,0,.3)',
+      'border-radius:8px', 'font-size:.8rem', 'color:var(--yellow)',
+    ].join(';');
+    const msg = document.createElement('span');
+    msg.textContent = '⏳ ' + _pendingSingleScan + ' queued — waiting for current scan to finish';
+    const xBtn = document.createElement('button');
+    xBtn.textContent = '✕';
+    xBtn.style.cssText = 'background:none;border:none;color:var(--yellow);cursor:pointer;font-size:.9rem;padding:0 0 0 4px;line-height:1';
+    xBtn.onclick = _clearPendingSingleScan;
+    badge.appendChild(msg);
+    badge.appendChild(xBtn);
+    el.appendChild(badge);
+  }
 }
 
 function _buildProgressBlock(state) {
