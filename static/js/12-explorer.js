@@ -24,13 +24,13 @@ function setExplorerTf(tf) {
 
 function explorerPopout() {
   const sym = (document.getElementById('explorer-symbol')?.value || '').trim().toUpperCase();
-  if (!sym) return;
+  if (!sym) { notify('Enter a symbol first', 'err'); return; }
   openChart(sym, _explorerTf);
 }
 
 async function drawExplorerChart() {
   const raw = (document.getElementById('explorer-symbol')?.value || '').trim().toUpperCase();
-  if (!raw) return;
+  if (!raw) { notify('Enter a symbol first', 'err'); return; }
   const sym = raw.endsWith('USDT') ? raw : raw + 'USDT';
 
   const wrap   = document.getElementById('explorer-chart-wrap');

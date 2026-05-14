@@ -72,6 +72,8 @@ function _reloadCurrentPage() {
 
 // ── S/R Chart — opens as a detached, resizable window ───────────────────────
 function openChart(symbol, tf = '4H') {
+  if (!symbol) { notify('No symbol to chart', 'err'); return; }
+
   const liqs = (livePositionsCache || [])
     .filter(p => p.symbol === symbol && p.liquidation_price)
     .map(p => ({ price: parseFloat(p.liquidation_price), label: p.direction }));
@@ -96,8 +98,9 @@ function openChart(symbol, tf = '4H') {
   if (liqs.length)   url += '&liqs='   + encodeURIComponent(JSON.stringify(liqs));
   if (trades.length) url += '&trades=' + encodeURIComponent(JSON.stringify(trades));
 
-  window.open(url, `chart_${symbol}`,
+  const w = window.open(url, `chart_${symbol}`,
     'width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');
+  if (!w) notify('Popup blocked — allow popups for this site, then try again', 'err');
 }
 
 // ── Canvas overlay: S/R grey boxes + liquidation dashed lines ────────────────

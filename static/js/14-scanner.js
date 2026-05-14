@@ -757,8 +757,9 @@ function openScannerChart(sym, setup, evt) {
 
   let url = `/chart?symbol=${encodeURIComponent(sym)}&timeframe=${setup.timeframe||'4H'}`;
   if (trades.length) url += '&trades=' + encodeURIComponent(JSON.stringify(trades));
-  window.open(url, 'chart_' + sym,
+  const w = window.open(url, 'chart_' + sym,
     'width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');
+  if (!w) notify('Popup blocked — allow popups for this site, then try again', 'err');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
