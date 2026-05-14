@@ -101,7 +101,7 @@ def _sync_positions(conn) -> int:
     """
     try:
         rows = bc.get_recent_positions(max_pages=3)
-    except bc.BitgetAPIError as e:
+    except Exception as e:
         print(f"[Sync] positions fetch failed (non-fatal): {e}", flush=True)
         return 0
     if not rows:
@@ -532,7 +532,11 @@ def run_sync(conn=None) -> dict:
         n_pos    = _sync_positions(conn)
         # Auto-close any matched calls whose position has now synced
         n_closed = _auto_close_calls(conn)
-        n_retro  = _retroactive_close_calls(conn)
+        try:
+            n_retro = _retroactive_close_calls(conn)
+        except Exception as e:
+            print(f"[Sync] retroactive close failed (non-fatal): {e}", flush=True)
+            n_retro = 0
         # Orders + bills: time-filtered
         n_orders = _chunked_sync(_sync_orders, conn, last_ms, now_ms)
         n_bills  = _chunked_sync(_sync_bills,  conn, last_ms, now_ms)
