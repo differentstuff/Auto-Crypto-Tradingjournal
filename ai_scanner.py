@@ -99,7 +99,7 @@ CRITERIA_DEFAULTS: dict = {
     "funding":    True,   # Funding rate penalty (-1/-2 score points)
     "fear_greed": True,   # Fear & Greed ±0.5 adjustment
     "atr_sl":     True,   # Cap score ≤ 6 when SL < 1×ATR from entry
-    "rr_minimum": True,   # Cap score ≤ 6 when R:R < 1.5:1
+    "rr_minimum": True,   # Cap score ≤ 6 when R:R < 2:1
 }
 
 _CRITERIA_DISABLED_LABELS: dict = {
@@ -556,11 +556,11 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
     level_rules = []
     if cr.get("sr_anchor", True): level_rules.append("Entry >1×ATR from level → max 6")
     if cr.get("atr_sl",    True): level_rules.append("SL <1×ATR from entry → max 6")
-    if cr.get("rr_minimum",True): level_rules.append("R:R<1.5 → max 6")
+    if cr.get("rr_minimum",True): level_rules.append("R:R<2:1 → max 6")
     level_str = ". ".join(level_rules) + "." if level_rules else ""
 
     setups_text = "\n\n".join(parts)
-    scoring_hint = SCORING_SCALE[:60] + " ... 9=Excellent(R:R≥3:1), 10=Perfect(R:R≥4:1)"
+    scoring_hint = SCORING_SCALE[:60] + " ... 9=Excellent(R:R≥3.5), 10=Perfect(R:R≥4)"
     user_prompt = (
         f"Analyze these {len(finalists)} crypto futures setups. "
         f"Return a JSON ARRAY of exactly {len(finalists)} objects — one per setup, in the same order.\n\n"
@@ -580,7 +580,8 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
     return user_prompt
 
 
-def _score_finalists_with_agents(finalists: list, conn) -> list:
+def _score_finalists_with_agents(finalists: list, conn,
+                                 min_score: int = SCANNER_MIN_SCORE) -> list:
     """
     Run the agent pipeline (DataCollector → Interpreter → Sentiment →
     Reviewer → TradePrep) for each finalist. Replaces the inline Sonnet batch call.
@@ -615,23 +616,27 @@ def _score_finalists_with_agents(finalists: list, conn) -> list:
                 sym, direction, collected, interpreted, reviewed, sentiment, conn,
             )
             score = prep.get("setup_score", 0)
-            if score < 1:
+            if score < min_score:
                 continue
+            entry_p = prep.get("entry_price", 0) or 0
             results.append({
                 "_symbol":        sym,
                 "symbol":         sym,
                 "direction":      direction,
                 "setup_score":    score,
-                "entry_zone":     f"{prep.get('entry_price', 0):.4f}",
+                "setup_label":    prep.get("_model", ""),
+                "entry_zone":     {"low": entry_p, "high": entry_p,
+                                   "rationale": "Agent pipeline entry level"},
                 "sl_price":       prep.get("sl_price", 0),
-                "tp1":            prep.get("tp1_price", 0),
-                "tp2":            prep.get("tp2_price", 0),
+                "tp1_price":      prep.get("tp1_price", 0),
+                "tp2_price":      prep.get("tp2_price", 0),
                 "rr_ratio":       prep.get("rr_ratio", 0),
                 "key_conditions": prep.get("key_conditions", []),
                 "chart_png_b64":  prep.get("chart_png_b64", ""),
+                "summary":        " · ".join(prep.get("key_conditions", [])[:2]),
                 "_quick_score":   quick_score,
                 "_rationale":     rationale,
-                "confluence":     conf.get("label", ""),
+                "confluence_summary": conf.get("label", ""),
             })
         except Exception as e:
             print(f"[Scanner] agent scoring failed for {sym}: {e}", flush=True)
@@ -807,7 +812,7 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
             stage_progress= 0,
         )
         with db_conn() as conn:
-            setups = _score_finalists_with_agents(top_finalists, conn)
+            setups = _score_finalists_with_agents(top_finalists, conn, min_score=min_score)
         _update(stage_progress=100)
 
         # Add non-top-N setups with Haiku score + one-sentence rationale

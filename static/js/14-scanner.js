@@ -657,7 +657,8 @@ function buildDetailPanel(s, i) {
   ].filter(Boolean).join('\n');
 
   const scoreColor = s.setup_score>=9?'var(--accent3)':s.setup_score>=7?'var(--yellow)':'var(--muted)';
-  const setupData  = JSON.stringify(s);
+  // setupData intentionally not used — buttons reference _scanSetups[i] to avoid
+  // JSON double-quote injection breaking the onclick HTML attribute.
 
   return `<div class="scan-detail-panel">
     <div class="scan-dp-header">
@@ -700,9 +701,9 @@ function buildDetailPanel(s, i) {
 
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-primary btn-sm"
-        onclick="openScannerChart('${sym}',${setupData});event.stopPropagation()">📊 Chart with Levels</button>
+        onclick="openScannerChart('${sym}',_scanSetups[${i}]);event.stopPropagation()">📊 Chart with Levels</button>
       <button class="btn btn-secondary btn-sm"
-        onclick="_sendToCallAnalyzer(${JSON.stringify(prefill)});event.stopPropagation()">📋 Analyze</button>
+        onclick="_sendToCallAnalyzer(${i});event.stopPropagation()">📋 Analyze</button>
       <span style="font-size:.68rem;color:var(--border)">
         ${s._input_tokens||0} in / ${s._output_tokens||0} out tokens
       </span>
@@ -773,7 +774,21 @@ function fmtSP(v) {
   return n.toPrecision(4);
 }
 
-function _sendToCallAnalyzer(text) {
+function _sendToCallAnalyzer(i) {
+  const s   = _scanSetups[i];
+  if (!s) return;
+  const sym = (s._symbol || s.symbol || '?');
+  const ent = s.entry_zone || {};
+  const text = [
+    `$${sym.replace('USDT','')} ${s.direction} — Scanner ${s.setup_score}/10`,
+    ent.low  ? `Entry: $${ent.low}`  : '',
+    ent.high && ent.high !== ent.low ? `– $${ent.high}` : '',
+    s.sl_price  ? `SL: $${s.sl_price}`   : '',
+    s.tp1_price ? `TP1: $${s.tp1_price}` : '',
+    s.tp2_price ? `TP2: $${s.tp2_price}` : '',
+    s.rr_ratio  ? `R:R ${s.rr_ratio}`    : '',
+    s.summary   || '',
+  ].filter(Boolean).join('\n');
   showPage('calls');
   setTimeout(() => {
     const ta = document.getElementById('call-text');
