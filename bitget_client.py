@@ -57,7 +57,12 @@ def _get(path: str, params: dict) -> dict:
         with urllib.request.urlopen(req, timeout=15) as r:
             resp = json.loads(r.read())
     except urllib.error.HTTPError as e:
-        raise BitgetAPIError(f"HTTP {e.code}")
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            pass
+        raise BitgetAPIError(f"HTTP {e.code}: {body}")
 
     code = resp.get("code", "")
     if code != "00000":
