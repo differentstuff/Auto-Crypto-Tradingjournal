@@ -6,6 +6,7 @@ let _scanPollInterval  = null;
 let _scanLastState     = null;
 let _scanExpandedIdx   = null;
 let _scanSetups        = [];
+let _pendingSingleScan = null;   // string (symbol) when a single-coin scan is queued
 
 // ── Criteria definition ───────────────────────────────────────────────────────
 
@@ -794,6 +795,47 @@ function _sendToCallAnalyzer(i) {
     const ta = document.getElementById('call-text');
     if (ta) { ta.value = text; ta.focus(); }
   }, 150);
+}
+
+// ── Single-coin scan helpers ──────────────────────────────────────────────────
+
+async function _doSingleScan(sym) {
+  const minScore = parseInt(document.getElementById('scan-min-score')?.value || '6');
+  const criteria = _readCriteriaFromCheckboxes();
+  const res = await api('/api/scanner/run', 'POST',
+    { force: true, symbols: [sym], min_score: minScore, criteria });
+  if (!res.ok) return;
+  renderScannerPage(res.data);
+  if (res.data.status === 'running') _startScanPoller();
+}
+
+function _firePendingSingleScan() {
+  if (!_pendingSingleScan) return;
+  const sym = _pendingSingleScan;
+  _pendingSingleScan = null;
+  _doSingleScan(sym);
+}
+
+function _clearPendingSingleScan() {
+  _pendingSingleScan = null;
+  if (_scanLastState) renderScannerMeta(_scanLastState);
+}
+
+function _startSingleScan() {
+  const inp = document.getElementById('scan-single-symbol');
+  if (!inp) return;
+  let sym = inp.value.trim().toUpperCase();
+  if (!sym) return;
+  if (!sym.endsWith('USDT')) sym += 'USDT';
+  const state = _scanLastState || {};
+  if (state.status === 'running') {
+    _pendingSingleScan = sym;
+    inp.value = '';
+    renderScannerMeta(state);
+    return;
+  }
+  inp.value = '';
+  _doSingleScan(sym);
 }
 
 async function _loadScannerWatchlist() {
