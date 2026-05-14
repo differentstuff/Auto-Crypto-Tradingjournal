@@ -135,8 +135,9 @@ def run_sync() -> dict:
         # Auto-close any analyst calls whose matched Blofin position has now closed
         calls_closed = 0
         try:
-            from bitget_sync import _auto_close_calls
-            calls_closed = _auto_close_calls(conn, exchange="blofin")
+            from bitget_sync import _auto_close_calls, _retroactive_close_calls
+            calls_closed  = _auto_close_calls(conn, exchange="blofin")
+            calls_closed += _retroactive_close_calls(conn)
         except Exception:
             pass
 
