@@ -23,10 +23,11 @@ Results cached for 30 minutes. Scan runs in a background thread.
 
 import json
 import os
-from prompt_fragments import SCORING_SCALE, LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES
+from prompt_fragments import SCORING_SCALE, LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES, DRAW_ON_LIQUIDITY_RULES
 from constants import (MODEL, FAST_MODEL,
     SCANNER_MIN_SCORE, SCANNER_FULL_DETAIL_TOP_N, SCANNER_CACHE_TTL,
     SCANNER_MAX_WORKERS, PROMPT_CACHE_MIN_CHARS)
+import datetime
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -129,6 +130,34 @@ def _disabled_criteria_block(criteria: dict) -> str:
         "DISABLED SCORING CRITERIA (user has turned these OFF — do NOT apply them, "
         "do NOT mention them in your rationale):\n" + "\n".join(disabled)
     )
+
+
+# ── Kill zone helpers ──────────────────────────────────────────────────────────
+
+def _is_in_kill_zone(utc_hour: int = None) -> bool:
+    """
+    Return True if the given UTC hour falls within an institutional kill zone.
+    London: 07:00–09:59 UTC  |  NY AM: 12:00–14:59 UTC
+    Pass utc_hour explicitly for testing; defaults to current UTC time.
+    """
+    h = utc_hour if utc_hour is not None else datetime.datetime.utcnow().hour
+    return (7 <= h < 10) or (12 <= h < 15)
+
+
+def _annotate_kill_zone(result: dict, utc_hour: int = None) -> dict:
+    """
+    Append '⚠ Outside kill zone' to the urgency field when outside institutional windows.
+    No-op when inside a kill zone. Returns the result dict (mutated in place).
+    """
+    if _is_in_kill_zone(utc_hour):
+        return result
+    warning = "⚠ Outside kill zone"
+    if "urgency" in result:
+        existing = result["urgency"]
+        result["urgency"] = (existing + " " + warning).strip() if existing else warning
+    else:
+        result["urgency"] = warning
+    return result
 
 
 # ── Scan state ─────────────────────────────────────────────────────────────────
@@ -406,14 +435,15 @@ def _build_scanner_stable(rulebook_str: str, min_score: int = SCANNER_MIN_SCORE,
     caps = []
     if cr.get("sr_anchor", True): caps.append("no structural entry")
     if cr.get("atr_sl",    True): caps.append("SL inside ATR noise")
-    if cr.get("rr_minimum",True): caps.append("R:R below 1.5:1")
+    if cr.get("rr_minimum",True): caps.append("R:R below 2:1")
     cap_str = " or ".join(caps) if caps else "no valid setup"
     return (
         f"{rb_block}"
         + SCORING_SCALE + "\n"
-        + "5=Mod(borderline), 6=Accept(R:R≥1.5), 7=Good(R:R≥2:1), "
-        + "8=Strong(R:R≥2.5:1), 9=Excellent(multi-TF,R:R≥3:1), 10=Perfect(R:R≥4:1)\n"
-        + f"Score <{min_score} if: {cap_str}.{dis_part}"
+        + "5=Mod(borderline), 6=Accept(R:R≥2), 7=Good(R:R≥2.5), "
+        + "8=Strong(R:R≥3), 9=Excellent(multi-TF,R:R≥3.5), 10=Perfect(R:R≥4)\n"
+        + f"Score <{min_score} if: {cap_str}.{dis_part}\n\n"
+        + DRAW_ON_LIQUIDITY_RULES
     )
 
 
@@ -482,6 +512,7 @@ def _ai_score(symbol, ctx, conf, direction, mkt_str, history, rulebook_str,
         if result.get("setup_score", 0) < min_score:
             return None
         result["_symbol"] = symbol
+        _annotate_kill_zone(result)
         return result
     except Exception as e:
         logger.warning("quick-score API call failed for %s: %s", symbol, e)
@@ -567,7 +598,7 @@ def _score_finalists_with_agents(finalists: list, conn) -> list:
     for sym, ctx, conf, direction, quick_score, rationale in finalists:
         try:
             collected = agent_data_collector.run({
-                "symbol": sym, "direction": direction, "timeframes": ["4H", "1D"],
+                "symbol": sym, "direction": direction, "timeframes": ["1H", "4H", "1D"],
             })
             with ThreadPoolExecutor(max_workers=2) as ex:
                 f_i = ex.submit(agent_data_interpreter.run, {"collected": collected})
@@ -639,6 +670,7 @@ def _batch_ai_score(finalists, mkt_str, histories, rulebook_str,
             if r.get("setup_score", 0) < min_score:
                 continue
             r["_symbol"] = symbol
+            _annotate_kill_zone(r)
             out.append(r)
         print(f"[scanner] batch scored {len(finalists)} symbols → {len(out)} setups", flush=True)
         return out
