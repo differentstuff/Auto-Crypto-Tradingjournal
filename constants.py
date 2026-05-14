@@ -1,6 +1,6 @@
 import os
 
-VERSION                = "1.2.0"
+VERSION                = "1.3.0"
 
 # ── Anthropic models ──────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY      = os.environ.get("ANTHROPIC_API_KEY", "")
