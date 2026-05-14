@@ -764,6 +764,9 @@ select:focus,input:focus{border-color:var(--accent)}
         <button class="btn" onclick="explorerPopout()" style="font-size:.82rem;padding:6px 12px">↗ Pop Out</button>
       </div>
 
+      <!-- Layer toggles (populated by JS after chart draws) -->
+      <div id="explorer-layer-toggles" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+
       <!-- Chart container -->
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;overflow:hidden">
         <div id="explorer-chart-wrap" style="height:480px;position:relative">
@@ -776,9 +779,8 @@ select:focus,input:focus{border-color:var(--accent)}
              min-height:34px;align-items:center;border-top:1px solid var(--border)"></div>
       </div>
 
-      <!-- Indicator cards -->
-      <div id="explorer-indicators" style="display:grid;gap:12px;
-           grid-template-columns:repeat(auto-fill,minmax(190px,1fr))"></div>
+      <!-- Indicator panel (compact table) -->
+      <div id="explorer-indicators" style="margin-bottom:16px"></div>
     </div>
 
     <div id="page-ai" class="page-view">
@@ -1489,7 +1491,7 @@ select:focus,input:focus{border-color:var(--accent)}
 <script src="/static/js/09-analysis.js?v=3.1"></script>
 <script src="/static/js/10-pending.js?v=2.8"></script>
 <script src="/static/js/11-sync.js?v=2.8"></script>
-<script src="/static/js/12-explorer.js?v=2.9"></script>
+<script src="/static/js/12-explorer.js?v=3.0"></script>
 <script src="/static/js/13-init.js?v=2.8"></script>
 <script src="/static/js/14-scanner.js?v=3.2"></script>
 <script src="/static/js/15-hindsight.js?v=2.8"></script>

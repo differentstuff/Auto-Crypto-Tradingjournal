@@ -5,6 +5,76 @@
 let _explorerChart   = null;
 let _explorerWtChart = null;
 let _explorerTf      = '4H';
+
+// Layer refs for show/hide toggles
+let _explorerVolSeries = null;
+let _explorerTlSeries  = [];
+let _explorerSrLines   = [];
+let _explorerFibLines  = [];
+let _explorerLayers    = { vol: true, wt: true, sr: true, tl: true, fib: true, ind: true };
+
+function _resetExplorerLayerRefs() {
+  _explorerVolSeries = null;
+  _explorerTlSeries  = [];
+  _explorerSrLines   = [];
+  _explorerFibLines  = [];
+  _explorerLayers    = { vol: true, wt: true, sr: true, tl: true, fib: true, ind: true };
+}
+
+function _initExplorerLayerToggles() {
+  let bar = document.getElementById('explorer-layer-toggles');
+  if (!bar) return;
+  const defs = [
+    { key: 'vol', label: 'Volume' },
+    { key: 'wt',  label: 'WT Pane' },
+    { key: 'sr',  label: 'S/R' },
+    { key: 'tl',  label: 'Trendlines' },
+    { key: 'fib', label: 'Fibonacci' },
+    { key: 'ind', label: 'Indicators' },
+  ];
+  bar.textContent = '';
+  defs.forEach(({ key, label }) => {
+    const btn = document.createElement('button');
+    const on = _explorerLayers[key];
+    btn.style.cssText = `padding:3px 10px;font-size:.74rem;border-radius:6px;cursor:pointer;border:1px solid var(--border);
+      background:${on ? 'var(--accent)' : 'var(--bg2)'};color:${on ? '#fff' : 'var(--muted)'}`;
+    btn.textContent = label;
+    btn.onclick = () => _toggleExplorerLayer(key);
+    bar.appendChild(btn);
+  });
+}
+
+function _toggleExplorerLayer(name) {
+  _explorerLayers[name] = !_explorerLayers[name];
+  const on = _explorerLayers[name];
+
+  if (name === 'vol' && _explorerVolSeries) {
+    _explorerVolSeries.applyOptions({ visible: on });
+  }
+  if (name === 'wt') {
+    const w = document.getElementById('explorer-wt-wrap');
+    if (w) w.style.display = on ? '' : 'none';
+  }
+  if (name === 'sr') {
+    _explorerSrLines.forEach(pl => {
+      pl.applyOptions({ color: on ? pl.__col : 'rgba(0,0,0,0)', axisLabelVisible: on });
+    });
+  }
+  if (name === 'tl') {
+    _explorerTlSeries.forEach(s => s.applyOptions({ visible: on }));
+  }
+  if (name === 'fib') {
+    _explorerFibLines.forEach(pl => {
+      pl.applyOptions({ color: on ? pl.__col : 'rgba(0,0,0,0)', axisLabelVisible: on });
+    });
+  }
+  if (name === 'ind') {
+    const el = document.getElementById('explorer-indicators');
+    if (el) el.style.display = on ? '' : 'none';
+  }
+
+  _initExplorerLayerToggles();
+}
 const _EXPLORER_TFS = ['15m', '1H', '4H', '1D'];
 
 function _initExplorerTfBtns() {
@@ -38,6 +108,7 @@ async function drawExplorerChart() {
   const leg    = document.getElementById('explorer-sr-legend');
   const indEl  = document.getElementById('explorer-indicators');
 
+  _resetExplorerLayerRefs();
   if (_explorerChart)   { _explorerChart.remove();   _explorerChart   = null; }
   if (_explorerWtChart) { _explorerWtChart.remove(); _explorerWtChart = null; }
   const oldTitle = wrap.querySelector('.explorer-chart-title');
@@ -87,10 +158,11 @@ async function drawExplorerChart() {
   cs.priceScale().applyOptions({ scaleMargins: { top: 0.04, bottom: 0.22 } });
 
   // Volume histogram — bottom 20% of chart
-  const volS = _explorerChart.addHistogramSeries({
+  _explorerVolSeries = _explorerChart.addHistogramSeries({
     priceFormat: { type: 'volume' },
     priceScaleId: 'vol',
   });
+  const volS = _explorerVolSeries;
   _explorerChart.priceScale('vol').applyOptions({
     scaleMargins: { top: 0.82, bottom: 0 },
     visible: false,
@@ -104,11 +176,10 @@ async function drawExplorerChart() {
   // Axis labels for S/R (ghost line — just for right-axis price label)
   (levels || []).forEach(lvl => {
     const isS = lvl.type === 'support';
-    cs.createPriceLine({
-      price: lvl.price, lineWidth: 1, lineStyle: 0,
-      color: 'rgba(180,183,210,0.2)', axisLabelVisible: true,
-      title: `${isS ? 'S' : 'R'} ${lvl.touches}×`,
-    });
+    const col = 'rgba(180,183,210,0.2)';
+    const pl = cs.createPriceLine({ price: lvl.price, lineWidth: 1, lineStyle: 0, color: col, axisLabelVisible: true, title: `${isS ? 'S' : 'R'} ${lvl.touches}×` });
+    pl.__col = col;
+    _explorerSrLines.push(pl);
   });
 
   // Trendlines — lower TF first (drawn behind), higher TF last (drawn in front)
@@ -121,7 +192,7 @@ async function drawExplorerChart() {
     const color = tl.at_risk
       ? `rgba(255,179,0,${Math.min(a + 0.2, 1)})`
       : (isUp ? `rgba(38,217,107,${a})` : `rgba(239,83,80,${a})`);
-    const tls   = _explorerChart.addLineSeries({
+    const tls = _explorerChart.addLineSeries({
       color, lineWidth: _TL_WIDTH[w] ?? 1, lineStyle: 2,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
     });
@@ -129,6 +200,7 @@ async function drawExplorerChart() {
       { time: tl.p1_time, value: tl.p1_price },
       { time: tl.p2_time, value: tl.p2_price },
     ]);
+    _explorerTlSeries.push(tls);
   });
 
   _explorerChart.timeScale().fitContent();
@@ -150,23 +222,20 @@ async function drawExplorerChart() {
   // Fibonacci levels
   if (fibonacci && fibonacci.levels) {
     fibonacci.levels.forEach(fib => {
-      cs.createPriceLine({
-        price: fib.price, lineWidth: 1, lineStyle: 1,
-        color: 'rgba(180,130,255,0.55)',
-        axisLabelVisible: true,
-        title: `Fib ${fib.label}`,
-      });
+      const col = 'rgba(180,130,255,0.55)';
+      const pl = cs.createPriceLine({ price: fib.price, lineWidth: 1, lineStyle: 1, color: col, axisLabelVisible: true, title: `Fib ${fib.label}` });
+      pl.__col = col;
+      _explorerFibLines.push(pl);
     });
   }
 
   // Weekly S/R axis labels
   (htf_levels || []).forEach(lvl => {
     const isS = lvl.type === 'support';
-    cs.createPriceLine({
-      price: lvl.price, lineWidth: 1, lineStyle: 0,
-      color: 'rgba(255,193,60,0.3)', axisLabelVisible: true,
-      title: `1W ${isS ? 'S' : 'R'} ${lvl.touches}×`,
-    });
+    const col = 'rgba(255,193,60,0.3)';
+    const pl = cs.createPriceLine({ price: lvl.price, lineWidth: 1, lineStyle: 0, color: col, axisLabelVisible: true, title: `1W ${isS ? 'S' : 'R'} ${lvl.touches}×` });
+    pl.__col = col;
+    _explorerSrLines.push(pl);
   });
 
   // Start canvas overlay (S/R grey boxes + liquidation dashed lines)
@@ -225,7 +294,8 @@ async function drawExplorerChart() {
   window.removeEventListener('resize', window.__explorerResize);
   window.addEventListener('resize',    window.__explorerResize);
 
-  // Load indicators panel
+  // Show layer toggle bar and load indicators
+  _initExplorerLayerToggles();
   _loadExplorerIndicators(sym);
 }
 
@@ -237,82 +307,90 @@ async function _loadExplorerIndicators(sym) {
   if (!tf || !tf.indicators || !tf.indicators.ok) return;
   const ind = tf.indicators;
 
-  const card = (label, value, sub, color = 'var(--accent2)', tip = '') => `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px"${tip ? ` data-tip="${tip}"` : ''}>
-      <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">${label}</div>
-      <div style="font-size:1.1rem;font-weight:700;color:${color}">${value}</div>
-      ${sub ? `<div style="font-size:.75rem;color:var(--muted);margin-top:3px">${sub}</div>` : ''}
-    </div>`;
+  el.textContent = '';
 
-  let html = '';
+  // Compact 2-column row builder
+  const rows = [];
+  const row = (label, value, color = 'var(--text)', sub = '') => {
+    rows.push({ label, value, color, sub });
+  };
 
   if (ind.rsi) {
-    const c = ind.rsi.value > 70 ? 'var(--red)' : ind.rsi.value < 30 ? 'var(--accent3)' : 'var(--accent2)';
-    html += card('RSI (14)', ind.rsi.value, ind.rsi.signal, c,
-      'Relative Strength Index. Above 70 = overbought (potential reversal down). Below 30 = oversold (potential reversal up). 50 is neutral momentum.');
+    const c = ind.rsi.value > 70 ? 'var(--red)' : ind.rsi.value < 30 ? 'var(--accent3)' : 'var(--text)';
+    row('RSI 14', ind.rsi.value, c, ind.rsi.signal);
   }
   if (ind.macd) {
     const c = ind.macd.trend === 'bullish' ? 'var(--accent3)' : 'var(--red)';
-    const cross = ind.macd.crossover ? ' ← crossover' : ind.macd.crossunder ? ' ← crossunder' : '';
-    html += card('MACD', ind.macd.trend.toUpperCase(), `Histogram ${ind.macd.histogram_trend}${cross}`, c,
-      'Moving Average Convergence/Divergence. Bullish when fast EMA > slow EMA. Crossover = fresh bullish signal. Crossunder = fresh bearish signal. Histogram shows momentum strength.');
+    const cross = ind.macd.crossover ? ' · crossover' : ind.macd.crossunder ? ' · crossunder' : '';
+    row('MACD', ind.macd.trend.toUpperCase(), c, ind.macd.histogram_trend + cross);
   }
   if (ind.ema) {
-    const bullish = ind.ema.alignment && ind.ema.alignment.startsWith('fully bullish');
-    const bearish = ind.ema.alignment && ind.ema.alignment.startsWith('fully bearish');
+    const bullish = ind.ema.alignment?.startsWith('fully bullish');
+    const bearish = ind.ema.alignment?.startsWith('fully bearish');
     const c = bullish ? 'var(--accent3)' : bearish ? 'var(--red)' : 'var(--yellow)';
-    html += card('EMAs', ind.ema.stack || 'Mixed', ind.ema.alignment, c,
-      'EMA stack alignment (20/50/100/200). Fully bullish = price above all EMAs in ascending order — strong uptrend. Fully bearish = reverse. Mixed = consolidation or transition.');
+    row('EMA Stack', ind.ema.stack || 'Mixed', c, ind.ema.alignment || '');
   }
   if (ind.bollinger) {
-    const c = ind.bollinger.position_pct > 80 ? 'var(--red)' : ind.bollinger.position_pct < 20 ? 'var(--accent3)' : 'var(--accent2)';
-    html += card('Bollinger Bands', `${ind.bollinger.position_pct}th %ile`, ind.bollinger.signal, c,
-      'Price position within 2-standard-deviation bands. Above 80th percentile = near upper band (extended/overbought). Below 20th = near lower band (compressed/oversold). Middle = mean reversion zone.');
+    const c = ind.bollinger.position_pct > 80 ? 'var(--red)' : ind.bollinger.position_pct < 20 ? 'var(--accent3)' : 'var(--text)';
+    row('Bollinger', `${ind.bollinger.position_pct}th %ile`, c, ind.bollinger.signal);
   }
   if (ind.adx) {
     const c = ind.adx.value > 25 ? 'var(--yellow)' : 'var(--muted)';
-    html += card('ADX (14)', ind.adx.value, `${ind.adx.strength}${ind.adx.direction ? ' · ' + ind.adx.direction : ''}`, c,
-      'Average Directional Index — measures trend strength, not direction. Above 25 = trending market (trade with the trend). Below 20 = choppy/ranging (avoid breakout strategies). Direction shows +DI vs -DI bias.');
+    row('ADX 14', ind.adx.value, c, `${ind.adx.strength}${ind.adx.direction ? ' · ' + ind.adx.direction : ''}`);
   }
   if (ind.stoch_rsi) {
-    const c = ind.stoch_rsi.k > 80 ? 'var(--red)' : ind.stoch_rsi.k < 20 ? 'var(--accent3)' : 'var(--accent2)';
-    html += card('Stoch RSI', `K ${ind.stoch_rsi.k} / D ${ind.stoch_rsi.d}`, ind.stoch_rsi.signal, c,
-      'Stochastic RSI — RSI value processed through a stochastic oscillator. More sensitive than plain RSI. K > 80 = overbought. K < 20 = oversold. K crossing D = signal line crossover.');
+    const c = ind.stoch_rsi.k > 80 ? 'var(--red)' : ind.stoch_rsi.k < 20 ? 'var(--accent3)' : 'var(--text)';
+    row('Stoch RSI', `K ${ind.stoch_rsi.k} / D ${ind.stoch_rsi.d}`, c, ind.stoch_rsi.signal);
   }
   if (ind.atr) {
-    html += card('ATR (14)', `${ind.atr.value}`, `${ind.atr.pct}% of price`, 'var(--muted)',
-      'Average True Range — average candle-to-candle volatility. Use it to size your stop-loss: wider ATR requires wider stops to avoid noise. High ATR = volatile, risky entries.');
+    row('ATR 14', ind.atr.value, 'var(--muted)', `${ind.atr.pct}% of price`);
   }
   if (ind.volume) {
-    const c = ind.volume.ratio > 1.5 ? 'var(--yellow)' : ind.volume.ratio < 0.7 ? 'var(--muted)' : 'var(--accent2)';
-    html += card('Volume', `${ind.volume.ratio}× avg`, ind.volume.signal, c,
-      'Current candle volume vs. 20-period average. Above 1.5× = high-volume move (strong trend confirmation). Below 0.7× = low-activity candle (weak conviction, possible fake-out).');
+    const c = ind.volume.ratio > 1.5 ? 'var(--yellow)' : ind.volume.ratio < 0.7 ? 'var(--muted)' : 'var(--text)';
+    row('Volume', `${ind.volume.ratio}× avg`, c, ind.volume.signal);
   }
-  if (ind.support_resistance && ind.support_resistance.length) {
-    const sr = ind.support_resistance;
-    const sups = sr.filter(l => l.type === 'support').sort((a,b) => b.price - a.price);
-    const ress = sr.filter(l => l.type === 'resistance').sort((a,b) => a.price - b.price);
-    const lines = [];
-    if (sups[0]) lines.push(`S: ${sups[0].price} (${sups[0].touches}×)`);
-    if (ress[0]) lines.push(`R: ${ress[0].price} (${ress[0].touches}×)`);
-    html += card('Key S/R', lines[0] || '—', lines[1] || '', 'var(--fg)',
-      'Nearest support and resistance levels detected by price touch count. More touches = stronger level. S = price bounced up from here. R = price rejected down from here.');
-  }
-
-  // VMC Cipher B indicator card
   if (ind.wavetrend) {
     const wt = ind.wavetrend;
     const sig = wt.signal;
-    const sigLabel = sig === 'gold_buy' ? '🟡 Gold Buy' : sig === 'buy' ? '🟢 Buy' : sig === 'sell' ? '🔴 Sell' : '—';
-    const wt1c = wt.wt1 > 53 ? 'var(--red)' : wt.wt1 < -53 ? 'var(--accent3)' : 'var(--accent2)';
-    html += card('VMC Cipher B',
-      `WT1 ${wt.wt1}  WT2 ${wt.wt2}`,
-      `MFI ${wt.mfi} · Zone: ${wt.zone} · Signal: ${sigLabel}`,
-      wt1c,
-      'VuManChu Cipher B. WT1 (teal) = WaveTrend oscillator. WT2 (red) = signal line. Cross above WT2 in oversold (<−53) = buy. Cross below in overbought (>53) = sell. Gold signal at <−80 = extreme oversold reversal. MFI = money flow strength.');
+    const sigLabel = sig === 'gold_buy' ? '🟡 Gold' : sig === 'buy' ? '🟢 Buy' : sig === 'sell' ? '🔴 Sell' : '—';
+    const c = wt.wt1 > 53 ? 'var(--red)' : wt.wt1 < -53 ? 'var(--accent3)' : 'var(--text)';
+    row('WT1 / WT2', `${wt.wt1} / ${wt.wt2}`, c, `MFI ${wt.mfi} · ${wt.zone} · ${sigLabel}`);
+  }
+  if (ind.support_resistance && ind.support_resistance.length) {
+    const sups = ind.support_resistance.filter(l => l.type === 'support').sort((a,b) => b.price - a.price);
+    const ress = ind.support_resistance.filter(l => l.type === 'resistance').sort((a,b) => a.price - b.price);
+    if (sups[0]) row('Support', `${sups[0].price}`, 'var(--accent3)', `${sups[0].touches}× touches`);
+    if (ress[0]) row('Resistance', `${ress[0].price}`, 'var(--red)', `${ress[0].touches}× touches`);
   }
 
-  el.innerHTML = html; // safe: all content is numbers/labels from server indicators
+  // Render as compact 2-column table
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden';
+  rows.forEach((r, i) => {
+    const line = document.createElement('div');
+    line.style.cssText = `display:flex;align-items:center;padding:7px 14px;gap:10px;` +
+      (i < rows.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,.04)' : '');
+    if (i % 2 === 1) line.style.background = 'rgba(255,255,255,.02)';
+
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:.73rem;color:var(--muted);width:80px;flex-shrink:0';
+    lbl.textContent = r.label;
+
+    const val = document.createElement('span');
+    val.style.cssText = `font-size:.82rem;font-weight:600;color:${r.color};flex-shrink:0;width:110px`;
+    val.textContent = String(r.value);
+
+    const sub = document.createElement('span');
+    sub.style.cssText = 'font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    sub.textContent = r.sub || '';
+
+    line.appendChild(lbl);
+    line.appendChild(val);
+    line.appendChild(sub);
+    wrap.appendChild(line);
+  });
+
+  el.appendChild(wrap);
 }
 
 // ── VMC Cipher B WaveTrend pane for Chart Explorer ────────────────────────────
