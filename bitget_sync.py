@@ -537,10 +537,22 @@ def run_sync(conn=None) -> dict:
         except Exception as e:
             print(f"[Sync] retroactive close failed (non-fatal): {e}", flush=True)
             n_retro = 0
-        # Orders + bills: time-filtered
-        n_orders = _chunked_sync(_sync_orders, conn, last_ms, now_ms)
-        n_bills  = _chunked_sync(_sync_bills,  conn, last_ms, now_ms)
-        equity   = bc.get_account_equity()
+        # Orders + bills: time-filtered (non-fatal — API key may lack order-read permission)
+        try:
+            n_orders = _chunked_sync(_sync_orders, conn, last_ms, now_ms)
+        except Exception as e:
+            print(f"[Sync] orders fetch failed (non-fatal): {e}", flush=True)
+            n_orders = 0
+        try:
+            n_bills = _chunked_sync(_sync_bills, conn, last_ms, now_ms)
+        except Exception as e:
+            print(f"[Sync] bills fetch failed (non-fatal): {e}", flush=True)
+            n_bills = 0
+        try:
+            equity = bc.get_account_equity()
+        except Exception as e:
+            print(f"[Sync] equity fetch failed (non-fatal): {e}", flush=True)
+            equity = {}
 
         _set_setting(conn, "last_sync_ms", now_ms)
         _set_setting(conn, "account_equity", equity.get("accountEquity", ""))
