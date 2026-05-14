@@ -268,8 +268,6 @@ def _retroactive_close_calls(conn) -> int:
     Records outcome retroactively; outcome_pnl is NULL (no actual trade).
     Returns number of calls resolved.
     """
-    from datetime import datetime, timezone
-
     cur   = conn.cursor()
     calls = cur.execute("""
         SELECT id, symbol, direction, sl_price, tp1_price, tp2_price, created_at
@@ -552,7 +550,7 @@ def run_sync(conn=None) -> dict:
         _startup_done = True
         _sync_status["last_run"]    = result["synced_at"]
         _sync_status["last_result"] = result
-        print(f"[Sync] Done — {n_pos} positions, {n_orders} orders, {n_bills} bills, {n_closed} calls auto-closed", flush=True)
+        print(f"[Sync] Done — {n_pos} positions, {n_orders} orders, {n_bills} bills, {n_closed} auto-closed, {n_retro} retro-closed", flush=True)
         return result
 
     except Exception as e:
