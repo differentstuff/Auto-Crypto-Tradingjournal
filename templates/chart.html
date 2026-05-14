@@ -38,6 +38,7 @@ header{display:flex;align-items:center;justify-content:space-between;
 <header>
   <span id="chart-title">Loading…</span>
   <div id="tf-btns"></div>
+  <div id="layer-btns" style="display:flex;gap:5px;margin-left:auto;flex-wrap:wrap"></div>
 </header>
 <div id="chart-wrap"><div id="status">Loading chart…</div></div>
 <div id="wt-wrap"><div id="wt-label">VMC Cipher B — WaveTrend</div></div>
@@ -50,6 +51,51 @@ let tf     = params.get('timeframe') || '4H';
 const TFS  = ['15m','1H','4H','1D'];
 let _chart = null;
 let _wtChart = null;
+
+// Layer refs for show/hide toggles
+let _volSeries = null;
+let _tlSeries  = [];
+let _srLines   = [];
+let _fibLines  = [];
+let _layers    = { vol: true, wt: true, sr: true, tl: true, fib: true, legend: true };
+
+function renderLayerBtns() {
+  const bar  = document.getElementById('layer-btns');
+  const defs = [
+    { key: 'vol',    label: 'Volume' },
+    { key: 'wt',     label: 'WT' },
+    { key: 'sr',     label: 'S/R' },
+    { key: 'tl',     label: 'Trendlines' },
+    { key: 'fib',    label: 'Fibonacci' },
+    { key: 'legend', label: 'Legend' },
+  ];
+  bar.textContent = '';
+  defs.forEach(({ key, label }) => {
+    const btn = document.createElement('button');
+    btn.className = 'tf-btn' + (_layers[key] ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => toggleLayer(key);
+    bar.appendChild(btn);
+  });
+}
+
+function toggleLayer(name) {
+  _layers[name] = !_layers[name];
+  const on = _layers[name];
+  if (name === 'vol' && _volSeries) _volSeries.applyOptions({ visible: on });
+  if (name === 'wt') {
+    const w = document.getElementById('wt-wrap');
+    if (w) w.style.display = on ? '' : 'none';
+  }
+  if (name === 'sr')  _srLines.forEach(pl => pl.applyOptions({ color: on ? pl.__col : 'rgba(0,0,0,0)', axisLabelVisible: on }));
+  if (name === 'tl')  _tlSeries.forEach(s => s.applyOptions({ visible: on }));
+  if (name === 'fib') _fibLines.forEach(pl => pl.applyOptions({ color: on ? pl.__col : 'rgba(0,0,0,0)', axisLabelVisible: on }));
+  if (name === 'legend') {
+    const l = document.getElementById('sr-legend');
+    if (l) l.style.display = on ? '' : 'none';
+  }
+  renderLayerBtns();
+}
 
 // Liquidation levels: liqs=[{price,label},...]
 let _liquidations = [];
@@ -162,9 +208,10 @@ async function loadChart() {
   document.getElementById('status').textContent = 'Loading…';
   document.getElementById('status').style.display = 'flex';
   document.getElementById('sr-legend').innerHTML  = '';
+  _volSeries = null; _tlSeries = []; _srLines = []; _fibLines = [];
+  _layers = { vol: true, wt: true, sr: true, tl: true, fib: true, legend: true };
   if (_chart)   { _chart.remove();   _chart   = null; }
   if (_wtChart) { _wtChart.remove(); _wtChart = null; }
-  // Remove old overlay canvas now (new one created after chart builds)
   const old = wrap.querySelector('.sr-canvas');
   if (old) old.remove();
 
@@ -207,10 +254,11 @@ async function loadChart() {
   series.priceScale().applyOptions({ scaleMargins: { top: 0.04, bottom: 0.22 } });
 
   // Volume histogram — bottom 20% of chart, separate price scale
-  const volSeries = _chart.addHistogramSeries({
+  _volSeries = _chart.addHistogramSeries({
     priceFormat: { type: 'volume' },
     priceScaleId: 'vol',
   });
+  const volSeries = _volSeries;
   _chart.priceScale('vol').applyOptions({
     scaleMargins: { top: 0.82, bottom: 0 },
     visible: false,
@@ -221,15 +269,13 @@ async function loadChart() {
     color: c.close >= c.open ? 'rgba(38,217,107,0.30)' : 'rgba(239,83,80,0.30)',
   })));
 
-  // Axis labels for S/R (invisible line, just for the right-axis price label)
+  // Axis labels for S/R — stored for toggle
   (levels || []).forEach(lvl => {
     const isS = lvl.type === 'support';
-    series.createPriceLine({
-      price: lvl.price, lineWidth: 1, lineStyle: 0,
-      color: 'rgba(180,183,210,0.25)',
-      axisLabelVisible: true,
-      title: `${isS ? 'S' : 'R'} ${lvl.touches}×`,
-    });
+    const col = 'rgba(180,183,210,0.25)';
+    const pl = series.createPriceLine({ price: lvl.price, lineWidth: 1, lineStyle: 0, color: col, axisLabelVisible: true, title: `${isS ? 'S' : 'R'} ${lvl.touches}×` });
+    pl.__col = col;
+    _srLines.push(pl);
   });
 
   // Axis labels for liquidation levels
@@ -270,51 +316,41 @@ async function loadChart() {
     });
   });
 
-  // Trendlines — lower TF first (drawn behind), higher TF last (drawn in front)
-  // at_risk trendlines rendered amber/dashed; normal trendlines green/red dashed
+  // Trendlines — stored for toggle
   const TL_ALPHA  = {1:.30, 2:.50, 3:.70, 4:.90};
   const TL_WIDTH  = {1:1,   2:1.5, 3:2,   4:2.5};
   [...(trendlines || [])].reverse().forEach(tl => {
-    const isUp    = tl.type === 'uptrend';
-    const w       = tl.weight || 1;
-    const a       = TL_ALPHA[w] ?? 0.5;
-    const lw      = TL_WIDTH[w] ?? 1;
-    const color   = tl.at_risk
+    const isUp  = tl.type === 'uptrend';
+    const w     = tl.weight || 1;
+    const a     = TL_ALPHA[w] ?? 0.5;
+    const color = tl.at_risk
       ? `rgba(255,179,0,${Math.min(a + 0.2, 1)})`
       : (isUp ? `rgba(38,217,107,${a})` : `rgba(239,83,80,${a})`);
-    const s = _chart.addLineSeries({
-      color, lineWidth: lw, lineStyle: 2,
-      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-    });
-    s.setData([
-      { time: tl.p1_time, value: tl.p1_price },
-      { time: tl.p2_time, value: tl.p2_price },
-    ]);
+    const s = _chart.addLineSeries({ color, lineWidth: TL_WIDTH[w] ?? 1, lineStyle: 2,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    s.setData([{ time: tl.p1_time, value: tl.p1_price }, { time: tl.p2_time, value: tl.p2_price }]);
+    _tlSeries.push(s);
   });
 
   _chart.timeScale().fitContent();
 
-  // Fibonacci retracement levels — dashed purple lines with ratio labels
+  // Fibonacci levels — stored for toggle
   if (fibonacci && fibonacci.levels) {
     fibonacci.levels.forEach(fib => {
-      series.createPriceLine({
-        price: fib.price, lineWidth: 1, lineStyle: 1,
-        color: 'rgba(180,130,255,0.55)',
-        axisLabelVisible: true,
-        title: `Fib ${fib.label}`,
-      });
+      const col = 'rgba(180,130,255,0.55)';
+      const pl = series.createPriceLine({ price: fib.price, lineWidth: 1, lineStyle: 1, color: col, axisLabelVisible: true, title: `Fib ${fib.label}` });
+      pl.__col = col;
+      _fibLines.push(pl);
     });
   }
 
-  // Weekly S/R axis labels
+  // Weekly S/R axis labels — stored with S/R lines for toggle
   (htf_levels || []).forEach(lvl => {
     const isS = lvl.type === 'support';
-    series.createPriceLine({
-      price: lvl.price, lineWidth: 1, lineStyle: 0,
-      color: 'rgba(255,193,60,0.3)',
-      axisLabelVisible: true,
-      title: `1W ${isS ? 'S' : 'R'} ${lvl.touches}×`,
-    });
+    const col = 'rgba(255,193,60,0.3)';
+    const pl = series.createPriceLine({ price: lvl.price, lineWidth: 1, lineStyle: 0, color: col, axisLabelVisible: true, title: `1W ${isS ? 'S' : 'R'} ${lvl.touches}×` });
+    pl.__col = col;
+    _srLines.push(pl);
   });
 
   // VMC Cipher B — WaveTrend oscillator pane
@@ -407,6 +443,8 @@ async function loadChart() {
   leg.innerHTML = chips.length
     ? chips.join('')
     : '<span style="color:#7986cb;font-size:.74rem">No S/R or trendlines detected</span>';
+
+  renderLayerBtns();
 }
 
 // ── VMC Cipher B — WaveTrend pane builder ─────────────────────────────────────
