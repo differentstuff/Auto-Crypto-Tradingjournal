@@ -38,15 +38,21 @@ def get_recent_trades(
     where = " AND ".join(conditions)
     params.append(limit)
 
-    rows = conn.execute(
+    _cols = ["symbol", "direction", "realized_pnl", "duration_minutes",
+             "entry_price", "close_price", "open_time", "close_time", "exchange"]
+    cur = conn.execute(
         f"SELECT symbol, direction, realized_pnl, duration_minutes, "
         f"       entry_price, close_price, open_time, close_time, exchange "
         f"FROM positions WHERE {where} "
         f"ORDER BY close_time DESC LIMIT ?",
         params,
-    ).fetchall()
+    )
+    rows = cur.fetchall()
 
-    return [dict(r) for r in rows]
+    # Support both sqlite3.Row (dict-like) and plain tuple rows
+    if rows and isinstance(rows[0], sqlite3.Row):
+        return [dict(r) for r in rows]
+    return [dict(zip(_cols, r)) for r in rows]
 
 
 def get_trade_stats(trades: list[dict]) -> dict:

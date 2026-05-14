@@ -19,6 +19,21 @@ if "anthropic" not in sys.modules:
     _anthropic.Anthropic = unittest.mock.MagicMock()
     sys.modules["anthropic"] = _anthropic
 
+if "pandas_ta" not in sys.modules:
+    _pandas_ta = types.ModuleType("pandas_ta")
+    sys.modules["pandas_ta"] = _pandas_ta
+
+if "chart_indicators" not in sys.modules:
+    _chart_indicators = types.ModuleType("chart_indicators")
+    _chart_indicators.compute_all_indicators = unittest.mock.MagicMock(return_value={})
+    _chart_indicators.compute_wavetrend = unittest.mock.MagicMock(return_value={})
+    sys.modules["chart_indicators"] = _chart_indicators
+
+if "chart_sr" not in sys.modules:
+    _chart_sr = types.ModuleType("chart_sr")
+    _chart_sr.detect_support_resistance = unittest.mock.MagicMock(return_value=[])
+    sys.modules["chart_sr"] = _chart_sr
+
 # Stub env vars before any project imports
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("BITGET_API_KEY", "test")
@@ -37,6 +52,7 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(_db, "DB_PATH", db_file)
     _db.init_db()
     conn = _db.get_conn()
+    conn.row_factory = None  # plain tuples so tests can do row == ("a", 1, ...)
     yield conn
     conn.close()
 

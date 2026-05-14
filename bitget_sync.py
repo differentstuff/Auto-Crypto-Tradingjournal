@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 import bitget_client as bc
 from database import get_conn
 import market_context as _mkt
+import chart_context
 
 SYNC_INTERVAL_SECONDS  = 5 * 60    # auto-sync every 5 minutes
 STARTUP_LOOKBACK_DAYS  = 2         # orders/bills catch-up window on first sync after (re)start
@@ -260,6 +261,99 @@ def _auto_close_calls(conn, exchange: str = "bitget") -> int:
     return closed
 
 
+def _retroactive_close_calls(conn) -> int:
+    """
+    For every 'saved' call older than 2 hours with entry/sl/tp1 prices set,
+    fetch 1H candles and check if price hit TP1, TP2, or SL since creation.
+    Records outcome retroactively; outcome_pnl is NULL (no actual trade).
+    Returns number of calls resolved.
+    """
+    from datetime import datetime, timezone
+
+    cur   = conn.cursor()
+    calls = cur.execute("""
+        SELECT id, symbol, direction, sl_price, tp1_price, tp2_price, created_at
+        FROM analyzed_calls
+        WHERE status      = 'saved'
+          AND sl_price    IS NOT NULL
+          AND tp1_price   IS NOT NULL
+          AND entry_price IS NOT NULL
+          AND created_at  < datetime('now', '-2 hours')
+    """).fetchall()
+
+    now_ms   = int(time.time() * 1000)
+    resolved = 0
+
+    for call in calls:
+        call_id, symbol, direction, sl_price, tp1_price, tp2_price, created_at = call
+
+        try:
+            df = chart_context.get_candles_at_time(symbol, "1H", now_ms, limit=500)
+        except Exception:
+            continue
+
+        if df.empty:
+            continue
+
+        try:
+            created_dt = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            created_ms = int(created_dt.timestamp() * 1000)
+        except Exception:
+            continue
+
+        df = df[df["timestamp"] > created_ms]
+        if df.empty:
+            continue
+
+        is_long   = "long" in (direction or "").lower()
+        hit_sl    = hit_tp1 = hit_tp2 = 0
+        outcome   = None
+
+        for _, row in df.iterrows():
+            high = row["high"]
+            low  = row["low"]
+            if is_long:
+                if sl_price and low <= sl_price:
+                    hit_sl, outcome = 1, "lost"
+                    break
+                elif tp2_price and high >= tp2_price:
+                    hit_tp1, hit_tp2, outcome = 1, 1, "won"
+                    break
+                elif tp1_price and high >= tp1_price:
+                    hit_tp1, outcome = 1, "won"
+                    break
+            else:
+                if sl_price and high >= sl_price:
+                    hit_sl, outcome = 1, "lost"
+                    break
+                elif tp2_price and low <= tp2_price:
+                    hit_tp1, hit_tp2, outcome = 1, 1, "won"
+                    break
+                elif tp1_price and low <= tp1_price:
+                    hit_tp1, outcome = 1, "won"
+                    break
+
+        if outcome is None:
+            continue
+
+        cur.execute("""
+            UPDATE analyzed_calls
+            SET status      = 'closed',
+                outcome     = ?,
+                outcome_pnl = NULL,
+                hit_tp1     = ?,
+                hit_tp2     = ?,
+                hit_sl      = ?,
+                outcome_at  = datetime('now')
+            WHERE id = ?
+        """, (outcome, hit_tp1, hit_tp2, hit_sl, call_id))
+        resolved += 1
+        print(f"[Sync] Retroactive #{call_id} {symbol} {direction} → {outcome}", flush=True)
+
+    conn.commit()
+    return resolved
+
+
 # ── Order sync ─────────────────────────────────────────────────────────────────
 
 def _sync_orders(conn, start_ms: int, end_ms: int = None) -> int:
@@ -436,6 +530,7 @@ def run_sync(conn=None) -> dict:
         n_pos    = _sync_positions(conn)
         # Auto-close any matched calls whose position has now synced
         n_closed = _auto_close_calls(conn)
+        n_retro  = _retroactive_close_calls(conn)
         # Orders + bills: time-filtered
         n_orders = _chunked_sync(_sync_orders, conn, last_ms, now_ms)
         n_bills  = _chunked_sync(_sync_bills,  conn, last_ms, now_ms)
@@ -449,7 +544,7 @@ def run_sync(conn=None) -> dict:
             "positions":    n_pos,
             "orders":       n_orders,
             "bills":        n_bills,
-            "calls_closed": n_closed,
+            "calls_closed": n_closed + n_retro,
             "equity":       equity,
             "synced_at":    datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
         }
