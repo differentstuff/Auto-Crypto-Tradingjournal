@@ -1,8 +1,67 @@
 
+async function loadAccuracyProgress() {
+  const res = await api('/api/calls/accuracy-progress');
+  if (!res.ok) return;
+  const d = res.data;
+
+  const sec = document.getElementById('prediction-accuracy-section');
+  if (sec) sec.style.display = '';
+
+  let card = document.getElementById('accuracy-progress-card');
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'accuracy-progress-card';
+    card.style.cssText = 'margin-bottom:16px;padding:14px 18px;background:var(--bg2);border:1px solid var(--border);border-radius:10px';
+    const content = document.getElementById('prediction-accuracy-content');
+    if (content) content.parentElement.insertBefore(card, content);
+    else return;
+  }
+
+  card.textContent = '';
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
+
+  const title = document.createElement('span');
+  title.style.cssText = 'font-size:.85rem;font-weight:600';
+  title.textContent = '\u{1F4CA} Accuracy Tracking';
+
+  const rateColor = d.win_rate >= 55 ? 'var(--accent3)' : d.win_rate >= 40 ? 'var(--yellow)' : 'var(--red)';
+  const meta = document.createElement('span');
+  meta.style.cssText = 'font-size:.8rem;color:var(--muted)';
+  meta.textContent = d.recorded + ' / ' + d.target + ' calls recorded · ';
+  const rateSpan = document.createElement('span');
+  rateSpan.style.color = rateColor;
+  rateSpan.textContent = d.win_rate + '% win rate';
+  meta.appendChild(rateSpan);
+
+  header.appendChild(title);
+  header.appendChild(meta);
+
+  const barWrap = document.createElement('div');
+  barWrap.style.cssText = 'background:var(--bg);border-radius:6px;height:8px;overflow:hidden;margin-bottom:8px';
+  const fill = document.createElement('div');
+  const pct  = Math.min(100, Math.round(d.recorded / d.target * 100));
+  fill.style.cssText = 'height:100%;border-radius:6px;transition:width .4s;width:' + pct + '%;background:' +
+    (d.enough_data ? 'var(--accent3)' : 'var(--accent)');
+  barWrap.appendChild(fill);
+
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:.75rem;color:var(--muted)';
+  note.textContent = d.enough_data
+    ? '✅ Statistical target reached — accuracy data is reliable'
+    : d.remaining + ' more outcome-recorded calls needed for statistical confidence';
+
+  card.appendChild(header);
+  card.appendChild(barWrap);
+  card.appendChild(note);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PREDICTION ACCURACY
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadPredictionAccuracy() {
+  loadAccuracyProgress();
   const res = await api('/api/calls/prediction-accuracy');
   const sec = document.getElementById('prediction-accuracy-section');
   const con = document.getElementById('prediction-accuracy-content');
