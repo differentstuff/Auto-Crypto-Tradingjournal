@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget/Blofin sync, a 7-a
 </p>
 
 <p align="center">
-  <strong>v1.1.0</strong>
+  <strong>v1.3.0</strong>
   &nbsp;·&nbsp;
   <a href="docs/architecture_detailed.pdf">📐 Architecture PDF</a>
   &nbsp;·&nbsp;
@@ -172,7 +172,7 @@ app.py                   Flask startup, 9 blueprints, 3 background threads
 database.py              Schema, 31 migrations, db_conn() context manager
 constants.py             All models, cache TTLs, thresholds — single source of truth
 
-# ── Specialized agents (v1.1.0) ──────────────────────────────────────────────
+# ── Specialized agents ───────────────────────────────────────────────────────
 agent_types.py           All TypedDict contracts (single source of truth)
 agent_data_collector.py  Parallel data fetch: OHLCV, funding, OI, F&G, FRED, Nansen, Grok
 agent_data_interpreter.py Pure indicator transforms (no network/AI/DB)
@@ -238,8 +238,10 @@ docs/architecture_detailed.pdf  10-section PDF for beginners + experts
 
 | Version | What it means |
 |---------|--------------|
-| v1.0 | Core journal + Grok/Gemini consensus + backtest loop + prompt caching |
-| **v1.1** | **7-agent pipeline + TradeMonitor + annotated charts + Kelly criterion** |
+| v1.0.1 | Core journal + Grok/Gemini consensus + backtest loop + prompt caching |
+| v1.1.0 | 7-agent pipeline + TradeMonitor + annotated charts + Kelly criterion |
+| v1.2.0 | Phase 4 UI/UX + retroactive outcome recorder + accuracy progress tracker |
+| **v1.3.0** | **SMC/ICT + VMC Cipher signal improvements: MFI signal, kill zone annotation, raised R:R thresholds, premium/discount zone, BOS/CHoCH rubric, 1H entry timeframe** |
 | v2.0 | Major new capability (e.g. exchange, auth layer, new data source tier) |
 
 ---

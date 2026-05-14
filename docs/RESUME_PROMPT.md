@@ -9,13 +9,13 @@
 We are continuing work on a self-hosted crypto futures trading journal.
 
 **Project:** `/Users/fbauer/Documents/ClaudeAIData/Trading-Journal/`
-**Version:** v1.1.0 (commit `7ba827d`, deployed to Pi at 192.168.1.21:8082)
+**Version:** v1.3.0 (commit `65e05dc`, deployed to Pi at 192.168.1.21:8082)
 **Stack:** Python 3.13 / Flask 3.1 / SQLite WAL / Raspberry Pi 5
 **GitHub:** https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal
 
 ---
 
-## What is built (v1.1.0 complete)
+## What is built (v1.3.0 complete)
 
 ### 7-Agent Pipeline
 
@@ -28,41 +28,28 @@ DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewe
                                              TradeMonitor (background, every 10 min)
 ```
 
-**New files (v1.1.0):**
-- `agent_types.py` — all TypedDict contracts
-- `agent_data_collector.py` — parallel fetch (OHLCV, funding, OI, F&G, FRED, Nansen, Grok)
-- `agent_data_interpreter.py` — pure indicator transforms
-- `agent_market_sentiment.py` — pure sentiment: contra_signal, crowd_position, funding_bias
-- `agent_data_reviewer.py` — signal quality gate (0-10) + KPIs from DB
-- `agent_risk_mgmt.py` — pure math: sizing + Kelly criterion (0.05–0.25)
-- `agent_chart_draw.py` — pure matplotlib annotated PNG (entry/SL/TP + criteria) — no mplfinance dep
-- `agent_trade_prep.py` — main Claude + Gemini call, assembles all agents
-- `agent_trade_monitor.py` — Haiku chain, fires Telegram + UI badge on risk_rating ≥ 7
-- `monitor_scheduler.py` — background thread (10 min, polls positions)
+### v1.3.0 — SMC/ICT + VMC Cipher Signal Improvements
+- **R:R thresholds raised** — score 6=2:1, 7=2.5:1, 8=3:1, 9=3.5:1, 10=4:1 (was 1.5/2/2.5/3/4)
+- **Premium/discount zone penalty** — LONG in premium or SHORT in discount zone → −1 score
+- **Draw-on-liquidity TP guidance** — `DRAW_ON_LIQUIDITY_RULES` injected into all AI call stables
+- **MFI standalone confluence signal** — `_mfi_weight()` ±0.3, dead-band ±10, max_val 5.9→6.2 per TF
+- **Kill zone annotation** — setups outside London (07–10 UTC) or NY AM (12–15 UTC) tagged "⚠ Outside kill zone"
+- **1H finalist timeframe** — agent pipeline uses `["1H", "4H", "1D"]` for top-N finalists
+- **BOS/CHoCH reversal rubric** — reversal setups require CHoCH; BOS alone scores ≤ 6
+- 74 tests pass (30 new); 3 new test files
 
-**Modified files (same external API):**
-- `agent_orchestrator.py` — gained `run_call_analysis()`, `run_scanner_prep()`, `run_monitor()`
-- `ai_call.py` — delegates to `run_call_analysis()`; explicitly maps symbol, direction, tp1_price
-- `ai_scanner.py` — Stage 3b calls `run_scanner_prep()` per finalist
-- `ai_live_trade.py` — delegates to `run_monitor()`
-- `telegram_notify.py` — gained `send_photo()` + chart attachment to scanner alerts
-- `static/js/01-utils.js` — `api()` handles non-JSON server responses (no more cryptic Safari errors)
-- `static/js/07-calls.js` — `saveCurrentCall()` strips `chart_png_b64` before POST
+### v1.2.0 — Phase 4 UI/UX + Accuracy Accumulation
+- **Retroactive outcome recorder** — `_retroactive_close_calls()` in bitget+blofin sync; checks 1H OHLCV for saved calls >2h old
+- **Accuracy progress widget** — `/api/calls/accuracy-progress`, `ACCURACY_TARGET = 35`
+- **Stale-data badge** — amber badge after 3 min without live trades refresh
+- **Scanner ETA** — `~Xm remaining` shown during active scan
+- Symbol autocomplete confirmed via `_attachSymbolPicker` + `/api/exchange/symbols`
 
-**DB migrations 29-31:** `analyzed_calls` has `risk_verdict_json`, `monitor_alert`, `chart_png_b64`
-
-### Consensus Logic
-```
-|Claude - Gemini| ≤ 1 → ✓ Confirmed
-|Claude - Gemini| ≤ 2 → ~ Aligned
-|Claude - Gemini| ≤ 3 → ⚠ Divergent
-|Claude - Gemini| > 3 → ⚡ REVIEW (skip trade)
-```
-
-### Prompt Caching
-- `build_stable_prefix()` → rulebook + calibration → `cache_control: ephemeral`
-- `build_context()` → backtest + market + chart + Nansen + Grok → not cached
-- Expected savings: 40–60% on repeated calls
+### v1.1.0 — 7-Agent Pipeline
+- agent_types.py, agent_data_collector, agent_data_interpreter, agent_market_sentiment
+- agent_data_reviewer, agent_risk_mgmt, agent_chart_draw, agent_trade_prep, agent_trade_monitor
+- monitor_scheduler.py — background thread (10 min, polls positions)
+- DB migrations 29-31: risk_verdict_json, monitor_alert, chart_png_b64
 
 ---
 
@@ -73,41 +60,42 @@ agent_types.py            All TypedDicts (CollectorResult, TradePrepResult, etc.
 agent_orchestrator.py     compute_consensus() + 3 pipeline runners
 agent_chart_draw.py       Pure matplotlib chart — plt.switch_backend("Agg") inside draw()
 ai_call.py                analyze_call() → delegates to orchestrator
-                          result["symbol"], ["direction"], ["tp1_price"] etc. explicitly mapped
-ai_scanner.py             3-stage + agent pipeline Stage 3b
-monitor_scheduler.py      Background position monitor
-constants.py              MODEL, FAST_MODEL, GEMINI_*, VERSION="1.1.0", MONITOR_*
-database.py               Migrations 1–31 (29=risk_verdict_json, 30=monitor_alert, 31=chart_png_b64)
-routes/calls.py           api_calls_save(): guards NOT NULL; saves chart_png_b64 to own column
-static/js/01-utils.js     api() handles non-JSON server errors (no more cryptic Safari exceptions)
-static/js/07-calls.js     saveCurrentCall() strips chart_png_b64 from POST payload
-scripts/self_test.py      54 tests + --agents pipeline smoke test
-requirements.txt          matplotlib>=3.7.0 (replaced mplfinance)
-docs/architecture.md      ASCII flow maps
-docs/architecture_detailed.pdf  11-section PDF
+ai_scanner.py             3-stage + agent pipeline Stage 3b; kill zone annotation
+prompt_fragments.py       SCORING_SCALE, LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES, DRAW_ON_LIQUIDITY_RULES
+prompt_builder.py         Stable prefix (cached) + dynamic context; LOQ rules + BOS/CHoCH rubric
+chart_context.py          confluence_score() — 7 signals: RSI/MACD/EMA/ADX/WT/MFI/CVD + vol
+constants.py              MODEL, FAST_MODEL, GEMINI_*, VERSION="1.3.0", ACCURACY_TARGET=35
+database.py               Migrations 1–31
+bitget_sync.py            _auto_close_calls() + _retroactive_close_calls()
+blofin_sync.py            Both close-calls functions wired in
+routes/calls.py           /api/calls/accuracy-progress endpoint
+static/js/01-utils.js     openChart() — popup blocker detection
+static/js/08-live.js      _startStalenessWatcher — stale-data badge
+static/js/09-analysis.js  loadAccuracyProgress() — accuracy widget
+static/js/14-scanner.js   ETA in _buildProgressBlock()
+scripts/self_test.py      74 tests + --agents pipeline smoke test
 ```
 
-### Known issues / gotchas
-- Pi must have `matplotlib>=3.7.0` installed (`pip3 install matplotlib --break-system-packages`)
+### Known gotchas
+- Pi must run via `sudo systemctl restart trading-journal` — NOT `nohup python app.py` (service loads .env)
 - `plt.switch_backend("Agg")` called inside `draw()` — must be after imports, not at module level
 - Claude returns `"tp1"` key (not `"tp1_price"`) — `ai_call.py` reads `result.get("tp1")` as fallback
-- `analyzed_calls.symbol` and `.direction` are NOT NULL — always explicitly set in `ai_call.analyze_call()`
+- `analyzed_calls.symbol` and `.direction` are NOT NULL — always explicitly set
 
 ---
 
 ## Deployment
 - Pi IP: 192.168.1.21, credentials in memory `feedback_pi_ssh.md`
-- After any push: SSH via expect + password, `git reset --hard origin/main`, then `sudo systemctl restart trading-journal`
-- **NEVER use `nohup python app.py`** — the systemd service loads `.env` via `EnvironmentFile=`; running directly leaves all API keys empty
+- After any push: `git fetch origin && git reset --hard origin/main && sudo systemctl restart trading-journal`
+- **NEVER use `nohup python app.py`** — systemd service loads `.env` via `EnvironmentFile=`; running directly leaves all API keys empty
 - Service: `trading-journal.service` (systemd), `ExecStart=/usr/bin/python3 app.py`
 
 ---
 
 ## Next Work (priority order)
 
-1. **Accuracy accumulation** — need ~15–20 outcome-recorded calls for 85% target (currently ~5)
-2. **Hyblock Capital integration** — liquidation levels as 8th confluence signal. Spec: `docs/superpowers/specs/2026-05-09-architecture-review-and-optimisation.md` §9
-3. **Phase 4 UI/UX** — stale-data badge on live trades, symbol autocomplete, scanner ETA display
+1. **Hyblock Capital integration** — liquidation levels as 8th confluence signal (deferred: need account/credentials). Spec: `docs/superpowers/specs/2026-05-09-architecture-review-and-optimisation.md` §9
+2. **Accuracy accumulation** — retroactive recorder auto-populates; Pi at 17/35 at last check; target 35 for statistical confidence
 
 ---
 
@@ -124,9 +112,11 @@ docs/architecture_detailed.pdf  11-section PDF
 ---
 
 ## Versioning Policy
-- v1.0.x = bug fixes and minor additions (continuous)
-- v1.1 = 7-agent pipeline + TradeMonitor + charts + Kelly
-- v2.0 = major new capability (new exchange, auth layer, new data tier)
+- v1.0.1 = Core journal + consensus + backtest loop
+- v1.1.0 = 7-agent pipeline + TradeMonitor + charts + Kelly
+- v1.2.0 = Phase 4 UI/UX + retroactive outcome recorder
+- v1.3.0 = SMC/ICT signal improvements (MFI, kill zones, R:R, premium/discount, CHoCH)
+- v2.0 = Major new capability (new exchange, auth layer, new data tier)
 
 ---
 
