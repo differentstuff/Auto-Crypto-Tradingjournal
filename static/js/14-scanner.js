@@ -306,7 +306,10 @@ function _startScanPoller() {
     const res = await api('/api/scanner/status');
     if (!res.ok) return;
     renderScannerPage(res.data);
-    if (res.data.status !== 'running') _stopScanPoller();
+    if (res.data.status !== 'running') {
+      _stopScanPoller();
+      _firePendingSingleScan();
+    }
   }, 2000);
 }
 function _stopScanPoller() {
