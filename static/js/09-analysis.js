@@ -55,6 +55,98 @@ async function loadAccuracyProgress() {
   card.appendChild(header);
   card.appendChild(barWrap);
   card.appendChild(note);
+
+  // Add backtest card below accuracy card if not already present
+  if (!document.getElementById('backtest-card')) {
+    const btCard = document.createElement('div');
+    btCard.id = 'backtest-card';
+    btCard.style.cssText = 'margin-top:12px;padding:14px 18px;background:var(--bg2);border:1px solid var(--border);border-radius:10px';
+
+    const btTitle = document.createElement('div');
+    btTitle.style.cssText = 'font-size:.85rem;font-weight:600;margin-bottom:10px';
+    btTitle.textContent = 'Backtest (6M · 4H)';
+
+    const inputRow = document.createElement('div');
+    inputRow.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+
+    const symbolInput = document.createElement('input');
+    symbolInput.id = 'backtestSymbol';
+    symbolInput.type = 'text';
+    symbolInput.placeholder = 'BTCUSDT';
+    symbolInput.value = 'BTCUSDT';
+    symbolInput.style.cssText = 'flex:1;padding:4px 8px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)';
+
+    const runBtn = document.createElement('button');
+    runBtn.style.cssText = 'padding:4px 12px;font-size:.8rem;background:var(--accent);border:none;border-radius:6px;color:#fff;cursor:pointer';
+    runBtn.textContent = '► Run';
+    runBtn.onclick = function() { loadBacktest(); };
+
+    inputRow.appendChild(symbolInput);
+    inputRow.appendChild(runBtn);
+
+    const resultDiv = document.createElement('div');
+    resultDiv.id = 'backtestResult';
+    resultDiv.style.cssText = 'font-size:.8rem;color:var(--muted)';
+    resultDiv.textContent = 'Enter symbol and click Run';
+
+    btCard.appendChild(btTitle);
+    btCard.appendChild(inputRow);
+    btCard.appendChild(resultDiv);
+    card.parentElement.insertBefore(btCard, card.nextSibling);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BACKTEST
+// ══════════════════════════════════════════════════════════════════════════════
+
+function _renderBacktestResult(container, d) {
+  container.textContent = '';
+  const metrics = [
+    ['Trades',  String(d.total_trades)],
+    ['Win %',   d.win_rate + '%'],
+    ['PF',      String(d.profit_factor)],
+    ['Sharpe',  String(d.sharpe)],
+    ['Max DD',  (d.max_drawdown * 100).toFixed(1) + '%'],
+  ];
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;margin-top:8px';
+  for (const [label, val] of metrics) {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;min-width:60px';
+    const valEl = document.createElement('div');
+    valEl.style.cssText = 'font-size:.9rem;font-weight:600';
+    valEl.textContent = val;
+    const labelEl = document.createElement('div');
+    labelEl.style.cssText = 'font-size:.7rem;color:var(--muted)';
+    labelEl.textContent = label;
+    cell.appendChild(valEl);
+    cell.appendChild(labelEl);
+    row.appendChild(cell);
+  }
+  container.appendChild(row);
+}
+
+async function loadBacktest(symbol) {
+  const sym = symbol
+    || (document.getElementById('backtestSymbol') || {}).value?.trim()
+    || 'BTCUSDT';
+  const container = document.getElementById('backtestResult');
+  if (!container) return;
+  container.textContent = 'Running backtest…';
+
+  try {
+    const json = await api('/api/backtest/run', 'POST', { symbol: sym, timeframe: '4H', days: 180 });
+    if (!json.ok) throw new Error(json.error || 'Backtest failed');
+    _renderBacktestResult(container, json.data);
+  } catch (e) {
+    container.textContent = '';
+    const err = document.createElement('small');
+    err.style.color = 'var(--red)';
+    err.textContent = e.message;
+    container.appendChild(err);
+    notify('Backtest error: ' + e.message, 'danger');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
