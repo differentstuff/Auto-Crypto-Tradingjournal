@@ -46,7 +46,7 @@ import nansen_client
 
 # ── Watchlist ──────────────────────────────────────────────────────────────────
 
-DEFAULT_WATCHLIST = [
+_BITGET_WATCHLIST = [
     # BTC / ETH
     "BTCUSDT", "ETHUSDT",
     # Major L1s
@@ -83,6 +83,19 @@ DEFAULT_WATCHLIST = [
     "CELOUSDT", "THETAUSDT", "NEOUSDT", "ONTUSDT", "IOTAUSDT",
     "WOOUSDT", "KLAYUSDT", "GMTUSDT",
 ]
+
+# BINANCE_WATCHLIST: top-100 Binance USDT-M futures by 24h volume.
+# Falls back to empty list if Binance unreachable at startup.
+try:
+    import ccxt_client as _ccxt
+    BINANCE_WATCHLIST = _ccxt.get_binance_futures_symbols()
+except Exception:
+    BINANCE_WATCHLIST = []
+
+# Merge: Bitget list first (home exchange), Binance additions after.
+DEFAULT_WATCHLIST = list(dict.fromkeys(
+    _BITGET_WATCHLIST + [s for s in BINANCE_WATCHLIST if s not in set(_BITGET_WATCHLIST)]
+))
 
 # ── Criteria defaults ──────────────────────────────────────────────────────────
 # Each key maps to a scoring check. When False the stage-2 gate skips the hard
