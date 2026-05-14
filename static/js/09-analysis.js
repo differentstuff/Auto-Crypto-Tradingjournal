@@ -77,21 +77,35 @@ async function loadAccuracyProgress() {
     symbolInput.style.cssText = 'flex:1;padding:4px 8px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)';
 
     const runBtn = document.createElement('button');
+    runBtn.id = 'backtestRunBtn';
     runBtn.style.cssText = 'padding:4px 12px;font-size:.8rem;background:var(--accent);border:none;border-radius:6px;color:#fff;cursor:pointer';
     runBtn.textContent = '► Run';
     runBtn.onclick = function() { loadBacktest(); };
 
+    const optBtn = document.createElement('button');
+    optBtn.id = 'backtestOptBtn';
+    optBtn.style.cssText = 'padding:4px 12px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer';
+    optBtn.textContent = '⚙ Optimize';
+    optBtn.title = 'Bayesian parameter search (~5-10 min)';
+    optBtn.onclick = function() { loadOptimizer(); };
+
     inputRow.appendChild(symbolInput);
     inputRow.appendChild(runBtn);
+    inputRow.appendChild(optBtn);
 
     const resultDiv = document.createElement('div');
     resultDiv.id = 'backtestResult';
     resultDiv.style.cssText = 'font-size:.8rem;color:var(--muted)';
     resultDiv.textContent = 'Enter symbol and click Run';
 
+    const optimizerDiv = document.createElement('div');
+    optimizerDiv.id = 'optimizerResult';
+    optimizerDiv.style.cssText = 'font-size:.8rem;margin-top:8px';
+
     btCard.appendChild(btTitle);
     btCard.appendChild(inputRow);
     btCard.appendChild(resultDiv);
+    btCard.appendChild(optimizerDiv);
     card.parentElement.insertBefore(btCard, card.nextSibling);
   }
 }
@@ -146,6 +160,69 @@ async function loadBacktest(symbol) {
     err.textContent = e.message;
     container.appendChild(err);
     notify('Backtest error: ' + e.message, 'danger');
+  }
+}
+
+function _setBtBtnsDisabled(disabled) {
+  const r = document.getElementById('backtestRunBtn');
+  const o = document.getElementById('backtestOptBtn');
+  if (r) r.disabled = disabled;
+  if (o) o.disabled = disabled;
+}
+
+async function loadOptimizer() {
+  const sym = (document.getElementById('backtestSymbol') || {}).value?.trim() || 'BTCUSDT';
+  const container = document.getElementById('optimizerResult');
+  if (!container) return;
+
+  _setBtBtnsDisabled(true);
+  container.textContent = '';
+  const msg = document.createElement('small');
+  msg.style.color = 'var(--muted)';
+  msg.textContent = '⧗ Running optimizer for ' + sym + ' (~5-10 min)…';
+  container.appendChild(msg);
+
+  try {
+    const json = await api('/api/backtest/optimize?symbol=' + encodeURIComponent(sym) + '&n_trials=50');
+    if (!json.ok) throw new Error(json.error || 'Optimizer failed');
+
+    container.textContent = '';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:.75rem;font-weight:600;color:var(--muted);margin-bottom:6px';
+    title.textContent = 'Best params (' + sym + ')';
+    container.appendChild(title);
+
+    const paramLabels = {
+      wt_oversold: 'WT oversold', rsi_max: 'RSI max', adx_min: 'ADX min',
+      min_confluence: 'Confluence', sl_pct: 'SL %', tp1_pct: 'TP1 %', tp2_pct: 'TP2 %',
+    };
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px';
+    for (const [key, label] of Object.entries(paramLabels)) {
+      if (!(key in json.data)) continue;
+      const val = typeof json.data[key] === 'number' ? json.data[key].toFixed(2) : String(json.data[key]);
+      const chip = document.createElement('div');
+      chip.style.cssText = 'padding:3px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:.75rem';
+      const k = document.createElement('span');
+      k.style.color = 'var(--muted)';
+      k.textContent = label + ': ';
+      const v = document.createElement('span');
+      v.style.fontWeight = '600';
+      v.textContent = val;
+      chip.appendChild(k);
+      chip.appendChild(v);
+      grid.appendChild(chip);
+    }
+    container.appendChild(grid);
+    notify('Optimizer complete for ' + sym, 'success');
+  } catch (e) {
+    container.textContent = '';
+    const err = document.createElement('small');
+    err.style.color = 'var(--red)';
+    err.textContent = 'Optimizer error: ' + e.message;
+    container.appendChild(err);
+  } finally {
+    _setBtBtnsDisabled(false);
   }
 }
 
