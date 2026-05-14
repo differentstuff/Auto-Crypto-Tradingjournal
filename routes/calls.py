@@ -316,6 +316,29 @@ def api_calls_prediction_accuracy():
     return _ok(rows)
 
 
+@bp.route("/api/calls/accuracy-progress")
+def api_calls_accuracy_progress():
+    from constants import ACCURACY_TARGET
+    with db_conn() as conn:
+        row = conn.execute("""
+            SELECT
+                COUNT(*)                                            AS recorded,
+                SUM(CASE WHEN outcome = 'won' THEN 1 ELSE 0 END)  AS wins
+            FROM analyzed_calls
+            WHERE outcome IS NOT NULL
+        """).fetchone()
+    recorded = row[0] or 0
+    wins     = row[1] or 0
+    win_rate = round(wins / recorded * 100, 1) if recorded else 0.0
+    return _ok({
+        "recorded":    recorded,
+        "target":      ACCURACY_TARGET,
+        "win_rate":    win_rate,
+        "remaining":   max(0, ACCURACY_TARGET - recorded),
+        "enough_data": recorded >= ACCURACY_TARGET,
+    })
+
+
 @bp.route("/api/calls/<int:call_id>/postmortem")
 def api_calls_postmortem(call_id):
     with db_conn() as conn:
