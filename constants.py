@@ -13,6 +13,9 @@ SCANNER_CACHE_TTL      = 1800   # 30 min — scanner result cache
 MARKET_CACHE_TTL       = 300    # 5 min  — Fear & Greed / funding rates
 NANSEN_CACHE_TTL       = 1800   # 30 min — Nansen smart money cache
 
+# ── Accuracy tracking ─────────────────────────────────────────────────────────
+ACCURACY_TARGET        = 35     # calls needed for 85% statistical confidence
+
 # ── Scanner pipeline ──────────────────────────────────────────────────────────
 SCANNER_MIN_SCORE         = 6
 SCANNER_FULL_DETAIL_TOP_N = 12
