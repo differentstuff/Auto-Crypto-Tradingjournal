@@ -4,3 +4,4 @@ pandas>=3.0.3
 pandas-ta>=0.4.71b0
 matplotlib>=3.7.0
 ccxt>=4.0.0
+optuna>=3.0.0
