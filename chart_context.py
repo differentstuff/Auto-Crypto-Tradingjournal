@@ -545,18 +545,19 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         ema_w  = _ema_weight(inds.get("ema",   {}))
         adx_w  = _adx_weight(inds.get("adx",   {}))
         wt_w   = _wt_weight(inds.get("wavetrend", {}))
+        mfi_w  = _mfi_weight(inds.get("wavetrend", {}))
         cvd_w  = _cvd_weight(inds.get("cvd", {}))
-        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + cvd_w
+        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + mfi_w + cvd_w
         vol_w  = _volume_weight(inds, base_score)
 
         tf_score = base_score + vol_w
         total_score += tf_score
 
-        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, cvd_w, vol_w) if w > 0), 1)
-        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, cvd_w, vol_w) if w < 0), 1)
+        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, vol_w) if w > 0), 1)
+        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
-    max_val = float(len(tfs) * 5.9)  # 6 directional signals (max 1.0 each, CVD 0.4) + vol (0.5)
+    max_val = float(len(tfs) * 6.2)  # 7 directional signals: RSI+MACD+EMA+ADX+WT(1.0 each) + MFI(0.3) + CVD(0.4) + vol(0.5)
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
@@ -628,6 +629,18 @@ def _cvd_weight(cvd: dict) -> float:
     return 0.4 if trend == "rising" else (-0.4 if trend == "falling" else 0.0)
 
 
+def _mfi_weight(wt: dict) -> float:
+    """
+    MFI (Money Flow) contribution from WaveTrend data.
+    MFI > 10 = capital inflow (bullish +0.3), MFI < -10 = outflow (bearish -0.3).
+    Dead-band ±10 avoids noise near zero.
+    """
+    mfi = wt.get("mfi", 0.0) if wt else 0.0
+    if mfi > 10:   return  0.3
+    if mfi < -10:  return -0.3
+    return 0.0
+
+
 def _get_tf_weights(ctx: dict, tf: str) -> list:
     """Return signal weights for a single timeframe (RSI/MACD/EMA/ADX/WT/CVD/Vol)."""
     inds = ctx.get(tf, {}).get("indicators", {})
@@ -639,6 +652,7 @@ def _get_tf_weights(ctx: dict, tf: str) -> list:
         _ema_weight(inds.get("ema",   {})),
         _adx_weight(inds.get("adx",   {})),
         _wt_weight(inds.get("wavetrend", {})),
+        _mfi_weight(inds.get("wavetrend", {})),
         _cvd_weight(inds.get("cvd", {})),
     ]
     base.append(_volume_weight(inds, sum(base)))
