@@ -98,6 +98,9 @@ async function loadLiveTrades() {
     renderPositionCards(displayPositions, liveWaitingLimits);
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
+    window._liveLastRefreshAt = Date.now();
+    const _staleBadge = document.getElementById('live-stale-badge');
+    if (_staleBadge) _staleBadge.remove();
   } catch(e) {
     document.getElementById('trades-container').innerHTML =
       `<div class="upload-result error">❌ ${e.message}</div>`;
@@ -463,3 +466,29 @@ function renderCorrelationWarning(positions) {
     el.style.display = 'none';
   }
 }
+
+// ── Stale-data badge ──────────────────────────────────────────────────────────
+(function _startStalenessWatcher() {
+  setInterval(() => {
+    if (typeof currentPage !== 'undefined' && currentPage !== 'trades') return;
+    if (!window._liveLastRefreshAt) return;
+    const age = Date.now() - window._liveLastRefreshAt;
+    if (age < 180_000) return;
+    if (document.getElementById('live-stale-badge')) return;
+    const mins = Math.floor(age / 60_000);
+    const badge = document.createElement('div');
+    badge.id = 'live-stale-badge';
+    badge.style.cssText = [
+      'padding:8px 14px',
+      'margin-bottom:12px',
+      'background:rgba(255,179,0,.1)',
+      'border:1px solid rgba(255,179,0,.3)',
+      'border-radius:8px',
+      'font-size:.82rem',
+      'color:var(--yellow)',
+    ].join(';');
+    badge.textContent = '⚠ Data may be stale — last updated ' + mins + 'm ago';
+    const container = document.getElementById('trades-container');
+    if (container) container.insertBefore(badge, container.firstChild);
+  }, 60_000);
+})();
