@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+import bitget_client
 from backtest_metrics import sharpe_ratio, sortino_ratio, max_drawdown, profit_factor
 
 
@@ -81,7 +82,6 @@ def _fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
     Fetch OHLCV data from Bitget with pagination (API caps at 200 per call).
     Walks backwards using endTime cursor until limit candles are collected.
     """
-    import bitget_client
     MAX_PER_CALL = 200
     sym = symbol.upper()
     if not sym.endswith("USDT"):
@@ -212,13 +212,15 @@ def _simulate_trades(df: pd.DataFrame, params: BacktestParams) -> list:
                 i = j
                 exited = True
                 break
-            elif hi >= tp2:
-                trades.append(BacktestTrade(entry, tp2, "tp2", (tp2 - entry) / entry, entry_time, exit_time))
+            elif hi >= tp1 and hi < tp2:
+                # TP1 hit but not TP2 — conservative exit at smaller target
+                trades.append(BacktestTrade(entry, tp1, "tp1", (tp1 - entry) / entry, entry_time, exit_time))
                 i = j
                 exited = True
                 break
-            elif hi >= tp1:
-                trades.append(BacktestTrade(entry, tp1, "tp1", (tp1 - entry) / entry, entry_time, exit_time))
+            elif hi >= tp2:
+                # Price cleared both targets in one candle — record full TP2
+                trades.append(BacktestTrade(entry, tp2, "tp2", (tp2 - entry) / entry, entry_time, exit_time))
                 i = j
                 exited = True
                 break

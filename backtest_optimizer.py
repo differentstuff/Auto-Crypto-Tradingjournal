@@ -38,4 +38,7 @@ def run_optimizer(symbol: str = "BTCUSDT", timeframe: str = "4H",
         n_trials=n_trials,
         n_jobs=1,
     )
+    completed = [t for t in study.trials if t.state.name == "COMPLETE"]
+    if not completed:
+        return {}
     return study.best_params

@@ -45,6 +45,11 @@ header{display:flex;align-items:center;justify-content:space-between;
 <div id="sr-legend"></div>
 
 <script>
+// Escape HTML entities to prevent XSS in legend chips built with innerHTML
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 const params = new URLSearchParams(location.search);
 let symbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
 let tf     = params.get('timeframe') || '4H';
@@ -374,25 +379,25 @@ async function loadChart() {
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(79,195,247,.12);color:rgba(79,195,247,.95);
         border:1px solid rgba(79,195,247,.25)">
-        ▶ ${t.dir} ENTRY  ${t.entry}
+        ▶ ${_esc(t.dir)} ENTRY  ${_esc(t.entry)}
       </span>`);
     if (t.tp1) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(38,217,107,.1);color:rgba(38,217,107,.95);
         border:1px solid rgba(38,217,107,.22)">
-        ✦ ${t.dir} TP1  ${t.tp1}${distChip(t.tp1)}
+        ✦ ${_esc(t.dir)} TP1  ${_esc(t.tp1)}${distChip(t.tp1)}
       </span>`);
     if (t.tp2) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(38,217,107,.07);color:rgba(38,217,107,.75);
         border:1px solid rgba(38,217,107,.15)">
-        ✦ ${t.dir} TP2  ${t.tp2}${distChip(t.tp2)}
+        ✦ ${_esc(t.dir)} TP2  ${_esc(t.tp2)}${distChip(t.tp2)}
       </span>`);
     if (t.sl) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(239,83,80,.1);color:rgba(239,83,80,.95);
         border:1px solid rgba(239,83,80,.22)">
-        ✕ ${t.dir} SL  ${t.sl}${distChip(t.sl)}
+        ✕ ${_esc(t.dir)} SL  ${_esc(t.sl)}${distChip(t.sl)}
       </span>`);
   });
 
@@ -400,7 +405,7 @@ async function loadChart() {
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:rgba(255,213,60,.1);color:rgba(255,213,60,.95);
       border:1px solid rgba(255,213,60,.2)">
-      ⚡ ${liq.label} LIQ  ${liq.price}
+      ⚡ ${_esc(liq.label)} LIQ  ${_esc(liq.price)}
     </span>`);
   });
 

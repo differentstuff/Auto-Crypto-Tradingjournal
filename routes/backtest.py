@@ -57,6 +57,11 @@ def backtest_optimize():
     except (ValueError, TypeError):
         return _err("invalid parameter value")
 
-    from backtest_optimizer import run_optimizer
-    best = run_optimizer(symbol, timeframe, days, n_trials)
+    try:
+        from backtest_optimizer import run_optimizer
+        best = run_optimizer(symbol, timeframe, days, n_trials)
+    except Exception:
+        return _err("optimizer failed")
+    if not best:
+        return _err("no completed trials — try more data or relaxed params")
     return _ok(best)

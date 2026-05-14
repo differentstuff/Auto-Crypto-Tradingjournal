@@ -133,10 +133,14 @@ async function drawExplorerChart() {
   titleEl.className = 'explorer-chart-title';
   titleEl.style.cssText = 'position:absolute;top:10px;left:12px;z-index:4;pointer-events:none;' +
     'display:flex;align-items:baseline;gap:8px';
-  titleEl.innerHTML =
-    `<span style="font-size:1.1rem;font-weight:700;color:var(--text);letter-spacing:.02em">${sym}</span>` +
-    `<span style="font-size:.78rem;font-weight:600;color:var(--accent);background:rgba(108,99,255,.15);` +
-    `padding:2px 8px;border-radius:4px">${_explorerTf}</span>`;
+  const symSpan = document.createElement('span');
+  symSpan.style.cssText = 'font-size:1.1rem;font-weight:700;color:var(--text);letter-spacing:.02em';
+  symSpan.textContent = sym;
+  const tfSpan = document.createElement('span');
+  tfSpan.style.cssText = 'font-size:.78rem;font-weight:600;color:var(--accent);background:rgba(108,99,255,.15);padding:2px 8px;border-radius:4px';
+  tfSpan.textContent = _explorerTf;
+  titleEl.appendChild(symSpan);
+  titleEl.appendChild(tfSpan);
   wrap.appendChild(titleEl);
 
   _explorerChart = LightweightCharts.createChart(wrap, {

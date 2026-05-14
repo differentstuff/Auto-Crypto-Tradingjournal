@@ -20,10 +20,10 @@ def test_connection() -> dict:
         exchange = get_blofin_exchange()
         exchange.fetch_balance()
         return {"ok": True, "error": None}
-    except ccxt.AuthenticationError as e:
-        return {"ok": False, "error": str(e)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    except ccxt.AuthenticationError:
+        return {"ok": False, "error": "Authentication failed — check API key and passphrase"}
+    except Exception:
+        return {"ok": False, "error": "Connection error"}
 
 
 def get_account_equity() -> dict:
