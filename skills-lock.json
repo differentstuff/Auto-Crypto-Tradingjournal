@@ -1,0 +1,431 @@
+{
+  "version": 1,
+  "skills": {
+    "Auto-Update Systems Expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/auto-update-systems/SKILL.md",
+      "computedHash": "2cd5b5fdac489cbbf27d827a9573770ffc70f335249ace27a2942a5033560d05"
+    },
+    "CI/CD Pipeline Security Expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/ci-cd/SKILL.md",
+      "computedHash": "3089a9a8227f9841e9b7a06e874c5db7e51b854b158a8472ad8a7207dc3cee51"
+    },
+    "Cross-Platform Build Expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/cross-platform-builds/SKILL.md",
+      "computedHash": "6066440296d887da77c3103b65e17441d2fddaf0d07221f33ad0bcfc03399507"
+    },
+    "Database Design Expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/database-design/SKILL.md",
+      "computedHash": "366da3842f00548f8714766e9a53b23d1dba7aebbabfaa7743fdc082a53633fe"
+    },
+    "Next.js Security Scan": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nextjs-security-scan/SKILL.md",
+      "computedHash": "67d4666fa9b1e4674a59f27064a9daff7584282522ca04e0112b5e0293cff1ed"
+    },
+    "Python Security Scan": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python-security-scan/SKILL.md",
+      "computedHash": "75e89763b88d487cb863b909682e0a09d2e46c230c56cdf8691a7a89274c7a4a"
+    },
+    "SQLCipher Encrypted Database Expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/sqlcipher/SKILL.md",
+      "computedHash": "f06bec4cc4eaba50b239c20fa5dfc43e9b08c67901c2a8b589a41ad77a49957c"
+    },
+    "SQLite Database Expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/sqlite/SKILL.md",
+      "computedHash": "0e75baa1c3159dba4c6db79330634327039c9813410256b73357dcbb0ed9d0ea"
+    },
+    "add-feishu": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/add-feishu/SKILL.md",
+      "computedHash": "341b865f7bf56d32c9475b4054cf7132c08d887888911e9980e9a886e8d225a5"
+    },
+    "api-design-principles": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/backend-development/skills/api-design-principles/SKILL.md",
+      "computedHash": "3316239df2bdcb41e992857b8142e0239e6964564dd5d7224e470c2ab350a03c"
+    },
+    "api-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/api-expert/SKILL.md",
+      "computedHash": "6cf6b00e5ffe788e74beae7e892502e2fce242991dbbdd4dbe0779e0f9741f27"
+    },
+    "applescript": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/applescript/SKILL.md",
+      "computedHash": "402edab11115b141df716e553441b9aa1b7a5a0751eb2a54aac49f68b352726a"
+    },
+    "appsec-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/appsec-expert/SKILL.md",
+      "computedHash": "52113e0f9a1bd1d45dfcffd03a594dfc77168f2f7ab5cc82258da3ce68c03b88"
+    },
+    "async-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/async-expert/SKILL.md",
+      "computedHash": "3f84bde7bba2a67d9afcc18691409fdcce2c93aae61087dd2ef1c99d4ddea47e"
+    },
+    "async-programming": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/async-programming/SKILL.md",
+      "computedHash": "868f77dd041a4212924d4dbaeae2053d6239bd7a94db162b916bae3d473ff76a"
+    },
+    "browser-automation": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/browser-automation/SKILL.md",
+      "computedHash": "59a6b75c500d882f9b2cc9b5b85859fec3f2414ac0cc600db30bc3e07949dc66"
+    },
+    "celery-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/celery-expert/SKILL.md",
+      "computedHash": "a0bc038bb3a9c930024720a2f34eb5fa7aad2152171cc7f7943afdf8c98f7f60"
+    },
+    "cicd-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/cicd-expert/SKILL.md",
+      "computedHash": "0bdbb10c296b5f70e4fe588f4be30bd77f300b06873557af09498fffcd294360"
+    },
+    "cilium-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/cilium-expert/SKILL.md",
+      "computedHash": "65626a0ac73cc7c471d985a7c9e47afb4a84c38601b0d229f63ac5ee89faf9ad"
+    },
+    "claude-api": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/claude-api/SKILL.md",
+      "computedHash": "fae9227ae5d58ed366bd225a35d8077100e8a0d056392b7d9165978d3ce4e860"
+    },
+    "cloud-api-integration": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/cloud-api-integration/SKILL.md",
+      "computedHash": "1b8d3859d3fa2064233e636fd71754876c574f94ed5930b9b58d2d2ab6c7dc4b"
+    },
+    "cover-image": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/cover-image/SKILL.md",
+      "computedHash": "c0bbd84e377818b162ec5d13c289ff47326c91301f375ebe5d1105bd7b624f20"
+    },
+    "dbus": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/dbus/SKILL.md",
+      "computedHash": "5ce3dbcd68211f9d64fd4f0e73f4249180c0cb49d82089e9db3a52b28f4db394"
+    },
+    "devsecops-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/devsecops-expert/SKILL.md",
+      "computedHash": "0e770b2394b93cd8189a910d92edfb3a5e2b40460c8c2ddb2e13d56dc3254523"
+    },
+    "diagram-to-image": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/diagram-to-image/SKILL.md",
+      "computedHash": "a142423844b3cf2cfc82cb526f973b0b0fcd314e423d8e45c19ccadab8380659"
+    },
+    "fastapi": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/fastapi/SKILL.md",
+      "computedHash": "4c23569494ad4bb7d044790519d31ac702029d718686ad29d1242ed81823eb03"
+    },
+    "fastapi-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/fastapi-expert/SKILL.md",
+      "computedHash": "e39bc5387bb44ff2f949a94a9ba3b90a121b80d24714af70c945894b7bab920e"
+    },
+    "fpl-copilot": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/fpl-copilot/SKILL.md",
+      "computedHash": "7e7cf6bfed528f38f02634cdaf2ca5a487c8b24c3757fadc84befed594b73c64"
+    },
+    "glsl": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/glsl/SKILL.md",
+      "computedHash": "ac49df8f99d8ed17e57ab31ef1d3332443a67a7ff8b9862b0ca5345923b8e97b"
+    },
+    "graph-database-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/graph-database-expert/SKILL.md",
+      "computedHash": "6ab96774b78cd46ef5bcf1d4afa3f77952705e26ffcf0c4f24cc075c604e19ae"
+    },
+    "graphql-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/graphql-expert/SKILL.md",
+      "computedHash": "018bc22e7bb4b3531e7267721f866ebed06d9728a48e510e458070690ef97a97"
+    },
+    "gsap": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/gsap/SKILL.md",
+      "computedHash": "b7d401d70a6f6f2bd29bb36ee803564cb071cc43bf5701e32a5dedbf88cc1466"
+    },
+    "harbor-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/harbor-expert/SKILL.md",
+      "computedHash": "91dc26d80c593b09c940557ad76639bbd7f7d109a94ae43d097d1b082fece005"
+    },
+    "interactive-input": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/interactive-input/SKILL.md",
+      "computedHash": "d2e74dc7b1071f1303f9c7d3a66f76bf59c16dbfd7c7f1a3d0c70a14290e3f3f"
+    },
+    "javascript-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/javascript-expert/SKILL.md",
+      "computedHash": "709901044d12ee235dda90c99d453f8eaf8d2bd0f87533e7cab4deaf07a8c2b5"
+    },
+    "kanidm-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/kanidm-expert/SKILL.md",
+      "computedHash": "1dafec206e0faa355fa9191586e401925a7a3711787db1b31a9d8291783908ff"
+    },
+    "linux-at-spi2": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/linux-at-spi2/SKILL.md",
+      "computedHash": "d0658d48b83c4c7771fdcfff934942b89defdd1a2e7730826c57c34f0947f08f"
+    },
+    "llm-integration": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/llm-integration/SKILL.md",
+      "computedHash": "f28dfe9983a26dd8599fdfeac82693ff3226e19ce9775f078770dc171f67fca6"
+    },
+    "macos-accessibility": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/macos-accessibility/SKILL.md",
+      "computedHash": "5ce51ea9aea29d58b5eaa4f32a0305f854974d7e6770eeba2d31babf0b347e03"
+    },
+    "model-quantization": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/model-quantization/SKILL.md",
+      "computedHash": "aaafe3f6f262e875a3049127b0777fecd261ac125f82ec5033877dcb02321f8a"
+    },
+    "personal-writing-style": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/personal-writing-style/SKILL.md",
+      "computedHash": "372b5172d2d585ab816fad3e2f7679a772f9f3b3628e026a889f8bdd5df91a32"
+    },
+    "pinia": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/pinia/SKILL.md",
+      "computedHash": "dab6b5d9f97a1b93353a6210afcbee84ea1e91db7e92c409f89fc92f926f9ed1"
+    },
+    "promote-post": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/promote-post/SKILL.md",
+      "computedHash": "ab7138a368c146839a33b4df3c4f4d91d8c252a957b26e74dc28328b9a5469b1"
+    },
+    "prompt-engineering": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/prompt-engineering/SKILL.md",
+      "computedHash": "52f48c79ce79a939d8953eeab474efc327b7c66b74edb39d9e29fd58e0bca059"
+    },
+    "publish-substack-article": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/publish-substack-article/SKILL.md",
+      "computedHash": "5df3f1c1cf31e92d859f693397b594f597822be3fd94f8ab1187cc1dae098409"
+    },
+    "publish-x-article": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/publish-x-article/SKILL.md",
+      "computedHash": "01a27a1b7f23cd0f55fe20762629bab4d7ae3fbdd181bce91dc9a011945ec02b"
+    },
+    "publish-zsxq-article": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/publish-zsxq-article/SKILL.md",
+      "computedHash": "fcab4dc5d701d62ea226117ce6ac3c4325811459a65d061da688a3ffe0d7166e"
+    },
+    "python": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/python/SKILL.md",
+      "computedHash": "c5e80b09977275e3199fd988e3556cd3c8822d0ee563faa71a20cf1d9550aff0"
+    },
+    "rabbitmq-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/rabbitmq-expert/SKILL.md",
+      "computedHash": "584e368d2811078acfb437c22ca07f1c93da52cbdcabcc8c24562128185c4b6b"
+    },
+    "rust": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/rust/SKILL.md",
+      "computedHash": "b70d9a080fc68001f0e4824f59fadabb287fd26407da97d0a7d2cde4724344fe"
+    },
+    "share-reading": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/share-reading/SKILL.md",
+      "computedHash": "740790f063621989ba5211ea7345e2364ba7662ea72575afcf9d3be06816e71c"
+    },
+    "slides-video": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/slides-video/SKILL.md",
+      "computedHash": "7d15bfe5214076eadf85137c553b017772b3fb8d7597d3e761a061d89e2c64c3"
+    },
+    "speech-to-text": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/speech-to-text/SKILL.md",
+      "computedHash": "c6fb55b2789130826a86fe2d7ed1b067ae825027c237bd0c8b20f3d9f917477f"
+    },
+    "subtitle-correction": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/subtitle-correction/SKILL.md",
+      "computedHash": "253916155d7bb617b63cbba05b28c0878c69c4402a377e5f8c869eca040023b5"
+    },
+    "surrealdb-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/surrealdb-expert/SKILL.md",
+      "computedHash": "193e7e210b4db1842cc5ae0d040ce1492d82371ab648a82821ea6ec91d9cbc65"
+    },
+    "tailwindcss": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/tailwindcss/SKILL.md",
+      "computedHash": "f592cd917989fe9a57ca6811a859b7caa5e413bee23410ed2d4174a76721c93a"
+    },
+    "talos-os-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/talos-os-expert/SKILL.md",
+      "computedHash": "c73dc27024caa5c8fd1ecbf18832b5a155377837c60cf1858f8d685bec1d7b5c"
+    },
+    "tauri": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/tauri/SKILL.md",
+      "computedHash": "8846df779beba33d583a1712ecfb18a3dc0a542ad1c95643a2797e0eb44f43ab"
+    },
+    "text-to-speech": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/text-to-speech/SKILL.md",
+      "computedHash": "b0cc88dca844894b5c6d16ea16529dd2ba471ca92cc8dd403b7903d4710f8348"
+    },
+    "threejs-tresjs": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/threejs-tresjs/SKILL.md",
+      "computedHash": "482eb8dc5bfdc99ca9ba3d0146f92c08fa0e1bd01d5d73670a0919a5a2e5416d"
+    },
+    "tweet-insight": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/tweet-insight/SKILL.md",
+      "computedHash": "a7a5afb5aca09d5520bba173145f8a7739bd22d64928ae3c802450e3fb1d4582"
+    },
+    "typescript": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/SKILL.md",
+      "computedHash": "cf7ff1a78d07002d388df7d9de896bd45c61b2269e4a8f90e008dd913eaf19cf"
+    },
+    "typescript-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/typescript-expert/SKILL.md",
+      "computedHash": "b3d242af278cd9e3c208e21ccb4ca502b7046caebe6917659357a38c90f7ecce"
+    },
+    "ui-ux-expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/ui-ux-expert/SKILL.md",
+      "computedHash": "c8d244c733101670bf2909f2af53d468380269cfc6172938dbaa97111a9848e1"
+    },
+    "video-script": {
+      "source": "sugarforever/01coder-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/video-script/SKILL.md",
+      "computedHash": "88e51c41b632568b0ed65d3ef17bb930d41bb7856132b384238aa1e360405a9b"
+    },
+    "vue-nuxt": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/vue-nuxt/SKILL.md",
+      "computedHash": "0c263fbb7360659c075f4a75f2911804cc688a46b76aa939fd71ade38fb4a7f5"
+    },
+    "wake-word-detection": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/wake-word-detection/SKILL.md",
+      "computedHash": "154b9c7a23b4154a77a536392f5273518f5e4c5e0d769eb81df77b8671f3d4d9"
+    },
+    "web-audio-api": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/web-audio-api/SKILL.md",
+      "computedHash": "d791e113525eafe8c0bc0fb3dbbdef05d470b0cfedd9f1eaa2f00081d3fce1bd"
+    },
+    "webgl": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/webgl/SKILL.md",
+      "computedHash": "981e4742ad032bb9e44a13dc1e03266f207e56fdfe4ed33108731837de3686b8"
+    },
+    "websocket": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/websocket/SKILL.md",
+      "computedHash": "95b114a48e8de6379506359866eb08cd40bc3fcda529de5c62cfc65f7e8e6466"
+    },
+    "windows-ui-automation": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/windows-ui-automation/SKILL.md",
+      "computedHash": "52d1feaed342c8d0b8081fa090d7ecc53791447ca94504df5a1f62c54f0f6dec"
+    }
+  }
+}

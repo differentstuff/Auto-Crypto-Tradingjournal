@@ -33,6 +33,11 @@ def api_import():
             f.save(fpath)
             if fname.lower().endswith(".zip"):
                 with zipfile.ZipFile(fpath, "r") as zf:
+                    real_tmp = os.path.realpath(tmp_dir) + os.sep
+                    for member in zf.namelist():
+                        dst = os.path.realpath(os.path.join(tmp_dir, member))
+                        if not dst.startswith(real_tmp):
+                            return _err("Invalid zip: path traversal detected")
                     zf.extractall(tmp_dir)
                 os.remove(fpath)
             for fn in os.listdir(tmp_dir):

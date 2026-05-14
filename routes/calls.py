@@ -126,7 +126,7 @@ def api_calls_save():
     return _ok({"id": new_id}), 201
 
 
-@bp.route("/api/calls/check-matches")
+@bp.route("/api/calls/check-matches", methods=["POST"])
 def api_calls_check_matches():
     positions = []
     try:

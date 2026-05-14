@@ -79,7 +79,10 @@ function journalReset() {
   journalLoad(1);
 }
 
-function escHtml(s) { return (s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;'); }
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 // ── Add Trade Modal ────────────────────────────────────────────────────────────
 function openAddModal() {

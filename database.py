@@ -8,9 +8,12 @@ The database has four tables:
   import_log      — tracks which CSV files have been imported and when
 """
 
-import sqlite3
+import logging
 import os
+import sqlite3
 from contextlib import contextmanager
+
+_log = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "trading_journal.db"))
 
@@ -32,10 +35,6 @@ def db_conn():
         yield conn
     finally:
         conn.close()
-
-
-import logging
-_log = logging.getLogger(__name__)
 
 
 def init_db():
@@ -340,8 +339,8 @@ def init_db():
     """)
 
     conn.commit()
-    conn.close()
     print(f"[DB] Initialized at {DB_PATH}")
+    conn.close()
 
 
 if __name__ == "__main__":

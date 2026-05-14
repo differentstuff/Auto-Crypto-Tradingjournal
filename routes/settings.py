@@ -120,8 +120,8 @@ def test_connection():
     if exchange == "blofin":
         result = blofin_client.test_connection()
         if result.get("ok"):
-            return _ok({"exchange": exchange, "message": result["msg"]})
-        return _err(f"Blofin: {result.get('msg', 'Connection failed')}")
+            return _ok({"exchange": exchange, "message": "Connected"})
+        return _err(f"Blofin: {result.get('error', 'Connection failed')}")
     else:
         try:
             equity = bitget_client.test_connection()
@@ -149,10 +149,15 @@ def save_credentials():
         return _err("exchange must be 'bitget' or 'blofin'")
     if not api_key or not secret:
         return _err("api_key and secret_key are required")
+    if len(api_key) > 256 or len(secret) > 256 or len(phrase) > 256:
+        return _err("Credential fields exceed maximum length")
 
     # Basic sanity: only allow hex/alphanumeric API keys
     if not re.match(r'^[A-Za-z0-9\-_]+$', api_key) or not re.match(r'^[A-Za-z0-9\-_]+$', secret):
         return _err("Credentials contain invalid characters")
+    # Passphrase allows printable ASCII except newlines (already stripped above)
+    if phrase and not re.match(r'^[\x20-\x7E]+$', phrase):
+        return _err("Passphrase contains invalid characters")
 
     prefix = exchange.upper()
     updates = {

@@ -1,5 +1,3 @@
-import logging
-logger = logging.getLogger(__name__)
 """
 ai_scanner.py — Proactive setup scanner.
 
@@ -22,6 +20,7 @@ Results cached for 30 minutes. Scan runs in a background thread.
 """
 
 import json
+import logging
 import os
 from prompt_fragments import SCORING_SCALE, LEVEL_PROXIMITY_RULES, MARKET_CONTEXT_RULES, DRAW_ON_LIQUIDITY_RULES
 from constants import (MODEL, FAST_MODEL,
@@ -39,6 +38,8 @@ from helpers import strip_fence, build_cached_messages
 import chart_context
 import market_context
 import ai_rulebook
+
+logger = logging.getLogger(__name__)
 import gemini_client
 import agent_orchestrator
 import nansen_client
@@ -84,18 +85,27 @@ _BITGET_WATCHLIST = [
     "WOOUSDT", "KLAYUSDT", "GMTUSDT",
 ]
 
-# BINANCE_WATCHLIST: top-100 Binance USDT-M futures by 24h volume.
-# Falls back to empty list if Binance unreachable at startup.
-try:
-    import ccxt_client as _ccxt
-    BINANCE_WATCHLIST = _ccxt.get_binance_futures_symbols()
-except Exception:
-    BINANCE_WATCHLIST = []
+# BINANCE_WATCHLIST: fetched lazily on first scan to avoid blocking startup.
+BINANCE_WATCHLIST: list = []
+_binance_watchlist_loaded = False
 
-# Merge: Bitget list first (home exchange), Binance additions after.
-DEFAULT_WATCHLIST = list(dict.fromkeys(
-    _BITGET_WATCHLIST + [s for s in BINANCE_WATCHLIST if s not in set(_BITGET_WATCHLIST)]
-))
+
+def _get_default_watchlist() -> list:
+    """Return merged Bitget+Binance watchlist, fetching Binance on first call."""
+    global BINANCE_WATCHLIST, _binance_watchlist_loaded
+    if not _binance_watchlist_loaded:
+        _binance_watchlist_loaded = True
+        try:
+            import ccxt_client as _ccxt
+            BINANCE_WATCHLIST = _ccxt.get_binance_futures_symbols()
+        except Exception:
+            BINANCE_WATCHLIST = []
+    return list(dict.fromkeys(
+        _BITGET_WATCHLIST + [s for s in BINANCE_WATCHLIST if s not in set(_BITGET_WATCHLIST)]
+    ))
+
+
+DEFAULT_WATCHLIST = _BITGET_WATCHLIST  # backward compat; callers should use _get_default_watchlist()
 
 # ── Criteria defaults ──────────────────────────────────────────────────────────
 # Each key maps to a scoring check. When False the stage-2 gate skips the hard
@@ -656,7 +666,7 @@ def _score_finalists_with_agents(finalists: list, conn,
                 "confluence_summary": conf.get("label", ""),
             })
         except Exception as e:
-            print(f"[Scanner] agent scoring failed for {sym}: {e}", flush=True)
+            logger.warning("agent scoring failed for %s: %s", sym, e)
     return results
 
 
@@ -880,7 +890,8 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
         )
 
     except Exception as e:
-        _update(status="error", error=str(e),
+        logger.exception("Scan thread failed")
+        _update(status="error", error="Scan failed — check server logs",
                 completed_at=time.time(), duration_sec=round(time.time() - t0, 1))
 
 
@@ -900,7 +911,7 @@ def start_scan(symbols: list = None, min_score: int = SCANNER_MIN_SCORE,
         if completed_at and (time.time() - completed_at) < SCANNER_CACHE_TTL and score_unchanged:
             return False  # still fresh with same threshold
 
-    syms = symbols or DEFAULT_WATCHLIST
+    syms = symbols or _get_default_watchlist()
     cr   = criteria or CRITERIA_DEFAULTS
     t = threading.Thread(target=_scan_thread, args=(syms, min_score, cr), daemon=True)
     t.start()
@@ -913,7 +924,7 @@ def force_scan(symbols: list = None, min_score: int = SCANNER_MIN_SCORE,
     with _state_lock:
         if _state["status"] == "running":
             return False
-    syms = symbols or DEFAULT_WATCHLIST
+    syms = symbols or _get_default_watchlist()
     cr   = criteria or CRITERIA_DEFAULTS
     t = threading.Thread(target=_scan_thread, args=(syms, min_score, cr), daemon=True)
     t.start()

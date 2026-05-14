@@ -9,8 +9,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Stub heavy optional deps so tests work without full pip install
 if "flask" not in sys.modules:
+    class _FakeResponse:
+        """Minimal Flask Response stub — supports both .get_json() and dict-style access."""
+        def __init__(self, data): self._data = data; self.status_code = 200
+        def get_json(self): return self._data
+        def __getitem__(self, key): return self._data[key]
+        def __contains__(self, key): return key in (self._data or {})
+        def get(self, key, default=None): return (self._data or {}).get(key, default)
     _flask = types.ModuleType("flask")
-    _flask.jsonify = lambda x: x
+    _flask.jsonify = lambda x: _FakeResponse(x)
     _flask.request = unittest.mock.MagicMock()
     sys.modules["flask"] = _flask
 
