@@ -17,7 +17,7 @@ async function loadLiveTrades() {
     // Fetch positions, matches, and waiting limits in parallel
     const [posRes, matchRes, limRes] = await Promise.all([
       api('/api/live/positions'),
-      api('/api/calls/check-matches'),
+      api('/api/calls/check-matches', 'POST'),
       api('/api/limits?status=waiting'),
     ]);
     if (!posRes.ok) throw new Error(posRes.error);
@@ -37,8 +37,8 @@ async function loadLiveTrades() {
       if (!el) return;
       if (cr.ok && cr.data.length) {
         const lines = cr.data.map(e =>
-          `📅 <strong>${e.title}</strong> ${e.when} ${e.time ? 'at ' + e.time + ' ET' : ''}` +
-          `${e.forecast ? ' — Forecast: ' + e.forecast : ''}${e.previous ? ' · Prev: ' + e.previous : ''}`
+          `📅 <strong>${_esc(e.title)}</strong> ${_esc(e.when)} ${e.time ? 'at ' + _esc(e.time) + ' ET' : ''}` +
+          `${e.forecast ? ' — Forecast: ' + _esc(e.forecast) : ''}${e.previous ? ' · Prev: ' + _esc(e.previous) : ''}`
         );
         el.innerHTML = '⚠ High-impact USD events:<br>' + lines.join('<br>');
         el.style.display = '';
@@ -369,34 +369,34 @@ function renderTradeAnalysis(idx, d) {
     <div class="action-box ${actionClass}">
       <div class="action-title">Recommended Action</div>
       <div class="action-val">${d.action}</div>
-      <div style="font-size:.82rem;color:var(--muted);margin-top:4px">${d.action_reason || ''}</div>
+      <div style="font-size:.82rem;color:var(--muted);margin-top:4px">${_esc(d.action_reason || '')}</div>
     </div>
 
-    <div class="ai-overall" style="margin:12px 0">${d.summary || ''}</div>
+    <div class="ai-overall" style="margin:12px 0">${_esc(d.summary || '')}</div>
 
     ${(tp.price || sl.price) ? `
     <div class="tp-sl-grid">
       ${tp.price ? `<div class="tp-sl-card">
         <h4>🟢 Take Profit</h4>
         <div class="tp-sl-price tp">${tp.price}</div>
-        <div class="tp-sl-rationale">${tp.rationale || ''}</div>
+        <div class="tp-sl-rationale">${_esc(tp.rationale || '')}</div>
       </div>` : '<div></div>'}
       ${sl.price ? `<div class="tp-sl-card">
         <h4>🔴 Stop Loss</h4>
         <div class="tp-sl-price sl">${sl.price}</div>
-        <div class="tp-sl-rationale">${sl.rationale || ''}</div>
+        <div class="tp-sl-rationale">${_esc(sl.rationale || '')}</div>
       </div>` : '<div></div>'}
     </div>` : ''}
 
     ${d.key_risks?.length ? `
     <div style="margin-top:12px">
       <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:6px">Key Risks</div>
-      <ul class="risk-list">${d.key_risks.map(r => `<li>${r}</li>`).join('')}</ul>
+      <ul class="risk-list">${d.key_risks.map(r => `<li>${_esc(r)}</li>`).join('')}</ul>
     </div>` : ''}
 
     ${d.historical_context ? `
     <div style="font-size:.78rem;color:var(--muted);margin-top:10px;padding:8px 12px;background:var(--bg3);border-radius:6px">
-      📊 ${d.historical_context}
+      📊 ${_esc(d.historical_context)}
     </div>` : ''}
 
     <div style="font-size:.7rem;color:var(--border);margin-top:12px;text-align:right">

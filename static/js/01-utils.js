@@ -2,6 +2,11 @@
 const charts = {};
 let currentPage = 'dashboard';
 
+// ── HTML escape helper (XSS guard) ────────────────────────────────────────────
+function _esc(s) {
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ── Notification toast ────────────────────────────────────────────────────────
 let _notifyTimer = null;
 function notify(msg, type) {
@@ -214,10 +219,10 @@ let _exchangeSymbols = [];  // all USDT-M futures symbols from Bitget
 
 // ── Symbol Picker ─────────────────────────────────────────────────────────────
 function _hlMatch(str, q) {
-  if (!q) return str;
+  if (!q) return _esc(str);
   const i = str.toUpperCase().indexOf(q.toUpperCase());
-  if (i < 0) return str;
-  return str.slice(0, i) + '<b>' + str.slice(i, i + q.length) + '</b>' + str.slice(i + q.length);
+  if (i < 0) return _esc(str);
+  return _esc(str.slice(0, i)) + '<b>' + _esc(str.slice(i, i + q.length)) + '</b>' + _esc(str.slice(i + q.length));
 }
 
 function _attachSymbolPicker(inputId) {
@@ -264,7 +269,7 @@ function _attachSymbolPicker(inputId) {
       (q.length < 1 ? src.slice(0, 80)
                     : src.filter(s => s.toUpperCase().includes(q.toUpperCase())).slice(0, 100));
     drop.innerHTML = hits.length
-      ? hits.map(s => `<div class="sym-opt" data-v="${s}">${_hlMatch(s, q)}</div>`).join('')
+      ? hits.map(s => `<div class="sym-opt" data-v="${_esc(s)}">${_hlMatch(s, q)}</div>`).join('')
       : `<div class="sym-no-match">${src.length ? 'No matches' : 'Loading…'}</div>`;
     drop.querySelectorAll('.sym-opt').forEach(el =>
       el.addEventListener('mousedown', e => {

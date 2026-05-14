@@ -703,8 +703,8 @@ function buildDetailPanel(s, i) {
   const entText = (ent.low && ent.high && ent.low !== ent.high)
     ? `${fmtSP(ent.low)} – ${fmtSP(ent.high)}` : fmtSP(ent.low || ent.high);
 
-  const conditions = (s.key_conditions||[]).map(c => `<span class="scan-dp-cond">✓ ${c}</span>`).join('');
-  const risks      = (s.risks||[]).map(r => `<span class="scan-dp-risk">⚠ ${r}</span>`).join('');
+  const conditions = (s.key_conditions||[]).map(c => `<span class="scan-dp-cond">✓ ${_esc(c)}</span>`).join('');
+  const risks      = (s.risks||[]).map(r => `<span class="scan-dp-risk">⚠ ${_esc(r)}</span>`).join('');
 
   const prefill = [
     `$${sym.replace('USDT','')} ${s.direction} — Scanner ${s.setup_score}/10`,
