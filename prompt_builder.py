@@ -21,6 +21,7 @@ import ai_pattern_detector
 import nansen_client
 import grok_client
 from analytics import get_backtest_context
+from prompt_fragments import DRAW_ON_LIQUIDITY_RULES
 
 # ~1 400 tokens of context at 4 chars/token — leaves plenty for the main prompt
 MAX_CONTEXT_CHARS = 5_600
@@ -34,8 +35,11 @@ _RUBRICS = {
     ),
     "reversal": (
         "REVERSAL RUBRIC: 9-10 = extreme RSI divergence at major S/R, multi-TF confirmation, "
-        "clear candle rejection pattern, R:R ≥ 3:1. 7-8 = strong level + indicator signal. "
-        "6 = moderate confluence only. Penalise reversals against the weekly trend unless very strong."
+        "clear candle rejection pattern, R:R ≥ 3.5:1. 7-8 = strong level + indicator signal. "
+        "6 = moderate confluence only. Penalise reversals against the weekly trend unless very strong. "
+        "CRITICAL: Require CHoCH (Change of Character) confirmation before entry — a BOS (Break of "
+        "Structure) alone confirms continuation, not reversal. Score ≤ 6 for any reversal setup "
+        "lacking prior CHoCH on the entry timeframe."
     ),
     "continuation": (
         "CONTINUATION RUBRIC: 9-10 = pullback to EMA in strong trend with RSI reset 45-55, "
@@ -72,8 +76,8 @@ def build_stable_prefix(conn, exchange_filter: str = None) -> str:
     Dynamic content (market data, chart, Nansen, Grok, similar trades) lives
     in build_context() below and must NOT be cached.
     """
-    sections   = []
-    remaining  = MAX_CONTEXT_CHARS
+    sections   = [DRAW_ON_LIQUIDITY_RULES]
+    remaining  = MAX_CONTEXT_CHARS - len(DRAW_ON_LIQUIDITY_RULES)
 
     rb = ai_rulebook.get_rulebook_for_prompt(conn)
     if rb:
