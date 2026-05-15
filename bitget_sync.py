@@ -19,6 +19,7 @@ import bitget_client as bc
 from database import get_conn
 import market_context as _mkt
 import chart_context
+from sync_base import auto_close_calls, retroactive_close_calls
 
 SYNC_INTERVAL_SECONDS  = 5 * 60    # auto-sync every 5 minutes
 STARTUP_LOOKBACK_DAYS  = 2         # orders/bills catch-up window on first sync after (re)start
@@ -536,9 +537,9 @@ def run_sync(conn=None) -> dict:
         # Positions: cursor-based — sees all recently closed trades regardless of open time
         n_pos    = _sync_positions(conn)
         # Auto-close any matched calls whose position has now synced
-        n_closed = _auto_close_calls(conn)
+        n_closed = auto_close_calls(conn)
         try:
-            n_retro = _retroactive_close_calls(conn)
+            n_retro = retroactive_close_calls(conn)
         except Exception as e:
             print(f"[Sync] retroactive close failed (non-fatal): {e}", flush=True)
             n_retro = 0

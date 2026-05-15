@@ -29,3 +29,45 @@ def test_sync_driver_is_protocol():
     from typing import Protocol
     assert issubclass(SyncDriver, Protocol) or hasattr(SyncDriver, '__protocol_attrs__') \
         or str(type(SyncDriver)) in ("<class 'type'>", "<class 'abc.ABCMeta'>")
+
+
+def test_sync_state_try_start_acquires():
+    from sync_base import SyncState
+    s = SyncState()
+    assert s.try_start() is True
+    assert s.snapshot()["running"] is True
+
+
+def test_sync_state_try_start_rejects_double():
+    from sync_base import SyncState
+    s = SyncState()
+    s.try_start()
+    assert s.try_start() is False
+
+
+def test_sync_state_finish_clears_running():
+    from sync_base import SyncState
+    s = SyncState()
+    s.try_start()
+    s.finish(result={"ok": True})
+    snap = s.snapshot()
+    assert snap["running"] is False
+    assert snap["last_result"] == {"ok": True}
+
+
+def test_auto_close_calls_importable():
+    """auto_close_calls and retroactive_close_calls must be importable from sync_base."""
+    from sync_base import auto_close_calls, retroactive_close_calls
+    assert callable(auto_close_calls)
+    assert callable(retroactive_close_calls)
+
+
+def test_blofin_sync_no_bitget_import():
+    """blofin_sync must not import from bitget_sync (cross-import eliminated)."""
+    import ast, pathlib
+    src = pathlib.Path("/Users/fbauer/Documents/ClaudeAIData/Trading-Journal/blofin_sync.py").read_text()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if isinstance(node, ast.ImportFrom) and node.module == "bitget_sync":
+                raise AssertionError("blofin_sync still imports from bitget_sync")
