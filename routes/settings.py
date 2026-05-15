@@ -209,3 +209,31 @@ def blofin_sync_status():
     status["available_balance"] = float(available[0]) if available else None
     status["last_sync_ms"]      = int(last_sync[0])   if last_sync  else None
     return _ok(status)
+
+
+@bp.get("/api/settings/telegram")
+def telegram_status():
+    """Return current Telegram alerts enabled/disabled state."""
+    from database import db_conn
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='telegram_alerts_enabled'"
+        ).fetchone()
+    enabled = (row is None) or (row[0] == '1')
+    return _ok({"enabled": enabled})
+
+
+@bp.post("/api/settings/telegram")
+def telegram_toggle():
+    """Toggle Telegram scanner alerts on or off. Body: {enabled: bool}"""
+    from database import db_conn
+    body = request.get_json(silent=True) or {}
+    enabled = bool(body.get("enabled", True))
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('telegram_alerts_enabled', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            ('1' if enabled else '0',)
+        )
+        conn.commit()
+    return _ok({"enabled": enabled})

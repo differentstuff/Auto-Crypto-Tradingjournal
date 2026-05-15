@@ -55,6 +55,18 @@ async function loadSettings() {
       💡 Use the <b>All / Bitget / Blofin</b> pills in the top bar to filter all statistics, charts, and analytics by exchange.
     </div>
 
+    <div class="settings-section-title" style="margin-top:28px">📲 Telegram Alerts</div>
+    <div id="tg-toggle-wrap" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:.85rem;font-weight:600">Scanner Alerts</div>
+        <div style="font-size:.75rem;color:var(--muted);margin-top:2px">Send Telegram message when scanner finds 6+/10 setups</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="tg-status-label" style="font-size:.78rem;color:var(--muted)">Loading…</span>
+        <button id="tg-toggle-btn" onclick="toggleTelegramAlerts()" style="padding:5px 16px;font-size:.8rem;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--bg);color:var(--text)">…</button>
+      </div>
+    </div>
+
     <div class="settings-section-title" style="margin-top:28px">🤖 AI Token Usage (last 7 days)</div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:.8rem">
@@ -76,6 +88,34 @@ async function loadSettings() {
 
   _injectSettingsCSS();
   loadTokenUsage();
+  _loadTelegramToggle();
+}
+
+async function _loadTelegramToggle() {
+  const res = await api('/api/settings/telegram');
+  if (!res.ok) return;
+  _renderTelegramToggle(res.data.enabled);
+}
+
+function _renderTelegramToggle(enabled) {
+  const label = document.getElementById('tg-status-label');
+  const btn   = document.getElementById('tg-toggle-btn');
+  if (!label || !btn) return;
+  label.textContent = enabled ? '● Enabled' : '○ Disabled';
+  label.style.color = enabled ? 'var(--accent3)' : 'var(--red)';
+  btn.textContent   = enabled ? 'Disable' : 'Enable';
+  btn.style.background = enabled ? 'rgba(239,83,80,.12)' : 'rgba(38,217,107,.12)';
+  btn.style.color      = enabled ? 'var(--red)' : 'var(--accent3)';
+  btn.style.borderColor = enabled ? 'var(--red)' : 'var(--accent3)';
+}
+
+async function toggleTelegramAlerts() {
+  const label = document.getElementById('tg-status-label');
+  const currentlyEnabled = label && label.textContent.includes('Enabled');
+  const res = await api('/api/settings/telegram', 'POST', { enabled: !currentlyEnabled });
+  if (!res.ok) { notify('Failed to update Telegram setting', 'danger'); return; }
+  _renderTelegramToggle(res.data.enabled);
+  notify('Telegram alerts ' + (res.data.enabled ? 'enabled' : 'disabled'), 'success');
 }
 
 

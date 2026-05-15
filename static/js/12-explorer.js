@@ -1,4 +1,30 @@
 
+// Smart price formatter — significant digits based on magnitude
+function _fmtP(v) {
+  if (v == null || v === '') return '—';
+  const n = Number(v);
+  if (isNaN(n)) return String(v);
+  const abs = Math.abs(n);
+  if (abs === 0)    return '0';
+  if (abs >= 1000)  return n.toFixed(2);
+  if (abs >= 1)     return n.toFixed(4);
+  if (abs >= 0.1)   return n.toFixed(5);
+  if (abs >= 0.01)  return n.toFixed(6);
+  if (abs >= 0.001) return n.toFixed(7);
+  return n.toPrecision(6);
+}
+function _priceFormat(refPrice) {
+  const abs = Math.abs(refPrice || 1);
+  let precision;
+  if (abs >= 1000)  precision = 2;
+  else if (abs >= 1)     precision = 4;
+  else if (abs >= 0.1)   precision = 5;
+  else if (abs >= 0.01)  precision = 6;
+  else if (abs >= 0.001) precision = 7;
+  else                   precision = 8;
+  return { type: 'price', precision, minMove: Math.pow(10, -precision) };
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CHART EXPLORER
 // ══════════════════════════════════════════════════════════════════════════════
@@ -159,6 +185,8 @@ async function drawExplorerChart() {
     wickUpColor: '#26d96b', wickDownColor: '#ef5350',
   });
   cs.setData(candles);
+  const _refP = candles.length ? candles[candles.length - 1].close : (current_price || 1);
+  cs.applyOptions({ priceFormat: _priceFormat(_refP) });
   cs.priceScale().applyOptions({ scaleMargins: { top: 0.04, bottom: 0.22 } });
 
   // Volume histogram — bottom 20% of chart
@@ -251,7 +279,7 @@ async function drawExplorerChart() {
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:rgba(255,213,60,.1);color:rgba(255,213,60,.95);
       border:1px solid rgba(255,213,60,.2)">
-      ⚡ ${liq.label} LIQ  ${liq.price}
+      ⚡ ${liq.label} LIQ  ${_fmtP(liq.price)}
     </span>`);
   });
   (trendlines || []).forEach(tl => {
@@ -274,7 +302,7 @@ async function drawExplorerChart() {
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:rgba(255,193,60,.10);color:rgba(255,193,60,.95);
       border:1px solid rgba(255,193,60,.25)" title="Weekly timeframe structural level">
-      1W ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
+      1W ${isS ? '▲ S' : '▼ R'} ${_fmtP(lvl.price)}${dtxt} (${lvl.touches}×)
     </span>`);
   });
   [...(levels || [])].reverse().forEach(lvl => {
@@ -283,7 +311,7 @@ async function drawExplorerChart() {
     const dtxt = dist !== null ? ` · ${dist > 0 ? '+' : ''}${dist}%` : '';
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:rgba(180,183,210,.08);color:${isS ? '#c8cade' : '#a0a8cc'}">
-      ${isS ? '▲ S' : '▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
+      ${isS ? '▲ S' : '▼ R'} ${_fmtP(lvl.price)}${dtxt} (${lvl.touches}×)
     </span>`);
   });
   leg.innerHTML = chips.length ? chips.join('') : '<span style="color:var(--muted);font-size:.74rem">No S/R or trendlines detected</span>'; // safe: all values are escaped prices/numbers

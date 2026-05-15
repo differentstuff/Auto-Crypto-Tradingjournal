@@ -57,9 +57,16 @@ def _run_once():
           f"{filt} finalists, {len(setups)} setups ({dur}s)")
 
     if setups:
-        telegram_notify.send_setup_alert(setups)
-        print(f"[Scanner Scheduler] Telegram alert sent ({len(setups)} setups)")
         _persist_setups(setups)
+        with db_conn() as conn:
+            tg_enabled = conn.execute(
+                "SELECT value FROM settings WHERE key='telegram_alerts_enabled'"
+            ).fetchone()
+        if tg_enabled is None or tg_enabled[0] == '1':
+            telegram_notify.send_setup_alert(setups)
+            print(f"[Scanner Scheduler] Telegram alert sent ({len(setups)} setups)")
+        else:
+            print(f"[Scanner Scheduler] Telegram alerts disabled — skipped ({len(setups)} setups)")
 
 
 def _persist_setups(setups: list):

@@ -50,6 +50,34 @@ function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Smart price formatter — uses significant digits based on price magnitude
+function _fmtP(v) {
+  if (v == null || v === '') return '—';
+  const n = Number(v);
+  if (isNaN(n)) return String(v);
+  const abs = Math.abs(n);
+  if (abs === 0)    return '0';
+  if (abs >= 1000)  return n.toFixed(2);
+  if (abs >= 1)     return n.toFixed(4);
+  if (abs >= 0.1)   return n.toFixed(5);
+  if (abs >= 0.01)  return n.toFixed(6);
+  if (abs >= 0.001) return n.toFixed(7);
+  return n.toPrecision(6);
+}
+
+// Returns priceFormat options for LightweightCharts based on price magnitude
+function _priceFormat(refPrice) {
+  const abs = Math.abs(refPrice || 1);
+  let precision;
+  if (abs >= 1000)  precision = 2;
+  else if (abs >= 1)     precision = 4;
+  else if (abs >= 0.1)   precision = 5;
+  else if (abs >= 0.01)  precision = 6;
+  else if (abs >= 0.001) precision = 7;
+  else                   precision = 8;
+  return { type: 'price', precision, minMove: Math.pow(10, -precision) };
+}
+
 const params = new URLSearchParams(location.search);
 let symbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
 let tf     = params.get('timeframe') || '4H';
@@ -255,6 +283,9 @@ async function loadChart() {
     wickUpColor: '#26d96b', wickDownColor: '#ef5350',
   });
   series.setData(candles);
+  // Apply smart price precision based on actual price magnitude
+  const _refPrice = candles.length ? candles[candles.length - 1].close : (current_price || 1);
+  series.applyOptions({ priceFormat: _priceFormat(_refPrice) });
   // Push candlesticks up so volume bars have room at the bottom
   series.priceScale().applyOptions({ scaleMargins: { top: 0.04, bottom: 0.22 } });
 
@@ -379,25 +410,25 @@ async function loadChart() {
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(79,195,247,.12);color:rgba(79,195,247,.95);
         border:1px solid rgba(79,195,247,.25)">
-        ▶ ${_esc(t.dir)} ENTRY  ${_esc(t.entry)}
+        ▶ ${_esc(t.dir)} ENTRY  ${_fmtP(t.entry)}
       </span>`);
     if (t.tp1) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(38,217,107,.1);color:rgba(38,217,107,.95);
         border:1px solid rgba(38,217,107,.22)">
-        ✦ ${_esc(t.dir)} TP1  ${_esc(t.tp1)}${distChip(t.tp1)}
+        ✦ ${_esc(t.dir)} TP1  ${_fmtP(t.tp1)}${distChip(t.tp1)}
       </span>`);
     if (t.tp2) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(38,217,107,.07);color:rgba(38,217,107,.75);
         border:1px solid rgba(38,217,107,.15)">
-        ✦ ${_esc(t.dir)} TP2  ${_esc(t.tp2)}${distChip(t.tp2)}
+        ✦ ${_esc(t.dir)} TP2  ${_fmtP(t.tp2)}${distChip(t.tp2)}
       </span>`);
     if (t.sl) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(239,83,80,.1);color:rgba(239,83,80,.95);
         border:1px solid rgba(239,83,80,.22)">
-        ✕ ${_esc(t.dir)} SL  ${_esc(t.sl)}${distChip(t.sl)}
+        ✕ ${_esc(t.dir)} SL  ${_fmtP(t.sl)}${distChip(t.sl)}
       </span>`);
   });
 
@@ -405,7 +436,7 @@ async function loadChart() {
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:rgba(255,213,60,.1);color:rgba(255,213,60,.95);
       border:1px solid rgba(255,213,60,.2)">
-      ⚡ ${_esc(liq.label)} LIQ  ${_esc(liq.price)}
+      ⚡ ${_esc(liq.label)} LIQ  ${_fmtP(liq.price)}
     </span>`);
   });
 
@@ -431,7 +462,7 @@ async function loadChart() {
       background:rgba(255,193,60,0.10);color:rgba(255,193,60,0.95);
       border:1px solid rgba(255,193,60,0.25)"
       title="Weekly timeframe structural level">
-      1W ${isS?'▲ S':'▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
+      1W ${isS?'▲ S':'▼ R'} ${_fmtP(lvl.price)}${dtxt} (${lvl.touches}×)
     </span>`);
   });
 
@@ -441,7 +472,7 @@ async function loadChart() {
     const dtxt = dist !== null ? ` · ${dist>0?'+':''}${dist}%` : '';
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:rgba(180,183,210,0.08);color:${isS?'#c8cade':'#a0a8cc'}">
-      ${isS?'▲ S':'▼ R'} ${lvl.price}${dtxt} (${lvl.touches}×)
+      ${isS?'▲ S':'▼ R'} ${_fmtP(lvl.price)}${dtxt} (${lvl.touches}×)
     </span>`);
   });
 
