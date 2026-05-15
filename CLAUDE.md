@@ -40,17 +40,32 @@ routes/*.py — import helpers + ai_* modules
 - Data pipeline: agent_data_collector → 15 parallel workers → CollectorResult → prompt_builder → Claude
 - Adding a new data source: add fetch_X() to data_sources.py + field to CollectorResult in agent_types.py
 
-## Data Sources (all free, active)
+## Data Sources (active, wired into 11-worker CollectorResult)
 | Client | Data | Key |
 |---|---|---|
-| ccxt_client.py | Binance/Bybit/OKX price, L/S ratio, funding | none |
-| market_context.py | Fear & Greed, FRED macro, VIX/DXY (yfinance), BTC mempool | none |
-| coinalyze_client.py | Aggregated OI + funding across all exchanges | COINALYZE_API_KEY |
-| finnhub_client.py | Economic calendar (FOMC/CPI/NFP dates) | FINNHUB_API_KEY |
-| coingecko_client.py | BTC dominance, cap tier, trending coins | none (keyless) |
-| nansen_client.py | Smart money wallet flows | paid |
-| grok_client.py | Social/news context per coin | XAI_API_KEY |
-| defillama (in market_context) | TVL + 7d change for DeFi tokens | none |
+| ccxt_client.py | Binance/Bybit/OKX prices, multi-exchange L/S ratio | none |
+| market_context.py | VIX/DXY (yfinance), BTC mempool, DefiLlama TVL, Fear&Greed, retail vs smart-money L/S divergence | none |
+| coinalyze_client.py | Aggregated OI + funding + liq trend + per-exchange funding spread | COINALYZE_API_KEY |
+| finnhub_client.py | Economic calendar — FOMC/CPI/NFP macro risk flag | FINNHUB_API_KEY |
+| coingecko_client.py | BTC dominance, cap tier, trending coins (keyless public API) | none |
+| deribit_client.py | BTC/ETH put/call skew — institutional sentiment proxy | none |
+| nansen_client.py | Smart money wallet flows + accumulating/distributing direction | paid |
+| grok_client.py | Social/news context per coin (cap-weighted 0-80%) | XAI_API_KEY |
+
+## Prompt budget order (prompt_builder.py)
+1. Backtest context — most relevant to setup
+2. Market context string — pre-fetched by caller
+3. All data source blocks (Coinalyze, Fear&Greed, macro regime, L/S divergence, etc.)
+4. Rulebook — protected until remaining < 100 chars (was 500)
+5. Calibration — protected until remaining < 100 chars
+6. Chart context — protected until remaining < 100 chars
+7. Grok social — protected until remaining < 150 chars
+
+## Scanner macro layer (scanner_stages.py)
+- _get_scan_macro_context() called ONCE per scan: VIX, F&G, Finnhub events, BTC dominance
+- _apply_macro_cap(): VIX > 35 → cap 6.0, VIX 25-35 → cap 7.5, macro event in 24h → cap 7.0
+- _build_macro_header(): prepended to every Stage 3 scoring prompt
+- macro_ctx stored in _state["macro_ctx"] — visible in scanner status API
 
 ## Confluence Signals (chart_confluence.py)
 9 signals + 2 SMT variants → max_val = 6.50/TF:
