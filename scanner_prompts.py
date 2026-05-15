@@ -21,7 +21,32 @@ from scanner_criteria import CRITERIA_DEFAULTS, _disabled_criteria_block
 logger = logging.getLogger(__name__)
 
 
-def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=SCANNER_MIN_SCORE):
+def _build_macro_header(macro_ctx: dict) -> str:
+    """Short macro context header prepended to every scanner setup prompt."""
+    if not macro_ctx:
+        return ""
+    parts = []
+    vix = macro_ctx.get("vix")
+    fg  = macro_ctx.get("fear_greed")
+    dom = macro_ctx.get("btc_dominance")
+    if vix:
+        regime = macro_ctx.get("regime", "").replace("_", " ").upper()
+        parts.append(f"VIX {vix:.0f} ({regime})")
+    if fg is not None:
+        fg_label = "Extreme Fear" if fg < 25 else "Fear" if fg < 45 else "Neutral" if fg < 55 else "Greed" if fg < 75 else "Extreme Greed"
+        parts.append(f"F&G {fg}/100 ({fg_label})")
+    if dom:
+        parts.append(f"BTC dom {dom:.0f}%")
+    if macro_ctx.get("macro_risk"):
+        hrs = macro_ctx.get("hours_until")
+        evt = macro_ctx.get("next_event", "macro event")
+        hrs_str = f" in {hrs:.0f}h" if hrs else ""
+        parts.append(f"⚠️ {evt}{hrs_str}")
+    return "MACRO: " + " | ".join(parts) + "\n\n" if parts else ""
+
+
+def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=SCANNER_MIN_SCORE,
+                  macro_ctx: dict = None):
     inds_4h = ctx.get("4H", {}).get("indicators", {})
     ema     = inds_4h.get("ema", {}) or {}
     price   = ema.get("current_price", 0)
@@ -53,8 +78,9 @@ def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, 
     hist_text  = json.dumps(history) if history.get("trades") else "No closed trades on this symbol yet"
     mkt_block  = f"\nMARKET CONTEXT:\n{mkt_str}\n" if mkt_str else ""
     rb_block   = f"\nTRADER RULEBOOK (known patterns — respect these):\n{rulebook_str}\n" if rulebook_str else ""
+    macro_header = _build_macro_header(macro_ctx or {})
 
-    return f"""You are a professional crypto futures analyst. Score the current {direction.upper()} setup for {symbol} on a 1-10 scale and provide specific trade parameters.
+    return f"""{macro_header}You are a professional crypto futures analyst. Score the current {direction.upper()} setup for {symbol} on a 1-10 scale and provide specific trade parameters.
 
 TECHNICAL SUMMARY:
 {pt_4h}

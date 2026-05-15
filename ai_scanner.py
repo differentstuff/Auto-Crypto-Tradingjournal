@@ -63,6 +63,8 @@ from scanner_prompts import (
 from scanner_stages import (
     _fetch_one,
     _stage2,
+    _get_scan_macro_context,
+    _apply_macro_cap,
 )
 
 # ── Watchlist mutable state (kept here so tests can reset ai_scanner.BINANCE_WATCHLIST) ──
@@ -102,6 +104,7 @@ _state: dict = {
     "after_filter":    0,
     "error":           None,
     "min_score":       SCANNER_MIN_SCORE,
+    "macro_ctx":       {},       # macro context fetched once per scan run
 }
 _state_lock = threading.Lock()
 
@@ -128,7 +131,8 @@ def _stage1(symbols: list, min_score: int = SCANNER_MIN_SCORE) -> list:
 # ── Stage 3: AI scoring ─────────────────────────────────────────────────────────
 
 def _score_finalists_with_agents(finalists: list, conn,
-                                 min_score: int = SCANNER_MIN_SCORE) -> list:
+                                 min_score: int = SCANNER_MIN_SCORE,
+                                 macro_ctx: dict = None) -> list:
     """
     Run the agent pipeline (DataCollector → Interpreter → Sentiment →
     Reviewer → TradePrep) for each finalist. Replaces the inline Sonnet batch call.
@@ -142,6 +146,7 @@ def _score_finalists_with_agents(finalists: list, conn,
     import agent_data_reviewer
     import agent_orchestrator
 
+    macro = macro_ctx or {}
     results = []
     for sym, ctx, conf, direction, quick_score, rationale in finalists:
         try:
@@ -163,6 +168,10 @@ def _score_finalists_with_agents(finalists: list, conn,
                 sym, direction, collected, interpreted, reviewed, sentiment, conn,
             )
             score = prep.get("setup_score", 0)
+            # Apply macro regime cap before threshold check
+            score, macro_warnings = _apply_macro_cap(float(score), macro)
+            if macro_warnings:
+                logger.info("macro cap applied to %s: %s", sym, "; ".join(macro_warnings))
             if score < min_score:
                 continue
             entry_p = float(prep.get("entry_price", 0) or 0)
@@ -170,7 +179,7 @@ def _score_finalists_with_agents(finalists: list, conn,
                 # Fallback: use current price from already-computed 4H chart context
                 ema_4h = ctx.get("4H", {}).get("indicators", {}).get("ema") or {}
                 entry_p = float(ema_4h.get("current_price") or 0)
-            results.append({
+            setup = {
                 "_symbol":        sym,
                 "symbol":         sym,
                 "direction":      direction,
@@ -188,7 +197,10 @@ def _score_finalists_with_agents(finalists: list, conn,
                 "_quick_score":   quick_score,
                 "_rationale":     rationale,
                 "confluence_summary": conf.get("label", ""),
-            })
+            }
+            if macro_warnings:
+                setup["macro_warnings"] = macro_warnings
+            results.append(setup)
         except Exception as e:
             logger.warning("agent scoring failed for %s: %s", sym, e)
     return results
@@ -202,6 +214,16 @@ def _score_finalists_with_agents(finalists: list, conn,
 def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: dict = None):
     cr = criteria or CRITERIA_DEFAULTS
     t0 = time.time()
+
+    # Fetch macro context once at the start — passed to all scoring stages
+    macro_ctx = _get_scan_macro_context()
+    _update(macro_ctx=macro_ctx)
+    if macro_ctx.get("vix") or macro_ctx.get("macro_risk"):
+        logger.info("macro ctx: VIX=%s regime=%s macro_risk=%s event=%s in %sh",
+                    macro_ctx.get("vix"), macro_ctx.get("regime"),
+                    macro_ctx.get("macro_risk"), macro_ctx.get("next_event"),
+                    macro_ctx.get("hours_until"))
+
     _update(
         status="running", started_at=t0, error=None, setups=[], scanned=0, after_filter=0,
         min_score=min_score,
@@ -308,7 +330,8 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
             stage_progress= 0,
         )
         with db_conn() as conn:
-            setups = _score_finalists_with_agents(top_finalists, conn, min_score=min_score)
+            setups = _score_finalists_with_agents(top_finalists, conn, min_score=min_score,
+                                                  macro_ctx=macro_ctx)
         _update(stage_progress=100)
 
         # Add non-top-N setups with Haiku score + one-sentence rationale

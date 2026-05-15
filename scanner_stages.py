@@ -15,6 +15,84 @@ from scanner_criteria import CRITERIA_DEFAULTS
 logger = logging.getLogger(__name__)
 
 
+def _get_scan_macro_context() -> dict:
+    """
+    Fetch global macro context for scanner. Called once per scan run, not per symbol.
+    Returns {"vix": float|None, "regime": str, "macro_risk": bool,
+             "btc_dominance": float|None, "fear_greed": int|None,
+             "next_event": str|None, "hours_until": float|None}
+    Degrades gracefully on any failure.
+    """
+    result = {
+        "vix": None, "regime": "unknown", "macro_risk": False,
+        "btc_dominance": None, "fear_greed": None,
+        "next_event": None, "hours_until": None,
+    }
+    try:
+        from market_context import get_macro_regime
+        mr = get_macro_regime()
+        result["vix"]    = mr.get("vix")
+        result["regime"] = mr.get("regime", "unknown")
+    except Exception:
+        pass
+    try:
+        from market_context import get_fear_greed
+        fg = get_fear_greed()
+        result["fear_greed"] = fg.get("value")
+    except Exception:
+        pass
+    try:
+        from finnhub_client import get_upcoming_events
+        eco = get_upcoming_events(hours_ahead=24)
+        result["macro_risk"]   = eco.get("macro_risk", False)
+        result["next_event"]   = eco.get("next_event")
+        result["hours_until"]  = eco.get("hours_until")
+    except Exception:
+        pass
+    try:
+        from coingecko_client import get_global_market
+        gm = get_global_market()
+        result["btc_dominance"] = gm.get("btc_dominance_pct")
+    except Exception:
+        pass
+    return result
+
+
+def _apply_macro_cap(score: float, macro_ctx: dict) -> tuple:
+    """
+    Apply macro regime caps to a setup score.
+    Returns (capped_score, list_of_warnings).
+    """
+    warnings = []
+    vix = macro_ctx.get("vix")
+    regime = macro_ctx.get("regime", "unknown")
+
+    # VIX cap: high fear suppresses score
+    if vix is not None:
+        if vix > 35:
+            cap = 6.0
+            if score > cap:
+                warnings.append(f"VIX {vix:.0f} (extreme fear) — score capped at {cap}")
+                score = min(score, cap)
+        elif vix > 25:
+            cap = 7.5
+            if score > cap:
+                warnings.append(f"VIX {vix:.0f} (elevated fear) — score capped at {cap}")
+                score = min(score, cap)
+
+    # Macro event cap: major event in next 12h
+    if macro_ctx.get("macro_risk"):
+        hrs = macro_ctx.get("hours_until")
+        evt = macro_ctx.get("next_event", "macro event")
+        cap = 7.0
+        if score > cap:
+            hrs_str = f" in {hrs:.0f}h" if hrs else ""
+            warnings.append(f"{evt}{hrs_str} — macro risk, score capped at {cap}")
+            score = min(score, cap)
+
+    return score, warnings
+
+
 def _fetch_one(symbol: str):
     try:
         tfs = ["4H", "1D"]
