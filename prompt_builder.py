@@ -148,7 +148,40 @@ def build_context(
         sections.append(block)
         remaining -= len(block)
 
-    # ── 2b. New data sources (macro regime, L/S consensus, DeFi TVL, BTC mempool) ─
+    # ── 2b. Fear & Greed index (fetched directly — not from CollectorResult) ─────
+    try:
+        from market_context import get_fear_greed
+        fg = get_fear_greed()
+        if fg and remaining > 0:
+            val = fg.get("value")
+            cls = fg.get("classification", "")
+            if val is not None:
+                icon = "😱" if val < 25 else "😨" if val < 45 else "😐" if val < 55 else "😊" if val < 75 else "🤑"
+                block = f"FEAR & GREED: {val}/100 — {cls} {icon}"
+                sections.append(block)
+                remaining -= len(block)
+    except Exception:
+        pass
+
+    # ── 2c. Retail vs smart-money divergence ─────────────────────────────────────
+    try:
+        from market_context import get_sentiment_divergence
+        div = get_sentiment_divergence(symbol) if symbol else {}
+        if div and div.get("ok") and remaining > 0:
+            retail_long = div.get("retail_long_pct")
+            smart_long  = div.get("top_trader_long_pct")
+            diff        = div.get("divergence_pct")
+            if retail_long is not None and smart_long is not None:
+                direction = "⚡ SMART vs RETAIL" if abs(diff or 0) > 5 else "aligned"
+                block = (f"POSITIONING: Retail {retail_long:.0f}% long / "
+                         f"Smart money {smart_long:.0f}% long "
+                         f"({direction}, {diff:+.1f}% divergence)")
+                sections.append(block)
+                remaining -= len(block)
+    except Exception:
+        pass
+
+    # ── 2d. New data sources (macro regime, L/S consensus, DeFi TVL, BTC mempool) ─
     if collector_result and remaining > 0:
         cr = collector_result
 
@@ -237,6 +270,26 @@ def build_context(
                     f"({ls.get('longs_pct', 50):.0f}% long / "
                     f"{ls.get('shorts_pct', 50):.0f}% short)"
                 )
+            # Per-exchange funding spread
+            fbe = cz.get("funding_by_exchange", {})
+            if fbe.get("spread_pct") is not None and abs(fbe["spread_pct"]) > 0:
+                exch_parts = [
+                    f"{ex.capitalize()}: {fbe[ex] * 100:.4f}%"
+                    for ex in ("binance", "bybit", "okx") if ex in fbe
+                ]
+                parts.append(
+                    f"Funding spread: {fbe['spread_pct']:.4f}% "
+                    f"({'|'.join(exch_parts)})"
+                )
+            # Liquidation 24h trend
+            lt = cz.get("liquidation_trend", {})
+            if lt.get("total_24h_usd"):
+                dom = lt.get("dominant_side", "equal")
+                trend = lt.get("trend", "stable")
+                parts.append(
+                    f"Liqs 24h: ${lt['total_24h_usd'] / 1e6:.1f}M "
+                    f"— {trend}, dominant: {dom}"
+                )
             if parts:
                 block = "COINALYZE (multi-exchange):\n  " + "\n  ".join(parts)
                 if len(block) <= remaining:
@@ -310,7 +363,7 @@ def build_context(
 
     # ── 3. Rulebook (kept here for callers that don't use build_stable_prefix) ─
     if include_rulebook and conn is not None:
-        if remaining > 500:
+        if remaining > 100:
             rb = ai_rulebook.get_rulebook_for_prompt(conn)
             if rb:
                 sections.append(rb)
@@ -320,7 +373,7 @@ def build_context(
 
     # ── 4. Calibration ────────────────────────────────────────────────────────
     if include_calibration and conn is not None:
-        if remaining > 300:
+        if remaining > 100:
             cal = ai_rulebook.get_calibration_for_prompt(conn, exchange=exchange_filter)
             if cal:
                 sections.append(cal)
@@ -330,7 +383,7 @@ def build_context(
 
     # ── 5. Chart context (compact single-line-per-TF format) ─────────────────
     if include_chart and symbol:
-        if remaining > 400:
+        if remaining > 100:
             tfs = timeframes or ["4H", "1D"]
             ctx = chart_context.get_chart_context(symbol, tfs)
             lines = []
