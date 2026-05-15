@@ -13,7 +13,7 @@ from ai_client import send as ai_send
 from helpers import strip_fence, build_cached_messages
 import prompt_builder
 import gemini_client
-import agent_orchestrator
+from consensus import compute_consensus
 import agent_chart_draw
 
 from agent_types import TradePrepInput, TradePrepResult
@@ -79,7 +79,7 @@ def run(inp: TradePrepInput, conn) -> TradePrepResult:
     claude_score = int(data.get("setup_score", 0))
     gemini_score = int(gemini_result.get("score", 0))
     consensus = (
-        agent_orchestrator.compute_consensus(claude_score, gemini_score)
+        compute_consensus(claude_score, gemini_score)
         if gemini_score else {}
     )
 
