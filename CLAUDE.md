@@ -37,6 +37,29 @@ routes/*.py — import helpers + ai_* modules
 - Token logging: log_token_usage(module, model, in, out, cached) — import from helpers or token_log
 - Prompt caching: build_cached_messages() — ephemeral cache on context blocks >= 4096 chars
 - Error fallbacks: use empty_interpreter/empty_sentiment/empty_reviewer from agent_types (not private _empty_* functions)
+- Data pipeline: agent_data_collector → 15 parallel workers → CollectorResult → prompt_builder → Claude
+- Adding a new data source: add fetch_X() to data_sources.py + field to CollectorResult in agent_types.py
+
+## Data Sources (all free, active)
+| Client | Data | Key |
+|---|---|---|
+| ccxt_client.py | Binance/Bybit/OKX price, L/S ratio, funding | none |
+| market_context.py | Fear & Greed, FRED macro, VIX/DXY (yfinance), BTC mempool | none |
+| coinalyze_client.py | Aggregated OI + funding across all exchanges | COINALYZE_API_KEY |
+| finnhub_client.py | Economic calendar (FOMC/CPI/NFP dates) | FINNHUB_API_KEY |
+| coingecko_client.py | BTC dominance, cap tier, trending coins | none (keyless) |
+| nansen_client.py | Smart money wallet flows | paid |
+| grok_client.py | Social/news context per coin | XAI_API_KEY |
+| defillama (in market_context) | TVL + 7d change for DeFi tokens | none |
+
+## Confluence Signals (chart_confluence.py)
+9 signals + 2 SMT variants → max_val = 6.50/TF:
+RSI, MACD, EMA, ADX, WaveTrend, MFI, CVD, volume,
+_smt_weight (cross-exchange price divergence ≥0.5%),
+_smt_direction_weight (24h directional divergence vs correlated pair ±0.15)
+VIX multiplier: score × 0.80 when VIX > 30 (5-min cached)
+SMT_SYMBOLS = {BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT}
+SMT_PAIRS = {BTC↔ETH, SOL→ETH, BNB→BTC, XRP→BTC}
 
 ## Testing
 - Framework: pytest
@@ -64,6 +87,13 @@ routes/*.py — import helpers + ai_* modules
 - CVD: Money Flow Multiplier formula v*(2c-l-h)/(h-l) — must match in both chart_indicators.py AND backtest_engine.py
 - Sharpe annualization: periods_per_year=2190 for 4H crypto (6 bars/day × 365, 24/7 market)
 - SMT weight: +0.15 on divergence (delta >= 0.5%), 0.0 on agreement — signal fires when prices DISAGREE
+- SMT direction weight: +0.15 bullish (symbol↑ pair↓), -0.15 bearish (symbol↓ pair↑), threshold ≥1% delta
+- Walk-forward split: 70% training / 30% test on real position date range
+
+## New Tools (Analysis tab)
+- Optimizer history: GET /api/backtest/optimizer-history — last 5 runs with Sharpe + params
+- Walk-forward test: POST /api/backtest/walk-forward — splits real positions 70/30, tests generalization
+- Hindsight re-run: POST /api/hindsight/run?n=841 — skips already-scored positions (LEFT JOIN fix)
 
 ## JS Frontend
 - 17 modules static/js/01-utils.js through 16-settings.js
