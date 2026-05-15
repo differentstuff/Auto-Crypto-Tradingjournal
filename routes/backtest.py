@@ -48,6 +48,7 @@ def backtest_run():
 
 @bp.get("/api/backtest/optimize")
 def backtest_optimize():
+    """Start async optimizer run. Returns job_id immediately — poll /<job_id> for results."""
     symbol    = request.args.get("symbol",    "BTCUSDT")
     timeframe = request.args.get("timeframe", "4H")
 
@@ -57,11 +58,19 @@ def backtest_optimize():
     except (ValueError, TypeError):
         return _err("invalid parameter value")
 
-    try:
-        from backtest_optimizer import run_optimizer
-        best = run_optimizer(symbol, timeframe, days, n_trials)
-    except Exception:
-        return _err("optimizer failed")
-    if not best:
-        return _err("no completed trials — try more data or relaxed params")
-    return _ok(best)
+    from backtest_optimizer import start_optimizer_job
+    job_id = start_optimizer_job(symbol, timeframe, days, n_trials)
+    return _ok({"job_id": job_id, "status": "running", "symbol": symbol,
+                "message": f"Optimizer started for {symbol} ({n_trials} trials)"})
+
+
+@bp.get("/api/backtest/optimize/<job_id>")
+def backtest_optimize_status(job_id: str):
+    """Poll optimizer job. Returns status=running|complete|error + result when done."""
+    from backtest_optimizer import get_job_status
+    job = get_job_status(job_id)
+    if job is None:
+        return _err("job not found"), 404
+    if job["status"] == "error":
+        return _err(job["error"] or "Optimizer failed")
+    return _ok(job)
