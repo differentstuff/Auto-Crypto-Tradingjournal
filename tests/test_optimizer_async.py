@@ -6,6 +6,8 @@ import threading
 from unittest.mock import patch
 import pytest
 
+pytest.importorskip("optuna", reason="optuna not installed on this machine")
+
 
 def _fast_result():
     return {"wt_oversold": -60.0, "rsi_max": 58.0, "adx_min": 18.0,

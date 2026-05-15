@@ -1,4 +1,4 @@
-"""Tests for _retroactive_close_calls in bitget_sync."""
+"""Tests for retroactive_close_calls (moved to sync_base)."""
 import sys, os
 import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,8 +32,8 @@ def test_long_tp1_hit(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 115, 95)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 1
     row = db.execute(
         "SELECT status, outcome, hit_tp1, hit_tp2, hit_sl FROM analyzed_calls WHERE id=?",
@@ -47,8 +47,8 @@ def test_long_tp2_hit(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 125, 95)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 1
     row = db.execute(
         "SELECT outcome, hit_tp1, hit_tp2 FROM analyzed_calls WHERE id=?", (call_id,)
@@ -61,8 +61,8 @@ def test_long_sl_hit(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 105, 88)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 1
     row = db.execute(
         "SELECT outcome, hit_sl FROM analyzed_calls WHERE id=?", (call_id,)
@@ -75,8 +75,8 @@ def test_short_tp1_hit(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 105, 88)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 1
     row = db.execute(
         "SELECT outcome, hit_tp1 FROM analyzed_calls WHERE id=?", (call_id,)
@@ -89,8 +89,8 @@ def test_short_sl_hit(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 112, 95)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 1
     row = db.execute(
         "SELECT outcome, hit_sl FROM analyzed_calls WHERE id=?", (call_id,)
@@ -103,8 +103,8 @@ def test_no_resolution_when_price_between_sl_and_tp(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 108, 95)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 0
     row = db.execute(
         "SELECT status, outcome FROM analyzed_calls WHERE id=?", (call_id,)
@@ -118,8 +118,8 @@ def test_sl_wins_when_same_candle_touches_both(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 115, 88)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 1
     row = db.execute("SELECT outcome FROM analyzed_calls WHERE id=?", (call_id,)).fetchone()
     assert row[0] == "lost"
@@ -131,8 +131,8 @@ def test_skips_call_too_recent(db, monkeypatch):
     candles = _make_candles([
         (int(datetime.now(timezone.utc).timestamp() * 1000), 115, 88)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 0
 
 
@@ -147,8 +147,8 @@ def test_skips_matched_calls(db, monkeypatch):
     candles = _make_candles([
         (int(datetime.now(timezone.utc).timestamp() * 1000), 115, 88)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 0
 
 
@@ -158,8 +158,8 @@ def test_outcome_pnl_is_null(db, monkeypatch):
     candles = _make_candles([
         (int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000), 115, 95)
     ])
-    monkeypatch.setattr("bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: candles)
-    from bitget_sync import _retroactive_close_calls
+    monkeypatch.setattr("chart_context.get_candles_at_time", lambda *a, **kw: candles)
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     _retroactive_close_calls(db)
     row = db.execute("SELECT outcome_pnl FROM analyzed_calls WHERE id=?", (call_id,)).fetchone()
     assert row[0] is None
@@ -170,5 +170,5 @@ def test_empty_candles_skipped(db, monkeypatch):
     monkeypatch.setattr(
         "bitget_sync.chart_context.get_candles_at_time", lambda *a, **kw: pd.DataFrame()
     )
-    from bitget_sync import _retroactive_close_calls
+    from sync_base import retroactive_close_calls as _retroactive_close_calls
     assert _retroactive_close_calls(db) == 0
