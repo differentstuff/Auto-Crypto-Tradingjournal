@@ -81,7 +81,7 @@ def get_account_equity() -> dict:
 
 
 def _paginate(path: str, row_key: str, start_ms: int, end_ms: int,
-              time_key: str = "cTime") -> list:
+              time_key: str = "cTime", max_pages: int = 50) -> list:
     """
     Generic paginated GET for Bitget history endpoints.
 
@@ -93,13 +93,13 @@ def _paginate(path: str, row_key: str, start_ms: int, end_ms: int,
 
     To compensate, each row's timestamp is checked against start_ms. Once we
     receive a row older than our window, we stop — otherwise we'd page through
-    the entire account history.
+    the entire account history. max_pages caps total API calls as a safety net.
     """
     all_rows = []
     end_id   = None
     LIMIT    = 100
 
-    while True:
+    for _ in range(max_pages):
         if end_id:
             params = {"productType": "USDT-FUTURES", "limit": str(LIMIT), "endId": end_id}
         else:
@@ -195,7 +195,7 @@ def get_account_bills(start_ms: int = None, end_ms: int = None) -> list:
     """
     return _paginate(
         "/api/v2/mix/account/bill", "bills",
-        start_ms, end_ms
+        start_ms, end_ms, max_pages=20
     )
 
 
