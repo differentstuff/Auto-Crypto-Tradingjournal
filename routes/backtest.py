@@ -8,6 +8,8 @@ from helpers import _ok, _err
 
 bp = Blueprint("backtest", __name__)
 
+VALID_TIMEFRAMES = {"1H", "2H", "4H", "8H", "12H", "1D", "3D", "1W"}
+
 
 @bp.post("/api/backtest/run")
 def backtest_run():
@@ -17,6 +19,8 @@ def backtest_run():
 
     if not symbol:
         return _err("symbol is required")
+    if timeframe not in VALID_TIMEFRAMES:
+        return _err(f"timeframe must be one of: {', '.join(sorted(VALID_TIMEFRAMES))}")
 
     try:
         days = min(int(body.get("days", 180)), 365)
@@ -54,6 +58,9 @@ def backtest_optimize():
     symbol    = request.args.get("symbol",    "BTCUSDT")
     timeframe = request.args.get("timeframe", "4H")
 
+    if timeframe not in VALID_TIMEFRAMES:
+        return _err(f"timeframe must be one of: {', '.join(sorted(VALID_TIMEFRAMES))}")
+
     try:
         n_trials = min(int(request.args.get("n_trials", 50)), 200)
         days     = min(int(request.args.get("days",     180)), 365)
@@ -85,11 +92,27 @@ def api_walk_forward():
         body      = request.get_json(force=True, silent=True) or {}
         symbol    = (body.get("symbol") or "BTCUSDT").upper().strip()
         timeframe = body.get("timeframe", "4H")
+        if timeframe not in VALID_TIMEFRAMES:
+            return _err(f"timeframe must be one of: {', '.join(sorted(VALID_TIMEFRAMES))}")
         n_trials  = int(body.get("n_trials", 30))
         n_trials  = max(10, min(n_trials, 100))
         import backtest_optimizer
         job_id = backtest_optimizer.start_walk_forward_job(symbol, timeframe, n_trials)
         return _ok({"job_id": job_id, "message": f"Walk-forward started for {symbol}"})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/backtest/walk-forward/<job_id>")
+def api_walk_forward_status(job_id):
+    """Poll walk-forward job status. Same registry as optimizer — typed separately."""
+    try:
+        import backtest_optimizer
+        status = backtest_optimizer.get_job_status(job_id)
+        if status is None:
+            return _err("Job not found", 404)
+        return _ok(status)
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
@@ -116,7 +139,7 @@ def api_optimizer_history():
                 try:
                     row["best_params"] = json.loads(row["best_params"])
                 except Exception:
-                    pass
+                    row["best_params"] = None
             history.append(row)
         return _ok({"runs": history})
     except Exception:

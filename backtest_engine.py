@@ -88,10 +88,12 @@ class BacktestResult:
     total_trades:  int   = 0
 
 
-def _fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
+def _fetch_ohlcv(symbol: str, timeframe: str, limit: int,
+                 end_ms: int | None = None) -> pd.DataFrame:
     """
     Fetch OHLCV data from Bitget with pagination (API caps at 200 per call).
     Walks backwards using endTime cursor until limit candles are collected.
+    end_ms: optional upper bound timestamp in milliseconds (default: now).
     """
     MAX_PER_CALL = 200
     sym = symbol.upper()
@@ -99,7 +101,7 @@ def _fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
         sym += "USDT"
 
     frames = []
-    end_time = None
+    end_time = end_ms  # None means API defaults to now
     remaining = limit
 
     while remaining > 0:
@@ -272,17 +274,25 @@ def _compute_metrics(trades: list) -> dict:
     }
 
 
-def run_backtest(symbol: str, timeframe: str, days: int,
-                 params: BacktestParams = None) -> BacktestResult:
+def run_backtest(symbol: str, timeframe: str = "4H", days: int = 90,
+                 params: BacktestParams = None,
+                 end_offset_days: int = 0) -> BacktestResult:
     """
     Run a full vectorized backtest. Fetches ~6 candles per day + 200 warmup candles.
     Returns an empty BacktestResult if fewer than 250 rows are available.
+
+    end_offset_days: how many days before now the backtest window ENDS (default 0 = now).
+                     e.g. end_offset_days=30 means the window ends 30 days ago,
+                     covering [now - (end_offset_days+days)*86400s, now - end_offset_days*86400s].
     """
     if params is None:
         params = BacktestParams()
 
     candles_needed = max(int(days * 6) + 200, 500)
-    df = _fetch_ohlcv(symbol, timeframe, limit=candles_needed)
+    import time as _time_mod
+    now_ms = int(_time_mod.time() * 1000)
+    end_ms = now_ms - end_offset_days * 86400 * 1000 if end_offset_days > 0 else None
+    df = _fetch_ohlcv(symbol, timeframe, limit=candles_needed, end_ms=end_ms)
 
     if df is None or len(df) < 250:
         return BacktestResult()

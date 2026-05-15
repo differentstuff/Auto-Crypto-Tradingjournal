@@ -20,7 +20,7 @@ bp = Blueprint("hindsight", __name__)
 def api_hindsight_run():
     try:
         n = int(request.args.get("n", 50))
-        n = max(5, min(n, 1000))
+        n = max(5, min(n, 200))
         started = ai_hindsight.start_batch(n)
         state = ai_hindsight.get_state()
         if not started:

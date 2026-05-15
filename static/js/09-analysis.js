@@ -125,8 +125,8 @@ async function loadAccuracyProgress() {
     btCard.appendChild(wfResultDiv);
     btCard.appendChild(historyDiv);
     card.parentElement.insertBefore(btCard, card.nextSibling);
-    loadOptimizerHistory();
   }
+  loadOptimizerHistory();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -301,7 +301,7 @@ async function loadOptimizerHistory() {
     midRow.appendChild(durEl);
     const paramRow = document.createElement('div');
     paramRow.style.cssText = 'color:var(--muted);margin-top:3px;font-size:.72rem';
-    paramRow.textContent = Object.entries(params).map(([k, v]) => k + ': ' + (typeof v === 'number' ? v.toFixed(3) : v)).join(' · ');
+    paramRow.textContent = Object.entries(params).map(([k, v]) => k + ': ' + (typeof v === 'number' ? v.toFixed(2) : v)).join(' · ');
     card.appendChild(topRow);
     card.appendChild(midRow);
     card.appendChild(paramRow);
@@ -361,7 +361,7 @@ async function runWalkForward() {
 
     const pollInterval = setInterval(async () => {
       try {
-        const pollRes = await api('/api/backtest/optimize/' + jobId);
+        const pollRes = await api('/api/backtest/walk-forward/' + jobId);
         if (!pollRes.ok) {
           clearInterval(pollInterval);
           _setBtBtnsDisabled(false);

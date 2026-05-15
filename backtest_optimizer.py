@@ -78,7 +78,8 @@ def get_job_status(job_id: str) -> Optional[dict]:
             "status": job.status, "result": job.result, "error": job.error}
 
 
-def _objective(trial: optuna.Trial, symbol: str, timeframe: str, days: int) -> float:
+def _objective(trial: optuna.Trial, symbol: str, timeframe: str, days: int,
+               end_offset_days: int = 0) -> float:
     """Optuna objective: sample params -> run backtest -> return Sharpe (or penalty)."""
     params = BacktestParams(
         wt_oversold    = trial.suggest_float("wt_oversold",    -80,   -40),
@@ -89,7 +90,8 @@ def _objective(trial: optuna.Trial, symbol: str, timeframe: str, days: int) -> f
         tp1_pct        = trial.suggest_float("tp1_pct",        0.03,  0.10),
         tp2_pct        = trial.suggest_float("tp2_pct",        0.08,  0.20),
     )
-    result = run_backtest(symbol, timeframe, days, params)
+    result = run_backtest(symbol, timeframe, days, params,
+                          end_offset_days=end_offset_days)
     if result.total_trades < 10:
         return -999.0  # penalise strategies that barely trade
     return result.sharpe
@@ -132,27 +134,32 @@ def run_walk_forward(symbol: str, timeframe: str = "4H",
     split_days = max(7, int(total_days * 0.70))
     test_days  = max(7, total_days - split_days)
 
-    # Phase 1: optimize on training window
+    # Phase 1: optimize on training window (ends test_days ago, so no overlap with test)
     try:
         train_params = run_optimizer(symbol, timeframe,
-                                     days=split_days, n_trials=n_trials)
+                                     days=split_days, n_trials=n_trials,
+                                     end_offset_days=test_days)
     except Exception as e:
         return {"error": f"Optimizer failed: {e}"}
 
-    # Phase 2: test best params on out-of-sample window
+    # Phase 2: test best params on out-of-sample window (most recent test_days, ending NOW)
+    # Training window ends where the test window begins (end_offset_days=test_days),
+    # so the two windows are non-overlapping — no data leakage.
     from backtest_engine import BacktestParams
     test_p = BacktestParams(**{k: v for k, v in train_params.items()
                                if k in BacktestParams.__dataclass_fields__})
     try:
         test_result = run_backtest(symbol, timeframe,
-                                   days=test_days, params=test_p)
+                                   days=test_days, params=test_p,
+                                   end_offset_days=0)
     except Exception as e:
         return {"error": f"Test backtest failed: {e}"}
 
-    # Also get training Sharpe for comparison
+    # Also get training Sharpe for comparison (training window ends at test_days ago)
     try:
         train_result = run_backtest(symbol, timeframe,
-                                    days=split_days, params=test_p)
+                                    days=split_days, params=test_p,
+                                    end_offset_days=test_days)
         train_sharpe = round(train_result.sharpe, 3)
     except Exception:
         train_sharpe = None
@@ -172,7 +179,7 @@ def run_walk_forward(symbol: str, timeframe: str = "4H",
         "test_sharpe":   test_sharpe,
         "generalizes":   generalizes,
         "best_params":   train_params,
-        "test_trades":   test_result.n_trades if test_result else 0,
+        "test_trades":   test_result.total_trades if test_result else 0,
         "test_win_rate": round(test_result.win_rate, 1) if test_result else None,
     }
 
@@ -205,16 +212,19 @@ def start_walk_forward_job(symbol: str, timeframe: str = "4H",
 
 
 def run_optimizer(symbol: str = "BTCUSDT", timeframe: str = "4H",
-                  days: int = 180, n_trials: int = 100) -> dict:
+                  days: int = 180, n_trials: int = 100,
+                  end_offset_days: int = 0) -> dict:
     """
     Run Optuna Bayesian optimization. Returns best params dict.
     Typical runtime on Pi: 5-15 min with n_trials=100.
+    end_offset_days: passed through to run_backtest to shift the window backward.
     """
     import time as _time_mod
     t0 = _time_mod.time()
     study = optuna.create_study(direction="maximize")
     study.optimize(
-        lambda t: _objective(t, symbol, timeframe, days),
+        lambda t: _objective(t, symbol, timeframe, days,
+                             end_offset_days=end_offset_days),
         n_trials=n_trials,
         n_jobs=1,
     )
