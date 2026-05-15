@@ -160,23 +160,23 @@ def test_smt_weight_btcusdt_no_price():
 
 
 def test_smt_weight_btcusdt_prices_converge():
-    """_smt_weight returns +0.15 when prices are within 0.5%."""
+    """_smt_weight returns 0.0 when prices agree within 0.5% (no divergence = no signal)."""
     from chart_context import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
-    # 60000 vs 60100 → delta = 0.167% < 0.5%
+    # 60000 vs 60100 → delta = 0.167% < 0.5% threshold
     with patch("chart_confluence.get_binance_price", return_value=60100.0):
         weight = _smt_weight(inds, "BTCUSDT")
-    assert weight == 0.15
+    assert weight == 0.0
 
 
 def test_smt_weight_btcusdt_prices_diverge():
-    """_smt_weight returns 0.0 when prices diverge > 0.5%."""
+    """_smt_weight returns +0.15 when prices diverge >= 0.5% (SMT signal detected)."""
     from chart_context import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
     # 60000 vs 60400 → delta = 0.667% > 0.5%
     with patch("chart_confluence.get_binance_price", return_value=60400.0):
         weight = _smt_weight(inds, "BTCUSDT")
-    assert weight == 0.0
+    assert weight == 0.15
 
 
 def test_confluence_score_uses_ctx_param():

@@ -89,25 +89,25 @@ def test_confluence_score_mfi_raises_bullish_score():
 # --- SMT Divergence tests ---
 
 def test_smt_weight_btc_prices_in_sync():
-    """Bitget and Binance prices within 0.5% -> +0.15 confirmation weight."""
+    """Bitget and Binance prices within 0.5% -> 0.0 (agreement = no divergence signal)."""
     from unittest.mock import patch
     import chart_context
 
     inds = {"ema": {"current_price": 60000.0}}
     with patch("chart_confluence.get_binance_price", return_value=60200.0):
         result = chart_context._smt_weight(inds, "BTCUSDT")
-    assert result == 0.15
+    assert result == 0.0
 
 
 def test_smt_weight_divergence_neutral():
-    """Bitget and Binance prices differ > 0.5% -> 0.0 (no reward, no penalty)."""
+    """Bitget and Binance prices differ > 0.5% -> +0.15 (SMT divergence detected)."""
     from unittest.mock import patch
     import chart_context
 
     inds = {"ema": {"current_price": 60000.0}}
     with patch("chart_confluence.get_binance_price", return_value=62000.0):
         result = chart_context._smt_weight(inds, "BTCUSDT")
-    assert result == 0.0
+    assert result == 0.15
 
 
 def test_smt_weight_non_smt_symbol():
