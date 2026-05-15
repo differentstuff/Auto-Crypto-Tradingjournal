@@ -34,6 +34,7 @@ class _OptJob:
 
 
 def _evict_old_jobs() -> None:
+    # Caller must hold _jobs_lock
     cutoff = _time.time() - _JOB_TTL
     stale = [jid for jid, j in _jobs.items() if j.started < cutoff]
     for jid in stale:

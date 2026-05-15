@@ -72,5 +72,5 @@ def backtest_optimize_status(job_id: str):
     if job is None:
         return _err("job not found"), 404
     if job["status"] == "error":
-        return _err(job["error"] or "Optimizer failed")
+        return _err("Optimizer failed — check server logs", 500)
     return _ok(job)
