@@ -79,7 +79,7 @@ def test_confluence_score_returns_dict():
     """confluence_score must return a dict with score, max, and label."""
     from chart_context import confluence_score
     with patch("chart_context.get_chart_context", return_value=_mock_ctx()):
-        with patch("chart_context.get_binance_price", return_value=None):
+        with patch("chart_confluence.get_binance_price", return_value=None):
             result = confluence_score("BTCUSDT", timeframes=["4H"])
     assert isinstance(result, dict)
     assert "score" in result
@@ -91,7 +91,7 @@ def test_confluence_score_has_label(self=None):
     """Label field must be a non-empty string."""
     from chart_context import confluence_score
     with patch("chart_context.get_chart_context", return_value=_mock_ctx()):
-        with patch("chart_context.get_binance_price", return_value=None):
+        with patch("chart_confluence.get_binance_price", return_value=None):
             result = confluence_score("BTCUSDT", timeframes=["4H"])
     assert isinstance(result["label"], str)
     assert len(result["label"]) > 0
@@ -101,7 +101,7 @@ def test_confluence_score_max_positive():
     """max field must be a positive number."""
     from chart_context import confluence_score
     with patch("chart_context.get_chart_context", return_value=_mock_ctx()):
-        with patch("chart_context.get_binance_price", return_value=None):
+        with patch("chart_confluence.get_binance_price", return_value=None):
             result = confluence_score("BTCUSDT", timeframes=["4H"])
     assert result["max"] > 0
 
@@ -111,7 +111,7 @@ def test_confluence_score_bullish_signals_raise_score():
     from chart_context import confluence_score
     with patch("chart_context.get_chart_context",
                return_value=_mock_ctx(rsi=25, macd_trend="bullish", adx=30)):
-        with patch("chart_context.get_binance_price", return_value=None):
+        with patch("chart_confluence.get_binance_price", return_value=None):
             result = confluence_score("BTCUSDT", timeframes=["4H"])
     assert result["score"] > 0
 
@@ -136,7 +136,7 @@ def test_confluence_score_neutral_indicators():
         }
     }
     with patch("chart_context.get_chart_context", return_value=neutral_ctx):
-        with patch("chart_context.get_binance_price", return_value=None):
+        with patch("chart_confluence.get_binance_price", return_value=None):
             result = confluence_score("BTCUSDT", timeframes=["4H"])
     # Score should be near zero for neutral indicators
     assert abs(result["score"]) < result["max"]
@@ -154,7 +154,7 @@ def test_smt_weight_btcusdt_no_price():
     """_smt_weight returns 0.0 when Binance price is None (even for BTCUSDT)."""
     from chart_context import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
-    with patch("chart_context.get_binance_price", return_value=None):
+    with patch("chart_confluence.get_binance_price", return_value=None):
         weight = _smt_weight(inds, "BTCUSDT")
     assert weight == 0.0
 
@@ -164,7 +164,7 @@ def test_smt_weight_btcusdt_prices_converge():
     from chart_context import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
     # 60000 vs 60100 → delta = 0.167% < 0.5%
-    with patch("chart_context.get_binance_price", return_value=60100.0):
+    with patch("chart_confluence.get_binance_price", return_value=60100.0):
         weight = _smt_weight(inds, "BTCUSDT")
     assert weight == 0.15
 
@@ -174,7 +174,7 @@ def test_smt_weight_btcusdt_prices_diverge():
     from chart_context import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
     # 60000 vs 60400 → delta = 0.667% > 0.5%
-    with patch("chart_context.get_binance_price", return_value=60400.0):
+    with patch("chart_confluence.get_binance_price", return_value=60400.0):
         weight = _smt_weight(inds, "BTCUSDT")
     assert weight == 0.0
 
@@ -184,7 +184,7 @@ def test_confluence_score_uses_ctx_param():
     from chart_context import confluence_score
     ctx = _mock_ctx()
     with patch("chart_context.get_chart_context") as mock_fetch:
-        with patch("chart_context.get_binance_price", return_value=None):
+        with patch("chart_confluence.get_binance_price", return_value=None):
             result = confluence_score("BTCUSDT", timeframes=["4H"], ctx=ctx)
     mock_fetch.assert_not_called()
     assert "score" in result

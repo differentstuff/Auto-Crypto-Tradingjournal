@@ -94,7 +94,7 @@ def test_smt_weight_btc_prices_in_sync():
     import chart_context
 
     inds = {"ema": {"current_price": 60000.0}}
-    with patch("chart_context.get_binance_price", return_value=60200.0):
+    with patch("chart_confluence.get_binance_price", return_value=60200.0):
         result = chart_context._smt_weight(inds, "BTCUSDT")
     assert result == 0.15
 
@@ -105,7 +105,7 @@ def test_smt_weight_divergence_neutral():
     import chart_context
 
     inds = {"ema": {"current_price": 60000.0}}
-    with patch("chart_context.get_binance_price", return_value=62000.0):
+    with patch("chart_confluence.get_binance_price", return_value=62000.0):
         result = chart_context._smt_weight(inds, "BTCUSDT")
     assert result == 0.0
 
