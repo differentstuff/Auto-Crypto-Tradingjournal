@@ -18,18 +18,25 @@ Runs as a systemd service on a Raspberry Pi 5 (<Pi-IP>). Accessible from any bro
 
 ## Import Graph (safe edit order)
 constants.py, prompt_fragments.py, trade_history.py, chart_sr.py, chart_indicators.py — no internal deps, edit freely
+token_log.py — token telemetry only; imported by ai_client via helpers re-export
 helpers.py, database.py — imported by everything, edit carefully
-ai_client.py — imports constants + helpers
-chart_context.py — orchestrates chart_indicators + chart_sr (1140 lines, being split)
+sync_base.py — SyncDriver protocol, SyncState class, auto_close_calls, retroactive_close_calls
+ai_client.py — imports constants + helpers (log_token_usage re-exported from token_log)
+chart_candles.py, chart_patterns.py, chart_confluence.py — split from chart_context
+chart_context.py — thin facade over chart_candles + chart_patterns + chart_confluence
 prompt_builder.py — imports chart_context, ai_rulebook, ai_pattern_detector, nansen_client
+agent_types.py — TypedDicts + empty_interpreter/empty_sentiment/empty_reviewer factories
 ai_*.py — import ai_client + prompt_builder + trade_history
+scanner_watchlist.py — symbol lists; scanner_criteria.py — CRITERIA_DEFAULTS + kill-zone; scanner_prompts.py — prompt builders; scanner_stages.py — Stage 1/2
+ai_scanner.py — thin: _state, scan thread, Stage 3, public API (imports scanner_* modules)
 routes/*.py — import helpers + ai_* modules
 
 ## AI Pipeline
 - Sonnet (claude-sonnet-4-6): call analyzer, advisor, scanner, rulebook, pattern detector, grader
 - Haiku (claude-haiku-4-5-20251001): scanner quick-score, hindsight, live trade check, limit analysis
-- Token logging: log_token_usage(module, model, in, out, cached) from helpers.py
+- Token logging: log_token_usage(module, model, in, out, cached) — import from helpers or token_log
 - Prompt caching: build_cached_messages() — ephemeral cache on context blocks >= 4096 chars
+- Error fallbacks: use empty_interpreter/empty_sentiment/empty_reviewer from agent_types (not private _empty_* functions)
 
 ## Testing
 - Framework: pytest
@@ -41,6 +48,14 @@ routes/*.py — import helpers + ai_* modules
 - All routes return {"ok": true/false, "data": ...} via _ok() / _err()
 - Never expose exception messages in API responses (CWE-209)
 - Never change existing endpoint URLs or response shapes
+- Use _safe_float(val) in routes/calls.py for parsing price fields from request JSON
+- Validate status fields against VALID_STATUSES allowlist before DB writes (see routes/limits.py)
+
+## Calculation Invariants (do not change without updating both sides)
+- WaveTrend: n1=10, n2=21, rolling(4) — must match in both chart_indicators.py AND backtest_engine.py
+- CVD: Money Flow Multiplier formula v*(2c-l-h)/(h-l) — must match in both chart_indicators.py AND backtest_engine.py
+- Sharpe annualization: periods_per_year=2190 for 4H crypto (6 bars/day × 365, 24/7 market)
+- SMT weight: +0.15 on divergence (delta >= 0.5%), 0.0 on agreement — signal fires when prices DISAGREE
 
 ## JS Frontend
 - 17 modules static/js/01-utils.js through 16-settings.js
