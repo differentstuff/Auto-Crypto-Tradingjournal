@@ -64,24 +64,76 @@ def get_open_positions() -> list:
 
 
 def get_position_history(symbol: str = None, limit: int = 100, after: str = None) -> list:
-    """Return list of closed order dicts. Empty list on error. 'after' accepted for backward compat."""
+    """
+    Return list of closed position dicts normalised for blofin_sync INSERT.
+    Uses Blofin's private account/positions-history endpoint via CCXT.
+    """
     try:
         exchange = get_blofin_exchange()
-        sym_ccxt = (symbol.removesuffix("USDT") + "/USDT:USDT" if symbol else None)
-        orders = exchange.fetch_closed_orders(sym_ccxt, limit=limit)
+        params: dict = {"limit": min(limit, 100)}
+        if symbol:
+            params["instId"] = symbol.removesuffix("USDT") + "-USDT"
+        if after:
+            params["after"] = after
+
+        raw = exchange.privateGetAccountPositionsHistory(params)
+        rows = (raw.get("data") or {}).get("resultList") or []
+
         result = []
-        for o in orders:
-            sym_raw = o.get("symbol") or ""
-            symbol_out = sym_raw.replace("/USDT:USDT", "USDT")
+        for r in rows:
+            sym_raw   = r.get("instId", "")                          # "BTC-USDT"
+            sym_out   = sym_raw.replace("-USDT", "USDT")             # "BTCUSDT"
+            base      = sym_raw.split("-")[0]                        # "BTC"
+            direction = (r.get("posSide") or r.get("side") or "long").lower()
+            if direction not in ("long", "short"):
+                direction = "long" if r.get("side") == "buy" else "short"
+
+            open_ms   = int(r.get("openTime")  or r.get("cTime")  or 0)
+            close_ms  = int(r.get("closeTime") or r.get("uTime")  or 0)
+            open_dt   = _ms_to_dt(open_ms)
+            close_dt  = _ms_to_dt(close_ms)
+            dur_min   = round((close_ms - open_ms) / 60000) if close_ms > open_ms else None
+
+            entry_px  = float(r.get("openAvgPx")  or r.get("avgPx")      or 0)
+            close_px  = float(r.get("closeAvgPx") or r.get("closePrice") or 0)
+            contracts = float(r.get("closeTotalPos") or r.get("pos")      or 0)
+            leverage  = int(float(r.get("lever") or 1))
+            notional  = round(contracts * entry_px, 4)
+
+            pnl       = float(r.get("realizedPnl") or r.get("pnl") or 0)
+            fee       = float(r.get("fee") or 0)
+            fee_open  = round(abs(fee) / 2, 6)
+            fee_close = round(abs(fee) / 2, 6)
+
             result.append({
-                "symbol":    symbol_out,
-                "side":      o.get("side"),
-                "price":     float(o.get("average") or o.get("price") or 0),
-                "amount":    float(o.get("filled") or 0),
-                "pnl":       float((o.get("info") or {}).get("pnl") or 0),
-                "timestamp": o.get("timestamp"),
-                "order_id":  o.get("id"),
+                "symbol":          sym_out,
+                "base_asset":      base,
+                "direction":       direction,
+                "margin_mode":     (r.get("mgnMode") or "cross").lower(),
+                "open_time":       open_dt,
+                "close_time":      close_dt,
+                "duration_minutes": dur_min,
+                "entry_price":     entry_px,
+                "close_price":     close_px,
+                "size_contracts":  contracts,
+                "size_usdt":       notional,
+                "position_pnl":    pnl,
+                "realized_pnl":    pnl,
+                "opening_fee":     fee_open,
+                "closing_fee":     fee_close,
+                "total_fees":      round(abs(fee), 6),
+                "external_id":     str(r.get("positionId") or r.get("tradeId") or ""),
+                "exchange":        "blofin",
+                "leverage":        leverage,
             })
         return result
     except Exception:
         return []
+
+
+def _ms_to_dt(ms: int) -> str | None:
+    """Convert millisecond timestamp to 'YYYY-MM-DD HH:MM:SS' string."""
+    if not ms:
+        return None
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
