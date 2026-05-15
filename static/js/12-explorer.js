@@ -171,7 +171,7 @@ async function drawExplorerChart() {
 
   _explorerChart = LightweightCharts.createChart(wrap, {
     width:  wrap.clientWidth,
-    height: 480,
+    height: Math.max(320, (wrap.clientHeight || window.innerHeight - 200) - 60),
     layout: { background: { type: 'solid', color: '#0f1117' }, textColor: '#7986cb' },
     grid:   { vertLines: { color: 'rgba(255,255,255,.04)' }, horzLines: { color: 'rgba(255,255,255,.04)' } },
     crosshair:       { mode: 1 },
@@ -321,7 +321,10 @@ async function drawExplorerChart() {
 
   // Resize handler
   window.__explorerResize = () => {
-    if (_explorerChart) _explorerChart.applyOptions({ width: wrap.clientWidth });
+    if (_explorerChart) _explorerChart.resize(
+      wrap.clientWidth,
+      Math.max(320, wrap.clientHeight - 60)
+    );
   };
   window.removeEventListener('resize', window.__explorerResize);
   window.addEventListener('resize',    window.__explorerResize);

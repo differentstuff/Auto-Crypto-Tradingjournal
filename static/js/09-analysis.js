@@ -116,20 +116,27 @@ async function loadAccuracyProgress() {
 
 function _renderBacktestResult(container, d) {
   container.textContent = '';
+
+  const winColor = (d.win_rate >= 55) ? 'var(--accent3)' : (d.win_rate < 45) ? 'var(--red)' : 'var(--muted)';
+  const pfColor  = (d.profit_factor > 1.3) ? 'var(--accent3)' : (d.profit_factor < 1.0) ? 'var(--red)' : 'var(--muted)';
+  const shColor  = (d.sharpe > 1.0) ? 'var(--accent3)' : (d.sharpe < 0) ? 'var(--red)' : 'var(--muted)';
+  const maxDdPct = d.max_drawdown * 100;
+  const ddColor  = (maxDdPct > 20) ? 'var(--red)' : (maxDdPct > 10) ? 'var(--accent2)' : 'var(--accent3)';
+
   const metrics = [
-    ['Trades',  String(d.total_trades)],
-    ['Win %',   d.win_rate + '%'],
-    ['PF',      String(d.profit_factor)],
-    ['Sharpe',  String(d.sharpe)],
-    ['Max DD',  (d.max_drawdown * 100).toFixed(1) + '%'],
+    ['Trades',  String(d.total_trades),           'var(--text)'],
+    ['Win %',   d.win_rate + '%',                  winColor],
+    ['PF',      String(d.profit_factor),           pfColor],
+    ['Sharpe',  String(d.sharpe),                  shColor],
+    ['Max DD',  maxDdPct.toFixed(1) + '%',         ddColor],
   ];
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;margin-top:8px';
-  for (const [label, val] of metrics) {
+  for (const [label, val, color] of metrics) {
     const cell = document.createElement('div');
     cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;min-width:60px';
     const valEl = document.createElement('div');
-    valEl.style.cssText = 'font-size:.9rem;font-weight:600';
+    valEl.style.cssText = `font-size:.9rem;font-weight:600;color:${color}`;
     valEl.textContent = val;
     const labelEl = document.createElement('div');
     labelEl.style.cssText = 'font-size:.7rem;color:var(--muted)';

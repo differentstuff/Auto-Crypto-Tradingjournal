@@ -664,6 +664,9 @@ function buildScannerRow(s, i) {
                    Today:'rgba(108,99,255,.12)','1-3 days':'rgba(121,134,203,.08)'}[s.urgency] || '';
   const urgCol  = {Now:'var(--red)','1-4h':'var(--yellow)',Today:'var(--accent)','1-3 days':'var(--muted)'}[s.urgency] || 'var(--muted)';
 
+  const rr = parseFloat(s.rr_ratio) || 0;
+  const rrColor = rr >= 3.0 ? 'var(--accent3)' : rr >= 2.0 ? 'var(--muted)' : 'var(--red)';
+
   const quickOnly = s.quick_score_only;
   const row = `<tr class="scanner-row${quickOnly?' scanner-row-quick':''}" onclick="toggleScanDetail(${i})" data-idx="${i}"
     title="${quickOnly ? 'Quick score only (Haiku) — no full breakdown available' : ''}">
@@ -675,7 +678,7 @@ function buildScannerRow(s, i) {
     <td style="font-size:.75rem;color:var(--muted);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${conf}</td>
     <td style="font-size:.75rem;color:var(--accent)">${pattern}</td>
     <td style="font-size:.78rem;color:var(--accent2)">${entTxt}</td>
-    <td style="font-size:.82rem;font-weight:600;color:var(--text)">${s.rr_ratio||'—'}</td>
+    <td style="font-size:.82rem;font-weight:600"><span style="color:${rrColor}">${rr ? rr.toFixed(1) + 'R' : '—'}</span></td>
     <td><span class="badge" style="background:${urgBg};color:${urgCol};font-size:.68rem">${s.urgency||'—'}</span></td>
   </tr>
   <tr id="scan-detail-${i}" class="scanner-detail-row" style="display:none">

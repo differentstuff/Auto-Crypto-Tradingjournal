@@ -369,9 +369,12 @@ select:focus,input:focus{border-color:var(--accent)}
 /* ── Call Analyzer Legend ────────────────────────────────────────────────── */
 .legend-section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid rgba(108,99,255,.15)}
 
+/* ── Nav section separators ──────────────────────────────────────────────────── */
+.nav-sep{font-size:.65rem;color:var(--muted);padding:14px 16px 3px;text-transform:uppercase;letter-spacing:.05em;pointer-events:none;opacity:.7}
+
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
 @media(max-width:900px){
-  nav{width:60px}.nav-item span,.nav-logo span,.nav-logo{display:none}
+  nav{width:60px}.nav-item span,.nav-logo span,.nav-logo,.nav-sep{display:none}
   .chart-row.cols-2{grid-template-columns:1fr}
   .form-grid{grid-template-columns:1fr}
 }
@@ -385,11 +388,31 @@ select:focus,input:focus{border-color:var(--accent)}
       📈 TradingJournal
       <span>USDT-M Futures</span>
     </div>
+    <div class="nav-sep">Trading</div>
     <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">
       <span class="nav-icon">🏠</span><span>Dashboard</span>
     </div>
+    <div class="nav-item" onclick="showPage('trades')" id="nav-trades">
+      <span class="nav-icon">⚡</span><span>Live Trades</span>
+    </div>
+    <div class="nav-item" onclick="showPage('calls')" id="nav-calls">
+      <span class="nav-icon">📡</span><span>Call Analyzer</span>
+    </div>
+    <div class="nav-item" onclick="showPage('pending')" id="nav-pending">
+      <span class="nav-icon">⏳</span><span>Pending Orders</span>
+    </div>
+    <div class="nav-item" onclick="showPage('live')" id="nav-live">
+      <span class="nav-icon">🔴</span><span>Live Sync</span>
+    </div>
+    <div class="nav-sep">Analysis</div>
     <div class="nav-item" onclick="showPage('journal')" id="nav-journal">
       <span class="nav-icon">📒</span><span>Journal</span>
+    </div>
+    <div class="nav-item" onclick="showPage('hindsight')" id="nav-hindsight">
+      <span class="nav-icon">🔮</span><span>Hindsight</span>
+    </div>
+    <div class="nav-item" onclick="showPage('charts')" id="nav-charts">
+      <span class="nav-icon">📊</span><span>Chart Explorer</span>
     </div>
     <div class="nav-item" onclick="showPage('deep')" id="nav-deep">
       <span class="nav-icon">📉</span><span>Deep Dive</span>
@@ -400,29 +423,12 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="nav-item" onclick="showPage('ai')" id="nav-ai">
       <span class="nav-icon">🤖</span><span>AI Advisor</span>
     </div>
-    <div class="nav-item" onclick="showPage('import')" id="nav-import">
-      <span class="nav-icon">⬆️</span><span>Import Data</span>
-    </div>
-    <div class="nav-item" onclick="showPage('charts')" id="nav-charts">
-      <span class="nav-icon">📊</span><span>Chart Explorer</span>
-    </div>
-    <div class="nav-item" onclick="showPage('calls')" id="nav-calls">
-      <span class="nav-icon">📡</span><span>Call Analyzer</span>
-    </div>
-    <div class="nav-item" onclick="showPage('trades')" id="nav-trades">
-      <span class="nav-icon">⚡</span><span>Live Trades</span>
-    </div>
-    <div class="nav-item" onclick="showPage('live')" id="nav-live">
-      <span class="nav-icon">🔴</span><span>Live Sync</span>
-    </div>
-    <div class="nav-item" onclick="showPage('pending')" id="nav-pending">
-      <span class="nav-icon">⏳</span><span>Pending Orders</span>
-    </div>
+    <div class="nav-sep">Tools</div>
     <div class="nav-item" onclick="showPage('scanner')" id="nav-scanner">
       <span class="nav-icon">⭐</span><span>Setup Scanner</span>
     </div>
-    <div class="nav-item" onclick="showPage('hindsight')" id="nav-hindsight">
-      <span class="nav-icon">🔮</span><span>Hindsight</span>
+    <div class="nav-item" onclick="showPage('import')" id="nav-import">
+      <span class="nav-icon">⬆️</span><span>Import Data</span>
     </div>
     <div class="nav-item" onclick="showPage('settings')" id="nav-settings">
       <span class="nav-icon">⚙️</span><span>Settings</span>
@@ -1488,12 +1494,12 @@ select:focus,input:focus{border-color:var(--accent)}
 <script src="/static/js/07-calls.js?v=2.9"></script>
 <script src="/static/js/08-live.js?v=3.1"></script>
 <script src="/static/js/08b-live-calls.js?v=2.9"></script>
-<script src="/static/js/09-analysis.js?v=3.2"></script>
+<script src="/static/js/09-analysis.js?v=3.3"></script>
 <script src="/static/js/10-pending.js?v=2.9"></script>
 <script src="/static/js/11-sync.js?v=2.8"></script>
-<script src="/static/js/12-explorer.js?v=3.2"></script>
+<script src="/static/js/12-explorer.js?v=3.3"></script>
 <script src="/static/js/13-init.js?v=2.8"></script>
-<script src="/static/js/14-scanner.js?v=3.3"></script>
+<script src="/static/js/14-scanner.js?v=3.4"></script>
 <script src="/static/js/15-hindsight.js?v=2.8"></script>
 <script src="/static/js/16-settings.js?v=2.5"></script>
 
