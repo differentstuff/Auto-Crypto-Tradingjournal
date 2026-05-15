@@ -263,7 +263,7 @@ async function drawExplorerChart() {
     const bdr   = tl.at_risk ? 'rgba(255,179,0,.30)'  : (isUp ? 'rgba(38,217,107,.18)' : 'rgba(239,83,80,.18)');
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
       background:${bg};color:${col};border:1px solid ${bdr}"
-      title="${tl.anchor1} → ${tl.anchor2}${tl.at_risk ? ' — nearly breached' : ''}">
+      title="${_esc(tl.anchor1)} → ${_esc(tl.anchor2)}${tl.at_risk ? ' — nearly breached' : ''}">
       ${tfLbl}${isUp ? '↗ Up' : '↘ Down'} TL (${tl.touches}×)${risk}
     </span>`);
   });
