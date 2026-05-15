@@ -51,6 +51,14 @@ routes/*.py — import helpers + ai_* modules
 - Use _safe_float(val) in routes/calls.py for parsing price fields from request JSON
 - Validate status fields against VALID_STATUSES allowlist before DB writes (see routes/limits.py)
 
+## Deployment (IMPORTANT)
+- **Never rsync *.db files to Pi** — production DB lives on Pi only, local has none
+- rsync exclude flags: --exclude="*.db" --exclude="*.db-wal" --exclude="*.db-shm" --exclude=".agents"
+- Always backup before restart: `bash /home/fbauer/trading-journal/scripts/backup_db.sh`
+- Backups auto-run via ExecStopPost on every systemctl stop/restart (7-day rolling, in backups/)
+- Daily cron backup at 04:00 Pi time
+- Restore procedure: stop service → cp backups/trading_journal_YYYYMMDD_HHMMSS.db trading_journal.db → start service
+
 ## Calculation Invariants (do not change without updating both sides)
 - WaveTrend: n1=10, n2=21, rolling(4) — must match in both chart_indicators.py AND backtest_engine.py
 - CVD: Money Flow Multiplier formula v*(2c-l-h)/(h-l) — must match in both chart_indicators.py AND backtest_engine.py
