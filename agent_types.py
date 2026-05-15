@@ -24,6 +24,10 @@ class CollectorResult(TypedDict):
     fred_macro: dict     # {fed_rate, cpi, m2_b, t10y, ok}
     nansen: dict         # {signal, label, smart_money_bias} or {}
     grok: dict           # {text, weight} or {}
+    macro_regime: dict   # {vix, dxy, regime} — global, fetched once
+    ls_consensus: dict   # {binance, bybit, okx, consensus} — per symbol
+    defi_tvl: dict       # {protocol, tvl_usd, tvl_7d_change_pct} or {} for non-DeFi
+    btc_mempool: dict    # {mempool_bytes, n_transactions, avg_fee_usd, congestion}
     fetched_at: float    # unix timestamp
 
 

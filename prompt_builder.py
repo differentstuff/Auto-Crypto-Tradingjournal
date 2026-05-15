@@ -111,6 +111,7 @@ def build_context(
     include_strengths: bool = True,
     timeframes: list = None,
     exchange_filter: str = None,   # 'bitget' | 'blofin' | None (all)
+    collector_result: dict = None,  # CollectorResult — supplies new data-source fields
 ) -> str:
     """
     Assemble the shared context block for a Claude prompt.
@@ -146,6 +147,67 @@ def build_context(
         block = f"CURRENT MARKET CONTEXT:\n{market_str}"
         sections.append(block)
         remaining -= len(block)
+
+    # ── 2b. New data sources (macro regime, L/S consensus, DeFi TVL, BTC mempool) ─
+    if collector_result and remaining > 0:
+        cr = collector_result
+
+        # Macro regime (VIX + DXY)
+        macro_regime = cr.get("macro_regime", {})
+        if macro_regime:
+            regime = macro_regime.get("regime", "unknown")
+            vix = macro_regime.get("vix")
+            dxy = macro_regime.get("dxy")
+            lines = [f"MACRO REGIME: {regime.upper()}"]
+            if vix is not None:
+                lines.append(
+                    f"  VIX: {vix} ({'⚠️ high fear' if vix > 25 else '✓ normal'})"
+                )
+            if dxy is not None:
+                lines.append(f"  DXY: {dxy}")
+            block = "\n".join(lines)
+            sections.append(block)
+            remaining -= len(block)
+
+        # Multi-exchange long/short consensus
+        ls = cr.get("ls_consensus", {})
+        if ls and remaining > 0:
+            consensus = ls.get("consensus", "unknown")
+            ratio_parts = []
+            for ex in ("binance", "bybit", "okx"):
+                v = ls.get(ex)
+                if v:
+                    ratio_parts.append(f"{ex.capitalize()}: {v:.2f}")
+            if ratio_parts:
+                block = (
+                    f"L/S RATIO ({consensus.upper()}): {' | '.join(ratio_parts)}"
+                )
+                sections.append(block)
+                remaining -= len(block)
+
+        # DeFi TVL (only if data exists — non-DeFi tokens return {})
+        tvl = cr.get("defi_tvl", {})
+        if tvl and remaining > 0:
+            change = tvl.get("tvl_7d_change_pct", 0)
+            change_str = f"+{change:.1f}%" if change >= 0 else f"{change:.1f}%"
+            block = (
+                f"DEFILLAMA TVL: ${tvl.get('tvl_usd', 0) / 1e9:.2f}B "
+                f"({change_str} 7d) — {tvl.get('protocol', '?')}"
+            )
+            sections.append(block)
+            remaining -= len(block)
+
+        # BTC mempool (network health)
+        mempool = cr.get("btc_mempool", {})
+        if mempool and remaining > 0:
+            cong = mempool.get("congestion", "unknown")
+            mb = mempool.get("mempool_bytes", 0)
+            if mb:
+                block = (
+                    f"BTC NETWORK: mempool {mb / 1e6:.0f}MB — {cong} congestion"
+                )
+                sections.append(block)
+                remaining -= len(block)
 
     # ── 3. Rulebook (kept here for callers that don't use build_stable_prefix) ─
     if include_rulebook and conn is not None:

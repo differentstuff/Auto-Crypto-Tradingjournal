@@ -19,6 +19,10 @@ from data_sources import (
     fetch_fred_macro,
     fetch_smart_money,
     fetch_news,
+    fetch_macro_regime,
+    fetch_ls_consensus,
+    fetch_defi_tvl,
+    fetch_btc_mempool,
 )
 
 from agent_types import CollectorInput, CollectorResult
@@ -38,14 +42,18 @@ def run(inp: CollectorInput) -> CollectorResult:
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=7) as ex:
-        f_funding = ex.submit(_safe, lambda: fetch_funding_rate(symbol))
-        f_oi      = ex.submit(_safe, lambda: fetch_open_interest(symbol))
-        f_ls      = ex.submit(_safe, lambda: fetch_long_short_ratio(symbol))
-        f_fg      = ex.submit(_safe, fetch_fear_greed)
-        f_fred    = ex.submit(_safe, fetch_fred_macro)
-        f_nansen  = ex.submit(_safe, lambda: fetch_smart_money(symbol))
-        f_grok    = ex.submit(_safe, lambda: fetch_news(symbol, direction))
+    with ThreadPoolExecutor(max_workers=11) as ex:
+        f_funding     = ex.submit(_safe, lambda: fetch_funding_rate(symbol))
+        f_oi          = ex.submit(_safe, lambda: fetch_open_interest(symbol))
+        f_ls          = ex.submit(_safe, lambda: fetch_long_short_ratio(symbol))
+        f_fg          = ex.submit(_safe, fetch_fear_greed)
+        f_fred        = ex.submit(_safe, fetch_fred_macro)
+        f_nansen      = ex.submit(_safe, lambda: fetch_smart_money(symbol))
+        f_grok        = ex.submit(_safe, lambda: fetch_news(symbol, direction))
+        f_macro       = ex.submit(_safe, fetch_macro_regime)
+        f_ls_con      = ex.submit(_safe, lambda: fetch_ls_consensus(symbol))
+        f_defi        = ex.submit(_safe, lambda: fetch_defi_tvl(symbol))
+        f_mempool     = ex.submit(_safe, fetch_btc_mempool)
 
     return CollectorResult(
         symbol        = symbol,
@@ -57,5 +65,9 @@ def run(inp: CollectorInput) -> CollectorResult:
         fred_macro    = f_fred.result(),
         nansen        = f_nansen.result(),
         grok          = f_grok.result(),
+        macro_regime  = f_macro.result(),
+        ls_consensus  = f_ls_con.result(),
+        defi_tvl      = f_defi.result(),
+        btc_mempool   = f_mempool.result(),
         fetched_at    = time.time(),
     )
