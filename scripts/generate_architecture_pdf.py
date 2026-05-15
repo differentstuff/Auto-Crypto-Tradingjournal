@@ -226,8 +226,9 @@ def build_story(styles):
     story.append(Spacer(1, 0.4*cm))
     story.append(ColoredRule(C_ACCENT, 0.6))
     story.append(Spacer(1, 0.4*cm))
-    story.append(Paragraph("Multi-Model Intelligence Framework — v1.1.0", S["cover_meta"]))
-    story.append(Paragraph("Claude Sonnet · Claude Haiku · Google Gemini · xAI Grok · Nansen · CoinGecko", S["cover_meta"]))
+    story.append(Paragraph("Multi-Model Intelligence Framework — v1.5.0", S["cover_meta"]))
+    story.append(Paragraph("Claude Sonnet · Claude Haiku · Google Gemini · xAI Grok · Nansen", S["cover_meta"]))
+    story.append(Paragraph("CoinGecko · Coinalyze · Finnhub · Deribit · DefiLlama · blockchain.com · yfinance · CCXT", S["cover_meta"]))
     story.append(Spacer(1, 1*cm))
 
     intro = make_table([
@@ -390,18 +391,24 @@ def build_story(styles):
             "Every 30 minutes (automatic) or manual run",
             "Up to 12 scored setups with entry_zone, sl, tp1, tp2, rr_ratio, urgency",
             "Proactively finds trade setups across 100 symbols without waiting for analyst calls.",
-            "Stage 1 (Confluence Filter, no AI): fetches 4H and 1D candles for all 100 "
-            "symbols in parallel and computes RSI, MACD, EMA, ADX, WaveTrend, and CVD. "
-            "Symbols where fewer than 2 indicators agree on direction are eliminated. "
-            "This typically cuts 100 to ~25-30 candidates with zero API cost. "
+            "Stage 0 (Macro Layer, once per run): VIX, Fear & Greed, Finnhub economic "
+            "calendar, and BTC dominance are fetched once and stored in scan state. Score "
+            "caps are computed: VIX > 35 → cap 6.0, VIX 25-35 → cap 7.5, high-impact "
+            "macro event in 24h → cap 7.0. These caps are applied to every Stage 3 score "
+            "BEFORE the threshold check — a 9-scoring setup in a VIX > 35 environment "
+            "is capped to 6.0. Macro context and warnings are visible in the scanner UI. "
+            "Stage 1 (Confluence Filter, no AI): fetches 4H and 1D candles for all "
+            "symbols in parallel and computes RSI, MACD, EMA, ADX, WaveTrend, CVD, and "
+            "9-signal confluence score including SMT divergence. Symbols below threshold "
+            "are eliminated — typically cuts 100+ symbols to ~25-30 with zero API cost. "
             "Stage 2 (Quality Gate, no AI): applies technical rules — rejects overextended "
-            "RSI, missing S/R structure, flat ADX (choppy market), very high funding rate. "
-            "This cuts to ~10-15 finalists. "
+            "RSI, missing S/R structure, flat ADX, very high funding rate. Cuts to ~10-15. "
             "Stage 3a (Haiku Quick Score): Haiku scores each finalist with a minimal "
             "prompt (120 tokens output max) — faster and 10× cheaper than Sonnet. Setups "
             "scoring below threshold are dropped. "
-            "Stage 3b (Sonnet Batch): all remaining finalists are scored in a SINGLE "
-            "Sonnet call using a batch prompt. This is a key token optimisation — scoring "
+            "Stage 3b (Sonnet Batch + macro cap): all remaining finalists are scored in "
+            "a SINGLE Sonnet call using a batch prompt. Macro cap is applied to each "
+            "score before the threshold. This is a key token optimisation — scoring "
             "12 symbols simultaneously rather than 12 sequential calls. "
             "Stage 3c (Gemini Consensus): top-5 finalists receive an independent Gemini "
             "score. The final ranking adjusts based on consensus confidence. "
@@ -589,27 +596,92 @@ def build_story(styles):
         "Data agents fetch, cache, and format external data. They don't call any AI "
         "model — they are pure data pipelines whose output enriches AI prompts.", S["body"]))
 
-    data_agents = [
-        ["Agent", "Source", "Cache", "What it provides", "Injected into"],
-        ["chart_context.py",  "Bitget REST v2", "10 min",
-         "OHLCV candles → RSI, MACD, EMA(20/50/200), ADX, ATR, Bollinger, StochRSI, WaveTrend Cipher A/B, CVD, S/R levels, trendlines, Fibonacci",
-         "All analysis agents"],
-        ["market_context.py", "Bitget + Bybit + Binance + OKX + alternative.me + FRED", "5 min",
-         "Funding rates (4 exchanges avg), Fear & Greed 0-100, Long/Short ratio, Open Interest, BTC regime (bull/bear/range), macro: Fed rate/treasury/CPI/M2",
-         "call_analyzer, scanner, advisor"],
-        ["nansen_client.py",  "Nansen.ai screener",  "30 min",
-         "On-chain wallet activity: netflow direction (accumulating/distributing), trader count, strength (weak/moderate/strong). Minimum 5 wallets for signal.",
-         "call_analyzer, scanner"],
-        ["grok_client.py",    "xAI Responses API",   "30 min",
-         "X/Twitter sentiment, recent news, social quality, red flags. MC-weighted.",
-         "call_analyzer, scanner (via prompt_builder)"],
-        ["gemini_client.py",  "Google Generative Language API", "30 min",
-         "Independent pre-proof score 1-10 with concerns list. Lean prompt (no rulebook/chart).",
-         "call_analyzer (parallel), scanner (top-5 consensus)"],
+    story.append(Paragraph(
+        "All sources feed into a single <b>CollectorResult</b> TypedDict via "
+        "<b>data_sources.py</b> (thin adapter layer). Adding a new source = one "
+        "function in data_sources.py + one field in CollectorResult — no other "
+        "file needs to change. The collector runs 12 workers in parallel.", S["body"]))
+
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Layer 1 — Global Macro  (fetched once, not per-symbol)", S["h3"]))
+    macro_data = [
+        ["Source", "Provider", "Auth", "Data / Fields", "Used in"],
+        ["VIX", "CBOE · yfinance", "Free",
+         "Current VIX level; 5-min cache",
+         "Scanner cap (>35→6.0, >25→7.5) · Confluence ×0.80 when >30"],
+        ["DXY", "ICE · yfinance", "Free",
+         "USD strength level; regime label",
+         "Macro regime block · Scanner Stage 3 header"],
+        ["Fear & Greed", "alternative.me", "Free",
+         "Score 0-100; label (Extreme Fear … Extreme Greed)",
+         "Scanner cap logic · Sentiment prompt · Dashboard pulse"],
+        ["Economic Calendar", "Finnhub API", "Key",
+         "FOMC/CPI/NFP events; hours_until; macro_risk flag",
+         "Scanner cap 7.0 when high-impact event in 24h · Prompt risk block"],
+        ["BTC Dom + Mkt Cap", "CoinGecko (free)", "Free",
+         "btc_dominance_pct; total_market_cap_usd; market_regime",
+         "Scanner macro header · Call Analyzer market context"],
     ]
-    story.append(make_table(data_agents,
-        [3.2*cm, 3.2*cm, 1.6*cm, 4.5*cm, 3.3*cm],
+    story.append(make_table(macro_data,
+        [2.0*cm, 2.8*cm, 1.0*cm, 4.6*cm, 4.4*cm],
+        header_bg=C_RED, font_size=8))
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("Layer 2 — Market Structure  (crypto-wide, not per-symbol)", S["h3"]))
+    mkt_data = [
+        ["Source", "Provider", "Auth", "Data / Fields", "Used in"],
+        ["Options Skew (PCR/IV)", "Deribit (free)", "Free",
+         "put_call_ratio; iv_skew; near_term_iv (expiry-sorted); sentiment label",
+         "BTC/ETH only — institutional put/call bias in sentiment prompt"],
+        ["BTC Mempool", "blockchain.com", "Free",
+         "mempool_bytes; n_transactions; avg_fee_usd; congestion label",
+         "On-chain congestion context injected into Call Analyzer prompt"],
+        ["Trending Coins (top 10)", "CoinGecko (free)", "Free",
+         "Top-10 trending coin symbols in last 24h",
+         "Is the analyzed coin trending? Injected into prompt context block"],
+    ]
+    story.append(make_table(mkt_data,
+        [2.8*cm, 2.5*cm, 1.0*cm, 4.6*cm, 3.9*cm],
+        header_bg=C_YELLOW, font_size=8))
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("Layer 3 — Symbol-Level  (per analyzed coin)", S["h3"]))
+    sym_data = [
+        ["Source", "Provider", "Auth", "Data / Fields", "Used in"],
+        ["Multi-Exchange L/S Ratio", "Binance+Bybit+OKX · CCXT", "Free",
+         "L/S ratio per exchange; consensus direction; retail vs smart-money divergence",
+         "Crowd positioning block · contra-signal flag (>65% vs trade direction)"],
+        ["OI · Funding · Liquidations", "Coinalyze API", "Key",
+         "Aggregated OI (multi-exchange); 24h liq trend; funding rate; per-exchange funding spread",
+         "Derivatives block in prompt · funding bias in sentiment agent"],
+        ["Cap rank · tier · volume", "CoinGecko (free)", "Free",
+         "market_cap_rank; cap_tier (mega/large/mid/small/micro); volume_24h_usd",
+         "Coin context in prompt · scales Grok weight by cap tier"],
+        ["DeFi TVL + 7d change", "DefiLlama (free)", "Free",
+         "protocol; tvl_usd; tvl_7d_change_pct  (returns {} for non-DeFi)",
+         "DeFi tokens only — protocol health context in prompt"],
+        ["OHLCV Candles (4H + 1D)", "Binance Futures · CCXT", "Free",
+         "~200-bar OHLCV DataFrame per timeframe; raises on failure",
+         "All indicators · S/R detection · SMT divergence · Backtester · Charts"],
+    ]
+    story.append(make_table(sym_data,
+        [2.8*cm, 2.8*cm, 1.0*cm, 4.6*cm, 3.6*cm],
         header_bg=C_ACCENT2, font_size=8))
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("Layer 4 — Trade Intelligence  (most specific to the analyzed trade)", S["h3"]))
+    intel_data = [
+        ["Source", "Provider", "Auth", "Data / Fields", "Used in"],
+        ["Smart Money Wallet Flows", "Nansen API", "Paid",
+         "signal; label; smart_money_bias; accumulating/distributing direction (🟢/🔴)",
+         "Sentiment agent prompt — institutional wallet behavior"],
+        ["Social & News Context", "xAI Grok API", "Key",
+         "text (narrative); weight 0.0–0.8 (scaled by cap tier)",
+         "Last block in Call Analyzer prompt · lowest prompt budget priority"],
+    ]
+    story.append(make_table(intel_data,
+        [2.8*cm, 2.0*cm, 1.0*cm, 5.0*cm, 4.0*cm],
+        header_bg=C_NANSEN, font_size=8))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph("5.1  Chart Context Architecture", S["h2"]))
@@ -620,22 +692,30 @@ def build_story(styles):
     chart_data = [
         ["Module", "Responsibility", "Key functions"],
         ["chart_indicators.py", "Pure indicator computation — no API calls, no side effects",
-         "compute_rsi, compute_macd, compute_ema_alignment, compute_adx, compute_wavetrend (VMC Cipher A/B), compute_cvd, compute_all_indicators"],
+         "compute_rsi, compute_macd, compute_ema_alignment, compute_adx, compute_wavetrend "
+         "(VMC Cipher A/B, n1=10/n2=21), compute_cvd (MFM formula), compute_all_indicators"],
         ["chart_sr.py", "S/R detection with ATR-relative tolerance and recency weighting",
-         "detect_support_resistance (ATR-relative clustering, exponential decay on touch recency), nearest_levels"],
-        ["chart_context.py", "Thin orchestrator: fetches candles, caches, calls the two above",
-         "get_candles (Bitget, 10-min cache), compute_indicators (delegates to above), confluence_score, get_candles_for_chart, detect_trendlines, detect_fibonacci"],
+         "detect_support_resistance (ATR clustering, exponential decay on touch recency), nearest_levels"],
+        ["chart_candles.py", "OHLCV fetch + 10-min cache",
+         "get_candles (Binance via CCXT), get_candles_for_chart"],
+        ["chart_patterns.py", "Trendlines + Fibonacci retracements",
+         "detect_trendlines, detect_fibonacci"],
+        ["chart_confluence.py", "9-signal confluence scorer + SMT divergence + VIX multiplier",
+         "_smt_weight (cross-exchange ±0.5%), _smt_direction_weight (24h correlated pair ±1%), "
+         "VIX ×0.80 when >30 (5-min cache); max_val=6.50/TF"],
+        ["chart_context.py", "Thin facade — re-exports from all 4 modules above",
+         "get_candles, compute_indicators, confluence_score, get_candles_for_chart"],
     ]
     story.append(make_table(chart_data,
-        [3.5*cm, 5.5*cm, 5.8*cm], header_bg=C_ACCENT2, font_size=8.5))
+        [3.2*cm, 4.5*cm, 7.1*cm], header_bg=C_ACCENT2, font_size=8.5))
 
     story.append(Spacer(1, 8))
     story.append(Paragraph(
-        "<b>VMC Cipher A/B (WaveTrend Oscillator):</b> implemented from scratch matching "
-        "TradingView's VuManChu Cipher B defaults (n1=10, n2=21). Provides gold_buy, "
-        "buy, and sell signals based on oversold/overbought crossovers. Adds a 7th "
-        "confluence signal to the scoring system. Rendered as a separate oscillator "
-        "pane below the candlestick chart in the browser.", S["body"]))
+        "<b>9-signal confluence system:</b> RSI, MACD, EMA, ADX, WaveTrend (VMC Cipher A/B, "
+        "n1=10/n2=21), MFI, CVD (Money Flow Multiplier v×(2c−l−h)/(h−l)), volume anomaly, "
+        "plus 2 SMT variants. Max score 6.50/timeframe. VIX multiplier applies ×0.80 "
+        "on the final score when VIX > 30 — so macro stress automatically reduces "
+        "confluence conviction.", S["body"]))
     story.append(PageBreak())
 
     # ── SECTION 6: AUTOMATION AGENTS ─────────────────────────────────────────
@@ -687,8 +767,88 @@ def build_story(styles):
         [3.8*cm, 11*cm], header_bg=colors.HexColor("#2a5090"), font_size=8.5))
     story.append(PageBreak())
 
-    # ── SECTION 7: PROMPT ARCHITECTURE ───────────────────────────────────────
-    story.append(Paragraph("7. Prompt Architecture & Caching", S["h1"]))
+    # ── SECTION 7: EMBEDDED BACKTESTER ───────────────────────────────────────
+    story.append(Paragraph("7. Embedded Backtester & Optimizer", S["h1"]))
+    story.append(ColoredRule(C_ACCENT))
+    story.append(Spacer(1, 4))
+
+    story.append(Paragraph(
+        "The embedded backtester runs entirely on historical positions stored in the "
+        "local SQLite database — no external API calls required. It uses the same "
+        "indicator logic as the live pipeline (WaveTrend n1=10/n2=21, CVD MFM formula) "
+        "so backtest results are comparable to live signal quality.", S["body"]))
+
+    story.append(Paragraph("7.1  Backtest Engine  —  backtest_engine.py", S["h2"]))
+    bt_data = [
+        ["Component", "What it does"],
+        ["run_backtest(symbol, tf, days, params, end_offset_days)",
+         "Fetches OHLCV via CCXT, applies vectorised signal logic, simulates trades, "
+         "returns BacktestResult with Sharpe, Sortino, max drawdown, profit factor, "
+         "win rate, avg win/loss. end_offset_days shifts the fetch window back in time."],
+        ["backtest_metrics.py",
+         "Pure metric functions: sharpe_ratio (sample std N−1, annualised √365), "
+         "sortino_ratio (downside-only std), max_drawdown (peak-to-trough fraction), "
+         "profit_factor (gross wins / gross losses). GPL-3.0 attribution."],
+        ["Configurable params",
+         "rsi_oversold (25–45), rsi_overbought (55–75), ema_short/long (10–50/50–250), "
+         "adx_min (15–35), atr_sl_mult (1.0–3.0), min_confluence (1–4). "
+         "All 7 params are searchable by the Bayesian optimizer."],
+    ]
+    story.append(make_table(bt_data, [4.5*cm, 10.3*cm],
+        header_bg=colors.HexColor("#2a4020"), font_size=8.5))
+
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("7.2  Bayesian Optimizer  —  backtest_optimizer.py", S["h2"]))
+    story.append(Paragraph(
+        "Uses Optuna (TPE sampler) to maximise Sharpe ratio over 7 parameters. "
+        "Runs in a background daemon thread so the UI stays responsive. "
+        "Each run is stored in the <b>optimizer_runs</b> table — the Analysis tab "
+        "shows the last 5 runs with Sharpe, win rate, and best parameters.", S["body"]))
+
+    story.append(Paragraph("7.3  Walk-Forward Test  —  No Data Leakage", S["h2"]))
+    story.append(Paragraph(
+        "The walk-forward test splits the real position date range 70% training / "
+        "30% test. The critical implementation detail: <b>end_offset_days</b> is "
+        "threaded through run_backtest → _fetch_ohlcv so the training window ends "
+        "at <i>now − test_days</i> (not at <i>now</i>). Without this, both windows "
+        "anchor to the present — the test set is a subset of the training set, "
+        "making all walk-forward results meaningless.", S["body"]))
+
+    wf_data = [
+        ["Window", "Fetch range", "Params source", "Purpose"],
+        ["Training (70%)", "now − (test+train days) → now − test_days",
+         "Optimizer maximises Sharpe here", "Find best parameters"],
+        ["Test (30%)", "now − test_days → now",
+         "Training best params applied frozen", "Measure out-of-sample Sharpe"],
+        ["Overfitting signal", "train_sharpe >> test_sharpe", "—",
+         "Gap > 0.5 suggests curve-fitting; use simpler params"],
+    ]
+    story.append(make_table(wf_data,
+        [2.5*cm, 4.5*cm, 3.5*cm, 4.3*cm],
+        header_bg=C_ACCENT, font_size=8.5))
+
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("7.4  Dashboard Metrics  —  analytics.py", S["h2"]))
+    story.append(Paragraph(
+        "Sharpe and Calmar are computed from <b>wallet_snapshots</b> (rolling balance "
+        "history imported from exchange). Key formula invariants:", S["body"]))
+
+    metrics_data = [
+        ["Metric", "Formula", "Note"],
+        ["Sharpe ratio", "mean(daily_ret) × 365 / (std(daily_ret, N−1) × √365)",
+         "Sample variance (N−1 denominator). Wallet filter: balance > $1 USDT."],
+        ["Calmar ratio", "ann_return_pct / max_dd_pct",
+         "max_dd_pct measured as % of running peak AT TIME OF TROUGH — not final ATH."],
+        ["Ann. volatility", "std(daily_ret, N−1) × √365 × 100",
+         "Displayed as % under Sharpe on dashboard."],
+    ]
+    story.append(make_table(metrics_data,
+        [2.5*cm, 6.5*cm, 5.8*cm],
+        header_bg=colors.HexColor("#2a1a40"), font_size=8.5))
+    story.append(PageBreak())
+
+    # ── SECTION 8 (was 7): PROMPT ARCHITECTURE ───────────────────────────────────────
+    story.append(Paragraph("8. Prompt Architecture & Caching", S["h1"]))
     story.append(ColoredRule(C_ACCENT))
     story.append(Spacer(1, 4))
 
@@ -696,7 +856,7 @@ def build_story(styles):
         "How prompts are built and cached is one of the most important architectural "
         "decisions in the system — it directly affects both cost and accuracy.", S["body"]))
 
-    story.append(Paragraph("7.1  The Stable / Dynamic Split", S["h2"]))
+    story.append(Paragraph("8.1  The Stable / Dynamic Split", S["h2"]))
     story.append(Paragraph(
         "Anthropic's prompt caching works by storing a prefix that is byte-for-byte "
         "identical across calls. When the cached prefix is reused, Anthropic charges "
@@ -727,7 +887,7 @@ def build_story(styles):
         [3.5*cm, 6.5*cm, 2.0*cm, 2.8*cm], header_bg=C_ACCENT, font_size=8.5))
 
     story.append(Spacer(1, 8))
-    story.append(Paragraph("7.2  Backtest Feedback Loop", S["h2"]))
+    story.append(Paragraph("8.2  Backtest Feedback Loop", S["h2"]))
     story.append(Paragraph(
         "Every Claude analysis prompt begins with a compact historical performance "
         "block injected by <b>get_backtest_context()</b> in analytics.py. This "
@@ -755,7 +915,7 @@ def build_story(styles):
         "mechanism for improving accuracy as trade history grows.", S["body"]))
 
     story.append(Spacer(1, 8))
-    story.append(Paragraph("7.3  CoT Learning Loop", S["h2"]))
+    story.append(Paragraph("8.3  CoT Learning Loop", S["h2"]))
     story.append(Paragraph(
         "When Claude analyzes a call, its step-by-step reasoning (the 'thinking' field "
         "in the JSON response) is stored as <code>cot_reasoning</code> in the database. "
@@ -766,8 +926,8 @@ def build_story(styles):
         "mistakes and continuous refinement without any retraining.", S["body"]))
     story.append(PageBreak())
 
-    # ── SECTION 8: AUTO-LINKING ───────────────────────────────────────────────
-    story.append(Paragraph("8. Position Auto-Linking System", S["h1"]))
+    # ── SECTION 9: AUTO-LINKING ───────────────────────────────────────────────
+    story.append(Paragraph("9. Position Auto-Linking System", S["h1"]))
     story.append(ColoredRule(C_ACCENT))
     story.append(Spacer(1, 4))
 
@@ -776,7 +936,7 @@ def build_story(styles):
         "are automatically linked to the corresponding live positions — without "
         "requiring the user to confirm each match manually.", S["body"]))
 
-    story.append(Paragraph("8.1  How the link is established", S["h2"]))
+    story.append(Paragraph("9.1  How the link is established", S["h2"]))
 
     link_data = [
         ["Scenario", "Auto-link behaviour"],
@@ -802,7 +962,7 @@ def build_story(styles):
         header_bg=C_ACCENT3, font_size=8.5))
 
     story.append(Spacer(1, 8))
-    story.append(Paragraph("8.2  What appears in Live Trades when linked", S["h2"]))
+    story.append(Paragraph("9.2  What appears in Live Trades when linked", S["h2"]))
     story.append(Paragraph(
         "Once a position is linked to a call, the live trades card shows a "
         "<b>Call Targets Panel</b> with: distance from mark price to SL, TP1, TP2, "
@@ -812,8 +972,8 @@ def build_story(styles):
         "R:R ratio from the original analysis.", S["body"]))
     story.append(PageBreak())
 
-    # ── SECTION 9: ACCURACY & BACKTESTING ─────────────────────────────────────
-    story.append(Paragraph("9. Accuracy Measurement & 85% Target", S["h1"]))
+    # ── SECTION 10: ACCURACY & BACKTESTING ─────────────────────────────────────
+    story.append(Paragraph("10. Accuracy Measurement & 85% Target", S["h1"]))
     story.append(ColoredRule(C_ACCENT))
     story.append(Spacer(1, 4))
 
@@ -823,7 +983,7 @@ def build_story(styles):
         "trade should be profitable at least 85% of the time. This is measured "
         "by <b>scripts/backtest_consensus.py</b>.", S["body"]))
 
-    story.append(Paragraph("9.1  Three hypotheses tested", S["h2"]))
+    story.append(Paragraph("10.1  Three hypotheses tested", S["h2"]))
 
     hyp_data = [
         ["Hypothesis", "Claim", "How measured"],
@@ -854,8 +1014,8 @@ def build_story(styles):
         "last 20 calls with Gemini live (uses API credits).", S["body"]))
     story.append(PageBreak())
 
-    # ── SECTION 10: 7-AGENT PIPELINE (v1.1.0) ────────────────────────────────
-    story.append(Paragraph("10. Specialized Agent Pipeline (v1.1.0)", S["h1"]))
+    # ── SECTION 11: SPECIALIZED AGENT PIPELINE (v1.5.0) ────────────────────────────────
+    story.append(Paragraph("11. Specialized Agent Pipeline (v1.5.0)", S["h1"]))
     story.append(ColoredRule(C_ACCENT))
     story.append(Spacer(1, 4))
 
@@ -867,7 +1027,7 @@ def build_story(styles):
         S["body"]))
 
     story.append(Spacer(1, 6))
-    story.append(Paragraph("10.1  Pipeline Flow", S["h2"]))
+    story.append(Paragraph("11.1  Pipeline Flow", S["h2"]))
 
     pipeline_flow = """
 DataCollector → [DataInterpreter + MarketSentiment (parallel)] → DataReviewer
@@ -885,7 +1045,7 @@ After position opens:
                        borderPadding=6, leading=12)))
 
     story.append(Spacer(1, 6))
-    story.append(Paragraph("10.2  Agent Contracts", S["h2"]))
+    story.append(Paragraph("11.2  Agent Contracts", S["h2"]))
 
     agent_contracts = [
         ["Agent", "Input", "Output", "AI call?", "DB access?"],
@@ -903,7 +1063,7 @@ After position opens:
         header_bg=C_ACCENT, font_size=8.5))
 
     story.append(Spacer(1, 8))
-    story.append(Paragraph("10.3  New Capabilities", S["h2"]))
+    story.append(Paragraph("11.3  New Capabilities", S["h2"]))
 
     new_caps = [
         (
@@ -957,8 +1117,8 @@ After position opens:
 
     story.append(PageBreak())
 
-    # ── SECTION 11: SUMMARY TABLE ─────────────────────────────────────────────
-    story.append(Paragraph("11. Complete Agent Reference", S["h1"]))
+    # ── SECTION 12: SUMMARY TABLE ─────────────────────────────────────────────
+    story.append(Paragraph("12. Complete Agent Reference", S["h1"]))
     story.append(ColoredRule(C_ACCENT))
     story.append(Spacer(1, 4))
 
@@ -983,7 +1143,7 @@ After position opens:
         ["monitor_scheduler","Automation",  "—",              "Every 10 min",     "Haiku per position"],
         ["bitget_sync",      "Automation",  "—",              "Every 5 min",      "Bitget REST cursor"],
         ["blofin_sync",      "Automation",  "—",              "Every 5 min",      "Blofin REST cursor"],
-        ["agent_data_collector","Agent",    "—",              "Per pipeline call","Parallel: 7 sources"],
+        ["agent_data_collector","Agent",    "—",              "Per pipeline call","Parallel: 12 sources (4 layers)"],
         ["agent_data_interpreter","Agent",  "—",              "Per pipeline call","Pure: indicators"],
         ["agent_market_sentiment","Agent",  "—",              "Per pipeline call","Pure: macro bias"],
         ["agent_data_reviewer","Agent",     "—",              "Per pipeline call","DB reads: KPIs"],
@@ -1000,7 +1160,7 @@ After position opens:
     story.append(ColoredRule(C_MUTED))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
-        "Trading Journal v1.1.0 · Self-hosted on Raspberry Pi 5 · "
+        "Trading Journal v1.5.0 · Self-hosted on Raspberry Pi 5 · "
         "Built with Claude Code · github.com/anvilfilbert/Auto-Crypto-Tradingjournal",
         ParagraphStyle("footer", fontSize=8, textColor=C_MUTED,
                       fontName="Helvetica", alignment=TA_CENTER)))
@@ -1039,8 +1199,8 @@ def main():
         leftMargin=1.8*cm, rightMargin=1.8*cm,
         topMargin=1.6*cm,  bottomMargin=1.6*cm,
         title="Trading Journal — AI Agent Architecture",
-        author="Trading Journal v1.1.0",
-        subject="Multi-Model Intelligence Framework",
+        author="Trading Journal v1.5.0",
+        subject="Multi-Model Intelligence Framework v1.5.0",
     )
 
     styles = make_styles()
