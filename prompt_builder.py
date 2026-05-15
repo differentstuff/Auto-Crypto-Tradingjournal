@@ -172,10 +172,10 @@ def build_context(
             smart_long  = div.get("top_trader_long_pct")
             diff        = div.get("divergence_pct")
             if retail_long is not None and smart_long is not None:
-                direction = "⚡ SMART vs RETAIL" if abs(diff or 0) > 5 else "aligned"
+                div_label = "⚡ SMART vs RETAIL" if abs(diff or 0) > 5 else "aligned"
                 block = (f"POSITIONING: Retail {retail_long:.0f}% long / "
                          f"Smart money {smart_long:.0f}% long "
-                         f"({direction}, {diff:+.1f}% divergence)")
+                         f"({div_label}, {diff:+.1f}% divergence)")
                 sections.append(block)
                 remaining -= len(block)
     except Exception:
