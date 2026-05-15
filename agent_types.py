@@ -175,3 +175,57 @@ class AnalysisResult(TypedDict):
     # pipeline metadata
     error: str
     degraded: bool
+
+
+class ScannerSetup(TypedDict, total=False):
+    """Shape of a scored setup from the scanner pipeline."""
+    _symbol:           str
+    _final_score:      float
+    _quick_score:      int
+    _rationale:        str
+    _consensus:        dict
+    _gemini_score:     dict
+    symbol:            str
+    direction:         str
+    setup_score:       int
+    setup_label:       str
+    entry_zone:        dict   # {"low": float, "high": float, "rationale": str}
+    sl_price:          float
+    tp1_price:         float
+    tp2_price:         float
+    rr_ratio:          float
+    key_conditions:    list
+    confluence_summary: str
+    summary:           str
+    gemini_score:      int | None
+    consensus_score:   float | None
+    consensus_flag:    str
+    chart_png_b64:     str
+
+
+def empty_interpreter(symbol: str = "") -> InterpreterResult:
+    """Return a minimal valid InterpreterResult for degraded/error paths."""
+    return InterpreterResult(
+        symbol=symbol,
+        by_timeframe={},
+        sr_levels=[],
+        confluence_score={"score": 0, "max": 1, "bullish": 0, "bearish": 0,
+                          "label": "Neutral", "details": []},
+        trend_direction="neutral",
+        momentum_bias="weak",
+        prompt_text="",
+    )
+
+
+def empty_sentiment(symbol: str = "") -> SentimentResult:
+    """Return a minimal valid SentimentResult for degraded/error paths."""
+    return SentimentResult(
+        macro_bias="neutral",
+        sentiment_score=5.0,
+        funding_bias="neutral",
+        crowd_position="balanced",
+        contra_signal=False,
+        key_factors=[],
+        grok_summary="",
+        prompt_text="",
+    )
