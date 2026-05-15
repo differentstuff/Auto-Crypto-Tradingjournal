@@ -311,8 +311,8 @@ async function fetchAndShowPostmortem(callId) {
     const res = await api('/api/calls/' + callId + '/postmortem');
     if (!res.ok || !res.data.findings.length) return;
     el.innerHTML = `
-      <div class="pm-title">📋 Loss Post-Mortem — ${res.data.symbol}</div>
-      ${res.data.findings.map(f => `<div style="margin-bottom:5px">• ${f}</div>`).join('')}
+      <div class="pm-title">📋 Loss Post-Mortem — ${_esc(res.data.symbol)}</div>
+      ${res.data.findings.map(f => `<div style="margin-bottom:5px">• ${_esc(f)}</div>`).join('')}
       <div style="margin-top:8px;font-size:.75rem;color:var(--muted)">Review these patterns before the next similar trade.</div>`;
     el.style.display = '';
     // Scroll to it

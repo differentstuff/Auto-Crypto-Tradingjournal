@@ -59,7 +59,7 @@ function renderHindsightStatus(state) {
   const dur = done && state.duration_sec ? ` · completed in ${state.duration_sec}s` : '';
   const msg = running ? `<span style="color:var(--yellow)">Running — ${prog}/${total} analyzed</span>`
             : done    ? `<span style="color:var(--muted)">Done${dur}</span>`
-            : state.status === 'error' ? `<span style="color:var(--red)">Error: ${state.error}</span>`
+            : state.status === 'error' ? `<span style="color:var(--red)">Error: ${_esc(state.error || '')}</span>`
             : `<span style="color:var(--muted)">No analysis run yet.</span>`;
 
   el.innerHTML = `

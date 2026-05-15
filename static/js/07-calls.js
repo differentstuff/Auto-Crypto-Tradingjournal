@@ -113,12 +113,12 @@ async function analyzeCall() {
     const res = await api('/api/calls/analyze', 'POST', body);
     loading.style.display = 'none';
 
-    if (!res.ok) { result.innerHTML = `<div class="upload-result error">❌ ${res.error}</div>`; }
+    if (!res.ok) { result.innerHTML = `<div class="upload-result error">❌ ${_esc(res.error)}</div>`; }
     else          { renderCallResult(res.data); }
     result.classList.remove('hidden');
   } catch(e) {
     loading.style.display = 'none';
-    result.innerHTML = `<div class="upload-result error">❌ ${e.message}</div>`;
+    result.innerHTML = `<div class="upload-result error">❌ ${_esc(e.message)}</div>`;
     result.classList.remove('hidden');
   } finally {
     btn.disabled = false;
@@ -350,7 +350,7 @@ function renderCallResult(d) {
 
   // Append Save + Chart buttons after result renders
   const chartBtn = d.symbol
-    ? `<button class="btn-chart-sm" onclick="openChart('${d.symbol}')">📊 Chart</button>`
+    ? `<button class="btn-chart-sm" onclick="openChart(this.dataset.sym)" data-sym="${_esc(d.symbol)}">📊 Chart</button>`
     : '';
   result.insertAdjacentHTML('beforeend', `
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -412,7 +412,7 @@ async function loadSavedCalls() {
           <strong>${c.symbol} ${c.direction}</strong>
           <span class="call-status-chip ${chipCls}">${c.status}</span>
           ${outcomeTag}
-          ${c.analyst ? `<span style="font-size:.72rem;background:rgba(79,195,247,.1);color:var(--accent2);padding:1px 8px;border-radius:20px">📡 ${escHtml(c.analyst)}</span>` : ''}
+          ${c.analyst ? `<span style="font-size:.72rem;background:rgba(79,195,247,.1);color:var(--accent2);padding:1px 8px;border-radius:20px">📡 ${_esc(c.analyst)}</span>` : ''}
           ${c.setup_score ? `<span style="font-size:.75rem;color:var(--muted)">${c.setup_score}/10 ${c.setup_label||''}</span>` : ''}
           ${c.rr_ratio ? `<span class="rr-pill" style="font-size:.72rem">${c.rr_ratio}</span>` : ''}
         </div>

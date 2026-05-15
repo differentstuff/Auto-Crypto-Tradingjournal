@@ -237,11 +237,11 @@ function renderPositionCards(positions, waitingLimits) {
         </div>
         <div class="pos-stat">
           <div class="pos-stat-label">Entry</div>
-          <div class="pos-stat-val">${parseFloat(p.entry_price).toPrecision(5)}</div>
+          <div class="pos-stat-val">${_fmtP(p.entry_price)}</div>
         </div>
         <div class="pos-stat">
           <div class="pos-stat-label">Mark Price</div>
-          <div class="pos-stat-val">${parseFloat(p.mark_price).toPrecision(5)}</div>
+          <div class="pos-stat-val">${_fmtP(p.mark_price)}</div>
         </div>
         <div class="pos-stat">
           <div class="pos-stat-label">Unrealized P&L</div>
@@ -278,8 +278,8 @@ function renderPositionCards(positions, waitingLimits) {
       <!-- Expandable detail row -->
       <div style="padding:0 20px;display:none;font-size:.78rem;color:var(--muted);border-top:1px solid var(--border)" id="detail-${i}">
         <div style="display:flex;gap:24px;padding:10px 0;flex-wrap:wrap">
-          <span>Break even: <strong>${parseFloat(p.break_even_price||0).toPrecision(5)}</strong></span>
-          <span>Liquidation: <strong style="color:var(--red)">${parseFloat(p.liquidation_price||0).toPrecision(5)}</strong></span>
+          <span>Break even: <strong>${_fmtP(p.break_even_price || 0)}</strong></span>
+          <span>Liquidation: <strong style="color:var(--red)">${_fmtP(p.liquidation_price || 0)}</strong></span>
           <span>Margin: <strong>${fmtC(p.margin_usdt)} USDT (${p.margin_mode})</strong></span>
           <span>Fees paid: <strong>${fmtC(p.total_fee)}</strong></span>
           <span>Realized so far: <strong class="${pnlClass(p.achieved_profits)}">${p.achieved_profits>=0?'+':''}${fmtC(p.achieved_profits)}</strong></span>
