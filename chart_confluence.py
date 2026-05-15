@@ -90,9 +90,10 @@ def _cvd_weight(cvd: dict) -> float:
 
 def _smt_weight(inds: dict, symbol: str) -> float:
     """
-    SMT Divergence: compare Bitget and Binance prices.
-    +0.15 when both exchanges agree within 0.5% (no divergence = confirmation).
-    0.0 when prices diverge > 0.5% or symbol not in SMT_SYMBOLS.
+    Cross-exchange divergence check (SMT-inspired).
+    Returns +0.15 when Bitget vs Binance prices diverge >= 0.5%
+    (price dislocation at this level = potential SMT signal).
+    Returns 0.0 when prices agree or data unavailable.
     """
     if symbol not in SMT_SYMBOLS:
         return 0.0
@@ -106,9 +107,7 @@ def _smt_weight(inds: dict, symbol: str) -> float:
     if binance_price is None:
         return 0.0
     delta_pct = abs(bitget_price - binance_price) / bitget_price
-    if delta_pct < 0.005:
-        return 0.15
-    return 0.0
+    return 0.15 if delta_pct >= 0.005 else 0.0
 
 
 def _mfi_weight(wt: dict) -> float:
@@ -180,7 +179,7 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
-    max_val = float(len(tfs) * 6.35)  # adds SMT max +0.15 per TF -> 6.2 + 0.15
+    max_val = float(len(tfs) * 6.35)  # SMT divergence +0.15 per TF when price dislocation detected
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
