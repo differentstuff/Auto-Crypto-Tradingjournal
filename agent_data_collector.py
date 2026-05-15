@@ -23,6 +23,7 @@ from data_sources import (
     fetch_global_market,
     fetch_coin_market_data,
     fetch_trending_coins,
+    fetch_options_skew,
 )
 
 from agent_types import CollectorInput, CollectorResult
@@ -42,7 +43,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    with ThreadPoolExecutor(max_workers=11) as ex:
         f_nansen      = ex.submit(_safe, lambda: fetch_smart_money(symbol))
         f_grok        = ex.submit(_safe, lambda: fetch_news(symbol, direction))
         f_macro       = ex.submit(_safe, fetch_macro_regime)
@@ -54,6 +55,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         f_global_mkt  = ex.submit(_safe, fetch_global_market)
         f_coin_mkt    = ex.submit(_safe, lambda: fetch_coin_market_data(symbol))
         f_trending    = ex.submit(_safe, fetch_trending_coins)
+        f_options     = ex.submit(_safe, lambda: fetch_options_skew(symbol))
 
     return CollectorResult(
         symbol           = symbol,
@@ -69,5 +71,6 @@ def run(inp: CollectorInput) -> CollectorResult:
         global_market    = f_global_mkt.result(),
         coin_market_data = f_coin_mkt.result(),
         trending_coins   = f_trending.result() or [],
+        options_skew     = f_options.result(),
         fetched_at       = time.time(),
     )

@@ -169,3 +169,12 @@ def fetch_trending_coins() -> list:
         return get_trending_coins()
     except Exception:
         return []
+
+
+def fetch_options_skew(symbol: str) -> dict:
+    """Deribit put/call skew for BTC/ETH. Returns {} for other symbols or on failure."""
+    try:
+        from deribit_client import get_options_skew
+        return get_options_skew(symbol)
+    except Exception:
+        return {}

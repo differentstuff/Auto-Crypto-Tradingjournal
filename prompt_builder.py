@@ -296,6 +296,38 @@ def build_context(
                     sections.append(block)
                     remaining -= len(block)
 
+        # Deribit options skew (BTC/ETH only)
+        opts = cr.get("options_skew", {})
+        if opts and remaining > 0:
+            pcr  = opts.get("put_call_ratio")
+            skew = opts.get("iv_skew")
+            sent = opts.get("sentiment", "neutral")
+            iv   = opts.get("near_term_iv")
+            parts = []
+            if pcr is not None:
+                parts.append(f"P/C ratio: {pcr:.2f}")
+            if skew is not None:
+                skew_dir = (
+                    "puts expensive (bearish hedge)" if skew > 3
+                    else "calls expensive (bullish)" if skew < -3
+                    else "balanced"
+                )
+                parts.append(f"IV skew: {skew:+.1f}% ({skew_dir})")
+            if iv is not None:
+                parts.append(f"Near-term IV: {iv:.0f}%")
+            if parts:
+                sent_label = {
+                    "bearish_hedge":       "institutional downside hedge",
+                    "bullish_positioning": "institutional upside positioning",
+                    "neutral":             "neutral",
+                }.get(sent, sent)
+                block = (
+                    f"DERIBIT OPTIONS ({opts.get('currency', '')}): "
+                    f"{' | '.join(parts)} — {sent_label}"
+                )
+                sections.append(block)
+                remaining -= len(block)
+
         # Economic events / macro risk (Finnhub)
         eco = cr.get("economic_events", {})
         if eco and remaining > 0:

@@ -28,6 +28,7 @@ class CollectorResult(TypedDict):
     global_market: dict     # CoinGecko: {btc_dominance_pct, total_market_cap_usd, market_regime}
     coin_market_data: dict  # CoinGecko: {market_cap_rank, cap_tier, volume_24h_usd}
     trending_coins:   list  # CoinGecko: top-10 trending symbol strings in last 24h
+    options_skew:     dict  # Deribit: {put_call_ratio, iv_skew, sentiment, near_term_iv} — BTC/ETH only
     fetched_at: float    # unix timestamp
 
 
