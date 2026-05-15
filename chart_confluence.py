@@ -13,6 +13,38 @@ _vix_cache: dict = {"value": None, "ts": 0.0}
 _vix_lock = _threading.Lock()
 _VIX_TTL = 300  # 5 minutes
 
+# Ticker change cache: TTL-based (5 minutes) to avoid ~40 live API calls per scan.
+# Cache entry: (value, timestamp, fn_id) — fn_id tracks the current function identity
+# so that monkeypatching in tests automatically invalidates stale cache entries.
+_ticker_change_cache: dict[str, tuple[float, float, int]] = {}
+_ticker_change_lock = _threading.Lock()
+_TICKER_TTL = 300  # 5 minutes
+
+
+def _get_ticker_change_cached(symbol: str) -> float | None:
+    """Return 24h ticker change % for symbol, cached for 5 minutes.
+
+    Cache is invalidated automatically when get_binance_ticker_change is replaced
+    (e.g. by monkeypatching in tests), tracked via function id().
+    """
+    import chart_confluence as _self_module
+    fn = _self_module.get_binance_ticker_change
+    fn_id = id(fn)
+    now = _time.time()
+    with _ticker_change_lock:
+        entry = _ticker_change_cache.get(symbol)
+        if entry is not None:
+            value, ts, cached_fn_id = entry
+            if cached_fn_id == fn_id and now - ts < _TICKER_TTL:
+                return value
+    try:
+        value = fn(symbol)
+    except Exception:
+        return None
+    with _ticker_change_lock:
+        _ticker_change_cache[symbol] = (value, _time.time(), fn_id)
+    return value
+
 def _get_vix_multiplier() -> float:
     """
     Returns a regime multiplier based on VIX level.
@@ -174,11 +206,8 @@ def _smt_direction_weight(inds: dict, symbol: str) -> float:
     pair = SMT_PAIRS.get(symbol)
     if not pair:
         return 0.0
-    try:
-        sym_chg  = get_binance_ticker_change(symbol)
-        pair_chg = get_binance_ticker_change(pair)
-    except Exception:
-        return 0.0
+    sym_chg  = _get_ticker_change_cached(symbol)
+    pair_chg = _get_ticker_change_cached(pair)
     if sym_chg is None or pair_chg is None:
         return 0.0
     # Same direction = no divergence

@@ -6,6 +6,7 @@ Stage 2: Technical quality gate (no AI, instant).
 """
 
 import logging
+import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import chart_context
@@ -69,6 +70,8 @@ def _apply_macro_cap(score: float, macro_ctx: dict) -> tuple:
 
     # VIX cap: high fear suppresses score
     if vix is not None:
+        if math.isnan(vix):
+            vix = 30.0  # conservative default — triggers the VIX 25-35 cap (7.5)
         if vix > 35:
             cap = 6.0
             if score > cap:

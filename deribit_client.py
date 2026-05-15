@@ -18,6 +18,7 @@ Live-tested field names (2026-05-15):
 import urllib.request
 import json
 import logging
+from datetime import datetime
 
 _log = logging.getLogger(__name__)
 _BASE = "https://www.deribit.com/api/v2/public"
@@ -109,8 +110,20 @@ def get_options_skew(symbol: str) -> dict:
         else:
             sentiment = "neutral"
 
-        # Near-term IV: average of first 10 puts + first 10 calls by list order
-        near_sample = put_ivs[:10] + call_ivs[:10]
+        # Near-term IV: sort contracts by expiry date, take first 10 puts + 10 calls
+        def _expiry_key(opt):
+            try:
+                parts = opt.get("instrument_name", "").split("-")
+                return datetime.strptime(parts[1], "%d%b%y")
+            except Exception:
+                return datetime.max
+
+        sorted_opts = sorted(result, key=_expiry_key)
+        near_put_ivs  = [float(o.get("mark_iv") or 0) for o in sorted_opts
+                         if o.get("instrument_name", "").endswith("-P") and float(o.get("mark_iv") or 0) > 0]
+        near_call_ivs = [float(o.get("mark_iv") or 0) for o in sorted_opts
+                         if o.get("instrument_name", "").endswith("-C") and float(o.get("mark_iv") or 0) > 0]
+        near_sample = near_put_ivs[:10] + near_call_ivs[:10]
         near_term_iv = round(sum(near_sample) / len(near_sample), 1) if near_sample else None
 
         return {

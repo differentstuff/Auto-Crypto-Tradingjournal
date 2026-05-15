@@ -676,7 +676,7 @@ def get_sharpe_calmar(conn=None, filters=None) -> dict:
     rows = _rows(conn, """
         SELECT date, wallet_balance
         FROM wallet_snapshots
-        WHERE wallet_balance IS NOT NULL
+        WHERE wallet_balance IS NOT NULL AND wallet_balance > 1
         ORDER BY date ASC
     """)
 
@@ -684,7 +684,7 @@ def get_sharpe_calmar(conn=None, filters=None) -> dict:
         return {"sharpe": None, "calmar": None, "message": "Insufficient wallet history"}
 
     balances = [r["wallet_balance"] for r in rows]
-    # Daily returns (approximate — wallet_snapshots may have multiple entries per day)
+    # Daily returns — take last balance per calendar day; skip transitions from dust (<$1)
     daily: dict = {}
     for r in rows:
         d = r["date"][:10]
@@ -698,31 +698,34 @@ def get_sharpe_calmar(conn=None, filters=None) -> dict:
     for i in range(1, len(sorted_days)):
         prev = daily[sorted_days[i - 1]]
         curr = daily[sorted_days[i]]
-        if prev and prev > 0:
+        if prev > 1.0:  # guard against dust/zero balances corrupting returns
             daily_returns.append((curr - prev) / prev)
 
     if not daily_returns:
         return {"sharpe": None, "calmar": None}
 
-    mean_ret = sum(daily_returns) / len(daily_returns)
-    variance = sum((r - mean_ret) ** 2 for r in daily_returns) / len(daily_returns)
+    n        = len(daily_returns)
+    mean_ret = sum(daily_returns) / n
+    # sample variance (N-1) — standard for estimating population std from a sample
+    variance = sum((r - mean_ret) ** 2 for r in daily_returns) / (n - 1) if n > 1 else 0
     std_ret  = math.sqrt(variance) if variance > 0 else 0
 
     ann_return = mean_ret * 365
     ann_std    = std_ret  * math.sqrt(365)
     sharpe = round(ann_return / ann_std, 3) if ann_std > 0 else None
 
-    # Max drawdown from wallet curve
+    # Max drawdown from wallet curve — percentage relative to the running peak at each step
     peak = balances[0]
-    max_dd_abs = 0
+    max_dd_pct_raw = 0.0
     for b in balances:
         if b > peak:
             peak = b
-        dd = peak - b
-        if dd > max_dd_abs:
-            max_dd_abs = dd
+        if peak > 0:
+            dd_pct = (peak - b) / peak * 100
+            if dd_pct > max_dd_pct_raw:
+                max_dd_pct_raw = dd_pct
 
-    max_dd_pct = round(max_dd_abs / peak * 100, 2) if peak > 0 else 0
+    max_dd_pct = round(max_dd_pct_raw, 2)
     calmar     = round(ann_return * 100 / max_dd_pct, 3) if max_dd_pct > 0 else None
 
     return {

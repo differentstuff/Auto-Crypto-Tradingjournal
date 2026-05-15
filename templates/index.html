@@ -430,6 +430,9 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="nav-item" onclick="showPage('import')" id="nav-import">
       <span class="nav-icon">⬆️</span><span>Import Data</span>
     </div>
+    <div class="nav-item" onclick="showPage('sources')" id="nav-sources">
+      <span class="nav-icon">🗂️</span><span>Data Sources</span>
+    </div>
     <div class="nav-item" onclick="showPage('settings')" id="nav-settings">
       <span class="nav-icon">⚙️</span><span>Settings</span>
     </div>
@@ -1195,6 +1198,371 @@ select:focus,input:focus{border-color:var(--accent)}
           <div style="color:var(--muted);font-size:.85rem">Click Scan Now to find high-conviction entries.</div>
         </div>
       </div>
+    </div>
+
+    <!-- ── Data Sources ──────────────────────────────────────────────────────── -->
+    <div id="page-sources" class="page-view">
+      <div class="page-title">Data Sources</div>
+      <div class="page-subtitle">All external inputs wired into the AI pipeline — ordered from macro to micro</div>
+
+      <style>
+        .src-layer{margin-bottom:36px}
+        .src-layer-hdr{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+        .src-layer-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+        .src-layer-title{font-size:1rem;font-weight:700}
+        .src-layer-sub{font-size:.78rem;color:var(--muted);margin-left:auto}
+        .src-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+        .src-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;border-left:3px solid transparent}
+        .src-card-hdr{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px}
+        .src-icon{font-size:1.3rem;line-height:1;flex-shrink:0}
+        .src-name{font-size:.9rem;font-weight:700;line-height:1.2}
+        .src-provider{font-size:.72rem;color:var(--muted);margin-top:2px}
+        .src-auth{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.68rem;font-weight:700;margin-left:auto;flex-shrink:0;align-self:flex-start}
+        .auth-key{background:rgba(255,179,0,.15);color:var(--yellow)}
+        .auth-paid{background:rgba(108,99,255,.15);color:var(--accent)}
+        .auth-free{background:rgba(38,217,107,.12);color:var(--accent3)}
+        .src-row{display:flex;gap:6px;margin-bottom:6px;font-size:.78rem;line-height:1.45}
+        .src-row-label{color:var(--muted);min-width:58px;flex-shrink:0;font-size:.7rem;text-transform:uppercase;padding-top:1px}
+        .src-row-val{color:var(--text)}
+        .src-tag{display:inline-block;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.68rem;color:var(--muted);margin:1px 2px 1px 0;white-space:nowrap}
+        .src-tag.used{background:rgba(79,195,247,.07);border-color:rgba(79,195,247,.25);color:var(--accent2)}
+      </style>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- LAYER 1 — GLOBAL MACRO                                              -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <div class="src-layer">
+        <div class="src-layer-hdr">
+          <div class="src-layer-dot" style="background:#ef5350"></div>
+          <div class="src-layer-title">Layer 1 — Global Macro</div>
+          <div class="src-layer-sub">Market regime signals · fetched once per analysis, not per-symbol</div>
+        </div>
+        <div class="src-grid">
+
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">📉</div>
+              <div><div class="src-name">VIX — Volatility Index</div><div class="src-provider">CBOE · yfinance (^VIX)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — global index</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">Current VIX level (float); cached 5 min</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Scanner score cap (>35→6.0, 25–35→7.5)</span>
+                <span class="src-tag used">Confluence VIX multiplier (×0.80 when >30)</span>
+                <span class="src-tag used">Call Analyzer macro block</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">💵</div>
+              <div><div class="src-name">DXY — US Dollar Index</div><div class="src-provider">ICE · yfinance (DX-Y.NYB)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — global index</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">DXY level; regime label (strong/neutral/weak USD)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer macro regime block</span>
+                <span class="src-tag used">Scanner Stage 3 macro header</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">😨</div>
+              <div><div class="src-name">Fear &amp; Greed Index</div><div class="src-provider">alternative.me · public API</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — crypto-wide sentiment</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">Score 0–100; label (Extreme Fear → Extreme Greed)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Scanner macro layer + cap logic</span>
+                <span class="src-tag used">Call Analyzer sentiment prompt</span>
+                <span class="src-tag used">Dashboard market pulse strip</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">🏛️</div>
+              <div><div class="src-name">Economic Calendar</div><div class="src-provider">Finnhub · REST API</div></div>
+              <span class="src-auth auth-key">API KEY</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">48-hour look-ahead window (global)</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">Upcoming FOMC/CPI/NFP events; hours_until; macro_risk flag</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Scanner macro cap (event in 24h → cap 7.0)</span>
+                <span class="src-tag used">Call Analyzer prompt risk block</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">🌍</div>
+              <div><div class="src-name">BTC Dominance &amp; Total Market Cap</div><div class="src-provider">CoinGecko · public API (keyless)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — global market endpoint</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">btc_dominance_pct; total_market_cap_usd; market_regime label</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Scanner macro layer header</span>
+                <span class="src-tag used">Call Analyzer market context block</span>
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- LAYER 2 — MARKET STRUCTURE                                          -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <div class="src-layer">
+        <div class="src-layer-hdr">
+          <div class="src-layer-dot" style="background:#ffb300"></div>
+          <div class="src-layer-title">Layer 2 — Market Structure</div>
+          <div class="src-layer-sub">Crypto-wide derivatives &amp; on-chain signals · not per-symbol</div>
+        </div>
+        <div class="src-grid">
+
+          <div class="src-card" style="border-left-color:#ffb300">
+            <div class="src-card-hdr">
+              <div class="src-icon">⚖️</div>
+              <div><div class="src-name">Options Skew (Put/Call)</div><div class="src-provider">Deribit · public API (keyless)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">BTC or ETH only (other symbols → empty)</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">put_call_ratio; iv_skew; near_term_iv (soonest expiry); sentiment label</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer sentiment prompt (institutional bias)</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ffb300">
+            <div class="src-card-hdr">
+              <div class="src-icon">⛓️</div>
+              <div><div class="src-name">BTC Mempool</div><div class="src-provider">blockchain.com · public API</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — Bitcoin network only</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">mempool_bytes; n_transactions; avg_fee_usd; congestion label</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer prompt (on-chain congestion context)</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ffb300">
+            <div class="src-card-hdr">
+              <div class="src-icon">🔥</div>
+              <div><div class="src-name">Trending Coins</div><div class="src-provider">CoinGecko · public API (keyless)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — global trending endpoint (last 24h)</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">Top-10 trending coin symbol strings</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer prompt (is this coin trending?)</span>
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- LAYER 3 — SYMBOL-LEVEL                                              -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <div class="src-layer">
+        <div class="src-layer-hdr">
+          <div class="src-layer-dot" style="background:#4fc3f7"></div>
+          <div class="src-layer-title">Layer 3 — Symbol-Level</div>
+          <div class="src-layer-sub">Per-coin market data · fetched once per analyzed symbol</div>
+        </div>
+        <div class="src-grid">
+
+          <div class="src-card" style="border-left-color:#4fc3f7">
+            <div class="src-card-hdr">
+              <div class="src-icon">📊</div>
+              <div><div class="src-name">Multi-Exchange L/S Ratio</div><div class="src-provider">Binance · Bybit · OKX via ccxt &amp; direct REST</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol (e.g. BTCUSDT)</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">L/S ratio per exchange; consensus direction; retail vs smart-money divergence label</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer crowd positioning block</span>
+                <span class="src-tag used">Contra-signal detection (&gt;65% crowd vs trade)</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#4fc3f7">
+            <div class="src-card-hdr">
+              <div class="src-icon">📈</div>
+              <div><div class="src-name">Derivatives (OI · Funding · Liquidations)</div><div class="src-provider">Coinalyze · REST API</div></div>
+              <span class="src-auth auth-key">API KEY</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">Aggregated OI (multi-exchange); 24h liquidation trend; funding rate; per-exchange funding spread</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer derivatives block</span>
+                <span class="src-tag used">Funding bias in sentiment agent</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#4fc3f7">
+            <div class="src-card-hdr">
+              <div class="src-icon">🏷️</div>
+              <div><div class="src-name">Coin Market Data</div><div class="src-provider">CoinGecko · public API (keyless)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">market_cap_rank; cap_tier (mega/large/mid/small/micro); volume_24h_usd</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer coin context (position sizing hints)</span>
+                <span class="src-tag used">Grok weight scaling by cap tier</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#4fc3f7">
+            <div class="src-card-hdr">
+              <div class="src-icon">🏗️</div>
+              <div><div class="src-name">DeFi TVL</div><div class="src-provider">DefiLlama · public API</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol — DeFi tokens only (returns {} for BTC/ETH)</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">protocol; tvl_usd; tvl_7d_change_pct</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer prompt (DeFi health context)</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#4fc3f7">
+            <div class="src-card-hdr">
+              <div class="src-icon">🕯️</div>
+              <div><div class="src-name">OHLCV Candles</div><div class="src-provider">Binance Futures · CCXT</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol + timeframe (default 4H + 1D)</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">~200-bar OHLCV DataFrame per timeframe</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">WaveTrend · RSI · MACD · ADX · EMA · MFI · CVD</span>
+                <span class="src-tag used">Volume analysis · S/R detection · SMT divergence</span>
+                <span class="src-tag used">Chart rendering · Backtester · Confluence score</span>
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- LAYER 4 — TRADE INTELLIGENCE                                        -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <div class="src-layer">
+        <div class="src-layer-hdr">
+          <div class="src-layer-dot" style="background:#26d96b"></div>
+          <div class="src-layer-title">Layer 4 — Trade Intelligence</div>
+          <div class="src-layer-sub">Per-symbol wallet &amp; social signals · most specific to the trade being analyzed</div>
+        </div>
+        <div class="src-grid">
+
+          <div class="src-card" style="border-left-color:#26d96b">
+            <div class="src-card-hdr">
+              <div class="src-icon">🐋</div>
+              <div><div class="src-name">Smart Money Wallet Flows</div><div class="src-provider">Nansen · REST API</div></div>
+              <span class="src-auth auth-paid">PAID</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">signal; label; smart_money_bias; accumulating/distributing direction (🟢/🔴)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer sentiment prompt (institutional wallet behavior)</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#26d96b">
+            <div class="src-card-hdr">
+              <div class="src-icon">📰</div>
+              <div><div class="src-name">Social &amp; News Context</div><div class="src-provider">xAI Grok · REST API</div></div>
+              <span class="src-auth auth-key">API KEY</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol + trade direction (Long/Short)</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">text (social sentiment narrative); weight 0–0.8 (scaled by market cap tier)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Call Analyzer final prompt (last block — lowest priority)</span>
+                <span class="src-tag used">Weight caps: mega-cap 0.3 · large 0.5 · micro 0.8</span>
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- PIPELINE MAP                                                         -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <div class="src-layer">
+        <div class="src-layer-hdr">
+          <div class="src-layer-dot" style="background:#6c63ff"></div>
+          <div class="src-layer-title">Pipeline Map</div>
+          <div class="src-layer-sub">Which layers reach which AI agents</div>
+        </div>
+        <div class="src-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+
+          <div class="src-card" style="border-left-color:#6c63ff">
+            <div class="src-card-hdr"><div class="src-icon">🔍</div><div><div class="src-name">Setup Scanner</div><div class="src-provider">Stage 1 · Stage 2 · Stage 3</div></div></div>
+            <div class="src-row"><span class="src-row-label">Stage 1</span><span class="src-row-val">Haiku quick-score — candles + L1 macro only</span></div>
+            <div class="src-row"><span class="src-row-label">Stage 2</span><span class="src-row-val">Technical — candles, indicators, S/R, confluence</span></div>
+            <div class="src-row"><span class="src-row-label">Stage 3</span><span class="src-row-val">Sonnet full score — all layers + macro cap applied</span></div>
+            <div class="src-row"><span class="src-row-label">Macro cap</span><span class="src-row-val">VIX, F&amp;G, FOMC events fetched once per scan run</span></div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#6c63ff">
+            <div class="src-card-hdr"><div class="src-icon">📋</div><div><div class="src-name">Call Analyzer</div><div class="src-provider">15-worker parallel fetch → Claude Sonnet</div></div></div>
+            <div class="src-row"><span class="src-row-label">Receives</span><span class="src-row-val">All 4 layers simultaneously via CollectorResult</span></div>
+            <div class="src-row"><span class="src-row-label">Budget order</span><span class="src-row-val">Backtest context → Market data → Rulebook → Chart → Grok</span></div>
+            <div class="src-row"><span class="src-row-label">Protected</span><span class="src-row-val">Rulebook · Chart · Calibration cut last (&lt;100 chars remaining)</span></div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#6c63ff">
+            <div class="src-card-hdr"><div class="src-icon">👁️</div><div><div class="src-name">Live Monitor</div><div class="src-provider">Haiku — runs on open positions</div></div></div>
+            <div class="src-row"><span class="src-row-label">Uses</span><span class="src-row-val">Candles + L/S ratio + macro regime (layers 1–3)</span></div>
+            <div class="src-row"><span class="src-row-label">Skips</span><span class="src-row-val">Nansen + Grok (latency sensitive)</span></div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#6c63ff">
+            <div class="src-card-hdr"><div class="src-icon">🔮</div><div><div class="src-name">Hindsight Grader</div><div class="src-provider">Haiku — post-trade scoring</div></div></div>
+            <div class="src-row"><span class="src-row-label">Uses</span><span class="src-row-val">Stored position data + historical candles only</span></div>
+            <div class="src-row"><span class="src-row-label">No live</span><span class="src-row-val">No external API calls — grades past trades from DB</span></div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
 
     <!-- ── Settings ──────────────────────────────────────────────────────────── -->

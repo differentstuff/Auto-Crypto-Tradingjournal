@@ -19,6 +19,7 @@ Three-stage pipeline:
 Results cached for 30 minutes. Scan runs in a background thread.
 """
 
+import copy
 import json
 import logging
 import os
@@ -111,7 +112,7 @@ _state_lock = threading.Lock()
 
 def get_state() -> dict:
     with _state_lock:
-        return dict(_state)
+        return copy.deepcopy(_state)
 
 
 def _update(**kwargs):

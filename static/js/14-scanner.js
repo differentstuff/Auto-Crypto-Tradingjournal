@@ -426,6 +426,41 @@ function renderScannerMeta(state) {
   sub.textContent = (window._scannerWatchlistCount||100) + ' symbols · scores ' + activeMins + '–10 · results cached 30 min · click a row for details';
   el.appendChild(sub);
 
+  // ── Macro context row ─────────────────────────────────────────────────────
+  const mc = state.macro_ctx;
+  if (mc && (mc.vix != null || mc.fear_greed != null || mc.cap_applied != null)) {
+    const macroRow = document.createElement('div');
+    macroRow.style.cssText = 'font-size:.76rem;color:var(--text-muted,var(--muted));margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+
+    const vixPart  = mc.vix        != null ? `VIX ${mc.vix.toFixed != null ? mc.vix.toFixed(1) : mc.vix}` : null;
+    const fgPart   = mc.fear_greed != null ? `F&G ${mc.fear_greed}` : (mc.fg != null ? `F&G ${mc.fg}` : null);
+    const capVal   = mc.cap_applied != null ? parseFloat(mc.cap_applied) : null;
+    const capPart  = capVal != null ? (capVal >= 10 ? 'No cap' : `Cap ${capVal.toFixed(1)}`) : null;
+
+    const parts = [vixPart, fgPart, capPart].filter(Boolean);
+    if (parts.length) {
+      const macroLabel = document.createElement('span');
+      macroLabel.style.color = 'var(--muted)';
+      macroLabel.textContent = 'Macro:';
+      macroRow.appendChild(macroLabel);
+      const macroInfo = document.createElement('span');
+      macroInfo.textContent = parts.join(' · ');
+      macroRow.appendChild(macroInfo);
+    }
+
+    const warnings = state.macro_warnings || [];
+    if (warnings.length) {
+      warnings.forEach(w => {
+        const badge = document.createElement('span');
+        badge.style.cssText = 'color:var(--yellow);font-size:.73rem;padding:1px 6px;background:rgba(255,179,0,.1);border-radius:4px';
+        badge.textContent = '⚠ ' + w;
+        macroRow.appendChild(badge);
+      });
+    }
+
+    if (macroRow.childNodes.length) el.appendChild(macroRow);
+  }
+
   // ── Single-coin scan row ──────────────────────────────────────────────────
   const singleRow = document.createElement('div');
   singleRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:10px';

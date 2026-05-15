@@ -17,10 +17,29 @@ Confirmed response shapes (2026-05-15):
 import urllib.request
 import json
 import logging
+import threading
+import time
 
 _log = logging.getLogger(__name__)
 _BASE = "https://api.coingecko.com/api/v3"
 _TIMEOUT = 10
+
+# Rate limiter: CoinGecko keyless public API allows 30 requests/minute.
+_ratelimit_lock = threading.Lock()
+_request_times: list[float] = []
+
+
+def _rate_limit():
+    """Block if 28+ requests have been made in the last 60 seconds (leaves 2 buffer)."""
+    with _ratelimit_lock:
+        now = time.time()
+        # Drop timestamps older than 60s
+        _request_times[:] = [t for t in _request_times if now - t < 60]
+        if len(_request_times) >= 28:
+            sleep_for = 60 - (now - _request_times[0])
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+        _request_times.append(time.time())
 
 # Map CCXT/trading symbols to CoinGecko coin IDs
 _COIN_IDS = {
@@ -47,6 +66,7 @@ def _get(path: str, params: dict = None) -> dict | list | None:
         qs = "?" + "&".join(f"{k}={v}" for k, v in params.items())
     url = f"{_BASE}/{path}{qs}"
     try:
+        _rate_limit()
         req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0"})
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
             return json.loads(r.read())

@@ -80,7 +80,7 @@ def get_upcoming_events(hours_ahead: int = 48) -> dict:
             # Only include US events and high/medium impact
             if country not in ("US", "United States", ""):
                 continue
-            if impact not in ("high", "medium", "3", "2", "1"):
+            if impact not in ("high", "medium"):
                 continue
 
             events.append({
@@ -100,7 +100,7 @@ def get_upcoming_events(hours_ahead: int = 48) -> dict:
             if any(kw in name_lower for kw in _HIGH_IMPACT):
                 macro_risk = True
                 if next_event is None:
-                    next_event = ev["event"]
+                    next_event = ev["event"][:80]
                     # Try to compute hours until event
                     try:
                         # Finnhub time format: "2026-05-15 14:00:00" (UTC)

@@ -42,6 +42,11 @@ _API_KEY = os.environ.get("COINALYZE_API_KEY", "")
 _TIMEOUT = 10
 
 
+def is_configured() -> bool:
+    """Return True if the Coinalyze API key is set."""
+    return bool(_API_KEY)
+
+
 def _symbol(trading_pair: str) -> str:
     """Convert 'BTCUSDT' → 'BTCUSDT_PERP.A' (aggregated perp across all exchanges)."""
     pair = trading_pair.upper()
@@ -149,7 +154,11 @@ def get_funding_rate(symbol: str) -> dict:
             return {}
         record = data[0] if isinstance(data, list) else data
         # Confirmed field: "value" = funding rate float
-        rate = float(record.get("value") or record.get("fundingRate") or record.get("r") or 0)
+        # Keep None as None — 0.0 means balanced longs/shorts, None means no data
+        raw = record.get("value") if record.get("value") is not None else record.get("fundingRate") if record.get("fundingRate") is not None else record.get("r")
+        if raw is None:
+            return {}
+        rate = float(raw)
         ann = round(rate * 3 * 365 * 100, 2)  # 8h payments × 3/day × 365 days
         if rate > 0.0005:
             sentiment = "longs_paying_heavily"

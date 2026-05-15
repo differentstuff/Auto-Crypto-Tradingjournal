@@ -126,7 +126,7 @@ def fetch_coinalyze(symbol: str) -> dict:
     """
     try:
         import coinalyze_client
-        if not coinalyze_client._API_KEY:
+        if not coinalyze_client.is_configured():
             return {}
         return coinalyze_client.get_all(symbol)
     except Exception:

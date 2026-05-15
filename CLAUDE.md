@@ -40,17 +40,25 @@ routes/*.py — import helpers + ai_* modules
 - Data pipeline: agent_data_collector → 15 parallel workers → CollectorResult → prompt_builder → Claude
 - Adding a new data source: add fetch_X() to data_sources.py + field to CollectorResult in agent_types.py
 
-## Data Sources (active, wired into 11-worker CollectorResult)
-| Client | Data | Key |
-|---|---|---|
-| ccxt_client.py | Binance/Bybit/OKX prices, multi-exchange L/S ratio | none |
-| market_context.py | VIX/DXY (yfinance), BTC mempool, DefiLlama TVL, Fear&Greed, retail vs smart-money L/S divergence | none |
-| coinalyze_client.py | Aggregated OI + funding + liq trend + per-exchange funding spread | COINALYZE_API_KEY |
-| finnhub_client.py | Economic calendar — FOMC/CPI/NFP macro risk flag | FINNHUB_API_KEY |
-| coingecko_client.py | BTC dominance, cap tier, trending coins (keyless public API) | none |
-| deribit_client.py | BTC/ETH put/call skew — institutional sentiment proxy | none |
-| nansen_client.py | Smart money wallet flows + accumulating/distributing direction | paid |
-| grok_client.py | Social/news context per coin (cap-weighted 0-80%) | XAI_API_KEY |
+## Data Sources (active, wired into 12-worker CollectorResult)
+| Layer | Client | Data | Key |
+|---|---|---|---|
+| 1 — Global Macro | market_context.py | VIX/DXY (yfinance) | none |
+| 1 — Global Macro | market_context.py | Fear & Greed (alternative.me) | none |
+| 1 — Global Macro | finnhub_client.py | Economic calendar — FOMC/CPI/NFP macro risk flag | FINNHUB_API_KEY |
+| 1 — Global Macro | coingecko_client.py | BTC dominance + total market cap | none |
+| 2 — Market Structure | deribit_client.py | BTC/ETH put/call skew — institutional sentiment proxy | none |
+| 2 — Market Structure | market_context.py | BTC mempool congestion (blockchain.com) | none |
+| 2 — Market Structure | coingecko_client.py | Trending coins (top-10, last 24h) | none |
+| 3 — Symbol-Level | ccxt_client.py + market_context.py | Multi-exchange L/S ratio + retail vs smart-money divergence | none |
+| 3 — Symbol-Level | coinalyze_client.py | Aggregated OI + funding + liq trend + per-exchange funding spread | COINALYZE_API_KEY |
+| 3 — Symbol-Level | coingecko_client.py | Cap rank, cap tier, 24h volume | none |
+| 3 — Symbol-Level | market_context.py | DefiLlama TVL (DeFi tokens only) | none |
+| 3 — Symbol-Level | chart_context.py via ccxt | OHLCV candles (Binance Futures) | none |
+| 4 — Trade Intelligence | nansen_client.py | Smart money wallet flows + accumulating/distributing direction | paid |
+| 4 — Trade Intelligence | grok_client.py | Social/news context per coin (cap-weighted 0-80%) | XAI_API_KEY |
+
+See Tools → Data Sources page in the UI for the full interactive reference.
 
 ## Prompt budget order (prompt_builder.py)
 1. Backtest context — most relevant to setup
@@ -103,12 +111,20 @@ SMT_PAIRS = {BTC↔ETH, SOL→ETH, BNB→BTC, XRP→BTC}
 - Sharpe annualization: periods_per_year=2190 for 4H crypto (6 bars/day × 365, 24/7 market)
 - SMT weight: +0.15 on divergence (delta >= 0.5%), 0.0 on agreement — signal fires when prices DISAGREE
 - SMT direction weight: +0.15 bullish (symbol↑ pair↓), -0.15 bearish (symbol↓ pair↑), threshold ≥1% delta
-- Walk-forward split: 70% training / 30% test on real position date range
+- Walk-forward split: 70% training / 30% test; end_offset_days prevents data leakage (training ends at now-test_days)
+- Sharpe (dashboard): sample variance (N-1 denominator), daily returns, annualize × sqrt(365)
+- Calmar (dashboard): max_dd_pct tracked as % of running peak at each step (NOT final all-time peak)
+- Wallet snapshot filter: wallet_balance > 1 USDT — excludes dust/zero entries that corrupt return series
 
 ## New Tools (Analysis tab)
 - Optimizer history: GET /api/backtest/optimizer-history — last 5 runs with Sharpe + params
 - Walk-forward test: POST /api/backtest/walk-forward — splits real positions 70/30, tests generalization
-- Hindsight re-run: POST /api/hindsight/run?n=841 — skips already-scored positions (LEFT JOIN fix)
+- Walk-forward poll: GET /api/backtest/walk-forward/<job_id> — dedicated poll endpoint (not /optimize/)
+- Hindsight re-run: POST /api/hindsight/run?n=200 — skips already-scored positions (LEFT JOIN fix), max 200
+
+## Data Sources page
+- Tools → Data Sources in left nav — lists all 14 sources grouped by macro→micro layer
+- Shows: provider, auth requirement, inputs, data returned, pipeline usage
 
 ## JS Frontend
 - 17 modules static/js/01-utils.js through 16-settings.js
