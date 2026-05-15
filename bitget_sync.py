@@ -308,24 +308,36 @@ def _retroactive_close_calls(conn) -> int:
             high = row["high"]
             low  = row["low"]
             if is_long:
-                if sl_price and low <= sl_price:
-                    hit_sl, outcome = 1, "lost"
-                    break
-                elif tp2_price and high >= tp2_price:
+                candle_open = float(row.get("open", 0) or 0)
+                sl_hit  = bool(sl_price  and float(low)  <= sl_price)
+                tp2_hit = bool(tp2_price and float(high) >= tp2_price)
+                tp1_hit = bool(tp1_price and float(high) >= tp1_price)
+                # If candle opened above SL, the position was safe at open → TP takes priority
+                open_above_sl = not sl_price or candle_open > sl_price
+                if tp2_hit and (open_above_sl or not sl_hit):
                     hit_tp1, hit_tp2, outcome = 1, 1, "won"
                     break
-                elif tp1_price and high >= tp1_price:
+                elif tp1_hit and (open_above_sl or not sl_hit):
                     hit_tp1, outcome = 1, "won"
                     break
-            else:
-                if sl_price and high >= sl_price:
+                elif sl_hit:
                     hit_sl, outcome = 1, "lost"
                     break
-                elif tp2_price and low <= tp2_price:
+            else:  # short
+                candle_open = float(row.get("open", 0) or 0)
+                sl_hit  = bool(sl_price  and float(high) >= sl_price)
+                tp2_hit = bool(tp2_price and float(low)  <= tp2_price)
+                tp1_hit = bool(tp1_price and float(low)  <= tp1_price)
+                # If candle opened below SL, the position was safe at open → TP takes priority
+                open_below_sl = not sl_price or candle_open < sl_price
+                if tp2_hit and (open_below_sl or not sl_hit):
                     hit_tp1, hit_tp2, outcome = 1, 1, "won"
                     break
-                elif tp1_price and low <= tp1_price:
+                elif tp1_hit and (open_below_sl or not sl_hit):
                     hit_tp1, outcome = 1, "won"
+                    break
+                elif sl_hit:
+                    hit_sl, outcome = 1, "lost"
                     break
 
         if outcome is None:
