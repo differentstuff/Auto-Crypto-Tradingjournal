@@ -95,6 +95,115 @@ def _objective(trial: optuna.Trial, symbol: str, timeframe: str, days: int) -> f
     return result.sharpe
 
 
+def run_walk_forward(symbol: str, timeframe: str = "4H",
+                     n_trials: int = 50) -> dict:
+    """
+    Walk-forward test using the user's actual position date range.
+
+    1. Reads oldest and newest closed positions for this symbol from DB.
+    2. Splits the date range at 70% (training / test).
+    3. Runs optimizer on the training window.
+    4. Runs a single backtest with best params on the test window.
+    5. Returns both Sharpe values so the user can judge generalization.
+    """
+    from database import db_conn
+    from backtest_engine import run_backtest
+
+    with db_conn() as conn:
+        row = conn.execute("""
+            SELECT MIN(close_time), MAX(close_time), COUNT(*)
+            FROM positions
+            WHERE symbol = ?
+              AND close_time IS NOT NULL
+        """, (symbol,)).fetchone()
+
+    if not row or not row[0]:
+        return {"error": f"No positions found for {symbol}"}
+
+    min_dt, max_dt, n_pos = row[0], row[1], row[2]
+    if n_pos < 10:
+        return {"error": f"Too few positions ({n_pos}) for walk-forward — need at least 10"}
+
+    from datetime import datetime
+    fmt = "%Y-%m-%d %H:%M:%S"
+    t_min = datetime.strptime(min_dt[:19], fmt)
+    t_max = datetime.strptime(max_dt[:19], fmt)
+    total_days = max(1, (t_max - t_min).days)
+    split_days = max(7, int(total_days * 0.70))
+    test_days  = max(7, total_days - split_days)
+
+    # Phase 1: optimize on training window
+    try:
+        train_params = run_optimizer(symbol, timeframe,
+                                     days=split_days, n_trials=n_trials)
+    except Exception as e:
+        return {"error": f"Optimizer failed: {e}"}
+
+    # Phase 2: test best params on out-of-sample window
+    from backtest_engine import BacktestParams
+    test_p = BacktestParams(**{k: v for k, v in train_params.items()
+                               if k in BacktestParams.__dataclass_fields__})
+    try:
+        test_result = run_backtest(symbol, timeframe,
+                                   days=test_days, params=test_p)
+    except Exception as e:
+        return {"error": f"Test backtest failed: {e}"}
+
+    # Also get training Sharpe for comparison
+    try:
+        train_result = run_backtest(symbol, timeframe,
+                                    days=split_days, params=test_p)
+        train_sharpe = round(train_result.sharpe, 3)
+    except Exception:
+        train_sharpe = None
+
+    test_sharpe = round(test_result.sharpe, 3) if test_result else None
+    generalizes = (test_sharpe is not None and test_sharpe > 0
+                   and train_sharpe is not None and test_sharpe > train_sharpe * 0.5)
+
+    return {
+        "symbol":        symbol,
+        "timeframe":     timeframe,
+        "total_days":    total_days,
+        "train_days":    split_days,
+        "test_days":     test_days,
+        "n_positions":   n_pos,
+        "train_sharpe":  train_sharpe,
+        "test_sharpe":   test_sharpe,
+        "generalizes":   generalizes,
+        "best_params":   train_params,
+        "test_trades":   test_result.n_trades if test_result else 0,
+        "test_win_rate": round(test_result.win_rate, 1) if test_result else None,
+    }
+
+
+def start_walk_forward_job(symbol: str, timeframe: str = "4H",
+                           n_trials: int = 50) -> str:
+    """Start an async walk-forward job in a daemon thread. Returns job_id immediately."""
+    job_id = str(uuid.uuid4())
+    job = _OptJob(job_id=job_id, symbol=symbol)
+    with _jobs_lock:
+        _evict_old_jobs()
+        _jobs[job_id] = job
+
+    def _run():
+        try:
+            result = run_walk_forward(symbol, timeframe, n_trials)
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id].status = "complete"
+                    _jobs[job_id].result = result
+        except Exception:
+            _logger.exception("Walk-forward job %s failed", job_id)
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id].status = "error"
+                    _jobs[job_id].error = "Walk-forward failed — check server logs"
+
+    threading.Thread(target=_run, daemon=True, name=f"wf-{job_id[:8]}").start()
+    return job_id
+
+
 def run_optimizer(symbol: str = "BTCUSDT", timeframe: str = "4H",
                   days: int = 180, n_trials: int = 100) -> dict:
     """

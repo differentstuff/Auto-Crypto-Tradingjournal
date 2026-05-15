@@ -89,9 +89,17 @@ async function loadAccuracyProgress() {
     optBtn.title = 'Bayesian parameter search (~5-10 min)';
     optBtn.onclick = function() { loadOptimizer(); };
 
+    const wfBtn = document.createElement('button');
+    wfBtn.id = 'backtestWfBtn';
+    wfBtn.style.cssText = 'padding:4px 12px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer';
+    wfBtn.textContent = '↔ Walk-Forward';
+    wfBtn.title = 'Walk-forward test: 70% train / 30% out-of-sample';
+    wfBtn.onclick = function() { runWalkForward(); };
+
     inputRow.appendChild(symbolInput);
     inputRow.appendChild(runBtn);
     inputRow.appendChild(optBtn);
+    inputRow.appendChild(wfBtn);
 
     const resultDiv = document.createElement('div');
     resultDiv.id = 'backtestResult';
@@ -102,6 +110,10 @@ async function loadAccuracyProgress() {
     optimizerDiv.id = 'optimizerResult';
     optimizerDiv.style.cssText = 'font-size:.8rem;margin-top:8px';
 
+    const wfResultDiv = document.createElement('div');
+    wfResultDiv.id = 'wf-result';
+    wfResultDiv.style.cssText = 'font-size:.8rem;margin-top:8px';
+
     const historyDiv = document.createElement('div');
     historyDiv.id = 'optimizer-history';
     historyDiv.style.cssText = 'margin-top:12px';
@@ -110,6 +122,7 @@ async function loadAccuracyProgress() {
     btCard.appendChild(inputRow);
     btCard.appendChild(resultDiv);
     btCard.appendChild(optimizerDiv);
+    btCard.appendChild(wfResultDiv);
     btCard.appendChild(historyDiv);
     card.parentElement.insertBefore(btCard, card.nextSibling);
     loadOptimizerHistory();
@@ -179,8 +192,10 @@ async function loadBacktest(symbol) {
 function _setBtBtnsDisabled(disabled) {
   const r = document.getElementById('backtestRunBtn');
   const o = document.getElementById('backtestOptBtn');
+  const w = document.getElementById('backtestWfBtn');
   if (r) r.disabled = disabled;
   if (o) o.disabled = disabled;
+  if (w) w.disabled = disabled;
 }
 
 async function loadOptimizer() {
@@ -322,6 +337,85 @@ function _renderOptimizerResult(container, params, sym) {
     grid.appendChild(chip);
   }
   container.appendChild(grid);
+}
+
+async function runWalkForward() {
+  const sym = (document.getElementById('backtestSymbol') || {}).value?.trim() || 'BTCUSDT';
+  const container = document.getElementById('wf-result');
+  if (!container) return;
+
+  _setBtBtnsDisabled(true);
+  container.textContent = '';
+  const msg = document.createElement('small');
+  msg.style.color = 'var(--muted)';
+  msg.textContent = '⧗ Starting walk-forward test for ' + sym + '…';
+  container.appendChild(msg);
+
+  try {
+    const startRes = await api('/api/backtest/walk-forward', 'POST',
+      { symbol: sym, timeframe: '4H', n_trials: 30 });
+    if (!startRes.ok) throw new Error(startRes.error || 'Failed to start walk-forward');
+
+    const jobId = startRes.data.job_id;
+    msg.textContent = '⧗ Walk-forward running for ' + sym + ' (~5-10 min)… polling every 5s';
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const pollRes = await api('/api/backtest/optimize/' + jobId);
+        if (!pollRes.ok) {
+          clearInterval(pollInterval);
+          _setBtBtnsDisabled(false);
+          container.textContent = '';
+          const err = document.createElement('small');
+          err.style.color = 'var(--red)';
+          err.textContent = 'Walk-forward error: ' + (pollRes.error || 'unknown');
+          container.appendChild(err);
+          return;
+        }
+        if (pollRes.data.status === 'complete') {
+          clearInterval(pollInterval);
+          _setBtBtnsDisabled(false);
+          _renderWalkForwardResult(pollRes.data.result);
+          notify('Walk-forward complete for ' + sym, 'success');
+        }
+        // status === 'running': keep polling
+      } catch (pollErr) {
+        clearInterval(pollInterval);
+        _setBtBtnsDisabled(false);
+        container.textContent = 'Poll error: ' + pollErr.message;
+      }
+    }, 5000);
+
+  } catch (e) {
+    container.textContent = '';
+    const err = document.createElement('small');
+    err.style.color = 'var(--red)';
+    err.textContent = e.message;
+    container.appendChild(err);
+    _setBtBtnsDisabled(false);
+    notify('Walk-forward error: ' + e.message, 'danger');
+  }
+}
+
+function _renderWalkForwardResult(r) {
+  const el = document.getElementById('wf-result');
+  if (!el) return;
+  if (r.error) { el.textContent = '❌ ' + r.error; return; }
+  const gen = r.generalizes;
+  const genColor = gen ? 'var(--accent3)' : 'var(--red)';
+  const genLabel = gen ? '✓ Generalizes' : '✗ Possible overfit';
+  el.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-top:10px;font-size:.82rem">
+      <div style="font-weight:600;margin-bottom:8px">Walk-Forward: ${r.symbol} ${r.timeframe}
+        <span style="margin-left:10px;color:${genColor};font-size:.78rem">${genLabel}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+        <div>Training (${r.train_days}d)<br><b>${r.train_sharpe ?? '—'}</b> Sharpe</div>
+        <div>Test (${r.test_days}d)<br><b style="color:${genColor}">${r.test_sharpe ?? '—'}</b> Sharpe</div>
+        <div>Test trades<br><b>${r.test_trades ?? '—'}</b> (${r.test_win_rate ?? '—'}% WR)</div>
+      </div>
+      <div style="color:var(--muted);font-size:.75rem">${r.n_positions} real positions over ${r.total_days} days used for split</div>
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

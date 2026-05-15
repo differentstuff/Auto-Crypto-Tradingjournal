@@ -78,6 +78,23 @@ def backtest_optimize_status(job_id: str):
     return _ok(job)
 
 
+@bp.route("/api/backtest/walk-forward", methods=["POST"])
+def api_walk_forward():
+    """Start async walk-forward test. Body: {symbol, timeframe, n_trials}"""
+    try:
+        body      = request.get_json(force=True, silent=True) or {}
+        symbol    = (body.get("symbol") or "BTCUSDT").upper().strip()
+        timeframe = body.get("timeframe", "4H")
+        n_trials  = int(body.get("n_trials", 30))
+        n_trials  = max(10, min(n_trials, 100))
+        import backtest_optimizer
+        job_id = backtest_optimizer.start_walk_forward_job(symbol, timeframe, n_trials)
+        return _ok({"job_id": job_id, "message": f"Walk-forward started for {symbol}"})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.get("/api/backtest/optimizer-history")
 def api_optimizer_history():
     """Return last 5 optimizer runs."""
