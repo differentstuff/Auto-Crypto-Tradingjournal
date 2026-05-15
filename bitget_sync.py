@@ -43,14 +43,7 @@ def _ensure_settings_table(conn):
     conn.commit()
 
 
-def _get_setting(conn, key, default=None):
-    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    return row[0] if row else default
-
-
-def _set_setting(conn, key, value):
-    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, str(value)))
-    conn.commit()
+from sync_base import _get_setting, _set_setting, SyncDriver  # noqa: F401
 
 
 # ── Field mapping helpers ──────────────────────────────────────────────────────

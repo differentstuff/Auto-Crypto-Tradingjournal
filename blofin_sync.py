@@ -33,14 +33,7 @@ def get_status() -> dict:
     return dict(_sync_status)
 
 
-def _get_setting(conn, key, default=None):
-    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    return row[0] if row else default
-
-
-def _set_setting(conn, key, value):
-    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, str(value)))
-    conn.commit()
+from sync_base import _get_setting, _set_setting
 
 
 def _ensure_exchange_col(conn):
