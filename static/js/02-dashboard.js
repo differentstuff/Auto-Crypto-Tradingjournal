@@ -189,9 +189,16 @@ async function loadDashboard() {
 
   // PnL curve chart
   if (d.pnl_curve.length) {
-    // Sample to max 200 points for performance
-    const step = Math.max(1, Math.floor(d.pnl_curve.length / 200));
-    const curve = d.pnl_curve.filter((_, i) => i % step === 0);
+    // Keep last 60 points at full resolution; downsample older portion
+    const raw = d.pnl_curve;
+    let curve;
+    if (raw.length <= 200) {
+      curve = raw;
+    } else {
+      const step = Math.max(1, Math.floor((raw.length - 60) / 140));
+      const older = raw.slice(0, -60).filter((_, i) => i % step === 0);
+      curve = [...older, ...raw.slice(-60)];
+    }
     makeChart('pnlCurveChart', 'line', {
       labels: curve.map(p => p.date),
       datasets: [{
@@ -259,15 +266,25 @@ async function loadDashboard() {
     });
   }
 
-  // Win/Loss donut
-  makeChart('winLossChart', 'doughnut', {
-    labels: ['Wins', 'Losses'],
-    datasets: [{
-      data: [d.win_trades, d.loss_trades],
-      backgroundColor: ['#26d96b', '#ef5350'], borderWidth: 0
-    }]
-  }, { scales: undefined,
-       plugins: { legend: { position: 'bottom', labels: { color: '#7986cb' } } } });
+  // Monthly P&L bar chart (last 6 months)
+  if (d.monthly_pnl && d.monthly_pnl.length) {
+    const months = d.monthly_pnl.map(m => m.month);
+    const values = d.monthly_pnl.map(m => m.net_pnl);
+    const colors = values.map(v => v >= 0 ? '#26d96b' : '#ef5350');
+    makeChart('winLossChart', 'bar', {
+      labels: months,
+      datasets: [{ label: 'Monthly P&L (USDT)', data: values,
+                   backgroundColor: colors, borderRadius: 3 }]
+    }, {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#607d8b', font: { size: 10 } } },
+        y: { ticks: { color: '#607d8b', font: { size: 10 },
+                      callback: v => fmtC(v) },
+             grid: { color: 'rgba(255,255,255,.05)' } }
+      }
+    });
+  }
 
   // Recent trades table
   document.getElementById('recent-tbody').innerHTML = d.recent_trades.map(t => `

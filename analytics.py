@@ -146,7 +146,7 @@ def get_dashboard_kpis(filters=None, conn=None):
     """, params)
 
     # current calendar month PnL — respects exchange filter
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timedelta as _td
     month_start  = _dt.utcnow().strftime('%Y-%m-01')
     mo_where, mo_params = _build_where({**filters, "date_from": month_start})
     # _build_where turns date_from into close_time >= ?, so we get the exchange clause too
@@ -154,6 +154,18 @@ def get_dashboard_kpis(filters=None, conn=None):
         f"SELECT SUM(realized_pnl) FROM positions {mo_where}",
         mo_params
     ), 4)
+
+    # last 6 calendar months P&L for dashboard bar chart
+    six_months_ago = (_dt.utcnow() - _td(days=180)).strftime('%Y-%m-01')
+    mo6_where, mo6_params = _build_where({**filters, "date_from": six_months_ago} if filters else {"date_from": six_months_ago})
+    monthly_pnl = _rows(conn, f"""
+        SELECT strftime('%Y-%m', close_time) AS month,
+               ROUND(SUM(realized_pnl), 2)   AS net_pnl,
+               COUNT(*)                       AS trades
+        FROM positions {mo6_where}
+        GROUP BY month
+        ORDER BY month ASC
+    """, mo6_params)
 
     # wallet balance curve (sample every 50th row to keep payload small)
     wallet_curve = _rows(conn, """
@@ -181,6 +193,7 @@ def get_dashboard_kpis(filters=None, conn=None):
         "profit_factor":   profit_factor,
         "max_drawdown":       max_drawdown,
         "current_month_pnl":  current_month_pnl,
+        "monthly_pnl":        monthly_pnl,
         "pnl_curve":          pnl_curve,
         "top_symbols":        top_symbols,
         "recent_trades":      recent_trades,
