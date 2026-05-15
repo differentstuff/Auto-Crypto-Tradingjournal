@@ -202,3 +202,74 @@ def test_fetch_coinalyze_adapter_no_key():
         from data_sources import fetch_coinalyze
         result = fetch_coinalyze("BTCUSDT")
     assert result == {}
+
+
+def test_get_all_has_new_keys():
+    """get_all() must return funding_by_exchange and liquidation_trend keys."""
+    with patch("coinalyze_client._get", return_value=None):
+        from coinalyze_client import get_all
+        result = get_all("BTCUSDT")
+    assert "funding_by_exchange" in result
+    assert "liquidation_trend" in result
+
+
+def test_get_funding_by_exchange_degrades():
+    """get_funding_by_exchange returns {} on API failure."""
+    with patch("coinalyze_client._get", return_value=None):
+        from coinalyze_client import get_funding_by_exchange
+        assert get_funding_by_exchange("BTCUSDT") == {}
+
+
+def test_get_funding_by_exchange_parses_per_exchange():
+    """get_funding_by_exchange reads per-exchange rates and computes spread."""
+    mock_response = [
+        {"symbol": "BTCUSDT_PERP.BINANCE", "value": 0.0001, "update": 0},
+        {"symbol": "BTCUSDT_PERP.BYBIT",   "value": 0.00007, "update": 0},
+        {"symbol": "BTCUSDT_PERP.OKX",     "value": 0.00013, "update": 0},
+    ]
+    with patch("coinalyze_client._get", return_value=mock_response):
+        from coinalyze_client import get_funding_by_exchange
+        result = get_funding_by_exchange("BTCUSDT")
+    assert result["binance"] == 0.0001
+    assert result["bybit"] == 0.00007
+    assert result["okx"] == 0.00013
+    # spread = (0.00013 - 0.00007) * 100 = 0.006
+    assert abs(result["spread_pct"] - 0.006) < 0.0001
+
+
+def test_get_liquidation_trend_degrades():
+    """get_liquidation_trend returns {} on API failure."""
+    with patch("coinalyze_client._get", return_value=None):
+        from coinalyze_client import get_liquidation_trend
+        assert get_liquidation_trend("BTCUSDT") == {}
+
+
+def test_get_liquidation_trend_too_few_records():
+    """get_liquidation_trend returns {} when fewer than 6 hourly records returned."""
+    mock_response = [{"t": 0, "l": 100000.0, "s": 50000.0}]
+    with patch("coinalyze_client._get", return_value=mock_response):
+        from coinalyze_client import get_liquidation_trend
+        assert get_liquidation_trend("BTCUSDT") == {}
+
+
+def test_get_liquidation_trend_accelerating():
+    """get_liquidation_trend detects accelerating when recent 6h >> older 18h."""
+    # 18 older hours with low liq, 6 recent hours with high liq → accelerating
+    old_records = [{"t": i, "l": 100.0, "s": 100.0} for i in range(18)]
+    recent_records = [{"t": 18 + i, "l": 1_000_000.0, "s": 1_000_000.0} for i in range(6)]
+    mock_response = old_records + recent_records
+    with patch("coinalyze_client._get", return_value=mock_response):
+        from coinalyze_client import get_liquidation_trend
+        result = get_liquidation_trend("BTCUSDT")
+    assert result["trend"] == "accelerating"
+    assert result["total_24h_usd"] > 0
+    assert result["recent_6h_usd"] > 0
+
+
+def test_get_liquidation_trend_dominant_shorts():
+    """get_liquidation_trend reports dominant_side=shorts when short liqs dominate."""
+    records = [{"t": i, "l": 100.0, "s": 500_000.0} for i in range(24)]
+    with patch("coinalyze_client._get", return_value=records):
+        from coinalyze_client import get_liquidation_trend
+        result = get_liquidation_trend("BTCUSDT")
+    assert result["dominant_side"] == "shorts"

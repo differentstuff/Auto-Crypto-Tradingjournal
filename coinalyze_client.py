@@ -192,19 +192,124 @@ def get_long_short_ratio(symbol: str) -> dict:
         return {}
 
 
+def get_funding_by_exchange(symbol: str) -> dict:
+    """
+    Per-exchange funding rates for a symbol.
+
+    Queries BINANCE, BYBIT, OKX individually using the per-exchange symbol format.
+    Response shape: [{"symbol": "...", "value": <rate_float>, "update": <ms>}]
+    "value" is the funding rate (e.g. 0.0001 = 0.01%)
+
+    Returns {"binance": float, "bybit": float, "okx": float, "spread_pct": float}
+    Spread = max - min rate (high spread = exchange friction signal).
+    Returns {} if endpoint not available.
+    """
+    base = symbol.upper().replace("USDT", "").replace("_PERP.A", "")
+    symbols = f"{base}USDT_PERP.BINANCE,{base}USDT_PERP.BYBIT,{base}USDT_PERP.OKX"
+    data = _get("funding-rate", {"symbols": symbols})
+    try:
+        if not data:
+            return {}
+        rates: dict = {}
+        for record in (data if isinstance(data, list) else [data]):
+            sym = record.get("symbol", "")
+            rate = float(record.get("value") or record.get("r") or 0)
+            if "BINANCE" in sym:
+                rates["binance"] = rate
+            elif "BYBIT" in sym:
+                rates["bybit"] = rate
+            elif "OKX" in sym:
+                rates["okx"] = rate
+        if len(rates) >= 2:
+            vals = [v for v in rates.values()]
+            rates["spread_pct"] = round((max(vals) - min(vals)) * 100, 5)
+        return rates
+    except Exception:
+        return {}
+
+
+def get_liquidation_trend(symbol: str) -> dict:
+    """
+    24h liquidation trend — are liquidations accelerating or decelerating?
+
+    Response shape: [{"symbol": "...", "t": <ms>, "l": <long_liq_usd>, "s": <short_liq_usd>}, ...]
+    "l" = long liquidations USD, "s" = short liquidations USD
+    Requires "from"/"to" ms timestamps + valid interval.
+
+    Returns {"total_24h_usd": float, "recent_6h_usd": float,
+             "trend": "accelerating"|"decelerating"|"stable", "dominant_side": "longs"|"shorts"|"equal"}
+    Returns {} if unavailable.
+    """
+    now_ms = int(time.time() * 1000)
+    from_ms = now_ms - (24 * 3600 * 1000)
+    data = _get("liquidation-history", {
+        "symbols":  _symbol(symbol),
+        "interval": "1hour",
+        "from":     from_ms,
+        "to":       now_ms,
+    })
+    try:
+        if not data or not isinstance(data, list) or len(data) < 6:
+            return {}
+
+        def _liq(record):
+            l = float(record.get("l") or record.get("longLiquidationUsd") or 0)
+            s = float(record.get("s") or record.get("shortLiquidationUsd") or 0)
+            return l, s
+
+        total_long = total_short = 0.0
+        recent_long = recent_short = 0.0
+        for i, r in enumerate(data):
+            l, s = _liq(r)
+            total_long += l
+            total_short += s
+            if i >= len(data) - 6:
+                recent_long += l
+                recent_short += s
+
+        total_24h = total_long + total_short
+        recent_6h = recent_long + recent_short
+        older_18h = total_24h - recent_6h
+        avg_6h_rate = recent_6h / 6
+        avg_18h_rate = older_18h / 18 if older_18h > 0 else 0
+
+        trend = (
+            "accelerating" if avg_6h_rate > avg_18h_rate * 1.5
+            else "decelerating" if avg_6h_rate < avg_18h_rate * 0.67
+            else "stable"
+        )
+        dominant = (
+            "longs" if total_long > total_short * 1.2
+            else "shorts" if total_short > total_long * 1.2
+            else "equal"
+        )
+        return {
+            "total_24h_usd": round(total_24h, 0),
+            "recent_6h_usd": round(recent_6h, 0),
+            "trend":         trend,
+            "dominant_side": dominant,
+        }
+    except Exception:
+        return {}
+
+
 def get_all(symbol: str) -> dict:
     """
-    Fetch OI, liquidations, funding rate, and L/S ratio in parallel.
+    Fetch OI, liquidations, funding rate, L/S ratio, per-exchange funding,
+    and 24h liquidation trend in parallel.
 
     All sources degrade gracefully — returns {} sub-dicts on individual failures.
     Use this in the agent pipeline for a single symbol.
 
     Returns:
         {
-            "oi":           {"oi_coins": float, "oi_symbol": str} or {},
-            "liquidations": {"liq_long_usd": float, "liq_short_usd": float, "liq_total_usd": float} or {},
-            "funding":      {"rate": float, "annualized_pct": float, "sentiment": str} or {},
-            "long_short":   {"ratio": float, "longs_pct": float, "shorts_pct": float} or {},
+            "oi":                  {"oi_coins": float, "oi_symbol": str} or {},
+            "liquidations":        {"liq_long_usd": float, "liq_short_usd": float, "liq_total_usd": float} or {},
+            "funding":             {"rate": float, "annualized_pct": float, "sentiment": str} or {},
+            "long_short":          {"ratio": float, "longs_pct": float, "shorts_pct": float} or {},
+            "funding_by_exchange": {"binance": float, "bybit": float, "okx": float, "spread_pct": float} or {},
+            "liquidation_trend":   {"total_24h_usd": float, "recent_6h_usd": float,
+                                    "trend": str, "dominant_side": str} or {},
         }
     """
     results: dict = {}
@@ -216,10 +321,12 @@ def get_all(symbol: str) -> dict:
             results[name] = {}
 
     threads = [
-        threading.Thread(target=_fetch, args=("oi",          get_open_interest,   symbol)),
-        threading.Thread(target=_fetch, args=("liquidations", get_liquidations,    symbol)),
-        threading.Thread(target=_fetch, args=("funding",      get_funding_rate,    symbol)),
-        threading.Thread(target=_fetch, args=("long_short",   get_long_short_ratio, symbol)),
+        threading.Thread(target=_fetch, args=("oi",                  get_open_interest,      symbol)),
+        threading.Thread(target=_fetch, args=("liquidations",         get_liquidations,       symbol)),
+        threading.Thread(target=_fetch, args=("funding",              get_funding_rate,       symbol)),
+        threading.Thread(target=_fetch, args=("long_short",           get_long_short_ratio,   symbol)),
+        threading.Thread(target=_fetch, args=("funding_by_exchange",  get_funding_by_exchange, symbol)),
+        threading.Thread(target=_fetch, args=("liquidation_trend",    get_liquidation_trend,  symbol)),
     ]
     for t in threads:
         t.start()
@@ -227,8 +334,10 @@ def get_all(symbol: str) -> dict:
         t.join(timeout=12)
 
     return {
-        "oi":           results.get("oi", {}),
-        "liquidations": results.get("liquidations", {}),
-        "funding":      results.get("funding", {}),
-        "long_short":   results.get("long_short", {}),
+        "oi":                  results.get("oi", {}),
+        "liquidations":        results.get("liquidations", {}),
+        "funding":             results.get("funding", {}),
+        "long_short":          results.get("long_short", {}),
+        "funding_by_exchange": results.get("funding_by_exchange", {}),
+        "liquidation_trend":   results.get("liquidation_trend", {}),
     }
