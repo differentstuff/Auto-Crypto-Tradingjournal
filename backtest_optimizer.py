@@ -2,11 +2,79 @@
 backtest_optimizer.py — Bayesian optimizer for backtester parameters using Optuna.
 Maximises Sharpe ratio across the parameter search space defined in BacktestParams.
 """
+import logging
+import threading
+import uuid
+from dataclasses import dataclass, field
+from typing import Optional
+import time as _time
+
 import optuna
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from backtest_engine import BacktestParams, run_backtest
+
+_logger = logging.getLogger(__name__)
+
+# ── Async job registry ─────────────────────────────────────────────────────────
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
+_JOB_TTL = 3600  # evict jobs older than 1 hour
+
+
+@dataclass
+class _OptJob:
+    job_id:  str
+    symbol:  str
+    status:  str = "running"  # running | complete | error
+    result:  Optional[dict] = None
+    error:   Optional[str] = None
+    started: float = field(default_factory=_time.time)
+
+
+def _evict_old_jobs() -> None:
+    cutoff = _time.time() - _JOB_TTL
+    stale = [jid for jid, j in _jobs.items() if j.started < cutoff]
+    for jid in stale:
+        del _jobs[jid]
+
+
+def start_optimizer_job(symbol: str, timeframe: str = "4H",
+                        days: int = 180, n_trials: int = 50) -> str:
+    """Start an async optimizer run in a daemon thread. Returns job_id immediately."""
+    job_id = str(uuid.uuid4())
+    job = _OptJob(job_id=job_id, symbol=symbol)
+    with _jobs_lock:
+        _evict_old_jobs()
+        _jobs[job_id] = job
+
+    def _run():
+        try:
+            result = run_optimizer(symbol, timeframe, days, n_trials)
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id].status = "complete"
+                    _jobs[job_id].result = result
+        except Exception:
+            _logger.exception("Optimizer job %s failed", job_id)
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id].status = "error"
+                    _jobs[job_id].error = "Optimizer failed — check server logs"
+
+    threading.Thread(target=_run, daemon=True, name=f"optuna-{job_id[:8]}").start()
+    return job_id
+
+
+def get_job_status(job_id: str) -> Optional[dict]:
+    """Return job status dict or None if job_id not found."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        return None
+    return {"job_id": job.job_id, "symbol": job.symbol,
+            "status": job.status, "result": job.result, "error": job.error}
 
 
 def _objective(trial: optuna.Trial, symbol: str, timeframe: str, days: int) -> float:
