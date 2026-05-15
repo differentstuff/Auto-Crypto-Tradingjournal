@@ -1,21 +1,7 @@
 from constants import PROMPT_CACHE_MIN_CHARS
 from flask import jsonify, request
-from database import db_conn
 
-
-def log_token_usage(module: str, model: str, input_tokens: int, output_tokens: int,
-                    cached_tokens: int = 0):
-    """Persist one AI call's token counts to the token_usage table."""
-    try:
-        with db_conn() as conn:
-            conn.execute(
-                "INSERT INTO token_usage (module, model, input_tokens, output_tokens, cached_tokens) "
-                "VALUES (?,?,?,?,?)",
-                (module, model, input_tokens, output_tokens, cached_tokens)
-            )
-            conn.commit()
-    except Exception:
-        pass  # never let logging errors break the calling code
+from token_log import log_token_usage  # noqa: F401  backward-compat re-export
 
 
 def strip_fence(raw: str) -> str:

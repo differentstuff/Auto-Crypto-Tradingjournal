@@ -5,45 +5,45 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_mfi_weight_bullish():
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight({"mfi": 30.0}) == 0.3
 
 
 def test_mfi_weight_bearish():
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight({"mfi": -25.0}) == -0.3
 
 
 def test_mfi_weight_deadband_positive():
     """Values between -10 and +10 return 0."""
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight({"mfi": 5.0}) == 0.0
 
 
 def test_mfi_weight_deadband_negative():
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight({"mfi": -8.0}) == 0.0
 
 
 def test_mfi_weight_empty_dict():
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight({}) == 0.0
 
 
 def test_mfi_weight_none():
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight(None) == 0.0
 
 
 def test_mfi_weight_boundary_positive_10():
     """Exactly 10 is inside the dead-band → 0."""
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight({"mfi": 10.0}) == 0.0
 
 
 def test_mfi_weight_boundary_above_10():
     """11 is outside dead-band → bullish."""
-    from chart_context import _mfi_weight
+    from chart_confluence import _mfi_weight
     assert _mfi_weight({"mfi": 11.0}) == 0.3
 
 
@@ -91,29 +91,29 @@ def test_confluence_score_mfi_raises_bullish_score():
 def test_smt_weight_btc_prices_in_sync():
     """Bitget and Binance prices within 0.5% -> 0.0 (agreement = no divergence signal)."""
     from unittest.mock import patch
-    import chart_context
+    import chart_confluence
 
     inds = {"ema": {"current_price": 60000.0}}
     with patch("chart_confluence.get_binance_price", return_value=60200.0):
-        result = chart_context._smt_weight(inds, "BTCUSDT")
+        result = chart_confluence._smt_weight(inds, "BTCUSDT")
     assert result == 0.0
 
 
 def test_smt_weight_divergence_neutral():
     """Bitget and Binance prices differ > 0.5% -> +0.15 (SMT divergence detected)."""
     from unittest.mock import patch
-    import chart_context
+    import chart_confluence
 
     inds = {"ema": {"current_price": 60000.0}}
     with patch("chart_confluence.get_binance_price", return_value=62000.0):
-        result = chart_context._smt_weight(inds, "BTCUSDT")
+        result = chart_confluence._smt_weight(inds, "BTCUSDT")
     assert result == 0.15
 
 
 def test_smt_weight_non_smt_symbol():
     """Non-SMT symbols (e.g. AAVEUSDT) always return 0.0."""
-    import chart_context
+    import chart_confluence
 
     inds = {"ema": {"current_price": 100.0}}
-    result = chart_context._smt_weight(inds, "AAVEUSDT")
+    result = chart_confluence._smt_weight(inds, "AAVEUSDT")
     assert result == 0.0

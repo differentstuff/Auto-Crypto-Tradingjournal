@@ -143,3 +143,8 @@ def _blocked(warnings: list) -> RiskResult:
         max_risk_hit=False, kelly_fraction=0.05,
         warnings=warnings, sizing_breakdown={},
     )
+
+
+def blocked(warnings: list) -> "RiskResult":
+    """Public alias — use from outside this module."""
+    return _blocked(warnings)

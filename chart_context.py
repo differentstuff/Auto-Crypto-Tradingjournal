@@ -24,11 +24,7 @@ from chart_candles import _cache, _cache_lock, _cached, get_candles, get_candles
 from chart_indicators import compute_all_indicators, compute_wavetrend
 from chart_patterns import detect_trendlines, detect_all_trendlines, detect_fibonacci  # noqa: F401
 from chart_sr import detect_support_resistance
-from chart_confluence import (  # noqa: F401
-    confluence_score, SMT_SYMBOLS,
-    _smt_weight, _rsi_weight, _macd_weight, _ema_weight, _adx_weight,
-    _wt_weight, _volume_weight, _cvd_weight, _mfi_weight, _get_tf_weights,
-)
+from chart_confluence import confluence_score, SMT_SYMBOLS
 
 
 # ── Indicator computation ──────────────────────────────────────────────────────

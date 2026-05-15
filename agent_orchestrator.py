@@ -125,7 +125,7 @@ def run_call_analysis(
             open_positions=open_positions,
         ), conn)
     except Exception as e:
-        risk = agent_risk_mgmt._blocked([f"RiskMgmt error: {e}"])
+        risk = agent_risk_mgmt.blocked([f"RiskMgmt error: {e}"])
 
     return AnalysisResult(
         setup_score=prep["setup_score"], direction=prep["direction"],

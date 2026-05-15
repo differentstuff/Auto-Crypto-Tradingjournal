@@ -144,7 +144,7 @@ def test_confluence_score_neutral_indicators():
 
 def test_confluence_score_non_smt_symbol_zero_smt():
     """Non-SMT symbol (AAVEUSDT) gets 0 SMT weight regardless of price."""
-    from chart_context import _smt_weight
+    from chart_confluence import _smt_weight
     inds = {"ema": {"current_price": 100.0}}
     weight = _smt_weight(inds, "AAVEUSDT")
     assert weight == 0.0
@@ -152,7 +152,7 @@ def test_confluence_score_non_smt_symbol_zero_smt():
 
 def test_smt_weight_btcusdt_no_price():
     """_smt_weight returns 0.0 when Binance price is None (even for BTCUSDT)."""
-    from chart_context import _smt_weight
+    from chart_confluence import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
     with patch("chart_confluence.get_binance_price", return_value=None):
         weight = _smt_weight(inds, "BTCUSDT")
@@ -161,7 +161,7 @@ def test_smt_weight_btcusdt_no_price():
 
 def test_smt_weight_btcusdt_prices_converge():
     """_smt_weight returns 0.0 when prices agree within 0.5% (no divergence = no signal)."""
-    from chart_context import _smt_weight
+    from chart_confluence import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
     # 60000 vs 60100 → delta = 0.167% < 0.5% threshold
     with patch("chart_confluence.get_binance_price", return_value=60100.0):
@@ -171,7 +171,7 @@ def test_smt_weight_btcusdt_prices_converge():
 
 def test_smt_weight_btcusdt_prices_diverge():
     """_smt_weight returns +0.15 when prices diverge >= 0.5% (SMT signal detected)."""
-    from chart_context import _smt_weight
+    from chart_confluence import _smt_weight
     inds = {"ema": {"current_price": 60000.0}}
     # 60000 vs 60400 → delta = 0.667% > 0.5%
     with patch("chart_confluence.get_binance_price", return_value=60400.0):

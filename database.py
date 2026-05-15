@@ -339,7 +339,7 @@ def init_db():
     """)
 
     conn.commit()
-    print(f"[DB] Initialized at {DB_PATH}")
+    _log.info("DB initialized at %s", DB_PATH)
     conn.close()
 
 

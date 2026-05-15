@@ -1,6 +1,9 @@
+import logging
 import os
 
 from flask import Flask, render_template, make_response
+
+_log = logging.getLogger(__name__)
 
 from database import init_db, get_conn
 from importer import import_folder
@@ -82,7 +85,7 @@ if __name__ == "__main__":
     if conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 0:
         csv_files = [f for f in os.listdir(DATA_DIR) if f.endswith(".csv")]
         if csv_files:
-            print(f"[Startup] DB empty, auto-importing {len(csv_files)} CSV files from data/")
+            _log.info("[Startup] DB empty, auto-importing %d CSV files from data/", len(csv_files))
             import_folder(DATA_DIR, conn)
     conn.close()
 
@@ -92,5 +95,5 @@ if __name__ == "__main__":
     monitor_scheduler.start()
 
     port = int(os.environ.get("PORT", 8082))
-    print(f"[App] Trading Journal running on http://0.0.0.0:{port}")
+    _log.info("[App] Trading Journal running on http://0.0.0.0:%d", port)
     app.run(host="0.0.0.0", port=port, debug=False)
