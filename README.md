@@ -11,7 +11,7 @@ A self-hosted crypto futures trading journal with live Bitget/Blofin sync, a 7-a
 </p>
 
 <p align="center">
-  <strong>v1.4.0</strong>
+  <strong>v1.5.0</strong>
   &nbsp;·&nbsp;
   <a href="docs/architecture_detailed.pdf">📐 Architecture PDF</a>
   &nbsp;·&nbsp;
@@ -249,6 +249,7 @@ docs/architecture_detailed.pdf  10-section PDF for beginners + experts
 | v1.2.0 | Phase 4 UI/UX + retroactive outcome recorder + accuracy progress tracker |
 | **v1.3.0** | **SMC/ICT + VMC Cipher signal improvements: MFI signal, kill zone annotation, raised R:R thresholds, premium/discount zone, BOS/CHoCH rubric, 1H entry timeframe** |
 | **v1.4.0** | **CCXT integration (Blofin HMAC replaced), Binance watchlist expansion, SMT Divergence 9th signal, embedded backtester + Optuna optimizer, chart layer toggles** |
+| **v1.5.0** | **Optimisation: async optimizer, security hardening, 238 tests, architecture refactoring (chart_context split 774→275 lines, consensus.py, sync_base.py, ScannerSetup TypedDict)** |
 | v2.0 | Major new capability (e.g. exchange, auth layer, new data source tier) |
 
 ---
