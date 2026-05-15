@@ -1,5 +1,7 @@
 import logging
 import os
+import signal
+import atexit
 
 from flask import Flask, render_template, make_response
 
@@ -77,6 +79,19 @@ def index():
 # ── startup ────────────────────────────────────────────────────────────────────
 # init_db() runs at import time so WSGI servers (gunicorn) initialise the schema.
 init_db()
+
+def _checkpoint_on_exit(*_):
+    """Flush WAL to the main DB file before process exit (SIGTERM from systemd)."""
+    try:
+        from database import get_conn
+        conn = get_conn()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.close()
+    except Exception:
+        pass
+
+signal.signal(signal.SIGTERM, _checkpoint_on_exit)
+atexit.register(_checkpoint_on_exit)
 
 if __name__ == "__main__":
 

@@ -23,6 +23,7 @@ def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")   # safe for concurrent reads
+    conn.execute("PRAGMA wal_autocheckpoint=100")  # checkpoint every 100 pages (~400KB), keeps WAL small
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

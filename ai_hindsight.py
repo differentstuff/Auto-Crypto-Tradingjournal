@@ -285,9 +285,11 @@ def _batch_thread(n: int):
     try:
         with db_conn() as conn:
             trades = [dict(r) for r in conn.execute("""
-                SELECT id, symbol, direction, open_time, entry_price, realized_pnl
-                FROM positions
-                ORDER BY close_time DESC
+                SELECT p.id, p.symbol, p.direction, p.open_time, p.entry_price, p.realized_pnl
+                FROM positions p
+                LEFT JOIN trade_hindsight h ON h.position_id = p.id
+                WHERE h.id IS NULL
+                ORDER BY p.close_time DESC
                 LIMIT ?
             """, (n,)).fetchall()]
             rulebook_str = ai_rulebook.get_rulebook_for_prompt(conn)
