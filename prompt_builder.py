@@ -209,6 +209,40 @@ def build_context(
                 sections.append(block)
                 remaining -= len(block)
 
+        # Coinalyze multi-exchange aggregated derivatives
+        cz = cr.get("coinalyze", {})
+        if cz and remaining > 0:
+            oi      = cz.get("oi", {})
+            liqs    = cz.get("liquidations", {})
+            funding = cz.get("funding", {})
+            ls      = cz.get("long_short", {})
+            parts   = []
+            if oi.get("oi_coins"):
+                parts.append(f"OI: {oi['oi_coins']:,.0f} coins (all exchanges)")
+            if liqs.get("liq_total_usd"):
+                parts.append(
+                    f"Liqs 1h: ${liqs['liq_total_usd'] / 1e6:.1f}M "
+                    f"(L:${liqs.get('liq_long_usd', 0) / 1e6:.1f}M "
+                    f"S:${liqs.get('liq_short_usd', 0) / 1e6:.1f}M)"
+                )
+            if funding.get("rate") is not None:
+                parts.append(
+                    f"Funding: {funding['rate'] * 100:.4f}% "
+                    f"({funding.get('sentiment', 'neutral')}, "
+                    f"{funding.get('annualized_pct', 0):.1f}% ann)"
+                )
+            if ls.get("ratio"):
+                parts.append(
+                    f"L/S: {ls['ratio']:.2f} "
+                    f"({ls.get('longs_pct', 50):.0f}% long / "
+                    f"{ls.get('shorts_pct', 50):.0f}% short)"
+                )
+            if parts:
+                block = "COINALYZE (multi-exchange):\n  " + "\n  ".join(parts)
+                if len(block) <= remaining:
+                    sections.append(block)
+                    remaining -= len(block)
+
     # ── 3. Rulebook (kept here for callers that don't use build_stable_prefix) ─
     if include_rulebook and conn is not None:
         if remaining > 500:

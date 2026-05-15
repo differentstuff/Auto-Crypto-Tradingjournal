@@ -28,6 +28,7 @@ class CollectorResult(TypedDict):
     ls_consensus: dict   # {binance, bybit, okx, consensus} — per symbol
     defi_tvl: dict       # {protocol, tvl_usd, tvl_7d_change_pct} or {} for non-DeFi
     btc_mempool: dict    # {mempool_bytes, n_transactions, avg_fee_usd, congestion}
+    coinalyze: dict      # {oi, liquidations, funding, long_short} — multi-exchange aggregated
     fetched_at: float    # unix timestamp
 
 

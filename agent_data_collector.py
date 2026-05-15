@@ -23,6 +23,7 @@ from data_sources import (
     fetch_ls_consensus,
     fetch_defi_tvl,
     fetch_btc_mempool,
+    fetch_coinalyze,
 )
 
 from agent_types import CollectorInput, CollectorResult
@@ -42,7 +43,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=11) as ex:
+    with ThreadPoolExecutor(max_workers=12) as ex:
         f_funding     = ex.submit(_safe, lambda: fetch_funding_rate(symbol))
         f_oi          = ex.submit(_safe, lambda: fetch_open_interest(symbol))
         f_ls          = ex.submit(_safe, lambda: fetch_long_short_ratio(symbol))
@@ -54,6 +55,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         f_ls_con      = ex.submit(_safe, lambda: fetch_ls_consensus(symbol))
         f_defi        = ex.submit(_safe, lambda: fetch_defi_tvl(symbol))
         f_mempool     = ex.submit(_safe, fetch_btc_mempool)
+        f_coinalyze   = ex.submit(_safe, lambda: fetch_coinalyze(symbol))
 
     return CollectorResult(
         symbol        = symbol,
@@ -69,5 +71,6 @@ def run(inp: CollectorInput) -> CollectorResult:
         ls_consensus  = f_ls_con.result(),
         defi_tvl      = f_defi.result(),
         btc_mempool   = f_mempool.result(),
+        coinalyze     = f_coinalyze.result(),
         fetched_at    = time.time(),
     )

@@ -117,3 +117,17 @@ def fetch_news(symbol: str, direction: str = "") -> dict:
         return {"text": text, "weight": weight}
     except Exception:
         return {}
+
+
+def fetch_coinalyze(symbol: str) -> dict:
+    """
+    Aggregated derivatives data from Coinalyze (multi-exchange OI, liquidations,
+    funding rate, L/S ratio). Returns {} if API key not configured or on error.
+    """
+    try:
+        import coinalyze_client
+        if not coinalyze_client._API_KEY:
+            return {}
+        return coinalyze_client.get_all(symbol)
+    except Exception:
+        return {}
