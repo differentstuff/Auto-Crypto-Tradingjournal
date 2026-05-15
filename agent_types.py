@@ -17,11 +17,6 @@ class CollectorInput(TypedDict):
 class CollectorResult(TypedDict):
     symbol: str
     candles: dict        # {"4H": pd.DataFrame, "1D": pd.DataFrame}
-    funding_rate: dict   # {rate, rate_pct, direction, high, ok}
-    open_interest: dict  # {oi_coins, oi_usd_m, change_24h_pct, trend, ok}
-    long_short: dict     # {long_pct, short_pct, bias, ok}
-    fear_greed: dict     # {value, classification, ok}
-    fred_macro: dict     # {fed_rate, cpi, m2_b, t10y, ok}
     nansen: dict         # {signal, label, smart_money_bias} or {}
     grok: dict           # {text, weight} or {}
     macro_regime: dict   # {vix, dxy, regime} — global, fetched once

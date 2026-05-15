@@ -12,11 +12,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from data_sources import (
     fetch_candles,
-    fetch_funding_rate,
-    fetch_open_interest,
-    fetch_long_short_ratio,
-    fetch_fear_greed,
-    fetch_fred_macro,
     fetch_smart_money,
     fetch_news,
     fetch_macro_regime,
@@ -47,12 +42,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=15) as ex:
-        f_funding     = ex.submit(_safe, lambda: fetch_funding_rate(symbol))
-        f_oi          = ex.submit(_safe, lambda: fetch_open_interest(symbol))
-        f_ls          = ex.submit(_safe, lambda: fetch_long_short_ratio(symbol))
-        f_fg          = ex.submit(_safe, fetch_fear_greed)
-        f_fred        = ex.submit(_safe, fetch_fred_macro)
+    with ThreadPoolExecutor(max_workers=10) as ex:
         f_nansen      = ex.submit(_safe, lambda: fetch_smart_money(symbol))
         f_grok        = ex.submit(_safe, lambda: fetch_news(symbol, direction))
         f_macro       = ex.submit(_safe, fetch_macro_regime)
@@ -68,11 +58,6 @@ def run(inp: CollectorInput) -> CollectorResult:
     return CollectorResult(
         symbol           = symbol,
         candles          = candles,
-        funding_rate     = f_funding.result(),
-        open_interest    = f_oi.result(),
-        long_short       = f_ls.result(),
-        fear_greed       = f_fg.result(),
-        fred_macro       = f_fred.result(),
         nansen           = f_nansen.result(),
         grok             = f_grok.result(),
         macro_regime     = f_macro.result(),
