@@ -229,3 +229,15 @@ def empty_sentiment(symbol: str = "") -> SentimentResult:
         grok_summary="",
         prompt_text="",
     )
+
+
+def empty_reviewer() -> "ReviewerResult":
+    """Return a zero-signal ReviewerResult for error paths."""
+    return ReviewerResult(
+        signal_quality=5.0,
+        warnings=[],
+        backtest_context="",
+        kpis={},
+        symbol_history={},
+        rubric="",
+    )

@@ -35,7 +35,8 @@ import agent_data_reviewer
 import agent_trade_prep
 import agent_risk_mgmt
 import agent_trade_monitor
-from agent_types import AnalysisResult, TradePrepInput, RiskInput, MonitorInput
+from agent_types import (AnalysisResult, TradePrepInput, RiskInput, MonitorInput,
+                         empty_interpreter, empty_sentiment, empty_reviewer)
 
 # ── Task → model routing table ─────────────────────────────────────────────────
 
@@ -97,8 +98,8 @@ def run_call_analysis(
             interpreted = f_interp.result()
             sentiment   = f_sent.result()
     except Exception:
-        interpreted = _empty_interp(symbol)
-        sentiment   = _empty_sent()
+        interpreted = empty_interpreter(symbol)
+        sentiment   = empty_sentiment()
 
     try:
         reviewed = agent_data_reviewer.run({
@@ -106,7 +107,7 @@ def run_call_analysis(
             "direction": direction, "setup_type": setup_type,
         }, conn)
     except Exception:
-        reviewed = _empty_review()
+        reviewed = empty_reviewer()
 
     try:
         prep = agent_trade_prep.run(TradePrepInput(
@@ -176,9 +177,8 @@ def run_monitor(position: dict, original_prep: dict):
         })
     except Exception as e:
         # Return safe default if data collection fails
-        from agent_types import InterpreterResult, SentimentResult
-        interpreted = _empty_interp(position.get("symbol", ""))
-        sentiment   = _empty_sent()
+        interpreted = empty_interpreter(position.get("symbol", ""))
+        sentiment   = empty_sentiment()
 
     return agent_trade_monitor.run(MonitorInput(
         position=position, original_prep=original_prep or {},
@@ -201,22 +201,3 @@ def _degraded(error: str) -> AnalysisResult:
     )
 
 
-def _empty_interp(symbol: str) -> dict:
-    from agent_types import InterpreterResult
-    return InterpreterResult(symbol=symbol, by_timeframe={}, sr_levels=[],
-                              confluence_score={}, trend_direction="neutral",
-                              momentum_bias="conflicted", prompt_text="")
-
-
-def _empty_sent() -> dict:
-    from agent_types import SentimentResult
-    return SentimentResult(macro_bias="neutral", sentiment_score=5.0,
-                           funding_bias="neutral", crowd_position="balanced",
-                           contra_signal=False, key_factors=[], grok_summary="",
-                           prompt_text="")
-
-
-def _empty_review() -> dict:
-    from agent_types import ReviewerResult
-    return ReviewerResult(signal_quality=5.0, warnings=[], backtest_context="",
-                          kpis={}, symbol_history={}, rubric="")
