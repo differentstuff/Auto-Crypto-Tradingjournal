@@ -65,7 +65,7 @@ def test_auto_close_calls_importable():
 def test_blofin_sync_no_bitget_import():
     """blofin_sync must not import from bitget_sync (cross-import eliminated)."""
     import ast, pathlib
-    src = pathlib.Path("/Users/fbauer/Documents/ClaudeAIData/Trading-Journal/blofin_sync.py").read_text()
+    src = (pathlib.Path(__file__).parent.parent / "blofin_sync.py").read_text()
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
