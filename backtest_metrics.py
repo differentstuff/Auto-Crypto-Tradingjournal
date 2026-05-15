@@ -5,10 +5,10 @@ Metric formulas adapted from Freqtrade optimize/optimize_reports.py (GPL-3.0).
 import numpy as np
 
 
-def sharpe_ratio(returns: list, periods_per_year: int = 1460) -> float:
+def sharpe_ratio(returns: list, periods_per_year: int = 2190) -> float:
     """
     Annualised Sharpe ratio.
-    periods_per_year=1460 for 4H candles (6 candles/day x 365 x ~2/3 active).
+    periods_per_year=2190 for 4H candles (6 candles/day x 365 days, crypto trades 24/7).
     Returns 0.0 when std=0 or fewer than 2 returns.
     """
     r = np.array(returns, dtype=float)
@@ -20,9 +20,10 @@ def sharpe_ratio(returns: list, periods_per_year: int = 1460) -> float:
     return float(r.mean() / std * (periods_per_year ** 0.5))
 
 
-def sortino_ratio(returns: list, periods_per_year: int = 1460) -> float:
+def sortino_ratio(returns: list, periods_per_year: int = 2190) -> float:
     """
     Annualised Sortino ratio (penalises downside deviation only).
+    periods_per_year=2190 for 4H candles (6 candles/day x 365 days, crypto trades 24/7).
     Returns 0.0 when no variance or fewer than 2 returns.
     When there are no negative returns, uses full std as fallback.
     """

@@ -157,18 +157,19 @@ def _compute_signals(df: pd.DataFrame, params: BacktestParams) -> pd.DataFrame:
 
     # WaveTrend — same formula as chart_indicators.py
     hlc3 = (high + low + close) / 3
-    ema1 = hlc3.ewm(span=9, adjust=False).mean()
-    d    = (hlc3 - ema1).abs().ewm(span=9, adjust=False).mean()
+    ema1 = hlc3.ewm(span=10, adjust=False).mean()
+    d    = (hlc3 - ema1).abs().ewm(span=10, adjust=False).mean()
     ci   = (hlc3 - ema1) / (0.015 * d.replace(0, np.nan)).fillna(1)
-    df["wt1"] = ci.ewm(span=13, adjust=False).mean()
-    df["wt2"] = df["wt1"].rolling(3).mean()
+    df["wt1"] = ci.ewm(span=21, adjust=False).mean()
+    df["wt2"] = df["wt1"].rolling(4, min_periods=1).mean()
 
     # MFI proxy (journal formula)
     hlc3_vol = hlc3 * volume
     df["mfi"] = (_rsi(hlc3_vol, length=60) - 50) * 2
 
-    # CVD proxy
-    df["cvd"]       = ((close - df["open"]) / (high - low + 1e-9) * volume).cumsum()
+    # CVD proxy — Money Flow Multiplier formula matching chart_indicators.py::compute_cvd()
+    hl = (high - low).replace(0, np.nan)
+    df["cvd"] = (volume * (2 * close - low - high) / hl).fillna(0).cumsum()
     df["cvd_trend"] = df["cvd"] > df["cvd"].shift(20)
 
     df["vol_ratio"] = volume / volume.rolling(20).mean()
