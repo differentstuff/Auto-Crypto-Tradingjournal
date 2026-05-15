@@ -407,6 +407,132 @@ def get_fred_macro() -> dict:
     return _cached("fred_macro", _fetch, ttl=3600 * 6)
 
 
+def get_macro_regime() -> dict:
+    """
+    Fetch VIX (fear index) and DXY (dollar index) via yfinance.
+    Returns {"vix": float|None, "dxy": float|None, "regime": str}
+    regime: "risk-off" | "neutral" | "risk-on"
+    Degrades to {"vix": None, "dxy": None, "regime": "unknown"} on failure.
+    """
+    try:
+        import yfinance as yf
+        vix_ticker = yf.Ticker("^VIX")
+        dxy_ticker = yf.Ticker("DX-Y.NYB")
+        vix_hist = vix_ticker.history(period="1d", interval="1h")
+        dxy_hist = dxy_ticker.history(period="1d", interval="1h")
+        vix = round(float(vix_hist["Close"].iloc[-1]), 2) if not vix_hist.empty else None
+        dxy = round(float(dxy_hist["Close"].iloc[-1]), 2) if not dxy_hist.empty else None
+        if vix is None:
+            regime = "unknown"
+        elif vix > 30:
+            regime = "risk-off"
+        elif vix > 20:
+            regime = "neutral"
+        else:
+            regime = "risk-on"
+        return {"vix": vix, "dxy": dxy, "regime": regime}
+    except Exception:
+        return {"vix": None, "dxy": None, "regime": "unknown"}
+
+
+# ── Multi-exchange long/short consensus ────────────────────────────────────────
+
+def get_ls_consensus(symbol: str) -> dict:
+    """Multi-exchange long/short ratio consensus. Degrades to {} on failure."""
+    try:
+        from ccxt_client import get_multi_exchange_ls_ratio
+        return get_multi_exchange_ls_ratio(symbol)
+    except Exception:
+        return {}
+
+
+# ── DefiLlama TVL ──────────────────────────────────────────────────────────────
+
+# Maps common DeFi token symbols to their DefiLlama protocol slug.
+_DEFILLAMA_SLUGS = {
+    "AAVEUSDT":   "aave",
+    "UNIUSDT":    "uniswap",
+    "CRVUSDT":    "curve-dex",
+    "COMPUSDT":   "compound-finance",
+    "MKRUSDT":    "maker",
+    "SUSHIUSDT":  "sushi",
+    "SNXUSDT":    "synthetix",
+    "GMXUSDT":    "gmx",
+    "DYDXUSDT":   "dydx",
+    "LQTYUSDT":   "liquity",
+}
+
+
+def get_defi_tvl(symbol: str) -> dict:
+    """
+    Fetch TVL and 7d change from DefiLlama for DeFi protocol tokens.
+    Returns {} for non-DeFi tokens or on error.
+    Returns {"tvl_usd": float, "tvl_7d_change_pct": float, "protocol": str}
+    """
+    slug = _DEFILLAMA_SLUGS.get(symbol.upper())
+    if not slug:
+        return {}
+    try:
+        import urllib.request, json, time
+        url = f"https://api.llama.fi/protocol/{slug}"
+        req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read())
+        tvl_history = data.get("tvl", [])
+        if len(tvl_history) < 8:
+            return {}
+        current_tvl = float(tvl_history[-1].get("totalLiquidityUSD", 0))
+        week_ago_tvl = float(tvl_history[-8].get("totalLiquidityUSD", 0))
+        change_pct = round((current_tvl - week_ago_tvl) / max(week_ago_tvl, 1) * 100, 2)
+        return {
+            "protocol":          slug,
+            "tvl_usd":           round(current_tvl, 0),
+            "tvl_7d_change_pct": change_pct,
+        }
+    except Exception:
+        return {}
+
+
+# ── BTC mempool stats ──────────────────────────────────────────────────────────
+
+def get_btc_mempool() -> dict:
+    """
+    BTC mempool size and transaction volume from blockchain.com public API.
+    Returns {"mempool_bytes": int|None, "n_transactions": int|None,
+             "avg_fee_usd": float|None, "congestion": str}
+    congestion: "high"|"moderate"|"low"|"unknown"
+    """
+    try:
+        import urllib.request, json
+        url = "https://api.blockchain.info/stats"
+        req = urllib.request.Request(url, headers={"User-Agent": "TradingJournal/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read())
+        mempool_bytes = data.get("mempool_size")
+        n_tx = data.get("n_transactions_total")
+        fees_per_tx = data.get("total_fees_btc", 0) / max(data.get("n_transactions", 1), 1)
+        btc_price = data.get("market_price_usd", 0) or 0
+        avg_fee_usd = round(fees_per_tx * btc_price, 2) if btc_price else None
+        # Mempool over 100MB = high congestion
+        if mempool_bytes is None:
+            congestion = "unknown"
+        elif mempool_bytes > 100_000_000:
+            congestion = "high"
+        elif mempool_bytes > 30_000_000:
+            congestion = "moderate"
+        else:
+            congestion = "low"
+        return {
+            "mempool_bytes":  mempool_bytes,
+            "n_transactions": n_tx,
+            "avg_fee_usd":    avg_fee_usd,
+            "congestion":     congestion,
+        }
+    except Exception:
+        return {"mempool_bytes": None, "n_transactions": None,
+                "avg_fee_usd": None, "congestion": "unknown"}
+
+
 def get_btc_regime(as_of_ts: str = None) -> str:
     """
     Determine BTC market regime ('bull', 'bear', or 'range') at a given ISO timestamp.

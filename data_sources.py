@@ -71,6 +71,42 @@ def fetch_smart_money(symbol: str) -> dict:
         return {}
 
 
+def fetch_macro_regime() -> dict:
+    """VIX + DXY macro regime from yfinance."""
+    try:
+        from market_context import get_macro_regime
+        return get_macro_regime()
+    except Exception:
+        return {"vix": None, "dxy": None, "regime": "unknown"}
+
+
+def fetch_ls_consensus(symbol: str) -> dict:
+    """Multi-exchange long/short ratio consensus."""
+    try:
+        from market_context import get_ls_consensus
+        return get_ls_consensus(symbol)
+    except Exception:
+        return {}
+
+
+def fetch_defi_tvl(symbol: str) -> dict:
+    """DefiLlama TVL for DeFi protocol tokens. Empty dict for non-DeFi."""
+    try:
+        from market_context import get_defi_tvl
+        return get_defi_tvl(symbol)
+    except Exception:
+        return {}
+
+
+def fetch_btc_mempool() -> dict:
+    """BTC mempool stats from blockchain.com."""
+    try:
+        from market_context import get_btc_mempool
+        return get_btc_mempool()
+    except Exception:
+        return {"congestion": "unknown"}
+
+
 def fetch_news(symbol: str, direction: str = "") -> dict:
     """Grok social intelligence / news context. Returns {} on failure."""
     try:

@@ -58,6 +58,58 @@ def get_binance_ticker_change(symbol: str) -> float | None:
         return None
 
 
+def get_multi_exchange_ls_ratio(symbol: str) -> dict:
+    """
+    Fetch long/short ratio from Binance, Bybit, and OKX simultaneously.
+    Returns {"binance": float|None, "bybit": float|None, "okx": float|None,
+             "consensus": str}  # "longs_dominant"|"shorts_dominant"|"neutral"|"unknown"
+    All public endpoints — no API key required.
+    """
+    import ccxt, threading
+
+    ratios: dict = {}
+
+    def _fetch(exchange_id: str, ccxt_symbol: str):
+        try:
+            ex = getattr(ccxt, exchange_id)({"enableRateLimit": True})
+            ls = ex.fetch_long_short_ratio_history(ccxt_symbol, "1h", limit=1)
+            if ls:
+                ratios[exchange_id] = round(float(ls[-1].get("longShortRatio", 0) or 0), 3)
+        except Exception:
+            ratios[exchange_id] = None
+
+    # Normalize symbol: BTCUSDT -> BTC/USDT:USDT for futures
+    base = symbol.replace("USDT", "")
+    ccxt_sym = f"{base}/USDT:USDT"
+
+    threads = [
+        threading.Thread(target=_fetch, args=("binance",  ccxt_sym)),
+        threading.Thread(target=_fetch, args=("bybit",    ccxt_sym)),
+        threading.Thread(target=_fetch, args=("okx",      ccxt_sym)),
+    ]
+    for t in threads: t.start()
+    for t in threads: t.join(timeout=5)
+
+    valid = [v for v in ratios.values() if v is not None and v > 0]
+    if not valid:
+        consensus = "unknown"
+    else:
+        avg = sum(valid) / len(valid)
+        if avg > 1.5:
+            consensus = "longs_dominant"
+        elif avg < 0.75:
+            consensus = "shorts_dominant"
+        else:
+            consensus = "neutral"
+
+    return {
+        "binance":   ratios.get("binance"),
+        "bybit":     ratios.get("bybit"),
+        "okx":       ratios.get("okx"),
+        "consensus": consensus,
+    }
+
+
 def get_binance_futures_symbols(min_vol_usd: float = 50_000_000) -> list:
     """
     Return top USDT-M linear futures symbols from Binance filtered by 24h volume.
