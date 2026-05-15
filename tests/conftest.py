@@ -91,13 +91,17 @@ def client(db, monkeypatch):
     import database as _db
     monkeypatch.setattr(_db, "DB_PATH", db.execute("PRAGMA database_list").fetchone()[2])
 
-    # Evict the Flask stub so that routes and helpers can import real Flask.
+    # Save stub Flask entries so we can restore them after the test
+    _saved_modules = {k: v for k, v in sys.modules.items()
+                      if k == "flask" or k.startswith("flask.")}
+
+    # Evict the Flask stub so that routes and helpers can import real Flask
     for _mod in list(sys.modules):
         if _mod == "flask" or _mod.startswith("flask."):
             del sys.modules[_mod]
     import flask
 
-    # Reload helpers so its module-level `jsonify` binding points to real Flask.
+    # Reload helpers so its module-level `jsonify` binding points to real Flask
     import helpers
     importlib.reload(helpers)
 
@@ -108,4 +112,14 @@ def client(db, monkeypatch):
     import routes.backtest as rb
     importlib.reload(rb)
     app.register_blueprint(rb.bp)
-    return app.test_client()
+
+    yield app.test_client()
+
+    # Teardown: restore the stub Flask so later tests that depend on it still work
+    for k in list(sys.modules):
+        if k == "flask" or k.startswith("flask."):
+            del sys.modules[k]
+    sys.modules.update(_saved_modules)
+    # Reload helpers to re-bind jsonify to the stub
+    import helpers as _h
+    importlib.reload(_h)
