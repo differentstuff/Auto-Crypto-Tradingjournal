@@ -122,3 +122,26 @@ def get_coin_market_data(symbol: str) -> dict:
         }
     except Exception:
         return {}
+
+
+def get_trending_coins() -> list:
+    """
+    Return list of trending coin symbols (top 10) from CoinGecko last 24h.
+    Trending = already popular = momentum chase risk for new entries.
+    Returns [] on failure.
+
+    Confirmed response (2026-05-15):
+      /search/trending -> {"coins": [{"item": {"symbol": "BTC", "market_cap_rank": 1}}, ...]}
+    Note: top_gainers_losers requires paid CoinGecko plan - not available on keyless.
+    """
+    data = _get("search/trending")
+    try:
+        symbols = []
+        for item in (data.get("coins") or []):
+            coin = item.get("item") or {}
+            sym = (coin.get("symbol") or "").upper().strip()
+            if sym:
+                symbols.append(sym)
+        return symbols[:10]
+    except Exception:
+        return []

@@ -160,3 +160,12 @@ def fetch_coin_market_data(symbol: str) -> dict:
         return get_coin_market_data(symbol)
     except Exception:
         return {}
+
+
+def fetch_trending_coins() -> list:
+    """Trending coin symbols from CoinGecko (last 24h). Empty list on failure."""
+    try:
+        from coingecko_client import get_trending_coins
+        return get_trending_coins()
+    except Exception:
+        return []

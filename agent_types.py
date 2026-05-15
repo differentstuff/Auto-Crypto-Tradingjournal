@@ -32,6 +32,7 @@ class CollectorResult(TypedDict):
     economic_events: dict   # Finnhub: {events, macro_risk, next_event, hours_until}
     global_market: dict     # CoinGecko: {btc_dominance_pct, total_market_cap_usd, market_regime}
     coin_market_data: dict  # CoinGecko: {market_cap_rank, cap_tier, volume_24h_usd}
+    trending_coins:   list  # CoinGecko: top-10 trending symbol strings in last 24h
     fetched_at: float    # unix timestamp
 
 

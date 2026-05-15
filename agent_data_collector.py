@@ -27,6 +27,7 @@ from data_sources import (
     fetch_economic_events,
     fetch_global_market,
     fetch_coin_market_data,
+    fetch_trending_coins,
 )
 
 from agent_types import CollectorInput, CollectorResult
@@ -46,7 +47,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=14) as ex:
+    with ThreadPoolExecutor(max_workers=15) as ex:
         f_funding     = ex.submit(_safe, lambda: fetch_funding_rate(symbol))
         f_oi          = ex.submit(_safe, lambda: fetch_open_interest(symbol))
         f_ls          = ex.submit(_safe, lambda: fetch_long_short_ratio(symbol))
@@ -62,6 +63,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         f_eco         = ex.submit(_safe, fetch_economic_events)
         f_global_mkt  = ex.submit(_safe, fetch_global_market)
         f_coin_mkt    = ex.submit(_safe, lambda: fetch_coin_market_data(symbol))
+        f_trending    = ex.submit(_safe, fetch_trending_coins)
 
     return CollectorResult(
         symbol           = symbol,
@@ -81,5 +83,6 @@ def run(inp: CollectorInput) -> CollectorResult:
         economic_events  = f_eco.result(),
         global_market    = f_global_mkt.result(),
         coin_market_data = f_coin_mkt.result(),
+        trending_coins   = f_trending.result() or [],
         fetched_at       = time.time(),
     )

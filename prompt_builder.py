@@ -298,6 +298,16 @@ def build_context(
                 sections.append(block)
                 remaining -= len(block)
 
+        # Trending coins risk flag
+        trending = cr.get("trending_coins", [])
+        if trending and remaining > 0:
+            sym_base = cr.get("symbol", "").replace("USDT", "").upper()
+            if sym_base in [t.upper() for t in trending]:
+                block = (f"⚠️ MOMENTUM RISK: {sym_base} is currently trending on CoinGecko "
+                         f"(top 10 in 24h) — potential late entry, consider tighter SL")
+                sections.append(block)
+                remaining -= len(block)
+
     # ── 3. Rulebook (kept here for callers that don't use build_stable_prefix) ─
     if include_rulebook and conn is not None:
         if remaining > 500:

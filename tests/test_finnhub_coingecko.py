@@ -70,3 +70,37 @@ def test_collector_result_has_new_fields():
     from agent_types import CollectorResult
     for field in ("economic_events", "global_market", "coin_market_data"):
         assert field in CollectorResult.__annotations__, f"Missing: {field}"
+
+
+def test_get_trending_coins_returns_list():
+    """get_trending_coins returns a list of symbol strings."""
+    fake = {"coins": [
+        {"item": {"symbol": "PEPE", "market_cap_rank": 50}},
+        {"item": {"symbol": "WIF",  "market_cap_rank": 60}},
+    ]}
+    with patch("coingecko_client._get", return_value=fake):
+        from coingecko_client import get_trending_coins
+        result = get_trending_coins()
+    assert "PEPE" in result
+    assert "WIF"  in result
+
+
+def test_get_trending_coins_degrades():
+    """get_trending_coins returns [] on error."""
+    with patch("coingecko_client._get", return_value=None):
+        from coingecko_client import get_trending_coins
+        assert get_trending_coins() == []
+
+
+def test_collector_result_has_trending_coins():
+    """CollectorResult must include trending_coins field."""
+    from agent_types import CollectorResult
+    assert "trending_coins" in CollectorResult.__annotations__
+
+
+def test_fetch_trending_adapter():
+    """fetch_trending_coins adapter returns list."""
+    with patch("coingecko_client.get_trending_coins", return_value=["BTC", "ETH"]):
+        from data_sources import fetch_trending_coins
+        result = fetch_trending_coins()
+    assert "BTC" in result
