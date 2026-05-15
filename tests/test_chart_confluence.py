@@ -46,3 +46,33 @@ def test_smt_symbols_coverage():
     from chart_confluence import SMT_SYMBOLS
     required = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
     assert required.issubset(SMT_SYMBOLS)
+
+
+def test_smt_direction_weight_bullish_divergence(monkeypatch):
+    """Symbol up, pair down → +0.15 (bullish SMT)."""
+    import chart_confluence as cc
+    monkeypatch.setattr(cc, "get_binance_ticker_change",
+                        lambda s: 2.5 if s == "BTCUSDT" else -1.5)
+    assert cc._smt_direction_weight({}, "BTCUSDT") == 0.15
+
+
+def test_smt_direction_weight_bearish_divergence(monkeypatch):
+    """Symbol down, pair up → -0.15 (bearish SMT)."""
+    import chart_confluence as cc
+    monkeypatch.setattr(cc, "get_binance_ticker_change",
+                        lambda s: -2.0 if s == "BTCUSDT" else 1.5)
+    assert cc._smt_direction_weight({}, "BTCUSDT") == -0.15
+
+
+def test_smt_direction_weight_no_divergence(monkeypatch):
+    """Both assets moving same direction → 0.0."""
+    import chart_confluence as cc
+    monkeypatch.setattr(cc, "get_binance_ticker_change",
+                        lambda s: 2.0)
+    assert cc._smt_direction_weight({}, "BTCUSDT") == 0.0
+
+
+def test_smt_direction_weight_unknown_symbol():
+    """Symbol not in SMT_PAIRS → 0.0."""
+    import chart_confluence as cc
+    assert cc._smt_direction_weight({}, "PEPEUSDT") == 0.0

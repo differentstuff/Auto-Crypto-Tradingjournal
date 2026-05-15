@@ -44,6 +44,20 @@ def get_binance_price(symbol: str) -> float | None:
         return None
 
 
+def get_binance_ticker_change(symbol: str) -> float | None:
+    """
+    Return the 24h percentage price change for a symbol on Binance.
+    Returns None on error. Uses cached exchange instance.
+    """
+    try:
+        exchange = get_binance_exchange()
+        ccxt_sym = symbol.replace("USDT", "/USDT:USDT")
+        ticker = exchange.fetch_ticker(ccxt_sym)
+        return ticker.get("percentage")  # float, e.g. 2.3 for +2.3%
+    except Exception:
+        return None
+
+
 def get_binance_futures_symbols(min_vol_usd: float = 50_000_000) -> list:
     """
     Return top USDT-M linear futures symbols from Binance filtered by 24h volume.

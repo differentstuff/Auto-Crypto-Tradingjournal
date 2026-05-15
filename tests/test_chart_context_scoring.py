@@ -48,7 +48,7 @@ def test_mfi_weight_boundary_above_10():
 
 
 def test_confluence_score_max_val_updated():
-    """max_val in confluence_score must equal len(tfs) * 6.35 when SMT included."""
+    """max_val in confluence_score must equal len(tfs) * 6.50 when SMT included."""
     from chart_context import confluence_score
     import unittest.mock as mock
 
@@ -60,8 +60,8 @@ def test_confluence_score_max_val_updated():
     }
     with mock.patch("chart_context.get_chart_context", return_value=mock_ctx):
         result = confluence_score("BTCUSDT", ["4H", "1D"], ctx=mock_ctx)
-    assert result["max"] == pytest.approx(2 * 6.35, rel=1e-3), \
-        f"Expected max=12.7, got {result['max']}"
+    assert result["max"] == pytest.approx(2 * 6.50, rel=1e-3), \
+        f"Expected max=13.0, got {result['max']}"
 
 
 def test_confluence_score_mfi_raises_bullish_score():

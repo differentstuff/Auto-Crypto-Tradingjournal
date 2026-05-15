@@ -4,11 +4,21 @@ Single public function: confluence_score().
 All _*_weight helpers are private to this module.
 Extracted from chart_context.py.
 """
-from ccxt_client import get_binance_price
+from ccxt_client import get_binance_price, get_binance_ticker_change
 
 # Correlated pairs where cross-exchange divergence is meaningful.
 # All must be liquid USDT-M perpetuals available on both Bitget and Binance.
 SMT_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
+
+# For each symbol, its correlated counterpart to compare direction against.
+# Both must be available via get_binance_ticker_change() below.
+SMT_PAIRS = {
+    "BTCUSDT": "ETHUSDT",
+    "ETHUSDT": "BTCUSDT",
+    "SOLUSDT": "ETHUSDT",
+    "BNBUSDT": "BTCUSDT",
+    "XRPUSDT": "BTCUSDT",
+}
 
 
 def _rsi_weight(rsi_val: float) -> float:
@@ -112,6 +122,43 @@ def _smt_weight(inds: dict, symbol: str) -> float:
     return 0.15 if delta_pct >= 0.005 else 0.0
 
 
+def _smt_direction_weight(inds: dict, symbol: str) -> float:
+    """
+    True SMT divergence: compare 24h direction of symbol vs its correlated pair.
+
+    Returns +0.15 when the symbol is going UP while its pair goes DOWN
+    (pair fails to confirm the move — bullish SMT divergence at lows).
+    Returns -0.15 when the symbol is going DOWN while its pair goes UP
+    (pair fails to confirm — bearish SMT divergence at highs).
+    Returns 0.0 when both move in the same direction or data unavailable.
+
+    Threshold: divergence only counts when the directions differ by >= 1%.
+    """
+    pair = SMT_PAIRS.get(symbol)
+    if not pair:
+        return 0.0
+    try:
+        sym_chg  = get_binance_ticker_change(symbol)
+        pair_chg = get_binance_ticker_change(pair)
+    except Exception:
+        return 0.0
+    if sym_chg is None or pair_chg is None:
+        return 0.0
+    # Same direction = no divergence
+    if sym_chg * pair_chg > 0:
+        return 0.0
+    # Directions differ — check magnitude
+    if abs(sym_chg - pair_chg) < 1.0:
+        return 0.0
+    # Symbol up, pair down → bullish SMT
+    if sym_chg > 0 and pair_chg < 0:
+        return 0.15
+    # Symbol down, pair up → bearish SMT
+    if sym_chg < 0 and pair_chg > 0:
+        return -0.15
+    return 0.0
+
+
 def _mfi_weight(wt: dict) -> float:
     """
     MFI (Money Flow) contribution from WaveTrend data.
@@ -138,6 +185,7 @@ def _get_tf_weights(ctx: dict, tf: str, symbol: str = "") -> list:
         _mfi_weight(inds.get("wavetrend", {})),
         _cvd_weight(inds.get("cvd", {})),
         _smt_weight(inds, symbol),
+        _smt_direction_weight(inds, symbol),
     ]
     base.append(_volume_weight(inds, sum(base)))
     return base
@@ -170,18 +218,19 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         wt_w   = _wt_weight(inds.get("wavetrend", {}))
         mfi_w  = _mfi_weight(inds.get("wavetrend", {}))
         cvd_w  = _cvd_weight(inds.get("cvd", {}))
-        smt_w  = _smt_weight(inds, symbol)
-        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + mfi_w + cvd_w + smt_w
+        smt_w     = _smt_weight(inds, symbol)
+        smt_dir_w = _smt_direction_weight(inds, symbol)
+        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + mfi_w + cvd_w + smt_w + smt_dir_w
         vol_w  = _volume_weight(inds, base_score)
 
         tf_score = base_score + vol_w
         total_score += tf_score
 
-        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, vol_w) if w > 0), 1)
-        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, vol_w) if w < 0), 1)
+        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, smt_dir_w, vol_w) if w > 0), 1)
+        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, smt_dir_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
-    max_val = float(len(tfs) * 6.35)  # SMT divergence +0.15 per TF when price dislocation detected
+    max_val = float(len(tfs) * 6.50)  # cross-exchange SMT +0.15 + direction SMT +0.15 per TF
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
