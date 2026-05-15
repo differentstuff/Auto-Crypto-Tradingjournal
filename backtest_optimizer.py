@@ -101,6 +101,8 @@ def run_optimizer(symbol: str = "BTCUSDT", timeframe: str = "4H",
     Run Optuna Bayesian optimization. Returns best params dict.
     Typical runtime on Pi: 5-15 min with n_trials=100.
     """
+    import time as _time_mod
+    t0 = _time_mod.time()
     study = optuna.create_study(direction="maximize")
     study.optimize(
         lambda t: _objective(t, symbol, timeframe, days),
@@ -110,4 +112,26 @@ def run_optimizer(symbol: str = "BTCUSDT", timeframe: str = "4H",
     completed = [t for t in study.trials if t.state.name == "COMPLETE"]
     if not completed:
         return {}
-    return study.best_params
+    best_params = study.best_params
+    best_sharpe = study.best_value if study.best_value > -999.0 else None
+    duration_sec = round(_time_mod.time() - t0, 1)
+
+    # Save to optimizer_runs history
+    try:
+        import json as _json
+        from database import db_conn as _db_conn
+        with _db_conn() as _conn:
+            _conn.execute("""
+                INSERT INTO optimizer_runs (symbol, timeframe, days, n_trials, best_sharpe, best_params, duration_sec)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                symbol, timeframe, days, n_trials,
+                round(best_sharpe, 4) if best_sharpe is not None else None,
+                _json.dumps(best_params),
+                duration_sec,
+            ))
+            _conn.commit()
+    except Exception:
+        pass  # non-fatal — job result is in-memory regardless
+
+    return best_params

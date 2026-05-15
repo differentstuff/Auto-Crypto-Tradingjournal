@@ -303,6 +303,21 @@ def init_db():
         )
     """)
 
+    # ── optimizer_runs ────────────────────────────────────────────────────────
+    _apply(32, "optimizer_runs", """
+        CREATE TABLE IF NOT EXISTS optimizer_runs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts          TEXT    NOT NULL DEFAULT (datetime('now')),
+            symbol      TEXT    NOT NULL,
+            timeframe   TEXT    NOT NULL,
+            days        INTEGER NOT NULL,
+            n_trials    INTEGER NOT NULL,
+            best_sharpe REAL,
+            best_params TEXT,
+            duration_sec REAL
+        )
+    """)
+
     # ── settings ──────────────────────────────────────────────────────────────
     # Key-value store: last sync time, account equity, rulebook timestamps.
     # Also created by bitget_sync._ensure_settings_table() but must exist here

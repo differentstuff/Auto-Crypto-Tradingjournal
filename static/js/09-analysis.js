@@ -102,11 +102,17 @@ async function loadAccuracyProgress() {
     optimizerDiv.id = 'optimizerResult';
     optimizerDiv.style.cssText = 'font-size:.8rem;margin-top:8px';
 
+    const historyDiv = document.createElement('div');
+    historyDiv.id = 'optimizer-history';
+    historyDiv.style.cssText = 'margin-top:12px';
+
     btCard.appendChild(btTitle);
     btCard.appendChild(inputRow);
     btCard.appendChild(resultDiv);
     btCard.appendChild(optimizerDiv);
+    btCard.appendChild(historyDiv);
     card.parentElement.insertBefore(btCard, card.nextSibling);
+    loadOptimizerHistory();
   }
 }
 
@@ -214,6 +220,7 @@ async function loadOptimizer() {
           _setBtBtnsDisabled(false);
           _renderOptimizerResult(container, pollRes.data.result, sym);
           notify('Optimizer complete for ' + sym, 'success');
+          loadOptimizerHistory();
         }
         // status === 'running': keep polling
       } catch (pollErr) {
@@ -232,6 +239,59 @@ async function loadOptimizer() {
     _setBtBtnsDisabled(false);
     notify('Optimizer error: ' + e.message, 'danger');
   }
+}
+
+async function loadOptimizerHistory() {
+  const el = document.getElementById('optimizer-history');
+  if (!el) return;
+  const res = await api('/api/backtest/optimizer-history');
+  if (!res.ok || !res.data.runs.length) {
+    el.textContent = '';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:var(--muted);font-size:.78rem';
+    msg.textContent = 'No optimizer runs yet';
+    el.appendChild(msg);
+    return;
+  }
+  el.textContent = '';
+  res.data.runs.forEach(r => {
+    const params = r.best_params || {};
+    const sharpeColor = r.best_sharpe > 1.0 ? 'var(--accent3)' : r.best_sharpe > 0 ? 'var(--muted)' : 'var(--red)';
+    const card = document.createElement('div');
+    card.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:.78rem';
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex;justify-content:space-between;margin-bottom:4px';
+    const sym = document.createElement('span');
+    const symB = document.createElement('b');
+    symB.textContent = r.symbol;
+    sym.appendChild(symB);
+    sym.appendChild(document.createTextNode(' ' + r.timeframe + ' · ' + r.days + 'd · ' + r.n_trials + ' trials'));
+    const ts = document.createElement('span');
+    ts.style.color = 'var(--muted)';
+    ts.textContent = (r.ts || '').slice(0, 16);
+    topRow.appendChild(sym);
+    topRow.appendChild(ts);
+    const midRow = document.createElement('div');
+    midRow.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap';
+    const sharpeEl = document.createElement('span');
+    const sharpeB = document.createElement('b');
+    sharpeB.style.color = sharpeColor;
+    sharpeB.textContent = r.best_sharpe != null ? r.best_sharpe.toFixed(2) : '—';
+    sharpeEl.appendChild(document.createTextNode('Sharpe: '));
+    sharpeEl.appendChild(sharpeB);
+    const durEl = document.createElement('span');
+    durEl.style.color = 'var(--muted)';
+    durEl.textContent = r.duration_sec != null ? r.duration_sec.toFixed(0) + 's' : '';
+    midRow.appendChild(sharpeEl);
+    midRow.appendChild(durEl);
+    const paramRow = document.createElement('div');
+    paramRow.style.cssText = 'color:var(--muted);margin-top:3px;font-size:.72rem';
+    paramRow.textContent = Object.entries(params).map(([k, v]) => k + ': ' + (typeof v === 'number' ? v.toFixed(3) : v)).join(' · ');
+    card.appendChild(topRow);
+    card.appendChild(midRow);
+    card.appendChild(paramRow);
+    el.appendChild(card);
+  });
 }
 
 function _renderOptimizerResult(container, params, sym) {

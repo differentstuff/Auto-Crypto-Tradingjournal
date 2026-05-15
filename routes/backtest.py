@@ -1,4 +1,6 @@
 """routes/backtest.py — Backtest and optimizer API endpoints."""
+import traceback
+
 from flask import Blueprint, request
 
 from backtest_engine import BacktestParams, run_backtest
@@ -74,3 +76,32 @@ def backtest_optimize_status(job_id: str):
     if job["status"] == "error":
         return _err("Optimizer failed — check server logs", 500)
     return _ok(job)
+
+
+@bp.get("/api/backtest/optimizer-history")
+def api_optimizer_history():
+    """Return last 5 optimizer runs."""
+    try:
+        from database import db_conn
+        with db_conn() as conn:
+            rows = conn.execute("""
+                SELECT ts, symbol, timeframe, days, n_trials,
+                       best_sharpe, best_params, duration_sec
+                FROM optimizer_runs
+                ORDER BY id DESC
+                LIMIT 5
+            """).fetchall()
+        import json
+        history = []
+        for r in rows:
+            row = dict(r)
+            if row.get("best_params"):
+                try:
+                    row["best_params"] = json.loads(row["best_params"])
+                except Exception:
+                    pass
+            history.append(row)
+        return _ok({"runs": history})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
