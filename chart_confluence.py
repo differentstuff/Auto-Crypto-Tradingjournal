@@ -6,7 +6,9 @@ Extracted from chart_context.py.
 """
 from ccxt_client import get_binance_price
 
-SMT_SYMBOLS = {"BTCUSDT", "ETHUSDT"}
+# Correlated pairs where cross-exchange divergence is meaningful.
+# All must be liquid USDT-M perpetuals available on both Bitget and Binance.
+SMT_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
 
 
 def _rsi_weight(rsi_val: float) -> float:

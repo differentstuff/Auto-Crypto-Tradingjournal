@@ -31,3 +31,18 @@ def test_smt_weight_missing_price(monkeypatch):
     import chart_confluence as cc
     monkeypatch.setattr(cc, "get_binance_price", lambda s: 100.0)
     assert cc._smt_weight({}, "BTCUSDT") == 0.0
+
+
+def test_smt_weight_solusdt_in_set(monkeypatch):
+    """SOLUSDT is now in SMT_SYMBOLS — should trigger on divergence."""
+    import chart_confluence as cc
+    monkeypatch.setattr(cc, "get_binance_price", lambda s: 98.0)
+    inds = {"ema": {"current_price": 100.0}}  # 2% delta
+    assert cc._smt_weight(inds, "SOLUSDT") == 0.15
+
+
+def test_smt_symbols_coverage():
+    """SMT_SYMBOLS must contain at least BTC, ETH, SOL, BNB, XRP."""
+    from chart_confluence import SMT_SYMBOLS
+    required = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
+    assert required.issubset(SMT_SYMBOLS)
