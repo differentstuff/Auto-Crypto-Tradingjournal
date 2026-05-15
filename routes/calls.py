@@ -14,6 +14,15 @@ import blofin_client
 bp = Blueprint("calls", __name__)
 
 
+def _safe_float(val, default=None):
+    """Parse float from user-supplied input. Returns default on invalid input — never raises."""
+    try:
+        f = float(val)
+        return f if f else default
+    except (TypeError, ValueError):
+        return default
+
+
 @bp.route("/api/calls/analyze", methods=["POST"])
 def api_calls_analyze():
     try:
@@ -102,9 +111,9 @@ def api_calls_save():
             symbol, direction,
             d.get("_call_text", ""),
             sz.get("entry_price"), sz.get("dca_price"),
-            sz.get("sl_price") or (float(sl_b.get("price") or 0) or None),
-            float(tp1.get("price") or 0) or None,
-            float(tp2.get("price") or 0) or None,
+            sz.get("sl_price") or _safe_float(sl_b.get("price")),
+            _safe_float(tp1.get("price")),
+            _safe_float(tp2.get("price")),
             sz.get("avg_entry"), sz.get("total_notional_usdt"), sz.get("margin_needed_usdt"),
             sz.get("risk_pct"), sz.get("risk_amount_usdt"), sz.get("leverage"),
             1 if d.get("has_dca") else 0,

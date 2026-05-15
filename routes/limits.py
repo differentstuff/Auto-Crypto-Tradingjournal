@@ -60,6 +60,10 @@ def api_limits_bulk_update():
     if not ids:
         return _err("ids list is required")
 
+    VALID_STATUSES = {"waiting", "triggered", "dismissed", "expired"}
+    if "status" in d and d["status"] not in VALID_STATUSES:
+        return _err(f"status must be one of: {', '.join(sorted(VALID_STATUSES))}")
+
     editable = ["status", "sl_price", "tp1_price", "tp2_price", "call_id", "analyst", "notes"]
     # Pre-built fragments — column names are hardcoded, never from request data.
     _set_sql = {k: k + " = ?" for k in editable}
@@ -100,6 +104,11 @@ def api_limits_risk_summary():
 @bp.route("/api/limits/<int:lim_id>", methods=["PATCH"])
 def api_limits_update(lim_id):
     d        = request.get_json(force=True)
+
+    VALID_STATUSES = {"waiting", "triggered", "dismissed", "expired"}
+    if "status" in d and d["status"] not in VALID_STATUSES:
+        return _err(f"status must be one of: {', '.join(sorted(VALID_STATUSES))}")
+
     editable = ["status", "limit_price", "size_usdt", "leverage", "sl_price",
                 "tp1_price", "tp2_price", "analyst", "notes", "analysis_json",
                 "call_id", "bitget_order_id"]

@@ -118,6 +118,9 @@ def client(db, monkeypatch):
     import routes.backtest as rb
     importlib.reload(rb)
     app.register_blueprint(rb.bp)
+    import routes.limits as rl
+    importlib.reload(rl)
+    app.register_blueprint(rl.bp)
 
     yield app.test_client()
 
