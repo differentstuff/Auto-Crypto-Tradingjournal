@@ -4,7 +4,44 @@ Single public function: confluence_score().
 All _*_weight helpers are private to this module.
 Extracted from chart_context.py.
 """
+import threading as _threading
+import time as _time
 from ccxt_client import get_binance_price, get_binance_ticker_change
+
+# VIX cache: TTL-based (5 minutes) to avoid hammering yfinance during scans.
+_vix_cache: dict = {"value": None, "ts": 0.0}
+_vix_lock = _threading.Lock()
+_VIX_TTL = 300  # 5 minutes
+
+def _get_vix_multiplier() -> float:
+    """
+    Returns a regime multiplier based on VIX level.
+    Cached for 5 minutes to avoid hammering yfinance during scans.
+    - VIX > 30 (high fear / risk-off): 0.80 — suppress bullish confluence
+    - VIX ≤ 30 (normal / risk-on):    1.00 — no suppression
+    Returns 1.0 on any error or if yfinance unavailable.
+    """
+    global _vix_cache
+    now = _time.time()
+    with _vix_lock:
+        if now - _vix_cache["ts"] < _VIX_TTL and _vix_cache["value"] is not None:
+            return _vix_cache["value"]
+    try:
+        from market_context import get_macro_regime
+        regime = get_macro_regime()
+        vix = regime.get("vix")
+        if vix is None:
+            multiplier = 1.0
+        elif vix > 30:
+            multiplier = 0.80
+        else:
+            multiplier = 1.0
+        with _vix_lock:
+            _vix_cache = {"value": multiplier, "ts": now}
+        return multiplier
+    except Exception:
+        return 1.0
+
 
 # Correlated pairs where cross-exchange divergence is meaningful.
 # All must be liquid USDT-M perpetuals available on both Bitget and Binance.
@@ -230,6 +267,11 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, smt_dir_w, vol_w) if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
+    # Apply macro regime multiplier (VIX-based, cached 5 min)
+    vix_mult = _get_vix_multiplier()
+    if vix_mult != 1.0:
+        total_score = round(total_score * vix_mult, 2)
+
     max_val = float(len(tfs) * 6.50)  # cross-exchange SMT +0.15 + direction SMT +0.15 per TF
     pct     = total_score / max_val if max_val else 0.0
 
@@ -259,4 +301,5 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         "bearish": bear_total,
         "label":   label,
         "details": details,
+        "vix_regime_active": vix_mult != 1.0,
     }

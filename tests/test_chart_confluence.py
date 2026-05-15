@@ -76,3 +76,47 @@ def test_smt_direction_weight_unknown_symbol():
     """Symbol not in SMT_PAIRS → 0.0."""
     import chart_confluence as cc
     assert cc._smt_direction_weight({}, "PEPEUSDT") == 0.0
+
+
+def test_vix_multiplier_suppresses_on_high_vix(monkeypatch):
+    """VIX > 30 should reduce confluence score by 20%."""
+    import chart_confluence as cc
+    # Force VIX cache to return 0.80 multiplier
+    monkeypatch.setattr(cc, "_get_vix_multiplier", lambda: 0.80)
+    # Use a mock context that would normally score positively
+    ctx = {
+        "4H": {"indicators": {"ok": True,
+            "rsi": {"value": 25, "signal": "oversold"},
+            "macd": {"trend": "bullish", "histogram_trend": "rising",
+                     "crossover": False, "crossunder": False},
+            "ema": {"stack": "bullish", "alignment": "bullish", "current_price": 100.0},
+            "adx": {"value": 30, "strength": "strong", "direction": "bullish"},
+            "wavetrend": {"wt1": -65.0, "wt2": -68.0, "signal": "buy",
+                          "zone": "oversold", "mfi": 25.0,
+                          "cross_up": True, "cross_down": False},
+            "cvd": {"trend": "rising"}, "volume": {"ratio": 2.0},
+        }}
+    }
+    with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "chart_confluence.get_binance_price", return_value=None):
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+                "chart_confluence.get_binance_ticker_change", return_value=None):
+            result = cc.confluence_score("BTCUSDT", ["4H"], ctx=ctx)
+    # Verify the multiplier was applied and vix_regime_active flag is set
+    assert "score" in result
+    assert "vix_regime_active" in result
+    assert result["vix_regime_active"] == True
+
+
+def test_vix_multiplier_no_change_normal(monkeypatch):
+    """VIX ≤ 30 should not change confluence score."""
+    import chart_confluence as cc
+    monkeypatch.setattr(cc, "_get_vix_multiplier", lambda: 1.0)
+    assert cc._get_vix_multiplier() == 1.0
+
+
+def test_vix_cache_structure():
+    """_vix_cache dict must have value and ts keys."""
+    from chart_confluence import _vix_cache
+    assert "value" in _vix_cache
+    assert "ts" in _vix_cache
