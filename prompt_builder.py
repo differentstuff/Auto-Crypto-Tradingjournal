@@ -451,12 +451,26 @@ def build_context(
                 sections.append(strengths)
                 remaining -= len(strengths)
 
-    # ── 7. Nansen smart money signal ─────────────────────────────────────────
+    # ── 7. Nansen smart money signal (with on-chain flow direction) ────────────
     if symbol and nansen_client.is_configured() and remaining > 100:
         try:
             ns = nansen_client.get_smart_money_signal(symbol)
             if ns.get("ok"):
-                ns_block = f"NANSEN SMART MONEY: {ns['prompt_line']}"
+                # Highlight flow direction as the most actionable signal
+                direction = ns.get("direction", "unknown")
+                flow_icon = {
+                    "accumulating": "🟢",
+                    "distributing": "🔴",
+                    "neutral":      "⚪",
+                }.get(direction, "⚫")
+
+                netflow = ns.get("netflow_usd", 0)
+                flow_str = f"${netflow:+,.0f}" if netflow != 0 else "neutral"
+
+                ns_block = (
+                    f"NANSEN SMART MONEY: {flow_icon} {direction.upper()} | "
+                    f"netflow {flow_str} | {ns['prompt_line']}"
+                )
                 sections.append(ns_block)
                 remaining -= len(ns_block)
         except Exception as e:
