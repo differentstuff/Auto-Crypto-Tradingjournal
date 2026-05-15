@@ -82,3 +82,30 @@ def sample_positions(db):
         )
     db.commit()
     return db
+
+
+@pytest.fixture
+def client(db, monkeypatch):
+    """Real Flask test client with in-memory DB, isolated per test."""
+    import importlib
+    import database as _db
+    monkeypatch.setattr(_db, "DB_PATH", db.execute("PRAGMA database_list").fetchone()[2])
+
+    # Evict the Flask stub so that routes and helpers can import real Flask.
+    for _mod in list(sys.modules):
+        if _mod == "flask" or _mod.startswith("flask."):
+            del sys.modules[_mod]
+    import flask
+
+    # Reload helpers so its module-level `jsonify` binding points to real Flask.
+    import helpers
+    importlib.reload(helpers)
+
+    import routes.calls as rc
+    importlib.reload(rc)
+    app = flask.Flask(__name__)
+    app.register_blueprint(rc.bp)
+    import routes.backtest as rb
+    importlib.reload(rb)
+    app.register_blueprint(rb.bp)
+    return app.test_client()
