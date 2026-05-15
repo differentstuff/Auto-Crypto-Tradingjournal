@@ -4,7 +4,6 @@
 
 A self-hosted crypto futures trading journal with live Bitget/Blofin sync, a 7-agent AI pipeline, and deep performance analytics. Runs on a Raspberry Pi (or any Linux box), accessible from any local browser.
 
-**Community:** [📢 t.me/autocryptotradingjournal](https://t.me/autocryptotradingjournal) · [💬 t.me/autotradingjournal](https://t.me/autotradingjournal)
 
 <p align="center">
   <img src="docs/images/factsheet-preview.png" alt="Crypto Trading Journal fact sheet" width="720">
@@ -14,10 +13,6 @@ A self-hosted crypto futures trading journal with live Bitget/Blofin sync, a 7-a
   <strong>v1.5.0</strong>
   &nbsp;·&nbsp;
   <a href="docs/architecture_detailed.pdf">📐 Architecture PDF</a>
-  &nbsp;·&nbsp;
-  <a href="https://t.me/autocryptotradingjournal">📢 Telegram</a>
-  &nbsp;·&nbsp;
-  <a href="https://t.me/autotradingjournal">💬 Community</a>
 </p>
 
 ---
