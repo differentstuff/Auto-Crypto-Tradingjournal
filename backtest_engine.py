@@ -12,6 +12,17 @@ import bitget_client
 from backtest_metrics import sharpe_ratio, sortino_ratio, max_drawdown, profit_factor
 
 
+# Confluence signal weights — mirror chart_context.py directional signals
+# (SMT Divergence excluded: not available in OHLCV history)
+_RSI_W = 0.5    # rsi < 40
+_EMA_W = 1.0    # ema_bull (20 > 50)
+_WT_W  = 0.85   # wt_buy (oversold cross)
+_MFI_W = 0.3    # mfi > 10
+_CVD_W = 0.4    # cvd_trend rising
+_VOL_W = 0.5    # vol_ratio > 1.5x average
+_CONFLUENCE_DENOM = _RSI_W + _EMA_W + _WT_W + _MFI_W + _CVD_W + _VOL_W
+
+
 def _rsi(series: pd.Series, length: int = 14) -> pd.Series:
     """Wilder-smoothed RSI — mirrors pandas_ta.rsi()."""
     delta = series.diff()
@@ -167,13 +178,13 @@ def _compute_signals(df: pd.DataFrame, params: BacktestParams) -> pd.DataFrame:
 
     # Simplified confluence fraction (weights mirror chart_context.py)
     df["confluence"] = (
-        (df["rsi"] < 40).astype(float) * 0.5
-        + df["ema_bull"].astype(float) * 1.0
-        + df["wt_buy"].astype(float) * 0.85
-        + (df["mfi"] > 10).astype(float) * 0.3
-        + df["cvd_trend"].astype(float) * 0.4
-        + (df["vol_ratio"] > 1.5).astype(float) * 0.5
-    ) / 3.55
+        (df["rsi"] < 40).astype(float) * _RSI_W
+        + df["ema_bull"].astype(float) * _EMA_W
+        + df["wt_buy"].astype(float) * _WT_W
+        + (df["mfi"] > 10).astype(float) * _MFI_W
+        + df["cvd_trend"].astype(float) * _CVD_W
+        + (df["vol_ratio"] > 1.5).astype(float) * _VOL_W
+    ) / _CONFLUENCE_DENOM
 
     df["entry_signal"] = (
         df["wt_buy"]
