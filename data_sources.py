@@ -131,3 +131,32 @@ def fetch_coinalyze(symbol: str) -> dict:
         return coinalyze_client.get_all(symbol)
     except Exception:
         return {}
+
+
+def fetch_economic_events() -> dict:
+    """Upcoming high-impact macro events from Finnhub. Degrades to {} on failure."""
+    try:
+        import finnhub_client
+        if not finnhub_client._API_KEY:
+            return {"events": [], "macro_risk": False, "next_event": None, "hours_until": None}
+        return finnhub_client.get_upcoming_events(hours_ahead=48)
+    except Exception:
+        return {"events": [], "macro_risk": False, "next_event": None, "hours_until": None}
+
+
+def fetch_global_market() -> dict:
+    """BTC dominance, total market cap, altcoin season from CoinGecko. No key needed."""
+    try:
+        from coingecko_client import get_global_market
+        return get_global_market()
+    except Exception:
+        return {}
+
+
+def fetch_coin_market_data(symbol: str) -> dict:
+    """Market cap rank, volume, cap tier for a coin from CoinGecko."""
+    try:
+        from coingecko_client import get_coin_market_data
+        return get_coin_market_data(symbol)
+    except Exception:
+        return {}

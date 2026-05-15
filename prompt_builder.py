@@ -243,6 +243,61 @@ def build_context(
                     sections.append(block)
                     remaining -= len(block)
 
+        # Economic events / macro risk (Finnhub)
+        eco = cr.get("economic_events", {})
+        if eco and remaining > 0:
+            if eco.get("macro_risk"):
+                hrs = eco.get("hours_until")
+                evt = eco.get("next_event", "unknown event")
+                hrs_str = f" in {hrs}h" if hrs is not None else ""
+                block = (
+                    f"⚠️ MACRO RISK: {evt}{hrs_str} — consider reduced position size"
+                )
+                sections.append(block)
+                remaining -= len(block)
+            elif eco.get("events"):
+                block = (
+                    f"UPCOMING MACRO: {eco['events'][0]['event']} "
+                    f"({eco['events'][0].get('time', '?')[:10]})"
+                )
+                sections.append(block)
+                remaining -= len(block)
+
+        # Global market (BTC dominance / altcoin regime) from CoinGecko
+        gm = cr.get("global_market", {})
+        if gm and remaining > 0:
+            regime = gm.get("market_regime", "unknown")
+            dom = gm.get("btc_dominance_pct")
+            mcap = gm.get("total_market_cap_usd", 0)
+            parts = []
+            if dom is not None:
+                parts.append(f"BTC dom: {dom}% ({regime.replace('_', ' ')})")
+            if mcap:
+                parts.append(f"Total mcap: ${mcap / 1e12:.2f}T")
+            if parts:
+                block = "MARKET: " + " | ".join(parts)
+                sections.append(block)
+                remaining -= len(block)
+
+        # Coin market data from CoinGecko
+        cmd = cr.get("coin_market_data", {})
+        if cmd and remaining > 0:
+            rank = cmd.get("market_cap_rank")
+            tier = cmd.get("cap_tier", "unknown")
+            vol  = cmd.get("volume_24h_usd", 0)
+            chg  = cmd.get("price_change_24h_pct", 0)
+            parts = []
+            if rank:
+                parts.append(f"Rank #{rank} ({tier.replace('_', ' ')})")
+            if vol:
+                parts.append(f"Vol: ${vol / 1e6:.0f}M 24h")
+            if chg:
+                parts.append(f"{'+' if chg >= 0 else ''}{chg:.1f}% 24h")
+            if parts:
+                block = "COINGECKO: " + " | ".join(parts)
+                sections.append(block)
+                remaining -= len(block)
+
     # ── 3. Rulebook (kept here for callers that don't use build_stable_prefix) ─
     if include_rulebook and conn is not None:
         if remaining > 500:

@@ -24,6 +24,9 @@ from data_sources import (
     fetch_defi_tvl,
     fetch_btc_mempool,
     fetch_coinalyze,
+    fetch_economic_events,
+    fetch_global_market,
+    fetch_coin_market_data,
 )
 
 from agent_types import CollectorInput, CollectorResult
@@ -43,7 +46,7 @@ def run(inp: CollectorInput) -> CollectorResult:
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=12) as ex:
+    with ThreadPoolExecutor(max_workers=14) as ex:
         f_funding     = ex.submit(_safe, lambda: fetch_funding_rate(symbol))
         f_oi          = ex.submit(_safe, lambda: fetch_open_interest(symbol))
         f_ls          = ex.submit(_safe, lambda: fetch_long_short_ratio(symbol))
@@ -56,21 +59,27 @@ def run(inp: CollectorInput) -> CollectorResult:
         f_defi        = ex.submit(_safe, lambda: fetch_defi_tvl(symbol))
         f_mempool     = ex.submit(_safe, fetch_btc_mempool)
         f_coinalyze   = ex.submit(_safe, lambda: fetch_coinalyze(symbol))
+        f_eco         = ex.submit(_safe, fetch_economic_events)
+        f_global_mkt  = ex.submit(_safe, fetch_global_market)
+        f_coin_mkt    = ex.submit(_safe, lambda: fetch_coin_market_data(symbol))
 
     return CollectorResult(
-        symbol        = symbol,
-        candles       = candles,
-        funding_rate  = f_funding.result(),
-        open_interest = f_oi.result(),
-        long_short    = f_ls.result(),
-        fear_greed    = f_fg.result(),
-        fred_macro    = f_fred.result(),
-        nansen        = f_nansen.result(),
-        grok          = f_grok.result(),
-        macro_regime  = f_macro.result(),
-        ls_consensus  = f_ls_con.result(),
-        defi_tvl      = f_defi.result(),
-        btc_mempool   = f_mempool.result(),
-        coinalyze     = f_coinalyze.result(),
-        fetched_at    = time.time(),
+        symbol           = symbol,
+        candles          = candles,
+        funding_rate     = f_funding.result(),
+        open_interest    = f_oi.result(),
+        long_short       = f_ls.result(),
+        fear_greed       = f_fg.result(),
+        fred_macro       = f_fred.result(),
+        nansen           = f_nansen.result(),
+        grok             = f_grok.result(),
+        macro_regime     = f_macro.result(),
+        ls_consensus     = f_ls_con.result(),
+        defi_tvl         = f_defi.result(),
+        btc_mempool      = f_mempool.result(),
+        coinalyze        = f_coinalyze.result(),
+        economic_events  = f_eco.result(),
+        global_market    = f_global_mkt.result(),
+        coin_market_data = f_coin_mkt.result(),
+        fetched_at       = time.time(),
     )
