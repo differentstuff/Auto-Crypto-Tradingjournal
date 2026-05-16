@@ -108,26 +108,39 @@ def make_styles():
 
 # ── Table helpers ─────────────────────────────────────────────────────────────
 def make_table(data, col_widths, header_bg=C_ACCENT, row_colors=True, font_size=9):
+    leading = font_size + 3
+
+    def _cell(text, is_header):
+        """Wrap plain strings in Paragraph so ReportLab wraps long lines."""
+        if not isinstance(text, str):
+            return text
+        return Paragraph(
+            text.replace("\n", "<br/>"),
+            ParagraphStyle(
+                "mth" if is_header else "mtb",
+                fontName="Helvetica-Bold" if is_header else "Helvetica",
+                fontSize=font_size, leading=leading, textColor=C_TEXT,
+            ),
+        )
+
+    wrapped = [[_cell(cell, i == 0) for cell in row] for i, row in enumerate(data)]
+
     style = [
-        ("BACKGROUND",  (0,0), (-1,0),  header_bg),
-        ("TEXTCOLOR",   (0,0), (-1,0),  C_TEXT),
-        ("FONTNAME",    (0,0), (-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",    (0,0), (-1,-1), font_size),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1),
+        ("BACKGROUND",    (0,0), (-1, 0), header_bg),
+        ("FONTSIZE",      (0,0), (-1,-1), font_size),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1),
             [colors.HexColor("#161b22"), colors.HexColor("#1a2030")]
             if row_colors else [C_SURFACE]),
-        ("TEXTCOLOR",   (0,1), (-1,-1), C_TEXT),
-        ("FONTNAME",    (0,1), (-1,-1), "Helvetica"),
-        ("GRID",        (0,0), (-1,-1), 0.25, C_BORDER),
-        ("ALIGN",       (0,0), (-1,-1), "LEFT"),
-        ("VALIGN",      (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING",  (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 5),
-        ("LEFTPADDING", (0,0), (-1,-1), 7),
-        ("RIGHTPADDING",(0,0), (-1,-1), 7),
-        ("LINEBELOW",   (0,0), (-1,0),  1.0, C_ACCENT),
+        ("GRID",          (0,0), (-1,-1), 0.25, C_BORDER),
+        ("ALIGN",         (0,0), (-1,-1), "LEFT"),
+        ("VALIGN",        (0,0), (-1,-1), "TOP"),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 7),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 7),
+        ("LINEBELOW",     (0,0), (-1, 0), 1.0, C_ACCENT),
     ]
-    t = Table(data, colWidths=col_widths)
+    t = Table(wrapped, colWidths=col_widths)
     t.setStyle(TableStyle(style))
     return t
 
