@@ -130,3 +130,89 @@ SMT_PAIRS = {BTC↔ETH, SOL→ETH, BNB→BTC, XRP→BTC}
 - 17 modules static/js/01-utils.js through 16-settings.js
 - Bump ?v=X.X in templates/index.html on every JS change
 - notify(msg, type) toast function in 01-utils.js
+
+## Scanner Stage 3 — HTF→LTF Breakdown
+- `enrich_finalists_1h()` in scanner_stages.py: fetches 1H candles via `compute_indicators()` + `format_for_prompt()` — adds S/R levels + prompt_text to ctx["1H"] for all 30 finalists before Stage 3
+- Stage 3 prompts (_build_prompt, _build_batch_prompt, _quick_score) include 1H data and explicit instruction: **1D bias → 4H confirmation → 1H entry/SL → 4H/1D TP**
+- Scored output reports `"timeframe": "Multi-TF (1D/4H/1H)"`
+- Rationale: closed 4H bars can be up to 4h stale; 1H cuts max staleness to 1h for entry/SL precision
+
+## Chart System
+
+### Static Annotated Chart (agent_chart_draw.py)
+Generated as base64 PNG for Telegram alerts + pending limit cards.
+
+```python
+agent_chart_draw.draw(
+    candles, symbol, direction,
+    entry,          # entry zone low (or single entry)
+    sl, tp1, tp2,
+    criteria=[],    # key_conditions list → top-right text box
+    n_candles=60,
+    entry_high=None,   # entry zone high → shaded blue band
+    sr_levels=[],      # list of {type, price, touches, strength}
+)
+```
+
+**Visual elements:**
+- `▲ LONG` / `▼ SHORT` colored badge (top-left, green/red)
+- Entry zone: shaded blue band between entry and entry_high
+- SL = red dashed, TP1 = bright green `#26D96B`, TP2 = cyan `#4FC3F7`
+- Price labels on right edge of every level line
+- S&R zones: green (support) / red (resistance), alpha scales with touches
+- Confluence zones: adjacent levels within 0.3% merged into wider band (`_merge_sr()`)
+- At-level highlight: zones within 0.5% of current price get brighter fill + border + ⚡ label
+- ATR-based zone width: `ATR × 0.15` half-width for singleton zones (F)
+- `scanner_scheduler._enrich_and_filter_setups()` passes `entry_zone.low/high`, `key_conditions`, `detect_support_resistance(candles)` as `sr_levels`
+
+### Live Chart Popup (templates/chart.html — LightweightCharts)
+- Direction badge chip: `▲ LONG` (green) / `▼ SHORT` (red) shown first in legend
+- Trade levels: Entry (blue, solid), SL (red, dashed), TP1 (green, solid), TP2 (cyan, solid) — all with axis labels
+- S&R canvas overlay: green support / red resistance (was uniform grey)
+- `_mergeSrLevels()`: JS confluence merge (within 0.3%), `_computeAtr()`: ATR from candle array for zone width
+- `_startOverlay(wrap, series, mergedLvls, htf_levels, liquidations, atr)`: uses ATR × 0.15 for singleton zone half-width
+- At-level zones: 2px border rect + brighter fill + `⚡AT LEVEL` chip in legend
+- Weekly S&R stays gold, unchanged
+
+## Pending Limit Orders (routes/limits.py + static/js/10-pending.js)
+
+### AI Verdict Display (bug fixed)
+- `analysis_json` from `ai_limit.py` uses fields: `recommendation`, `setup_quality.score`, `risk_assessment`
+- Old code read `verdict`/`setup_score`/`confidence` → showed "undefined". Fixed in 10-pending.js v3.0+
+- Color: Keep=green, Cancel=red, Adjust*=yellow
+
+### Bitget Preset SL/TP Sync
+- `bitget_client.get_pending_orders()` now parses `presetStopLossPrice` → `preset_sl`, `presetTakeProfitPrice` → `preset_tp`
+- `GET /api/live/pending-orders` backfills `sl_price`/`tp1_price` on journal limit rows where NULL, matched by `bitget_order_id`
+
+### Scanner Chart in Limit Card
+- `GET /api/limits` JOINs `analyzed_calls.analysis_json` for rows with a `call_id` and extracts `chart_png_b64`
+- Pending limit card renders the chart as inline `<img>` below the AI verdict
+
+### Delete Route
+- `DELETE /api/limits/<id>` now has try/except → returns JSON error instead of HTML 500
+
+## Live Trade Analysis (agent_trade_monitor.py)
+
+### Direction-Aware Prompt (bug fixed)
+Position dict from `bitget_client.get_open_positions()` uses `direction` / `entry_price` / `mark_price` — the prompt was reading `side` / `openPrice` / `markPrice` (all wrong, all defaulted). Fixed field names.
+
+For Short positions, the prompt now injects a `DIRECTION CONTEXT — SHORT` block:
+- Bearish momentum = **favorable** (price moving toward TP)
+- SL must be **above** entry (not below)
+- TP is **below** entry
+- Hard rule: "never swap SL/TP placement for Short positions"
+
+## Hermes Agent (interactive Telegram assistant)
+Separate from the scanner alert bot. Two-bot setup:
+- **Alert bot** (`TELEGRAM_BOT_TOKEN` in journal .env): one-way push from `telegram_notify.py`
+- **Hermes bot** (`~/.hermes/.env`): two-way interactive chat for querying the journal
+
+Hermes runs as a user systemd service (`hermes-gateway.service`) on the Pi, configured to query the journal API at `http://localhost:8082`. SOUL.md documents all key endpoints + response style. MEMORY.md seeds trader profile.
+
+Service commands:
+```bash
+hermes gateway status
+hermes gateway start / stop
+journalctl --user -u hermes-gateway -f
+```
