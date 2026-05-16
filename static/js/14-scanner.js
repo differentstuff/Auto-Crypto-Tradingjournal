@@ -970,21 +970,75 @@ function _sendToCallAnalyzer(i) {
   if (!s) return;
   const sym = (s._symbol || s.symbol || '?');
   const ent = s.entry_zone || {};
-  const text = [
-    `$${sym.replace('USDT','')} ${s.direction} — Scanner ${s.setup_score}/10`,
-    ent.low  ? `Entry: $${ent.low}`  : '',
-    ent.high && ent.high !== ent.low ? `– $${ent.high}` : '',
+
+  // Build rich call text with all available scanner data
+  const lines = [
+    `$${sym.replace('USDT','')} ${s.direction} — Setup Scanner ${s.setup_score}/10`,
+    s.setup_label   ? `Grade: ${s.setup_label}`                              : '',
+    s.chart_pattern ? `Pattern: ${s.chart_pattern}`                           : '',
+    '',
+    ent.low  ? `Entry: $${ent.low}${ent.high && ent.high !== ent.low ? ` – $${ent.high}` : ''}` : '',
     s.sl_price  ? `SL: $${s.sl_price}`   : '',
     s.tp1_price ? `TP1: $${s.tp1_price}` : '',
     s.tp2_price ? `TP2: $${s.tp2_price}` : '',
     s.rr_ratio  ? `R:R ${s.rr_ratio}`    : '',
-    s.summary   || '',
-  ].filter(Boolean).join('\n');
+    s.urgency   ? `Timing: ${s.urgency}` : '',
+    '',
+    s.why_this_score     ? `Why: ${s.why_this_score}`         : '',
+    s.confluence_summary ? `Confluence: ${s.confluence_summary}` : '',
+    s.summary            ? `Summary: ${s.summary}`            : '',
+  ];
+
+  // Key conditions
+  const conds = s.key_conditions || [];
+  if (conds.length) {
+    lines.push('');
+    lines.push('Signals:');
+    conds.forEach(c => lines.push(`  · ${c}`));
+  }
+
+  // Risks
+  const risks = s.risks || [];
+  if (risks.length) {
+    lines.push('');
+    lines.push('Risks:');
+    risks.forEach(r => lines.push(`  · ${r}`));
+  }
+
+  const text = lines.filter(l => l !== undefined && l !== null && l !== '').join('\n').trim();
+
   showPage('calls');
   setTimeout(() => {
+    // Text
     const ta = document.getElementById('call-text');
     if (ta) { ta.value = text; ta.focus(); }
-  }, 150);
+
+    // Analyst name
+    const analystEl = document.getElementById('call-analyst');
+    if (analystEl) analystEl.value = 'Setup Scanner';
+
+    // Chart — inject scanner chart into the call analyzer image slot
+    const chartB64 = s.chart_png_b64 || s._chart_png_b64 || '';
+    if (chartB64) {
+      // Set the global callImageB64/callImageType used by analyzeCall()
+      if (typeof callImageB64 !== 'undefined') {
+        callImageB64  = chartB64;
+        callImageType = 'image/png';
+      }
+      // Show the preview image
+      const preview = document.getElementById('call-img-preview');
+      if (preview) {
+        preview.src = 'data:image/png;base64,' + chartB64;
+        preview.style.display = 'block';
+      }
+      // Hide the drop-zone placeholder text
+      const dropZone = document.getElementById('call-img-drop');
+      if (dropZone) {
+        const placeholder = dropZone.querySelector('p');
+        if (placeholder) placeholder.style.display = 'none';
+      }
+    }
+  }, 200);
 }
 
 // ── Single-coin scan helpers ──────────────────────────────────────────────────
