@@ -122,6 +122,37 @@ def _enrich_and_filter_setups(setups: list) -> list:
     return enriched
 
 
+def _on_scan_complete(setups: list):
+    """
+    Completion hook registered with ai_scanner — fires for EVERY scan finish,
+    whether triggered by the scheduler or manually via the API.
+    """
+    if not setups:
+        return
+
+    _persist_setups(setups)
+
+    try:
+        import entry_watcher
+        entry_watcher.process_scan_results(setups)
+    except Exception as ew_err:
+        print(f"[Scanner Scheduler] Entry watcher error: {ew_err}")
+
+    with db_conn() as conn:
+        tg_enabled = conn.execute(
+            "SELECT value FROM settings WHERE key='telegram_alerts_enabled'"
+        ).fetchone()
+    if tg_enabled is None or tg_enabled[0] == '1':
+        alert_setups = _enrich_and_filter_setups(setups)
+        if alert_setups:
+            telegram_notify.send_setup_alert(alert_setups)
+            print(f"[Scanner Scheduler] Telegram alert sent ({len(alert_setups)} setups)")
+        else:
+            print(f"[Scanner Scheduler] All {len(setups)} setup(s) stale (price moved) — no alert sent")
+    else:
+        print(f"[Scanner Scheduler] Telegram alerts disabled — skipped ({len(setups)} setups)")
+
+
 def _run_once():
     started = ai_scanner.force_scan(min_score=SCHEDULER_MIN_SCORE, criteria=SCHEDULER_CRITERIA)
     if not started:
@@ -129,7 +160,6 @@ def _run_once():
         return
 
     state   = _wait_for_scan()
-    setups  = state.get("setups") or []
     scanned = state.get("scanned", 0)
     filt    = state.get("after_filter", 0)
     dur     = state.get("duration_sec", "?")
@@ -139,30 +169,7 @@ def _run_once():
         print(f"[Scanner Scheduler] Scan error: {err}")
         return
 
-    print(f"[Scanner Scheduler] Done — {scanned} symbols, "
-          f"{filt} finalists, {len(setups)} setups ({dur}s)")
-
-    if setups:
-        _persist_setups(setups)
-        # Entry watcher: classify setups and update recommendation queue
-        try:
-            import entry_watcher
-            entry_watcher.process_scan_results(setups)
-        except Exception as ew_err:
-            print(f"[Scanner Scheduler] Entry watcher error: {ew_err}")
-        with db_conn() as conn:
-            tg_enabled = conn.execute(
-                "SELECT value FROM settings WHERE key='telegram_alerts_enabled'"
-            ).fetchone()
-        if tg_enabled is None or tg_enabled[0] == '1':
-            alert_setups = _enrich_and_filter_setups(setups)
-            if alert_setups:
-                telegram_notify.send_setup_alert(alert_setups)
-                print(f"[Scanner Scheduler] Telegram alert sent ({len(alert_setups)} setups)")
-            else:
-                print(f"[Scanner Scheduler] All {len(setups)} setup(s) stale (price moved) — no alert sent")
-        else:
-            print(f"[Scanner Scheduler] Telegram alerts disabled — skipped ({len(setups)} setups)")
+    print(f"[Scanner Scheduler] Done — {scanned} symbols, {filt} finalists ({dur}s)")
 
 
 def _persist_setups(setups: list):
@@ -266,5 +273,7 @@ def start():
         print("[Scanner Scheduler] Telegram not configured — "
               "set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env to enable alerts")
         return
+    # Register completion hook so manual scans also trigger TG + entry_watcher
+    ai_scanner.register_completion_hook(_on_scan_complete)
     t = threading.Thread(target=_loop, daemon=True, name="scanner-scheduler")
     t.start()

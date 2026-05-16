@@ -110,6 +110,16 @@ _state: dict = {
 }
 _state_lock = threading.Lock()
 
+# Completion hooks — called with the setups list when any scan finishes.
+# Registered by scanner_scheduler so both manual and scheduled scans trigger TG.
+_completion_hooks: list = []
+
+
+def register_completion_hook(fn) -> None:
+    """Register a callable(setups: list) fired when any scan completes."""
+    if fn not in _completion_hooks:
+        _completion_hooks.append(fn)
+
 
 def get_state() -> dict:
     with _state_lock:
@@ -386,6 +396,13 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
             stage=0, stage_label="",
             stage_detail=f"{len(setups)} setup{'s' if len(setups)!=1 else ''} found in {round(time.time()-t0,1)}s",
         )
+
+        # Fire completion hooks (registered by scanner_scheduler for TG + entry_watcher)
+        for hook in list(_completion_hooks):
+            try:
+                hook(setups)
+            except Exception as hook_err:
+                logger.warning("Completion hook failed: %s", hook_err)
 
     except Exception as e:
         logger.exception("Scan thread failed")
