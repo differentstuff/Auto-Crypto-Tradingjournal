@@ -9,27 +9,63 @@ let _scanSetups        = [];
 let _pendingSingleScan = null;   // string (symbol) when a single-coin scan is queued
 
 // ── Criteria definition ───────────────────────────────────────────────────────
+// group: 'trend' | 'momentum' | 'flow' | 'risk' | 'context'
 
 const SCAN_CRITERIA = [
-  { key: 'rsi',        label: 'RSI filter',            desc: 'Reject/penalise overextended RSI (>78 long, <22 short) in quality gate and Claude prompt' },
-  { key: 'macd',       label: 'MACD alignment',        desc: 'Count MACD crossover/direction as a 4H signal and factor into Claude scoring' },
-  { key: 'ema_stack',  label: 'EMA stack',             desc: 'Count EMA alignment (20>50>200 bullish or reverse) as a 4H signal' },
-  { key: 'adx',        label: 'ADX ≥ 15 trend',        desc: 'Reject flat/choppy markets with ADX below 15 in quality gate' },
-  { key: 'sr_anchor',  label: 'S/R structural anchor', desc: 'Require entry within 4×ATR of a named S/R level — disable for memes or news moves' },
-  { key: 'wavetrend',  label: 'WaveTrend (VMC)',        desc: 'Include VMC Cipher A/B WaveTrend signal in Claude scoring' },
-  { key: 'volume',     label: 'Volume confirm',        desc: 'Reward volume confirmation of the setup move in Claude scoring' },
-  { key: 'funding',    label: 'Funding rate',          desc: 'Penalise score −1/−2 when funding rate is crowded (>0.05% / >0.1%)' },
-  { key: 'fear_greed', label: 'Fear & Greed',          desc: 'Apply ±0.5 score adjustment for extreme Fear & Greed readings' },
-  { key: 'atr_sl',     label: 'ATR SL floor',          desc: 'Cap score ≤ 6 when SL is tighter than 1×ATR from entry (inside noise)' },
-  { key: 'rr_minimum', label: 'R:R minimum',           desc: 'Cap score ≤ 6 for R:R < 1.5:1; require ≥ 2:1 for score 7+' },
+  { key:'ema_stack',  group:'trend',    icon:'📈', label:'EMA Stack',
+    desc:'20/50/200 EMA alignment with price. Confirms trend phase and direction. Primary filter for continuation setups — disable when trading against the trend (reversals).' },
+  { key:'adx',        group:'trend',    icon:'💪', label:'ADX Strength',
+    desc:'Rejects flat/choppy markets (ADX < 18). Ensures a real trend exists before scoring. Critical for continuations. Disable for reversals — low ADX is favourable there.' },
+  { key:'sr_anchor',  group:'trend',    icon:'🏗', label:'S/R Anchor',
+    desc:'Entry must be within 4xATR of a named support/resistance level. Structural discipline. Disable for news-driven or low-cap momentum moves.' },
+  { key:'rsi',        group:'momentum', icon:'⚡', label:'RSI Zone',
+    desc:'Penalises overextended RSI (above 78 long / below 22 short) for continuations. For reversals RSI extremes are conviction, not a penalty.' },
+  { key:'macd',       group:'momentum', icon:'📊', label:'MACD Signal',
+    desc:'Crossover direction and histogram trend as a 4H momentum signal. Strong weighting for breakouts (growing histogram = expanding momentum) and continuations.' },
+  { key:'wavetrend',  group:'momentum', icon:'🌊', label:'WaveTrend / VMC',
+    desc:'VMC Cipher A/B oscillator crossover. Primary trigger for reversals — gold buy = highest conviction. Less relevant for breakouts where price leads.' },
+  { key:'volume',     group:'flow',     icon:'📦', label:'Volume Confirm',
+    desc:'High volume (above 1.5x) amplifies score +0.5. Low volume (below 0.7x) dampens -0.25. Non-negotiable for real breakouts — no volume means fakeout risk.' },
+  { key:'atr_sl',     group:'risk',     icon:'🛡', label:'ATR SL Floor',
+    desc:'Caps score at 6 when SL is tighter than 1xATR from entry. Stops inside the noise floor get hunted before the move begins. Almost always leave on.' },
+  { key:'rr_minimum', group:'risk',     icon:'⚖', label:'R:R Minimum 2:1',
+    desc:'Caps score at 6 for R:R below 2:1. Requires 2.5:1 for score 7+. The most important quality gate — poor R:R kills edge even when direction is right.' },
+  { key:'funding',    group:'risk',     icon:'💸', label:'Funding Penalty',
+    desc:'Penalises score -1/-2 for crowded funding (above 0.05% / 0.1%). High funding = late entry, crowded trade. Always enable for perpetual futures.' },
+  { key:'fear_greed', group:'context',  icon:'🌍', label:'Fear & Greed',
+    desc:'Score adjustment for extreme sentiment (below 20 or above 80). Useful when macro strongly biases one direction. Lower impact than structural signals.' },
 ];
 
-const SCAN_PRESETS = {
-  full:      { label: 'Full (default)',   keys: null },
-  trend:     { label: 'Trend Momentum',  keys: { rsi:true,  macd:true,  ema_stack:true,  adx:true,  sr_anchor:false, wavetrend:true,  volume:true,  funding:false, fear_greed:false, atr_sl:false, rr_minimum:true  } },
-  structure: { label: 'Structure-only',  keys: { rsi:false, macd:false, ema_stack:false, adx:false, sr_anchor:true,  wavetrend:false, volume:false, funding:true,  fear_greed:false, atr_sl:true,  rr_minimum:true  } },
-  meme:      { label: 'Meme / Low-cap',  keys: { rsi:true,  macd:false, ema_stack:false, adx:false, sr_anchor:false, wavetrend:false, volume:true,  funding:true,  fear_greed:true,  atr_sl:false, rr_minimum:false } },
-};
+const SCAN_GROUPS = [
+  { key:'trend',    label:'Trend & Structure',  color:'#4fc3f7', hint:'Does a trend exist at a meaningful level?' },
+  { key:'momentum', label:'Momentum Signals',   color:'#6c63ff', hint:'What are the oscillators saying?' },
+  { key:'flow',     label:'Flow & Volume',      color:'#4a90d9', hint:'Is there real participation behind the move?' },
+  { key:'risk',     label:'Risk Quality Gates', color:'#26d96b', hint:'Hard limits — SL structure and R:R' },
+  { key:'context',  label:'Market Context',     color:'#ffb300', hint:'External sentiment overlay' },
+];
+
+const SCAN_PRESETS = [
+  { key:'all',
+    label:'All Checks', icon:'✨',
+    hint:'Strictest filter — every signal active',
+    keys: null },
+  { key:'continuation',
+    label:'Continuation', icon:'📈',
+    hint:'EMA stack + ADX required · RSI sweet spot · no WaveTrend needed',
+    keys:{ema_stack:true, adx:true, rsi:true, macd:true, volume:true, sr_anchor:true, atr_sl:true, rr_minimum:true, wavetrend:false, funding:false, fear_greed:false} },
+  { key:'reversal',
+    label:'Reversal', icon:'🔄',
+    hint:'WaveTrend + RSI extremes primary · EMA/ADX not required',
+    keys:{wavetrend:true, rsi:true, sr_anchor:true, atr_sl:true, rr_minimum:true, macd:true, volume:true, funding:true, fear_greed:true, ema_stack:false, adx:false} },
+  { key:'breakout',
+    label:'Breakout', icon:'🚀',
+    hint:'Volume non-negotiable · MACD momentum · S/R break required',
+    keys:{volume:true, macd:true, rsi:true, sr_anchor:true, adx:true, atr_sl:true, rr_minimum:true, wavetrend:false, ema_stack:false, funding:false, fear_greed:false} },
+  { key:'scalp',
+    label:'Scalp / News', icon:'⚡',
+    hint:'Fast moves · minimal structure · volume + RSI only',
+    keys:{rsi:true, volume:true, atr_sl:true, rr_minimum:true, ema_stack:false, adx:false, sr_anchor:false, macd:false, wavetrend:false, funding:false, fear_greed:false} },
+];
 
 const _CR_KEY = 'scanCriteria';
 
@@ -43,149 +79,204 @@ function _readCriteriaFromCheckboxes() {
   const cr = {};
   SCAN_CRITERIA.forEach(c => {
     const el = document.getElementById('cr-' + c.key);
-    cr[c.key] = el ? el.checked : true;
+    cr[c.key] = el ? el.getAttribute('data-active') !== '0' : true;
   });
   return cr;
 }
 
+function _pillSetActive(el, active) {
+  if (!el) return;
+  el.setAttribute('data-active', active ? '1' : '0');
+  const color = el.getAttribute('data-color') || '#6c63ff';
+  if (active) {
+    el.style.background  = _colorAlpha(color, 0.12);
+    el.style.borderColor = color;
+    el.style.color       = color;
+    el.style.opacity     = '1';
+  } else {
+    el.style.background  = 'var(--bg3)';
+    el.style.borderColor = 'var(--border)';
+    el.style.color       = 'var(--muted)';
+    el.style.opacity     = '0.55';
+  }
+}
+
+function _colorAlpha(hex, a) {
+  const h = hex.replace('#', '');
+  if (h.length !== 6) return 'rgba(108,99,255,' + a + ')';
+  const r = parseInt(h.slice(0,2), 16);
+  const g = parseInt(h.slice(2,4), 16);
+  const b = parseInt(h.slice(4,6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
 function _applyPreset(presetKey) {
-  const p = SCAN_PRESETS[presetKey];
+  const p = SCAN_PRESETS.find(x => x.key === presetKey);
   if (!p) return;
   SCAN_CRITERIA.forEach(c => {
-    const el = document.getElementById('cr-' + c.key);
-    if (el) el.checked = (p.keys === null) ? true : (p.keys[c.key] !== false);
+    const active = p.keys === null ? true : (p.keys[c.key] !== false);
+    _pillSetActive(document.getElementById('cr-' + c.key), active);
   });
   _onCriteriaChange();
+  document.querySelectorAll('.cr-preset-tab').forEach(btn => {
+    btn.classList.toggle('cr-preset-active', btn.getAttribute('data-pkey') === presetKey);
+  });
 }
 
 function _onCriteriaChange() {
   const cr = _readCriteriaFromCheckboxes();
   _saveCriteria(cr);
-  // Update preset label
-  const pl = document.getElementById('cr-preset-label');
-  if (pl) {
-    let matched = 'Custom';
-    for (const [k, p] of Object.entries(SCAN_PRESETS)) {
-      if (p.keys === null) {
-        if (SCAN_CRITERIA.every(c => cr[c.key] !== false)) { matched = p.label; break; }
-      } else {
-        if (SCAN_CRITERIA.every(c => (cr[c.key] !== false) === (p.keys[c.key] !== false))) { matched = p.label; break; }
-      }
+  let matched = null;
+  for (const p of SCAN_PRESETS) {
+    if (p.keys === null) {
+      if (SCAN_CRITERIA.every(c => cr[c.key] !== false)) { matched = p.key; break; }
+    } else {
+      if (SCAN_CRITERIA.every(c => (cr[c.key] !== false) === (p.keys[c.key] !== false))) { matched = p.key; break; }
     }
-    pl.textContent = matched;
   }
-  // Update count badge
+  document.querySelectorAll('.cr-preset-tab').forEach(btn => {
+    btn.classList.toggle('cr-preset-active', btn.getAttribute('data-pkey') === (matched || ''));
+  });
   const cnt = document.getElementById('cr-active-count');
   if (cnt) {
     const n = SCAN_CRITERIA.filter(c => cr[c.key] !== false).length;
-    cnt.textContent = n + ' / ' + SCAN_CRITERIA.length + ' criteria active';
+    cnt.textContent = n + ' / ' + SCAN_CRITERIA.length + ' active';
     cnt.style.color = n === SCAN_CRITERIA.length ? 'var(--muted)' : 'var(--yellow)';
   }
 }
 
-// ── Criteria panel builder (DOM-safe) ─────────────────────────────────────────
+// ── Criteria panel builder ────────────────────────────────────────────────────
+
+function _injectCriteriaCSS() {
+  if (document.getElementById('cr-style')) return;
+  const s = document.createElement('style');
+  s.id = 'cr-style';
+  s.textContent = `
+    #criteria-panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px;box-shadow:0 4px 20px rgba(0,0,0,.35)}
+    .cr-panel-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+    .cr-panel-title{font-size:.95rem;font-weight:700;color:var(--text)}
+    .cr-panel-sub{font-size:.74rem;color:var(--muted);margin-top:3px;max-width:520px;line-height:1.5}
+    .cr-close-btn{background:none;border:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1}
+    .cr-close-btn:hover{color:var(--text);background:var(--bg3)}
+    .cr-preset-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)}
+    .cr-preset-tab{display:flex;flex-direction:column;align-items:flex-start;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;cursor:pointer;transition:.15s;min-width:100px;flex:1}
+    .cr-preset-tab:hover{border-color:var(--accent);background:var(--bg)}
+    .cr-preset-active{border-color:var(--accent)!important;background:rgba(108,99,255,.1)!important}
+    .cr-preset-name{font-size:.8rem;font-weight:700;color:var(--text)}
+    .cr-preset-hint{font-size:.68rem;color:var(--muted);margin-top:3px;line-height:1.35}
+    .cr-group{margin-bottom:14px}
+    .cr-group-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .cr-group-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .cr-group-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+    .cr-group-hint{font-size:.68rem;color:var(--muted);margin-left:auto}
+    .cr-pills{display:flex;flex-wrap:wrap;gap:7px}
+    .cr-pill{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:pointer;transition:.15s;min-width:120px;flex:1;max-width:210px;background:var(--bg3);color:var(--muted);opacity:.55}
+    .cr-pill:hover{opacity:1!important}
+    .cr-pill-top{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+    .cr-pill-icon{font-size:.95rem;line-height:1}
+    .cr-pill-name{font-size:.8rem;font-weight:700;line-height:1.2}
+    .cr-pill-desc{font-size:.68rem;line-height:1.4;color:inherit;opacity:.85}
+    .cr-footer{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+  `;
+  document.head.appendChild(s);
+}
 
 function _renderCriteriaPanel() {
   const old = document.getElementById('criteria-panel');
   if (old) old.remove();
+  _injectCriteriaCSS();
 
   const saved = _loadCriteria() || {};
   const panel = document.createElement('div');
   panel.id = 'criteria-panel';
-  panel.className = 'criteria-panel';
   panel.style.display = 'none';
 
   // Header
-  const hdr = document.createElement('div');
-  hdr.className = 'criteria-header';
-  const hdrText = document.createElement('div');
-  const hdrTitle = document.createElement('div');
-  hdrTitle.style.cssText = 'font-weight:700;font-size:.9rem;color:var(--text)';
-  hdrTitle.textContent = 'Scoring Criteria';
-  const hdrSub = document.createElement('div');
-  hdrSub.style.cssText = 'font-size:.75rem;color:var(--muted);margin-top:2px';
-  hdrSub.textContent = 'Choose which checks Claude applies. Hover any item for details. Disabled criteria are skipped in the quality gate and Claude prompt.';
-  hdrText.appendChild(hdrTitle);
-  hdrText.appendChild(hdrSub);
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'cr-close';
-  closeBtn.textContent = '✕';
-  closeBtn.onclick = _toggleCriteriaPanel;
-  hdr.appendChild(hdrText);
-  hdr.appendChild(closeBtn);
+  const hdr = document.createElement('div'); hdr.className = 'cr-panel-hdr';
+  const hdrL = document.createElement('div');
+  const title = document.createElement('div'); title.className = 'cr-panel-title';
+  title.textContent = '🎯 Scoring Criteria';
+  const sub = document.createElement('div'); sub.className = 'cr-panel-sub';
+  sub.textContent = 'Select which signals Claude evaluates when scoring setups. Disabled criteria are skipped in the quality gate and prompt. Hover any pill for details.';
+  hdrL.appendChild(title); hdrL.appendChild(sub);
+  const closeBtn = document.createElement('button'); closeBtn.className = 'cr-close-btn';
+  closeBtn.textContent = '✕'; closeBtn.onclick = _toggleCriteriaPanel;
+  hdr.appendChild(hdrL); hdr.appendChild(closeBtn);
   panel.appendChild(hdr);
 
-  // Presets row
-  const presetsRow = document.createElement('div');
-  presetsRow.className = 'cr-presets';
-  const presetsLbl = document.createElement('span');
-  presetsLbl.style.cssText = 'font-size:.72rem;color:var(--muted);margin-right:6px';
-  presetsLbl.textContent = 'Presets:';
-  presetsRow.appendChild(presetsLbl);
-  Object.entries(SCAN_PRESETS).forEach(([k, p]) => {
-    const btn = document.createElement('button');
-    btn.className = 'cr-preset-btn';
-    btn.textContent = p.label;
-    btn.onclick = () => _applyPreset(k);
-    presetsRow.appendChild(btn);
+  // Strategy presets
+  const presetRow = document.createElement('div'); presetRow.className = 'cr-preset-row';
+  SCAN_PRESETS.forEach(p => {
+    const tab = document.createElement('button'); tab.className = 'cr-preset-tab';
+    tab.setAttribute('data-pkey', p.key);
+    const name = document.createElement('div'); name.className = 'cr-preset-name';
+    name.textContent = p.icon + '  ' + p.label;
+    const hint = document.createElement('div'); hint.className = 'cr-preset-hint';
+    hint.textContent = p.hint;
+    tab.appendChild(name); tab.appendChild(hint);
+    tab.onclick = () => _applyPreset(p.key);
+    presetRow.appendChild(tab);
   });
-  const presetLabel = document.createElement('span');
-  presetLabel.id = 'cr-preset-label';
-  presetLabel.style.cssText = 'font-size:.72rem;color:var(--accent2);margin-left:8px';
-  presetsRow.appendChild(presetLabel);
-  panel.appendChild(presetsRow);
+  panel.appendChild(presetRow);
 
-  // Criteria grid
-  const grid = document.createElement('div');
-  grid.className = 'cr-grid';
-  SCAN_CRITERIA.forEach(c => {
-    const label = document.createElement('label');
-    label.className = 'cr-item';
-    label.title = c.desc;
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.id = 'cr-' + c.key;
-    cb.checked = (saved[c.key] !== false);
-    cb.addEventListener('change', _onCriteriaChange);
-    const lbl = document.createElement('span');
-    lbl.className = 'cr-label';
-    lbl.textContent = c.label;
-    const desc = document.createElement('span');
-    desc.className = 'cr-desc';
-    desc.textContent = c.desc;
-    label.appendChild(cb);
-    label.appendChild(lbl);
-    label.appendChild(desc);
-    grid.appendChild(label);
+  // Grouped criteria pills
+  SCAN_GROUPS.forEach(g => {
+    const items = SCAN_CRITERIA.filter(c => c.group === g.key);
+    if (!items.length) return;
+    const section = document.createElement('div'); section.className = 'cr-group';
+    const ghdr = document.createElement('div'); ghdr.className = 'cr-group-hdr';
+    const dot = document.createElement('div'); dot.className = 'cr-group-dot';
+    dot.style.background = g.color;
+    const glabel = document.createElement('div'); glabel.className = 'cr-group-label';
+    glabel.style.color = g.color; glabel.textContent = g.label;
+    const ghint = document.createElement('div'); ghint.className = 'cr-group-hint';
+    ghint.textContent = g.hint;
+    ghdr.appendChild(dot); ghdr.appendChild(glabel); ghdr.appendChild(ghint);
+    section.appendChild(ghdr);
+    const pills = document.createElement('div'); pills.className = 'cr-pills';
+    items.forEach(c => {
+      const active = saved[c.key] !== false;
+      const pill = document.createElement('div'); pill.className = 'cr-pill';
+      pill.id = 'cr-' + c.key;
+      pill.setAttribute('data-active', active ? '1' : '0');
+      pill.setAttribute('data-color', g.color);
+      pill.title = c.desc;
+      const top = document.createElement('div'); top.className = 'cr-pill-top';
+      const icon = document.createElement('span'); icon.className = 'cr-pill-icon';
+      icon.textContent = c.icon;
+      const nm = document.createElement('span'); nm.className = 'cr-pill-name';
+      nm.textContent = c.label;
+      top.appendChild(icon); top.appendChild(nm);
+      const desc = document.createElement('div'); desc.className = 'cr-pill-desc';
+      desc.textContent = c.desc.split('.')[0] + '.';
+      pill.appendChild(top); pill.appendChild(desc);
+      pill.onclick = () => {
+        const now = pill.getAttribute('data-active') !== '0';
+        _pillSetActive(pill, !now);
+        _onCriteriaChange();
+      };
+      _pillSetActive(pill, active);
+      pills.appendChild(pill);
+    });
+    section.appendChild(pills); panel.appendChild(section);
   });
-  panel.appendChild(grid);
 
   // Footer
-  const footer = document.createElement('div');
-  footer.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)';
-  const cnt = document.createElement('span');
-  cnt.id = 'cr-active-count';
-  cnt.style.cssText = 'font-size:.75rem;color:var(--muted)';
-  const footerBtns = document.createElement('div');
-  footerBtns.style.display = 'flex';
-  footerBtns.style.gap = '8px';
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'btn btn-secondary btn-sm';
-  resetBtn.textContent = 'Reset to defaults';
-  resetBtn.onclick = () => _applyPreset('full');
-  const applyBtn = document.createElement('button');
-  applyBtn.className = 'btn btn-primary btn-sm';
+  const footer = document.createElement('div'); footer.className = 'cr-footer';
+  const cnt = document.createElement('span'); cnt.id = 'cr-active-count';
+  cnt.style.cssText = 'font-size:.76rem;color:var(--muted)';
+  const btns = document.createElement('div'); btns.style.cssText = 'display:flex;gap:8px';
+  const resetBtn = document.createElement('button'); resetBtn.className = 'btn btn-secondary btn-sm';
+  resetBtn.textContent = 'Reset'; resetBtn.onclick = () => _applyPreset('all');
+  const applyBtn = document.createElement('button'); applyBtn.className = 'btn btn-primary btn-sm';
   applyBtn.textContent = 'Apply & Scan';
   applyBtn.onclick = () => { _toggleCriteriaPanel(); startScan(true); };
-  footerBtns.appendChild(resetBtn);
-  footerBtns.appendChild(applyBtn);
-  footer.appendChild(cnt);
-  footer.appendChild(footerBtns);
+  btns.appendChild(resetBtn); btns.appendChild(applyBtn);
+  footer.appendChild(cnt); footer.appendChild(btns);
   panel.appendChild(footer);
 
   const meta = document.getElementById('scanner-meta');
   if (meta) meta.after(panel);
-
   _onCriteriaChange();
 }
 
@@ -195,6 +286,7 @@ function _toggleCriteriaPanel() {
   if (!panel) return;
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
 }
+
 
 async function loadScanner() {
   _loadScannerWatchlist();
