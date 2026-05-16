@@ -92,7 +92,24 @@ def _run_once():
             print(f"[Monitor] Error for {symbol}: {e}", flush=True)
 
 
+def _monitor_alerts_enabled() -> bool:
+    """Check whether position monitor Telegram alerts are enabled (default on)."""
+    try:
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key='telegram_monitor_enabled'"
+            ).fetchone()
+        return (row is None) or (row[0] == '1')
+    except Exception:
+        return True
+
+
 def _send_monitor_alert(position: dict, result: dict):
+    if not _monitor_alerts_enabled():
+        symbol = position.get("symbol", "?")
+        print(f"[Monitor] Monitor alerts disabled — skipped alert for {symbol}", flush=True)
+        return
+
     symbol  = position.get("symbol", "?")
     unrl    = float(position.get("unrealized_pct", 0) or 0)
     action  = result["action"]

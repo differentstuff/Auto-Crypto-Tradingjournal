@@ -213,27 +213,35 @@ def blofin_sync_status():
 
 @bp.get("/api/settings/telegram")
 def telegram_status():
-    """Return current Telegram alerts enabled/disabled state."""
+    """Return current Telegram alert states for both scanner and monitor."""
     from database import db_conn
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT value FROM settings WHERE key='telegram_alerts_enabled'"
-        ).fetchone()
-    enabled = (row is None) or (row[0] == '1')
-    return _ok({"enabled": enabled})
+        rows = {
+            r["key"]: r["value"]
+            for r in conn.execute(
+                "SELECT key, value FROM settings "
+                "WHERE key IN ('telegram_alerts_enabled','telegram_monitor_enabled')"
+            ).fetchall()
+        }
+    return _ok({
+        "scanner_enabled": rows.get("telegram_alerts_enabled", "1") == "1",
+        "monitor_enabled": rows.get("telegram_monitor_enabled", "1") == "1",
+    })
 
 
 @bp.post("/api/settings/telegram")
 def telegram_toggle():
-    """Toggle Telegram scanner alerts on or off. Body: {enabled: bool}"""
+    """Toggle a Telegram alert type. Body: {type: 'scanner'|'monitor', enabled: bool}"""
     from database import db_conn
-    body = request.get_json(silent=True) or {}
+    body    = request.get_json(silent=True) or {}
+    kind    = body.get("type", "scanner")
     enabled = bool(body.get("enabled", True))
+    key = "telegram_alerts_enabled" if kind == "scanner" else "telegram_monitor_enabled"
     with db_conn() as conn:
         conn.execute(
-            "INSERT INTO settings (key, value) VALUES ('telegram_alerts_enabled', ?) "
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            ('1' if enabled else '0',)
+            (key, '1' if enabled else '0')
         )
         conn.commit()
-    return _ok({"enabled": enabled})
+    return _ok({"type": kind, "enabled": enabled})

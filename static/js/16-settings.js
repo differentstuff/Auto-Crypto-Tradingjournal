@@ -56,14 +56,26 @@ async function loadSettings() {
     </div>
 
     <div class="settings-section-title" style="margin-top:28px">📲 Telegram Alerts</div>
-    <div id="tg-toggle-wrap" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between">
-      <div>
-        <div style="font-size:.85rem;font-weight:600">Scanner Alerts</div>
-        <div style="font-size:.75rem;color:var(--muted);margin-top:2px">Send Telegram message when scanner finds 6+/10 setups</div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div id="tg-scanner-row" style="padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-size:.85rem;font-weight:600">⭐ Setup Scanner Alerts</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:2px">Notify when scanner finds new 6+/10 setups (every 30 min)</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="tg-scanner-label" style="font-size:.78rem;color:var(--muted)">Loading…</span>
+          <button id="tg-scanner-btn" onclick="toggleTelegramType('scanner')" style="padding:5px 16px;font-size:.8rem;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--bg);color:var(--text)">…</button>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span id="tg-status-label" style="font-size:.78rem;color:var(--muted)">Loading…</span>
-        <button id="tg-toggle-btn" onclick="toggleTelegramAlerts()" style="padding:5px 16px;font-size:.8rem;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--bg);color:var(--text)">…</button>
+      <div id="tg-monitor-row" style="padding:14px 18px;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:.85rem;font-weight:600">👁 Position Monitor Alerts</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:2px">Notify when an open position needs attention (risk ≥7 or action ≠ Hold)</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="tg-monitor-label" style="font-size:.78rem;color:var(--muted)">Loading…</span>
+          <button id="tg-monitor-btn" onclick="toggleTelegramType('monitor')" style="padding:5px 16px;font-size:.8rem;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--bg);color:var(--text)">…</button>
+        </div>
       </div>
     </div>
 
@@ -94,28 +106,30 @@ async function loadSettings() {
 async function _loadTelegramToggle() {
   const res = await api('/api/settings/telegram');
   if (!res.ok) return;
-  _renderTelegramToggle(res.data.enabled);
+  _renderTelegramRow('scanner', res.data.scanner_enabled);
+  _renderTelegramRow('monitor', res.data.monitor_enabled);
 }
 
-function _renderTelegramToggle(enabled) {
-  const label = document.getElementById('tg-status-label');
-  const btn   = document.getElementById('tg-toggle-btn');
+function _renderTelegramRow(type, enabled) {
+  const label = document.getElementById('tg-' + type + '-label');
+  const btn   = document.getElementById('tg-' + type + '-btn');
   if (!label || !btn) return;
-  label.textContent = enabled ? '● Enabled' : '○ Disabled';
-  label.style.color = enabled ? 'var(--accent3)' : 'var(--red)';
-  btn.textContent   = enabled ? 'Disable' : 'Enable';
-  btn.style.background = enabled ? 'rgba(239,83,80,.12)' : 'rgba(38,217,107,.12)';
-  btn.style.color      = enabled ? 'var(--red)' : 'var(--accent3)';
+  label.textContent     = enabled ? '● Enabled' : '○ Disabled';
+  label.style.color     = enabled ? 'var(--accent3)' : 'var(--red)';
+  btn.textContent       = enabled ? 'Disable' : 'Enable';
+  btn.style.background  = enabled ? 'rgba(239,83,80,.12)' : 'rgba(38,217,107,.12)';
+  btn.style.color       = enabled ? 'var(--red)' : 'var(--accent3)';
   btn.style.borderColor = enabled ? 'var(--red)' : 'var(--accent3)';
 }
 
-async function toggleTelegramAlerts() {
-  const label = document.getElementById('tg-status-label');
+async function toggleTelegramType(type) {
+  const label = document.getElementById('tg-' + type + '-label');
   const currentlyEnabled = label && label.textContent.includes('Enabled');
-  const res = await api('/api/settings/telegram', 'POST', { enabled: !currentlyEnabled });
+  const res = await api('/api/settings/telegram', 'POST', { type, enabled: !currentlyEnabled });
   if (!res.ok) { notify('Failed to update Telegram setting', 'danger'); return; }
-  _renderTelegramToggle(res.data.enabled);
-  notify('Telegram alerts ' + (res.data.enabled ? 'enabled' : 'disabled'), 'success');
+  _renderTelegramRow(type, res.data.enabled);
+  const name = type === 'scanner' ? 'Scanner alerts' : 'Monitor alerts';
+  notify(name + ' ' + (res.data.enabled ? 'enabled' : 'disabled'), 'success');
 }
 
 
