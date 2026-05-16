@@ -82,11 +82,30 @@ def _build_prompt(position: dict, orig_prep: dict,
     sent_txt   = sentiment.get("prompt_text", "")
     interp_txt = interpreted.get("prompt_text", "")
 
+    is_short = side.lower() == "short"
+    direction_ctx = (
+        f"DIRECTION CONTEXT — {side.upper()}:\n"
+        + (
+            "- Bearish momentum (falling RSI, price below EMAs, bearish MACD) = FAVORABLE — price moving toward TP\n"
+            "- Bullish momentum = UNFAVORABLE — price moving toward SL\n"
+            f"- SL MUST be ABOVE entry ({entry}) — price rising above SL triggers the stop\n"
+            f"- TP is BELOW entry ({entry}) — position profits as price falls\n"
+            "- 'Price below all EMAs' = price moving in the profitable direction for this Short"
+            if is_short else
+            "- Bullish momentum (rising RSI, price above EMAs, bullish MACD) = FAVORABLE — price moving toward TP\n"
+            "- Bearish momentum = UNFAVORABLE — price moving toward SL\n"
+            f"- SL MUST be BELOW entry ({entry}) — price falling below SL triggers the stop\n"
+            f"- TP is ABOVE entry ({entry}) — position profits as price rises"
+        )
+    )
+
     return f"""You are a crypto futures risk manager. Assess this OPEN position and give a specific, actionable verdict.
 
 POSITION: {symbol} {side} {lev}x
 Entry: {entry} | Mark: {mark} | Unrealized: {unrl_pct:.1f}% (${unrl_pl})
 Duration: {dur:.0f} min | SL: {sl} | TP: {tp}
+
+{direction_ctx}
 
 CURRENT TECHNICALS:
 {interp_txt}
@@ -99,6 +118,7 @@ Respond with ONLY valid JSON (no markdown):
 
 Rules:
 - unrealized_pct < -30% → seriously consider Close Now or Partial Close
-- SL is "not set" AND unrealized_pct < -5% → recommend setting one (risk_rating >= 6)
+- SL is "not set" → recommend setting one with correct placement (above entry for Short, below for Long)
 - Contra signal (crowd against position) → raise risk_rating by 1
-- Reference actual numbers in your reasoning"""
+- Reference actual numbers in your reasoning
+- For Short: recommend SL price ABOVE entry, TP price BELOW entry — never swap these"""
