@@ -300,6 +300,8 @@ def get_pending_orders() -> list:
         c_time_ms  = int(r.get("cTime") or 0)
         margin_mode = r.get("marginMode") or "crossed"
 
+        preset_sl = float(r.get("presetStopLossPrice") or 0) or None
+        preset_tp = float(r.get("presetTakeProfitPrice") or 0) or None
         order = {
             "order_id":    r.get("orderId"),
             "symbol":      r.get("symbol"),
@@ -314,6 +316,8 @@ def get_pending_orders() -> list:
             "client_oid":  r.get("clientOid"),
             "created_ms":  c_time_ms,
             "created_at":  _ms_to_str(c_time_ms) if c_time_ms else "",
+            "preset_sl":   preset_sl,
+            "preset_tp":   preset_tp,
         }
         if trade_side == "open":
             entry_orders.append(order)

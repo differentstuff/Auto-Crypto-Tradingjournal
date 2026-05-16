@@ -379,14 +379,24 @@ function renderPendingLimitCard(lim) {
   if (lim.analysis_json) {
     try {
       const a = JSON.parse(lim.analysis_json);
-      const vColor = a.verdict==='Keep' ? 'var(--accent3)' : a.verdict==='Adjust' ? 'var(--yellow)' : 'var(--red)';
-      verdictHtml = `<div class="pending-verdict">
-        <span style="font-weight:700;color:${vColor}">${a.verdict}</span>
-        <span style="color:var(--muted)"> · Score ${a.setup_score}/10 · ${a.confidence} confidence</span>
-        <div style="margin-top:6px;color:var(--muted);font-size:.8rem">${escHtml(a.summary||'')}</div>
-        ${a.adjustments?.length ? `<div style="margin-top:8px;font-size:.78rem">${a.adjustments.map(x=>`<div style="padding:3px 0;border-bottom:1px solid var(--border)">→ ${escHtml(x)}</div>`).join('')}</div>` : ''}
-        ${a.risks?.length ? `<div style="margin-top:6px;font-size:.75rem;color:var(--red)">${a.risks.map(r=>`<div>⚠ ${escHtml(r)}</div>`).join('')}</div>` : ''}
-      </div>`;
+      // ai_limit.py returns: recommendation, setup_quality.score, risk_assessment, entry_quality
+      const rec = a.recommendation || a.verdict;
+      if (rec) {
+        const isKeep   = rec === 'Keep';
+        const isCancel = rec === 'Cancel';
+        const vColor   = isKeep ? 'var(--accent3)' : isCancel ? 'var(--red)' : 'var(--yellow)';
+        const score    = a.setup_quality?.score ?? a.setup_score;
+        const risk     = a.risk_assessment || a.entry_quality || '';
+        const adjList  = a.adjustments || a.key_risks || [];
+        verdictHtml = `<div class="pending-verdict">
+          <span style="font-weight:700;color:${vColor}">${rec}</span>
+          ${score != null ? `<span style="color:var(--muted)"> · Score ${score}/10</span>` : ''}
+          ${risk ? `<span style="color:var(--muted)"> · ${escHtml(risk)}</span>` : ''}
+          <div style="margin-top:6px;color:var(--muted);font-size:.8rem">${escHtml(a.summary||'')}</div>
+          ${adjList.length ? `<div style="margin-top:8px;font-size:.78rem">${adjList.map(x=>`<div style="padding:3px 0;border-bottom:1px solid var(--border)">→ ${escHtml(x)}</div>`).join('')}</div>` : ''}
+          ${a.key_risks?.length && !adjList.includes(a.key_risks[0]) ? `<div style="margin-top:6px;font-size:.75rem;color:var(--red)">${a.key_risks.map(r=>`<div>⚠ ${escHtml(r)}</div>`).join('')}</div>` : ''}
+        </div>`;
+      }
     } catch(e) {}
   }
 

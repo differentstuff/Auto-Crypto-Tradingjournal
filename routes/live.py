@@ -60,6 +60,26 @@ def api_live_pending_orders():
             "SELECT bitget_order_id FROM pending_limits WHERE bitget_order_id IS NOT NULL"
         ).fetchall()]
 
+        # Backfill missing SL/TP on journal limits from Bitget preset values
+        for order in orders.get("entry", []):
+            oid     = order.get("order_id")
+            preset_sl = order.get("preset_sl")
+            preset_tp = order.get("preset_tp")
+            if not oid or (not preset_sl and not preset_tp):
+                continue
+            sets, vals = [], []
+            if preset_sl:
+                sets.append("sl_price = ?");  vals.append(preset_sl)
+            if preset_tp:
+                sets.append("tp1_price = ?"); vals.append(preset_tp)
+            if sets:
+                vals.append(oid)
+                conn.execute(
+                    f"UPDATE pending_limits SET {', '.join(sets)} WHERE bitget_order_id=? AND sl_price IS NULL",
+                    vals
+                )
+        conn.commit()
+
     return _ok({"bitget_orders": orders, "tracked_ids": tracked})
 
 
