@@ -22,7 +22,27 @@ from database import db_conn
 
 FIRST_DELAY   = int(os.environ.get("SCANNER_FIRST_DELAY", 300))   # 5 min
 INTERVAL      = int(os.environ.get("SCANNER_INTERVAL",    1800))  # 30 min
-SCAN_TIMEOUT  = 420                                                 # 7 min max per scan
+SCAN_TIMEOUT  = 900                                                 # 15 min max — extended for 500-coin list
+
+# Broad criteria: relaxes Stage-2 hard filters so all archetypes (continuation,
+# reversal, breakout) pass through to Stage 3. Archetype is auto-detected per
+# symbol in Stage 3 and scored with the appropriate rubric.
+# Only risk-quality gates are kept (ATR SL floor + R:R minimum).
+SCHEDULER_CRITERIA = {
+    "rsi":        True,   # RSI extreme still relevant for reversals
+    "macd":       True,   # MACD momentum signal
+    "wavetrend":  True,   # WaveTrend — primary trigger for reversals
+    "volume":     True,   # Volume confirmation
+    "funding":    True,   # Funding rate penalty
+    "fear_greed": True,   # F&G adjustment
+    "atr_sl":     True,   # Hard gate: SL must be > 1×ATR from entry
+    "rr_minimum": True,   # Hard gate: R:R must be >= 2:1
+    # Disabled: these are strategy-specific and would reject valid setups
+    "ema_stack":  False,  # Reversal setups can be countertrend — EMA not required
+    "adx":        False,  # Reversal setups have LOW ADX — gate would reject them
+    "sr_anchor":  False,  # Breakout/news setups may not anchor to named S/R
+}
+SCHEDULER_MIN_SCORE = 1   # Show everything — user decides whether to enter
 
 
 def _wait_for_scan() -> dict:
@@ -102,7 +122,7 @@ def _enrich_and_filter_setups(setups: list) -> list:
 
 
 def _run_once():
-    started = ai_scanner.force_scan()
+    started = ai_scanner.force_scan(min_score=SCHEDULER_MIN_SCORE, criteria=SCHEDULER_CRITERIA)
     if not started:
         print("[Scanner Scheduler] Scan already running — skipping cycle")
         return
