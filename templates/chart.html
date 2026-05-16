@@ -148,8 +148,29 @@ try {
 document.title  = symbol + ' — Chart';
 document.getElementById('chart-title').textContent = symbol;
 
+// ── S&R confluence zone merging ───────────────────────────────────────────────
+function _mergeSrLevels(levels, pct = 0.003) {
+  if (!levels || !levels.length) return [];
+  const srt = [...levels].sort((a, b) => a.price - b.price);
+  const groups = [[srt[0]]];
+  for (let i = 1; i < srt.length; i++) {
+    const g = groups[groups.length - 1];
+    if ((srt[i].price - g[g.length-1].price) / g[g.length-1].price <= pct)
+      g.push(srt[i]);
+    else groups.push([srt[i]]);
+  }
+  return groups.map(g => {
+    const touches  = g.reduce((s, l) => s + (l.touches || 1), 0);
+    const supCnt   = g.filter(l => l.type === 'support').length;
+    const price    = g.reduce((s, l) => s + l.price, 0) / g.length;
+    return { price, zoneMin: g[0].price, zoneMax: g[g.length-1].price,
+             touches, type: supCnt > g.length / 2 ? 'support' : 'resistance',
+             isConfluence: g.length > 1, count: g.length };
+  });
+}
+
 // ── Canvas overlay: S/R boxes + liquidation dashed lines ──────────────────────
-function _startOverlay(wrap, series, levels, htf_levels, liquidations) {
+function _startOverlay(wrap, series, mergedLvls, htf_levels, liquidations) {
   // Remove any previous overlay canvas
   const old = wrap.querySelector('.sr-canvas');
   if (old) old.remove();
@@ -184,18 +205,34 @@ function _startOverlay(wrap, series, levels, htf_levels, liquidations) {
       ctx.fillRect(0, top, chartW, ht);
     });
 
-    // ── S/R grey boxes (darker = more touches) ────────────────────────────────
-    (levels || []).forEach(lvl => {
-      const hw = lvl.price * 0.003;               // half-width of zone (0.3%)
-      const yT = series.priceToCoordinate(lvl.price + hw);
-      const yB = series.priceToCoordinate(lvl.price - hw);
+    // ── S/R zones (colored by type, at-level highlighted) ─────────────────────
+    (mergedLvls || []).forEach(lvl => {
+      const isS  = lvl.type === 'support';
+      const col  = isS ? [38,217,107] : [239,83,80];
+      const atLevel = current_price && Math.abs(lvl.price - current_price) / current_price <= 0.005;
+
+      // Zone band: use zoneMin/zoneMax if available (confluence), else price ±0.3%
+      const lo   = lvl.zoneMin ?? (lvl.price * 0.997);
+      const hi   = lvl.zoneMax ?? (lvl.price * 1.003);
+      const yT   = series.priceToCoordinate(hi);
+      const yB   = series.priceToCoordinate(lo);
       if (yT === null || yB === null) return;
-      // Alpha: min 0.07 (1 touch) → max 0.42 (many touches)
-      const a   = Math.min(0.07 + (lvl.touches - 1) * 0.035, 0.42).toFixed(3);
-      ctx.fillStyle = `rgba(180,183,210,${a})`;
-      const top = Math.min(yT, yB);
-      const ht  = Math.max(Math.abs(yB - yT), 3);
+      const top  = Math.min(yT, yB);
+      const ht   = Math.max(Math.abs(yB - yT), atLevel ? 4 : 3);
+
+      const baseA = Math.min(0.07 + (lvl.touches - 1) * 0.035, 0.38);
+      const alpha = atLevel ? Math.min(baseA + 0.18, 0.55) : baseA;
+      ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha.toFixed(3)})`;
       ctx.fillRect(0, top, chartW, ht);
+
+      // Border for "at level" and confluence
+      if (atLevel || lvl.isConfluence) {
+        ctx.save();
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${atLevel ? 0.85 : 0.45})`;
+        ctx.lineWidth   = atLevel ? 2 : 1;
+        ctx.strokeRect(0, top, chartW, ht);
+        ctx.restore();
+      }
     });
 
     // ── Liquidation levels (yellow dashed) ────────────────────────────────────
@@ -265,6 +302,7 @@ async function loadChart() {
     document.getElementById('status').textContent = 'No candle data for ' + symbol;
     return;
   }
+  const mergedLevels = _mergeSrLevels(levels || []);
 
   document.getElementById('status').style.display = 'none';
 
@@ -307,10 +345,16 @@ async function loadChart() {
   })));
 
   // Axis labels for S/R — stored for toggle
-  (levels || []).forEach(lvl => {
-    const isS = lvl.type === 'support';
-    const col = 'rgba(180,183,210,0.25)';
-    const pl = series.createPriceLine({ price: lvl.price, lineWidth: 1, lineStyle: 0, color: col, axisLabelVisible: true, title: `${isS ? 'S' : 'R'} ${lvl.touches}×` });
+  mergedLevels.forEach(lvl => {
+    const isS  = lvl.type === 'support';
+    const col  = isS ? 'rgba(38,217,107,0.20)' : 'rgba(239,83,80,0.20)';
+    const axisCol = isS ? 'rgba(38,217,107,0.30)' : 'rgba(239,83,80,0.30)';
+    const conf = lvl.isConfluence ? ` ×${lvl.count}` : '';
+    const pl = series.createPriceLine({
+      price: lvl.price, lineWidth: 1, lineStyle: 0, color: col,
+      axisLabelVisible: true, axisLabelColor: axisCol,
+      title: `${isS ? 'S' : 'R'} ${_fmtP(lvl.price)} ×${lvl.touches}${conf}`,
+    });
     pl.__col = col;
     _srLines.push(pl);
   });
@@ -396,7 +440,7 @@ async function loadChart() {
   _buildWtPane(document.getElementById('wt-wrap'), wavetrend || [], _chart);
 
   // Start canvas overlay (S/R boxes + liquidation lines)
-  _startOverlay(wrap, series, levels, htf_levels, _liquidations);
+  _startOverlay(wrap, series, mergedLevels, htf_levels, _liquidations);
 
   // ── Legend ──────────────────────────────────────────────────────────────────
   const leg   = document.getElementById('sr-legend');
@@ -479,13 +523,19 @@ async function loadChart() {
     </span>`);
   });
 
-  [...(levels||[])].reverse().forEach(lvl => {
+  [...mergedLevels].reverse().forEach(lvl => {
     const isS  = lvl.type === 'support';
-    const dist = current_price ? ((lvl.price-current_price)/current_price*100).toFixed(1) : null;
-    const dtxt = dist !== null ? ` · ${dist>0?'+':''}${dist}%` : '';
+    const col  = isS ? 'rgba(38,217,107,1)' : 'rgba(239,83,80,1)';
+    const bg   = isS ? 'rgba(38,217,107,0.10)' : 'rgba(239,83,80,0.10)';
+    const bd   = isS ? 'rgba(38,217,107,0.25)' : 'rgba(239,83,80,0.25)';
+    const dist = current_price ? ((lvl.price - current_price) / current_price * 100) : null;
+    const dtxt = dist !== null ? ` · ${dist >= 0 ? '+' : ''}${dist.toFixed(1)}%` : '';
+    const atLevel = dist !== null && Math.abs(dist) <= 0.5;
+    const confTxt = lvl.isConfluence ? ` · Confluence ×${lvl.count}` : '';
     chips.push(`<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-      background:rgba(180,183,210,0.08);color:${isS?'#c8cade':'#a0a8cc'}">
-      ${isS?'▲ S':'▼ R'} ${_fmtP(lvl.price)}${dtxt} (${lvl.touches}×)
+      background:${bg};color:${col};border:1px solid ${bd};
+      ${atLevel ? 'font-weight:700;box-shadow:0 0 6px ' + bd + ';' : ''}">
+      ${isS ? '▲ S' : '▼ R'} ${_fmtP(lvl.price)}${dtxt} (${lvl.touches}×)${confTxt}${atLevel ? ' ⚡AT LEVEL' : ''}
     </span>`);
   });
 

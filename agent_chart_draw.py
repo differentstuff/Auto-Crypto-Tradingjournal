@@ -10,6 +10,7 @@ Pure matplotlib implementation. Draws candlesticks with trade levels:
   - Price label on right edge of every level line
   - Decision criteria text (top-right)
   - Volume bar subplot
+  - S&R zones: colored by type (green=support, red=resistance), labeled, at-level highlighted
 
 Returns base64-encoded PNG string. Returns "" on any failure.
 """
@@ -17,6 +18,35 @@ import base64
 import io
 
 import pandas as pd
+
+
+def _merge_sr(levels, pct=0.003):
+    """Merge S&R levels within pct of each other (by price ratio) into confluence zones."""
+    if not levels:
+        return []
+    srt = sorted(levels, key=lambda x: x["price"])
+    groups, cur = [], [srt[0]]
+    for lv in srt[1:]:
+        if (lv["price"] - cur[-1]["price"]) / cur[-1]["price"] <= pct:
+            cur.append(lv)
+        else:
+            groups.append(cur); cur = [lv]
+    groups.append(cur)
+    out = []
+    for g in groups:
+        prices  = [x["price"] for x in g]
+        touches = sum(x.get("touches", 1) for x in g)
+        sup_cnt = sum(1 for x in g if x.get("type") == "support")
+        out.append({
+            "price":         sum(prices) / len(prices),
+            "zone_min":      min(prices),
+            "zone_max":      max(prices),
+            "touches":       touches,
+            "type":          "support" if sup_cnt > len(g) / 2 else "resistance",
+            "is_confluence": len(g) > 1,
+            "count":         len(g),
+        })
+    return out
 
 
 def draw(
@@ -30,6 +60,7 @@ def draw(
     criteria: list = None,
     n_candles: int = 60,
     entry_high: float = None,
+    sr_levels: list = None,
 ) -> str:
     """Returns base64-encoded PNG or '' on failure."""
     try:
@@ -109,6 +140,39 @@ def draw(
         ez_hi = entry_high if (entry_high and entry_high != entry) else entry
         if ez_lo and ez_hi and ez_hi != ez_lo:
             ax_price.axhspan(ez_lo, ez_hi, alpha=0.13, color=ENTRY_C, zorder=1)
+
+        # ── S&R zones (A+B+C+D+E) ────────────────────────────────────────────
+        last_close = float(df["close"].iloc[-1]) if "close" in df.columns else 0
+        merged_sr  = _merge_sr(sr_levels or [])
+        for lvl in merged_sr[:6]:   # cap at 6 to avoid clutter
+            is_sup = lvl["type"] == "support"
+            col_hex = "#26D96B" if is_sup else "#EF5350"
+            at_level = last_close and abs(lvl["price"] - last_close) / last_close <= 0.005
+
+            # Zone band
+            lo = lvl.get("zone_min", lvl["price"] * 0.997)
+            hi = lvl.get("zone_max", lvl["price"] * 1.003)
+            base_a = min(0.07 + (lvl["touches"] - 1) * 0.04, 0.38)
+            alpha  = min(base_a + 0.18, 0.55) if at_level else base_a
+            ax_price.axhspan(lo, hi, alpha=alpha, color=col_hex, zorder=1)
+
+            # At-level: extra border line
+            if at_level:
+                ax_price.axhline(lvl["price"], color=col_hex, linewidth=0.9,
+                                 linestyle="-", zorder=2, alpha=0.6)
+
+            # Right-side label
+            conf_tag = f" x{lvl['count']}" if lvl.get("is_confluence") else ""
+            label = f"{'S' if is_sup else 'R'} {lvl['price']:.5g} x{lvl['touches']}{conf_tag}"
+            if at_level:
+                label += " !"
+            ax_price.text(
+                n - 0.5, lvl["price"], f"  {label}",
+                color=col_hex, fontsize=7.5, fontweight="bold" if at_level else "normal",
+                va="center", ha="left", zorder=5,
+                bbox=dict(boxstyle="round,pad=0.18", facecolor=BG,
+                          edgecolor=col_hex, alpha=0.7, linewidth=0.7),
+            )
 
         # ── Level lines + right-side price labels ────────────────────────────
         def _draw_level(price, color, lw, ls, label):

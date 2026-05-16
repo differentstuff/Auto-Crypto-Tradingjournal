@@ -99,9 +99,11 @@ def _enrich_and_filter_setups(setups: list) -> list:
 
         # ── Chart generation ──────────────────────────────────────────────
         try:
+            from chart_sr import detect_support_resistance
             candles = get_candles(sym, "4H")
             if candles is not None and not candles.empty:
                 ez = s.get("entry_zone") or {}
+                sr_raw = detect_support_resistance(candles)
                 chart_b64 = agent_chart_draw.draw(
                     candles     = candles,
                     symbol      = sym,
@@ -112,6 +114,7 @@ def _enrich_and_filter_setups(setups: list) -> list:
                     tp1         = s.get("tp1_price"),
                     tp2         = s.get("tp2_price"),
                     criteria    = s.get("key_conditions") or [],
+                    sr_levels   = sr_raw,
                 )
                 if chart_b64:
                     s["chart_png_b64"] = chart_b64
