@@ -66,6 +66,7 @@ from scanner_stages import (
     _stage2,
     _get_scan_macro_context,
     _apply_macro_cap,
+    enrich_finalists_1h,
 )
 
 # ── Watchlist mutable state (kept here so tests can reset ai_scanner.BINANCE_WATCHLIST) ──
@@ -289,6 +290,10 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 print(f"[Nansen] {active}/{len(finalist_syms)} finalists have smart money signal", flush=True)
             except Exception as e:
                 print(f"[Nansen] Signal fetch failed: {e}", flush=True)
+
+        # Enrich finalists with 1H chart data before AI scoring stages
+        _update(stage_detail="Fetching 1H data for finalists…")
+        finalists = enrich_finalists_1h(finalists)
 
         # Stage 3a — Quick score all finalists with Haiku (cheap pre-filter pass)
         # Use a threshold 1 below min_score so Haiku false-negatives don't filter

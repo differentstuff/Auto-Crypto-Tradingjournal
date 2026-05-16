@@ -20,9 +20,10 @@ import ai_scanner
 import telegram_notify
 from database import db_conn
 
-FIRST_DELAY   = int(os.environ.get("SCANNER_FIRST_DELAY", 300))   # 5 min
-INTERVAL      = int(os.environ.get("SCANNER_INTERVAL",    1800))  # 30 min
-SCAN_TIMEOUT  = 900                                                 # 15 min max — extended for 500-coin list
+FIRST_DELAY      = int(os.environ.get("SCANNER_FIRST_DELAY", 300))   # 5 min
+INTERVAL         = int(os.environ.get("SCANNER_INTERVAL",    1800))  # 30 min
+SCAN_TIMEOUT     = 900                                                 # 15 min max — extended for 500-coin list
+WATCHER_INTERVAL = 2700                                                # 45 minutes
 
 # Broad criteria: relaxes Stage-2 hard filters so all archetypes (continuation,
 # reversal, breakout) pass through to Stage 3. Archetype is auto-detected per
@@ -143,6 +144,12 @@ def _run_once():
 
     if setups:
         _persist_setups(setups)
+        # Entry watcher: classify setups and update recommendation queue
+        try:
+            import entry_watcher
+            entry_watcher.process_scan_results(setups)
+        except Exception as ew_err:
+            print(f"[Scanner Scheduler] Entry watcher error: {ew_err}")
         with db_conn() as conn:
             tg_enabled = conn.execute(
                 "SELECT value FROM settings WHERE key='telegram_alerts_enabled'"
@@ -233,11 +240,20 @@ def _loop():
     print(f"[Scanner Scheduler] First scan in {FIRST_DELAY // 60} min, "
           f"then every {INTERVAL // 60} min")
     time.sleep(FIRST_DELAY)
+    last_watcher_review = 0.0
     while True:
         try:
             _run_once()
         except Exception as e:
             print(f"[Scanner Scheduler] Unhandled error: {e}")
+        # Run watcher review every 45 min independently of scan cycle
+        if time.time() - last_watcher_review >= WATCHER_INTERVAL:
+            try:
+                import entry_watcher
+                entry_watcher.run_review_cycle()
+                last_watcher_review = time.time()
+            except Exception as e:
+                print(f"[Scanner Scheduler] Watcher review error: {e}")
         time.sleep(INTERVAL)
 
 

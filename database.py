@@ -318,6 +318,32 @@ def init_db():
         )
     """)
 
+    # ── entry_watcher_recs ────────────────────────────────────────────────────
+    _apply(33, "entry_watcher_recs", """
+        CREATE TABLE IF NOT EXISTS entry_watcher_recs (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol            TEXT NOT NULL,
+            direction         TEXT NOT NULL,
+            alert_type        TEXT NOT NULL,
+            entry_low         REAL,
+            entry_high        REAL,
+            sl_price          REAL,
+            tp1_price         REAL,
+            tp2_price         REAL,
+            score             REAL,
+            archetype         TEXT,
+            rationale         TEXT,
+            key_conditions    TEXT,
+            status            TEXT DEFAULT 'active',
+            invalidation_reason TEXT,
+            replaced_by       TEXT,
+            created_at        TEXT DEFAULT (datetime('now')),
+            expires_at        TEXT,
+            invalidated_at    TEXT,
+            analysis_json     TEXT
+        )
+    """)
+
     # ── settings ──────────────────────────────────────────────────────────────
     # Key-value store: last sync time, account equity, rulebook timestamps.
     # Also created by bitget_sync._ensure_settings_table() but must exist here

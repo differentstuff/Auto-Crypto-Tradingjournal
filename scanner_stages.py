@@ -107,6 +107,29 @@ def _fetch_one(symbol: str):
         return symbol, None, None
 
 
+def enrich_finalists_1h(finalists: list) -> list:
+    """
+    Fetch 1H candles for each finalist and add to their ctx dict.
+    Called after Stage 2, before Stage 3 Haiku quick-score and Sonnet batch scoring.
+    Returns the same list with ctx["1H"] populated where data is available.
+    """
+    from chart_context import get_candles as _get_candles
+    from chart_indicators import compute_all_indicators
+    enriched = []
+    for item in finalists:
+        sym, ctx, conf, direction = item
+        if "1H" not in ctx:
+            try:
+                candles_1h = _get_candles(sym, "1H")
+                if candles_1h is not None and not candles_1h.empty:
+                    inds_1h = compute_all_indicators(candles_1h)
+                    ctx["1H"] = {"indicators": inds_1h, "prompt_text": ""}
+            except Exception:
+                pass
+        enriched.append((sym, ctx, conf, direction))
+    return enriched
+
+
 def _stage1(symbols: list, min_score: int = SCANNER_MIN_SCORE,
             _update_fn=None) -> list:
     """Return [(symbol, ctx, conf, direction)] with enough aligned signals.
