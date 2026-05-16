@@ -64,3 +64,28 @@ def _get_default_watchlist() -> list:
 
 
 DEFAULT_WATCHLIST = _BITGET_WATCHLIST  # backward compat; callers should use _get_default_watchlist()
+
+
+def _get_extended_watchlist(max_symbols: int = 500, min_vol_usd: float = 3_000_000) -> list:
+    """
+    Fetch top Bitget USDT-M linear perpetuals sorted by 24h quote volume.
+    Falls back to _get_default_watchlist() on any error.
+    """
+    try:
+        import ccxt
+        bitget = ccxt.bitget({"enableRateLimit": True})
+        tickers = bitget.fetch_tickers()
+        candidates = []
+        for sym, t in tickers.items():
+            if not sym.endswith("/USDT:USDT"):
+                continue
+            vol = t.get("quoteVolume") or 0
+            if vol >= min_vol_usd:
+                candidates.append((sym.replace("/USDT:USDT", "USDT"), vol))
+        candidates.sort(key=lambda x: -x[1])
+        result = [s[0] for s in candidates[:max_symbols]]
+        print(f"[Watchlist] {len(result)} Bitget futures by volume (>${min_vol_usd/1e6:.0f}M 24h)", flush=True)
+        return result
+    except Exception as e:
+        print(f"[Watchlist] Extended fetch failed: {e} — using default list")
+        return _get_default_watchlist()

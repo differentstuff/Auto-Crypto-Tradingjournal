@@ -111,54 +111,90 @@ def _fp(v) -> str:
 
 
 def send_setup_alert(setups: list) -> bool:
-    """Format scanner results and send as a Telegram alert."""
-    n = len(setups)
-    lines = [f"🔍 <b>Setup Scanner</b> — <b>{n} setup{'s' if n != 1 else ''} found</b>\n"]
+    """Format scanner results and send as Telegram alerts — one message per setup with chart."""
+    if not setups:
+        return False
 
-    for s in setups[:6]:
+    # Send individual alert per setup (with its own chart)
+    success = False
+    for s in setups[:5]:   # cap at 5
         sym   = s.get("_symbol") or s.get("symbol", "?")
         base  = sym.replace("USDT", "")
-        dir_  = (s.get("direction") or "").upper()
-        score = s.get("setup_score", "?")
+        dir_  = (s.get("direction") or "Long").upper()
+        score = s.get("setup_score") or s.get("_final_score") or 0
         label = s.get("setup_label", "")
         rr    = s.get("rr_ratio", "—")
         urg   = s.get("urgency", "")
-        pat   = s.get("chart_pattern") or ""
+        arch  = s.get("chart_pattern") or ""
 
-        ent  = s.get("entry_zone") or {}
-        el   = _fp(ent.get("low"))
-        eh   = _fp(ent.get("high"))
-        ent_str = f"{el}–{eh}" if el != "—" and eh != "—" and el != eh else el
+        ez    = s.get("entry_zone") or {}
+        el    = _fp(ez.get("low"))
+        eh    = _fp(ez.get("high"))
+        entry_str = f"{el} – {eh}" if el != eh and el != "—" and eh != "—" else (el if el != "—" else eh)
         sl_str  = _fp(s.get("sl_price"))
         tp1_str = _fp(s.get("tp1_price"))
+        tp2_str = _fp(s.get("tp2_price"))
 
-        dir_icon   = "📈" if dir_ == "LONG" else "📉"
-        score_icon = "⭐⭐" if isinstance(score, int) and score >= 10 else "⭐"
+        live_price   = s.get("_live_price")
+        drift_pct    = s.get("_price_drift_pct")
+        price_warn   = s.get("_price_warning", "")
+        conditions   = s.get("key_conditions") or []
+        why          = s.get("why_this_score") or s.get("summary") or ""
+        confluence   = s.get("confluence_summary") or ""
 
-        lines.append(
-            f"{score_icon} <b>{base}USDT</b> {dir_icon} <b>{dir_}</b> — "
-            f"<b>{score}/10</b> {label}"
-        )
-        lines.append(
-            f"Entry {ent_str} · SL {sl_str} · TP1 {tp1_str} · R:R {rr}"
-        )
-        meta = " · ".join(filter(None, [urg, pat]))
-        if meta:
-            lines.append(f"<i>{meta}</i>")
-        summary = (s.get("summary") or "").strip()
-        if summary:
-            lines.append(f"<i>{summary[:140]}{'…' if len(summary) > 140 else ''}</i>")
+        dir_icon  = "📈" if dir_ == "LONG" else "📉"
+        score_bar = "🟢" if score >= 8 else "🟡" if score >= 6 else "🟠"
+
+        lines = []
+        lines.append(f"{score_bar} <b>{base}USDT {dir_icon} {dir_}</b>  —  <b>{score}/10</b> {label}")
+        if arch:
+            lines.append(f"<i>{arch}</i>")
         lines.append("")
 
-    if n > 6:
-        lines.append(f"<i>…and {n - 6} more setup(s)</i>\n")
+        # Trade levels
+        lines.append(f"📍 <b>Entry:</b>  {entry_str}")
+        if live_price:
+            lines.append(f"💹 <b>Live now:</b>  {_fp(live_price)}" + (f"  <i>(+{drift_pct:.1f}% from entry)</i>" if drift_pct and drift_pct > 0.5 else ""))
+        lines.append(f"🛑 <b>Stop Loss:</b>  {sl_str}")
+        lines.append(f"🎯 <b>TP1:</b>  {tp1_str}")
+        lines.append(f"🎯 <b>TP2:</b>  {tp2_str}")
+        lines.append(f"⚖️ <b>R:R:</b>  {rr}")
+        if urg:
+            lines.append(f"⏱ <b>Timing:</b>  {urg}")
+        lines.append("")
 
-    lines.append(f'<a href="{APP_URL}">📊 Open Journal → Setup Scanner</a>')
-    msg = "\n".join(lines)
-    top_chart = (setups[0].get("chart_png_b64") or "") if setups else ""
-    if top_chart:
-        return send_photo(msg, top_chart)
-    return send_message(msg)
+        # Why enter
+        if why:
+            lines.append(f"💡 <b>Why enter:</b>")
+            lines.append(f"<i>{why[:280]}{'…' if len(why) > 280 else ''}</i>")
+            lines.append("")
+
+        # Key signals
+        if conditions:
+            lines.append("📊 <b>Signals:</b>")
+            for c in conditions[:5]:
+                lines.append(f"  · {c}")
+            lines.append("")
+
+        if confluence:
+            lines.append(f"🔗 <i>{confluence[:160]}</i>")
+
+        # Price staleness warning
+        if price_warn:
+            lines.append(f"\n⚠️ <i>{price_warn}</i>")
+
+        lines.append(f'\n<a href="{APP_URL}">📊 Open Scanner</a>')
+
+        msg = "\n".join(lines)
+        chart = s.get("chart_png_b64", "")
+        if chart:
+            ok = send_photo(msg, chart)
+        else:
+            ok = send_message(msg)
+        if ok:
+            success = True
+
+    return success
 
 
 def send_test_message() -> bool:

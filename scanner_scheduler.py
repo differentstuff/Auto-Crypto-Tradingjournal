@@ -36,6 +36,71 @@ def _wait_for_scan() -> dict:
     return ai_scanner.get_state()
 
 
+def _enrich_and_filter_setups(setups: list) -> list:
+    """
+    Before sending Telegram alerts:
+    1. Check live price vs entry zone — drop setups where price moved >5% past entry.
+    2. Generate annotated 4H chart for each remaining setup.
+    Returns filtered+enriched list (may be shorter than input).
+    """
+    import agent_chart_draw
+    from ccxt_client import get_binance_price
+    from chart_context import get_candles
+
+    enriched = []
+    for s in setups:
+        sym       = s.get("_symbol") or s.get("symbol", "")
+        direction = (s.get("direction") or "Long").lower()
+        ez        = s.get("entry_zone") or {}
+        entry_ref = ez.get("high") or ez.get("low") or s.get("entry_price") or 0
+
+        # ── Price freshness ────────────────────────────────────────────────
+        try:
+            live = get_binance_price(sym)
+            if live and entry_ref:
+                # For Long: positive drift = price moved above entry (missed move)
+                # For Short: positive drift = price dropped below entry (missed move)
+                if direction == "long":
+                    drift = (live - entry_ref) / entry_ref * 100
+                else:
+                    drift = (entry_ref - live) / entry_ref * 100
+
+                s["_live_price"]      = live
+                s["_price_drift_pct"] = round(drift, 1)
+
+                if drift > 5.0:
+                    print(f"[Scanner Scheduler] {sym} price moved {drift:.1f}% from entry — skipping stale setup")
+                    continue   # Drop from alert — entry is gone
+                elif drift > 2.0:
+                    s["_price_warning"] = f"Price moved {drift:.1f}% from entry zone — act fast or wait for pullback"
+        except Exception as e:
+            print(f"[Scanner Scheduler] Price check failed for {sym}: {e}")
+
+        # ── Chart generation ──────────────────────────────────────────────
+        try:
+            candles = get_candles(sym, "4H")
+            if candles is not None and not candles.empty:
+                chart_b64 = agent_chart_draw.draw(
+                    candles   = candles,
+                    symbol    = sym,
+                    direction = direction,
+                    entry     = entry_ref,
+                    sl        = s.get("sl_price"),
+                    tp1       = s.get("tp1_price"),
+                    tp2       = s.get("tp2_price"),
+                )
+                if chart_b64:
+                    s["chart_png_b64"] = chart_b64
+        except Exception as e:
+            print(f"[Scanner Scheduler] Chart failed for {sym}: {e}")
+
+        enriched.append(s)
+
+    if len(enriched) < len(setups):
+        print(f"[Scanner Scheduler] {len(setups) - len(enriched)} setup(s) dropped (price moved past entry)")
+    return enriched
+
+
 def _run_once():
     started = ai_scanner.force_scan()
     if not started:
@@ -63,8 +128,12 @@ def _run_once():
                 "SELECT value FROM settings WHERE key='telegram_alerts_enabled'"
             ).fetchone()
         if tg_enabled is None or tg_enabled[0] == '1':
-            telegram_notify.send_setup_alert(setups)
-            print(f"[Scanner Scheduler] Telegram alert sent ({len(setups)} setups)")
+            alert_setups = _enrich_and_filter_setups(setups)
+            if alert_setups:
+                telegram_notify.send_setup_alert(alert_setups)
+                print(f"[Scanner Scheduler] Telegram alert sent ({len(alert_setups)} setups)")
+            else:
+                print(f"[Scanner Scheduler] All {len(setups)} setup(s) stale (price moved) — no alert sent")
         else:
             print(f"[Scanner Scheduler] Telegram alerts disabled — skipped ({len(setups)} setups)")
 
