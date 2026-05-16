@@ -64,7 +64,7 @@ def _enrich_and_filter_setups(setups: list) -> list:
     Returns filtered+enriched list (may be shorter than input).
     """
     import agent_chart_draw
-    from ccxt_client import get_binance_price
+    from ccxt_client import get_live_price
     from chart_context import get_candles
 
     enriched = []
@@ -76,7 +76,7 @@ def _enrich_and_filter_setups(setups: list) -> list:
 
         # ── Price freshness ────────────────────────────────────────────────
         try:
-            live = get_binance_price(sym)
+            live = get_live_price(sym)
             if live and entry_ref:
                 # For Long: positive drift = price moved above entry (missed move)
                 # For Short: positive drift = price dropped below entry (missed move)

@@ -44,6 +44,25 @@ def get_binance_price(symbol: str) -> float | None:
         return None
 
 
+def get_live_price(symbol: str) -> float | None:
+    """
+    Fetch current last price for any symbol — tries Binance first (cached),
+    falls back to Bitget public ticker. Returns None only if both fail.
+    Used for price-freshness checks before Telegram alerts.
+    """
+    price = get_binance_price(symbol)
+    if price is not None:
+        return price
+    try:
+        import ccxt as _ccxt
+        bitget = _ccxt.bitget({"enableRateLimit": True})
+        ccxt_sym = symbol.removesuffix("USDT") + "/USDT:USDT"
+        ticker = bitget.fetch_ticker(ccxt_sym)
+        return ticker.get("last")
+    except Exception:
+        return None
+
+
 def get_binance_ticker_change(symbol: str) -> float | None:
     """
     Return the 24h percentage price change for a symbol on Binance.
