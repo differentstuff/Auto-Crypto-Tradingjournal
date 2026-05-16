@@ -19,6 +19,21 @@ def api_limits_list():
             "SELECT * FROM pending_limits WHERE status = ? ORDER BY created_at DESC",
             (status,)
         ).fetchall()]
+        # Attach chart_png_b64 from the linked analyzed_call's analysis_json
+        for row in rows:
+            if not row.get("call_id") or row.get("chart_png_b64"):
+                continue
+            try:
+                call = conn.execute(
+                    "SELECT analysis_json FROM analyzed_calls WHERE id=?",
+                    (row["call_id"],)
+                ).fetchone()
+                if call and call[0]:
+                    aj = json.loads(call[0])
+                    if aj.get("chart_png_b64"):
+                        row["chart_png_b64"] = aj["chart_png_b64"]
+            except Exception:
+                pass
     return _ok(rows)
 
 

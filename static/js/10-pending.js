@@ -433,6 +433,7 @@ function renderPendingLimitCard(lim) {
       <span style="margin-left:8px">· Added: ${(lim.created_at||'').slice(0,10)}</span>
     </div>` : ''}
     ${verdictHtml}
+    ${lim.chart_png_b64 ? `<div style="padding:0 18px 12px"><img src="data:image/png;base64,${lim.chart_png_b64}" style="width:100%;max-width:680px;border-radius:8px;border:1px solid var(--border);display:block" alt="Setup chart"></div>` : ''}
     <div id="pending-analyze-${lim.id}" style="display:none;padding:0 18px 12px"></div>
     <div style="display:flex;gap:8px;padding:10px 18px 14px;flex-wrap:wrap">${waitingActions}</div>
   </div>`;
