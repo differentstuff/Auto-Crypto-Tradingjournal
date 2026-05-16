@@ -191,6 +191,9 @@ def _score_finalists_with_agents(finalists: list, conn,
                 # Fallback: use current price from already-computed 4H chart context
                 ema_4h = ctx.get("4H", {}).get("indicators", {}).get("ema") or {}
                 entry_p = float(ema_4h.get("current_price") or 0)
+            urgency = ("Now" if score >= 9 else
+                       "1-4h" if score >= 8 else
+                       "Today" if score >= 7 else "1-3 days")
             setup = {
                 "_symbol":        sym,
                 "symbol":         sym,
@@ -209,6 +212,9 @@ def _score_finalists_with_agents(finalists: list, conn,
                 "_quick_score":   quick_score,
                 "_rationale":     rationale,
                 "confluence_summary": conf.get("label", ""),
+                "chart_pattern":  prep.get("chart_pattern") or None,
+                "urgency":        urgency,
+                "timeframe":      "Multi-TF (1D/4H/1H)",
             }
             if macro_warnings:
                 setup["macro_warnings"] = macro_warnings
@@ -352,8 +358,11 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
 
         # Add non-top-N setups with Haiku score + one-sentence rationale
         for sym, ctx, conf, direction, score, reason in rest_finalists:
-            inds = ctx.get("4H", {}).get("indicators", {})
+            inds  = ctx.get("4H", {}).get("indicators", {})
             price = inds.get("ema", {}).get("current_price")
+            urg   = ("Now" if score >= 9 else
+                     "1-4h" if score >= 8 else
+                     "Today" if score >= 7 else "1-3 days")
             setups.append({
                 "symbol":            sym,
                 "direction":         direction,
@@ -363,6 +372,9 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 "quick_score_only":  True,
                 "confluence":        conf.get("label", ""),
                 "current_price":     price,
+                "chart_pattern":     None,
+                "urgency":           urg,
+                "timeframe":         "4H",
             })
 
         # Attach Nansen smart money signal to each setup
