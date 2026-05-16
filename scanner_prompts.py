@@ -130,15 +130,24 @@ def _build_macro_header(macro_ctx: dict) -> str:
 def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, min_score=SCANNER_MIN_SCORE,
                   macro_ctx: dict = None, archetype: str = ""):
     inds_4h = ctx.get("4H", {}).get("indicators", {})
+    inds_1h = ctx.get("1H", {}).get("indicators", {}) or {}
     ema     = inds_4h.get("ema", {}) or {}
     price   = ema.get("current_price", 0)
-    atr_val = (inds_4h.get("atr", {}) or {}).get("value", 0)
+    atr_1h  = (inds_1h.get("atr", {}) or {}).get("value", 0)
+    atr_4h  = (inds_4h.get("atr", {}) or {}).get("value", 0)
 
     sr_4h = inds_4h.get("support_resistance", [])
-    sr_text = "\n".join(
+    sr_text_4h = "\n".join(
         f"  {l['type'].upper():10s} {l['price']:.6g}  "
         f"(strength {l.get('strength', 1)}, {l.get('touches', 1)} touches)"
         for l in sorted(sr_4h, key=lambda x: -x.get("touches", 1))[:6]
+    ) or "  None detected"
+
+    sr_1h = inds_1h.get("support_resistance", [])
+    sr_text_1h = "\n".join(
+        f"  {l['type'].upper():10s} {l['price']:.6g}  "
+        f"({l.get('touches', 1)} touches)"
+        for l in sorted(sr_1h, key=lambda x: -x.get("touches", 1))[:5]
     ) or "  None detected"
 
     tl_4h = inds_4h.get("trendlines", [])
@@ -149,6 +158,7 @@ def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, 
     ) or "  None"
 
     pt_4h = ctx.get("4H", {}).get("prompt_text", "No 4H data")
+    pt_1h = ctx.get("1H", {}).get("prompt_text", "")
     pt_1d = ctx.get("1D", {}).get("prompt_text", "No 1D data")
 
     conf_line = (
@@ -156,7 +166,14 @@ def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, 
         f"{conf['bullish']} bullish / {conf['bearish']} bearish signals)"
     )
 
-    price_note = f"Current price: {price:.6g}  |  1H-equivalent ATR: ~{atr_val:.4g}" if price else ""
+    atr_note = ""
+    if atr_1h:
+        atr_note = f"1H ATR: ~{atr_1h:.4g}  |  4H ATR: ~{atr_4h:.4g}"
+    elif atr_4h:
+        atr_note = f"4H ATR: ~{atr_4h:.4g}"
+    price_note = f"Current price: {price:.6g}  |  {atr_note}" if price else ""
+
+    pt_1h_block = f"\n{pt_1h}" if pt_1h else ""
     hist_text  = json.dumps(history) if history.get("trades") else "No closed trades on this symbol yet"
     mkt_block  = f"\nMARKET CONTEXT:\n{mkt_str}\n" if mkt_str else ""
     rb_block   = f"\nTRADER RULEBOOK (known patterns — respect these):\n{rulebook_str}\n" if rulebook_str else ""
@@ -167,15 +184,24 @@ def _build_prompt(symbol, ctx, conf, direction, mkt_str, history, rulebook_str, 
 
     return f"""{macro_header}You are a professional crypto futures analyst. Score the current {direction.upper()} setup for {symbol} on a 1-10 scale and provide specific trade parameters.
 
-TECHNICAL SUMMARY:
-{pt_4h}
+MULTI-TIMEFRAME BREAKDOWN (HTF → LTF):
+  1D  → directional bias and major structural levels
+  4H  → setup confirmation and trend structure
+  1H  → entry zone and stop loss placement (fresher, tighter precision)
+  4H/1D → take profit targets at higher structural resistance/support
+
+TECHNICAL DATA:
 {pt_1d}
+{pt_4h}{pt_1h_block}
 
 CONFLUENCE: {conf_line}
 {price_note}
 
-KEY S/R LEVELS (4H):
-{sr_text}
+KEY S/R LEVELS — 4H (TP targets, macro structure):
+{sr_text_4h}
+
+KEY S/R LEVELS — 1H (entry zone and SL anchors — USE THESE for entry/SL):
+{sr_text_1h}
 
 ACTIVE TRENDLINES:
 {tl_text}
@@ -193,16 +219,16 @@ TRADER HISTORY ON {symbol}:
 {rubric_block}
 
 REQUIREMENTS for any score ≥ {min_score}:
-- A specific entry zone anchored to a named structural level (S/R, EMA, trendline) with exact prices
-- A stop loss beyond the nearest structural level and ≥ 1× ATR from entry — state the level and ATR distance explicitly
-- At least two take-profit levels at significant resistance/support — state exactly what each targets
+- Entry zone: anchored to a 1H structural level (S/R, EMA, trendline) with exact prices — use 1H data for precision
+- Stop loss: beyond the nearest 1H structural level and ≥ 1× 1H ATR from entry — state the level and ATR distance
+- Take profits: at 4H or 1D resistance/support levels — name the structural zone for each TP
 - Detailed rationale for EVERY level: name the S/R zone, reference the indicator value, explain WHY
 
 RATIONALE DEPTH REQUIRED:
-  entry_rationale: "Price is pulling back to the 4H EMA50 ($X) which coincides with the 1D support zone at $Y (5 touches). RSI has cooled to 48 from 68 — reset without breaking structure."
-  sl_rationale: "Below the 1D support at $Z and the swing low at $W. Distance of $D = 1.8× 4H ATR ($A), placing the stop clearly outside noise."
-  tp1_rationale: "Previous 4H resistance at $R1, high-volume rejection on [date]. R:R 1:2.3 from midpoint entry."
-  tp2_rationale: "Weekly resistance cluster and the 1.618 Fibonacci extension from last major swing. R:R 1:4.1."
+  entry_rationale: "Price pulling back to 1H support at $X (4 touches on 1H, aligns with 4H EMA50 at $Y). 1H RSI cooled to 44 from 68 — momentum reset without breaking structure."
+  sl_rationale: "Below 1H swing low at $Z and 1H support cluster at $W. Distance $D = 1.5× 1H ATR ($A) — outside 1H noise, below 4H demand."
+  tp1_rationale: "4H resistance at $R1, high-volume rejection on [date]. R:R 1:2.3 from midpoint entry."
+  tp2_rationale: "1D resistance cluster and 1.618 Fibonacci extension from last major swing. R:R 1:4.1."
 
 If the setup scores below {min_score} (no valid entry level, SL inside ATR noise, or no logical TP):
 {{"setup_score": 0, "reason": "one sentence why this doesn't qualify"}}
@@ -212,19 +238,19 @@ Otherwise respond with this exact structure:
   "setup_score": 8, "setup_label": "Strong",
   "direction": "{direction}",
   "why_this_score": "2-3 sentences explaining specifically what earns this score and what would need to be different for a 9 or a 7",
-  "entry_zone": {{"low": 0.0, "high": 0.0, "rationale": "Name the level, give the price, explain WHY this is the entry zone"}},
+  "entry_zone": {{"low": 0.0, "high": 0.0, "rationale": "Name the 1H level, give the price, explain WHY this is the entry zone"}},
   "sl_price": 0.0,
-  "sl_rationale": "Name the structural level, state ATR distance (e.g. 1.6× 4H ATR), explain the invalidation logic",
+  "sl_rationale": "Name the 1H structural level, state 1H ATR distance (e.g. 1.5× 1H ATR), explain the invalidation logic",
   "tp1_price": 0.0,
-  "tp1_rationale": "Name the resistance/target, explain why price is likely to stall or reverse there",
+  "tp1_rationale": "Name the 4H resistance/target, explain why price is likely to stall or reverse there",
   "tp2_price": 0.0,
-  "tp2_rationale": "Name the higher target, explain the structural or Fibonacci significance",
+  "tp2_rationale": "Name the 4H/1D higher target, explain the structural or Fibonacci significance",
   "rr_ratio": "1:X.X",
   "chart_pattern": "Specific pattern name — or null if none",
-  "key_conditions": ["Specific signal with values, e.g. RSI 47 reset from 71", "MACD bull crossover on 4H", "EMA stack 20>50>200 bullish"],
+  "key_conditions": ["Specific signal with values, e.g. 1H RSI 44 reset from 68", "4H MACD bull crossover", "1D EMA stack 20>50>200 bullish"],
   "risks": ["Specific risk with context", "Second risk"],
   "urgency": "Now|1-4h|Today|1-3 days",
-  "timeframe": "4H",
+  "timeframe": "Multi-TF (1D/4H/1H)",
   "confluence_summary": "One sentence: the 2-3 most important aligned signals that create conviction",
   "summary": "2-3 sentence overall assessment referencing actual price numbers from the technical picture"
 }}
@@ -277,21 +303,29 @@ def _quick_score(symbol: str, ctx: dict, conf: dict, direction: str,
     Returns None if score < min_score or on any error.
     """
     pt_4h = ctx.get("4H", {}).get("prompt_text", "")
+    pt_1h = ctx.get("1H", {}).get("prompt_text", "")
     pt_1d = ctx.get("1D", {}).get("prompt_text", "")
     conf_line = f"{conf['label']} ({conf['bullish']}↑/{conf['bearish']}↓)"
 
     inds_4h = ctx.get("4H", {}).get("indicators", {})
-    sr = inds_4h.get("support_resistance", [])
+    inds_1h = (ctx.get("1H", {}).get("indicators", {}) or {})
+    sr_4h = inds_4h.get("support_resistance", [])
+    sr_1h = inds_1h.get("support_resistance", [])
     sr_compact = "  ".join(
         f"{'S' if l['type']=='support' else 'R'}:{l['price']:.6g}({l.get('touches',1)}t)"
-        for l in sorted(sr, key=lambda x: -x.get("touches", 1))[:4]
+        for l in sorted(sr_4h, key=lambda x: -x.get("touches", 1))[:4]
     ) or "none"
+    sr_1h_compact = "  ".join(
+        f"{'S' if l['type']=='support' else 'R'}:{l['price']:.6g}({l.get('touches',1)}t)"
+        for l in sorted(sr_1h, key=lambda x: -x.get("touches", 1))[:3]
+    ) or "none"
+    pt_1h_block = f"\n{pt_1h}" if pt_1h else ""
 
     variable = (
         f"Score this {direction.upper()} setup for {symbol} — return score 0-10 "
         f"and one short sentence explaining the key factor behind the score.\n\n"
-        f"{pt_4h}\n{pt_1d}\n"
-        f"Confluence: {conf_line}\nS/R: {sr_compact}\n\n"
+        f"{pt_1d}\n{pt_4h}{pt_1h_block}\n"
+        f"Confluence: {conf_line}\n4H S/R: {sr_compact}\n1H S/R: {sr_1h_compact}\n\n"
         f'If score < {min_score}: {{"score":0}}\n'
         f'If score >= {min_score}: {{"score":7,"direction":"{direction}",'
         f'"reason":"one sentence — main factor (e.g. \'4H EMA stack bullish, RSI reset to 52, clean S/R entry zone\')"}}\n'
@@ -326,29 +360,41 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
     parts = []
     for i, (symbol, ctx, conf, direction, score, _reason) in enumerate(finalists, 1):
         inds_4h = ctx.get("4H", {}).get("indicators", {})
+        inds_1h = ctx.get("1H", {}).get("indicators", {}) or {}
         ema     = inds_4h.get("ema", {}) or {}
         price   = ema.get("current_price", 0)
-        atr_val = (inds_4h.get("atr", {}) or {}).get("value", 0)
+        atr_4h  = (inds_4h.get("atr", {}) or {}).get("value", 0)
+        atr_1h  = (inds_1h.get("atr", {}) or {}).get("value", 0)
         pt_4h   = ctx.get("4H", {}).get("prompt_text", "No 4H data")
+        pt_1h   = ctx.get("1H", {}).get("prompt_text", "")
         pt_1d   = ctx.get("1D", {}).get("prompt_text", "No 1D data")
-        sr_4h   = inds_4h.get("support_resistance", [])
-        sr_text = "  ".join(
+
+        # 4H S/R for TP targets; 1H S/R for entry/SL anchors
+        sr_4h = inds_4h.get("support_resistance", [])
+        sr_4h_compact = "  ".join(
             f"{'S' if l['type']=='support' else 'R'}:{l['price']:.6g}({l.get('touches',1)}t)"
             for l in sorted(sr_4h, key=lambda x: -x.get("touches", 1))[:4]
         ) or "none"
+        sr_1h = inds_1h.get("support_resistance", [])
+        sr_1h_compact = "  ".join(
+            f"{'S' if l['type']=='support' else 'R'}:{l['price']:.6g}({l.get('touches',1)}t)"
+            for l in sorted(sr_1h, key=lambda x: -x.get("touches", 1))[:4]
+        ) or "none"
+
         hist = histories.get(symbol, {"trades": 0})
         conf_line = f"{conf['label']} ({conf['bullish']}↑/{conf['bearish']}↓)"
-        # Nansen smart money line (only when 5+ traders — already filtered in client)
         ns      = (nansen_signals or {}).get(symbol, {})
         ns_line = f"\n{ns['prompt_line']}" if ns.get("ok") else ""
         archetype = _detect_archetype(ctx, direction)
-        archetype_line = f"Archetype: {archetype.upper()}"
+        atr_str = f"1H ATR:{atr_1h:.4g}  4H ATR:{atr_4h:.4g}" if atr_1h else f"4H ATR:{atr_4h:.4g}"
+        pt_1h_block = f"\n{pt_1h}" if pt_1h else ""
+
         parts.append(
-            f"--- SETUP {i}: {symbol} ({direction.upper()}) ---\n"
-            f"{archetype_line}\n"
-            f"{pt_4h}\n{pt_1d}\n"
-            f"Confluence: {conf_line}  |  Price: {price:.6g}  |  ATR: {atr_val:.4g}\n"
-            f"S/R: {sr_text}\n"
+            f"--- SETUP {i}: {symbol} ({direction.upper()}) | Archetype: {archetype.upper()} ---\n"
+            f"{pt_1d}\n{pt_4h}{pt_1h_block}\n"
+            f"Confluence: {conf_line}  |  Price: {price:.6g}  |  {atr_str}\n"
+            f"4H S/R (TP targets): {sr_4h_compact}\n"
+            f"1H S/R (entry/SL — USE THESE): {sr_1h_compact}\n"
             f"History: {json.dumps(hist)}{ns_line}"
         )
 
@@ -356,10 +402,9 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
     dis_block = _disabled_criteria_block(cr)
     dis_part  = f"\n{dis_block}\n" if dis_block else ""
 
-    # Dynamic score cap rules based on enabled criteria
     level_rules = []
     if cr.get("sr_anchor", True): level_rules.append("Entry >1×ATR from level → max 6")
-    if cr.get("atr_sl",    True): level_rules.append("SL <1×ATR from entry → max 6")
+    if cr.get("atr_sl",    True): level_rules.append("SL <1×1H ATR from entry → max 6")
     if cr.get("rr_minimum",True): level_rules.append("R:R<2:1 → max 6")
     level_str = ". ".join(level_rules) + "." if level_rules else ""
 
@@ -371,20 +416,26 @@ def _build_batch_prompt(finalists, histories, min_score=SCANNER_MIN_SCORE, crite
         "BREAKOUT=Volume>1.5x required, RSI in momentum zone, price breaking S/R. "
         "CONTINUATION=EMA stack+ADX≥18 required, RSI in sweet spot 45-68(L)/32-55(S)."
     )
+    htf_ltf_rule = (
+        "HTF→LTF BREAKDOWN: Use 1D for directional bias. Use 4H to confirm trend structure. "
+        "Use 1H S/R levels to anchor the entry zone and stop loss (fresher, tighter precision). "
+        "Use 4H/1D resistance or support for take profit targets."
+    )
     user_prompt = (
         f"Analyze these {len(finalists)} crypto futures setups. "
         f"Return a JSON ARRAY of exactly {len(finalists)} objects — one per setup, in the same order.\n\n"
         f"{setups_text}\n\n"
+        f"{htf_ltf_rule}\n"
         f"{archetype_hints}\n"
         f"{scoring_hint}\n"
         f"{level_str}{dis_part}\n"
         f"For setups scoring >= {min_score}, use this structure:\n"
         '{"symbol":"X","direction":"Long","setup_score":7,"setup_label":"Good",'
-        '"why_this_score":"2-3 sentences","entry_zone":{"low":0,"high":0,"rationale":"..."},'
-        '"sl_price":0,"sl_rationale":"...","tp1_price":0,"tp1_rationale":"...",'
-        '"tp2_price":0,"tp2_rationale":"...","rr_ratio":"1:X","chart_pattern":null,'
+        '"why_this_score":"2-3 sentences","entry_zone":{"low":0,"high":0,"rationale":"1H level name + price"},'
+        '"sl_price":0,"sl_rationale":"1H structural level + 1H ATR distance","tp1_price":0,"tp1_rationale":"4H target",'
+        '"tp2_price":0,"tp2_rationale":"4H/1D target","rr_ratio":"1:X","chart_pattern":null,'
         '"key_conditions":["..."],"risks":["..."],"urgency":"Now|1-4h|Today|1-3 days",'
-        '"timeframe":"4H","confluence_summary":"...","summary":"..."}\n'
+        '"timeframe":"Multi-TF (1D/4H/1H)","confluence_summary":"...","summary":"..."}\n'
         f'For setups scoring below {min_score}: {{"symbol":"X","setup_score":0,"reason":"why"}}\n\n'
         "Respond with ONLY a valid JSON array — no markdown, no code fences."
     )

@@ -111,10 +111,10 @@ def enrich_finalists_1h(finalists: list) -> list:
     """
     Fetch 1H candles for each finalist and add to their ctx dict.
     Called after Stage 2, before Stage 3 Haiku quick-score and Sonnet batch scoring.
-    Returns the same list with ctx["1H"] populated where data is available.
+    Populates ctx["1H"] with full indicators + S/R levels + prompt_text so
+    Stage 3 can use 1H data for fresher entry zones and stop placement.
     """
-    from chart_context import get_candles as _get_candles
-    from chart_indicators import compute_all_indicators
+    from chart_context import get_candles as _get_candles, compute_indicators, format_for_prompt
     enriched = []
     for item in finalists:
         sym, ctx, conf, direction = item
@@ -122,8 +122,9 @@ def enrich_finalists_1h(finalists: list) -> list:
             try:
                 candles_1h = _get_candles(sym, "1H")
                 if candles_1h is not None and not candles_1h.empty:
-                    inds_1h = compute_all_indicators(candles_1h)
-                    ctx["1H"] = {"indicators": inds_1h, "prompt_text": ""}
+                    inds_1h = compute_indicators(candles_1h)   # includes S/R + trendlines
+                    pt_1h   = format_for_prompt(sym, inds_1h, "1H")
+                    ctx["1H"] = {"indicators": inds_1h, "prompt_text": pt_1h}
             except Exception:
                 pass
         enriched.append((sym, ctx, conf, direction))
