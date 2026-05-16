@@ -148,6 +148,19 @@ try {
 document.title  = symbol + ' — Chart';
 document.getElementById('chart-title').textContent = symbol;
 
+// ── ATR from candle array (14-period simple) ─────────────────────────────────
+function _computeAtr(candles, period = 14) {
+  if (!candles || candles.length < 2) return 0;
+  const slice = candles.slice(-Math.min(period + 1, candles.length));
+  let sum = 0, count = 0;
+  for (let i = 1; i < slice.length; i++) {
+    const h = slice[i].high, l = slice[i].low, cp = slice[i-1].close;
+    sum += Math.max(h - l, Math.abs(h - cp), Math.abs(l - cp));
+    count++;
+  }
+  return count ? sum / count : 0;
+}
+
 // ── S&R confluence zone merging ───────────────────────────────────────────────
 function _mergeSrLevels(levels, pct = 0.003) {
   if (!levels || !levels.length) return [];
@@ -170,7 +183,7 @@ function _mergeSrLevels(levels, pct = 0.003) {
 }
 
 // ── Canvas overlay: S/R boxes + liquidation dashed lines ──────────────────────
-function _startOverlay(wrap, series, mergedLvls, htf_levels, liquidations) {
+function _startOverlay(wrap, series, mergedLvls, htf_levels, liquidations, atr) {
   // Remove any previous overlay canvas
   const old = wrap.querySelector('.sr-canvas');
   if (old) old.remove();
@@ -205,15 +218,16 @@ function _startOverlay(wrap, series, mergedLvls, htf_levels, liquidations) {
       ctx.fillRect(0, top, chartW, ht);
     });
 
-    // ── S/R zones (colored by type, at-level highlighted) ─────────────────────
+    // ── S/R zones (colored by type, at-level highlighted, ATR-width) ────────────
     (mergedLvls || []).forEach(lvl => {
       const isS  = lvl.type === 'support';
       const col  = isS ? [38,217,107] : [239,83,80];
       const atLevel = current_price && Math.abs(lvl.price - current_price) / current_price <= 0.005;
 
-      // Zone band: use zoneMin/zoneMax if available (confluence), else price ±0.3%
-      const lo   = lvl.zoneMin ?? (lvl.price * 0.997);
-      const hi   = lvl.zoneMax ?? (lvl.price * 1.003);
+      // Zone band: confluence uses actual price spread; singleton uses ATR × 0.15 (F)
+      const hw   = atr ? atr * 0.15 : lvl.price * 0.003;
+      const lo   = lvl.isConfluence ? (lvl.zoneMin ?? (lvl.price - hw)) : (lvl.price - hw);
+      const hi   = lvl.isConfluence ? (lvl.zoneMax ?? (lvl.price + hw)) : (lvl.price + hw);
       const yT   = series.priceToCoordinate(hi);
       const yB   = series.priceToCoordinate(lo);
       if (yT === null || yB === null) return;
@@ -303,6 +317,7 @@ async function loadChart() {
     return;
   }
   const mergedLevels = _mergeSrLevels(levels || []);
+  const _atr = _computeAtr(candles);   // ATR for zone half-width (F)
 
   document.getElementById('status').style.display = 'none';
 
@@ -440,7 +455,7 @@ async function loadChart() {
   _buildWtPane(document.getElementById('wt-wrap'), wavetrend || [], _chart);
 
   // Start canvas overlay (S/R boxes + liquidation lines)
-  _startOverlay(wrap, series, mergedLevels, htf_levels, _liquidations);
+  _startOverlay(wrap, series, mergedLevels, htf_levels, _liquidations, _atr);
 
   // ── Legend ──────────────────────────────────────────────────────────────────
   const leg   = document.getElementById('sr-legend');

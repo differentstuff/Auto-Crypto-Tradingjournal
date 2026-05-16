@@ -141,7 +141,19 @@ def draw(
         if ez_lo and ez_hi and ez_hi != ez_lo:
             ax_price.axhspan(ez_lo, ez_hi, alpha=0.13, color=ENTRY_C, zorder=1)
 
-        # ── S&R zones (A+B+C+D+E) ────────────────────────────────────────────
+        # ── ATR (14-period) for singleton zone half-width ────────────────────
+        atr_hw = 0.0
+        if "high" in df.columns and "low" in df.columns and "close" in df.columns and len(df) >= 2:
+            tr_vals = []
+            for i in range(1, min(15, len(df))):
+                h  = float(df["high"].iloc[-i])
+                lv = float(df["low"].iloc[-i])
+                cp = float(df["close"].iloc[-i - 1])
+                tr_vals.append(max(h - lv, abs(h - cp), abs(lv - cp)))
+            if tr_vals:
+                atr_hw = (sum(tr_vals) / len(tr_vals)) * 0.15   # half-width = 15% of ATR
+
+        # ── S&R zones (A+B+C+D+E+F) ──────────────────────────────────────────
         last_close = float(df["close"].iloc[-1]) if "close" in df.columns else 0
         merged_sr  = _merge_sr(sr_levels or [])
         for lvl in merged_sr[:6]:   # cap at 6 to avoid clutter
@@ -149,9 +161,10 @@ def draw(
             col_hex = "#26D96B" if is_sup else "#EF5350"
             at_level = last_close and abs(lvl["price"] - last_close) / last_close <= 0.005
 
-            # Zone band
-            lo = lvl.get("zone_min", lvl["price"] * 0.997)
-            hi = lvl.get("zone_max", lvl["price"] * 1.003)
+            # Zone band: confluence uses actual price spread; singleton uses ATR width
+            hw = atr_hw or lvl["price"] * 0.003   # ATR-based, fallback to 0.3%
+            lo = lvl.get("zone_min", lvl["price"] - hw) if lvl.get("is_confluence") else lvl["price"] - hw
+            hi = lvl.get("zone_max", lvl["price"] + hw) if lvl.get("is_confluence") else lvl["price"] + hw
             base_a = min(0.07 + (lvl["touches"] - 1) * 0.04, 0.38)
             alpha  = min(base_a + 0.18, 0.55) if at_level else base_a
             ax_price.axhspan(lo, hi, alpha=alpha, color=col_hex, zorder=1)
