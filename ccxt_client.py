@@ -115,10 +115,17 @@ def get_binance_futures_symbols(min_vol_usd: float = 50_000_000) -> list:
     Return top USDT-M linear futures symbols from Binance filtered by 24h volume.
     Strips '/USDT:USDT' suffix to match journal symbol format (e.g. 'BTCUSDT').
     Returns empty list on any error.
+
+    Uses defaultType='future' so fetch_tickers() hits the USDT-M perpetuals
+    endpoint instead of the spot market (which uses BTC/USDT format).
     """
     try:
-        exchange = get_binance_exchange()
-        tickers = exchange.fetch_tickers()
+        import ccxt as _ccxt
+        futures_ex = _ccxt.binance({
+            "enableRateLimit": True,
+            "options": {"defaultType": "future"},
+        })
+        tickers = futures_ex.fetch_tickers()
         symbols = []
         for sym, t in tickers.items():
             if not sym.endswith("/USDT:USDT"):
@@ -130,6 +137,6 @@ def get_binance_futures_symbols(min_vol_usd: float = 50_000_000) -> list:
             symbols,
             key=lambda s: tickers.get(s.removesuffix("USDT") + "/USDT:USDT", {}).get("quoteVolume", 0),
             reverse=True,
-        )[:100]
+        )[:300]
     except Exception:
         return []

@@ -68,24 +68,32 @@ DEFAULT_WATCHLIST = _BITGET_WATCHLIST  # backward compat; callers should use _ge
 
 def _get_extended_watchlist(max_symbols: int = 500, min_vol_usd: float = 3_000_000) -> list:
     """
-    Fetch top Bitget USDT-M linear perpetuals sorted by 24h quote volume.
+    Return up to max_symbols USDT futures sorted by liquidity.
+
+    Strategy: Binance top-volume futures (reliable, keyless) merged with the
+    hand-picked Bitget list.  Bitget's fetch_tickers() returns spot pairs via
+    ccxt, not perpetuals, so we rely on Binance for volume-ranked discovery.
+
     Falls back to _get_default_watchlist() on any error.
     """
     try:
-        import ccxt
-        bitget = ccxt.bitget({"enableRateLimit": True})
-        tickers = bitget.fetch_tickers()
-        candidates = []
-        for sym, t in tickers.items():
-            if not sym.endswith("/USDT:USDT"):
-                continue
-            vol = t.get("quoteVolume") or 0
-            if vol >= min_vol_usd:
-                candidates.append((sym.replace("/USDT:USDT", "USDT"), vol))
-        candidates.sort(key=lambda x: -x[1])
-        result = [s[0] for s in candidates[:max_symbols]]
-        print(f"[Watchlist] {len(result)} Bitget futures by volume (>${min_vol_usd/1e6:.0f}M 24h)", flush=True)
-        return result
+        import ccxt_client
+        # Lower threshold to $3M — gives ~200-300 Binance symbols
+        binance_syms = ccxt_client.get_binance_futures_symbols(min_vol_usd=min_vol_usd)
+        if not binance_syms:
+            raise RuntimeError("Binance returned empty list")
+
+        # Merge: Bitget manual list first (preferred), then Binance additions
+        bitget_set = set(_BITGET_WATCHLIST)
+        extra      = [s for s in binance_syms if s not in bitget_set]
+        merged     = list(dict.fromkeys(_BITGET_WATCHLIST + extra))[:max_symbols]
+        print(
+            f"[Watchlist] {len(merged)} symbols "
+            f"(Bitget manual {len(_BITGET_WATCHLIST)} + Binance {len(extra)} extras, "
+            f"vol>${min_vol_usd/1e6:.0f}M)",
+            flush=True,
+        )
+        return merged
     except Exception as e:
         print(f"[Watchlist] Extended fetch failed: {e} — using default list")
         return _get_default_watchlist()
