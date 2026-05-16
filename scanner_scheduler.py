@@ -101,14 +101,17 @@ def _enrich_and_filter_setups(setups: list) -> list:
         try:
             candles = get_candles(sym, "4H")
             if candles is not None and not candles.empty:
+                ez = s.get("entry_zone") or {}
                 chart_b64 = agent_chart_draw.draw(
-                    candles   = candles,
-                    symbol    = sym,
-                    direction = direction,
-                    entry     = entry_ref,
-                    sl        = s.get("sl_price"),
-                    tp1       = s.get("tp1_price"),
-                    tp2       = s.get("tp2_price"),
+                    candles     = candles,
+                    symbol      = sym,
+                    direction   = direction,
+                    entry       = ez.get("low") or entry_ref,
+                    entry_high  = ez.get("high") or None,
+                    sl          = s.get("sl_price"),
+                    tp1         = s.get("tp1_price"),
+                    tp2         = s.get("tp2_price"),
+                    criteria    = s.get("key_conditions") or [],
                 )
                 if chart_b64:
                     s["chart_png_b64"] = chart_b64

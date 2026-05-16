@@ -326,30 +326,32 @@ async function loadChart() {
   });
 
   // Entry / SL / TP lines for open positions
+  // TP1 = bright green, TP2 = cyan (clearly distinct)
   (_trades || []).forEach(t => {
+    const dirLabel = t.dir ? (t.dir.toUpperCase() === 'LONG' ? '▲ Long' : '▼ Short') : '';
     if (t.entry) series.createPriceLine({
       price: t.entry, lineWidth: 2, lineStyle: 0,
-      color: 'rgba(79,195,247,0.85)',
-      axisLabelVisible: true, axisLabelColor: 'rgba(79,195,247,0.25)',
-      title: t.dir + ' ENTRY',
+      color: 'rgba(79,195,247,0.90)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(79,195,247,0.30)',
+      title: dirLabel + ' Entry',
     });
     if (t.sl) series.createPriceLine({
-      price: t.sl, lineWidth: 1.5, lineStyle: 2,
-      color: 'rgba(239,83,80,0.85)',
-      axisLabelVisible: true, axisLabelColor: 'rgba(239,83,80,0.25)',
-      title: t.dir + ' SL',
+      price: t.sl, lineWidth: 2, lineStyle: 2,
+      color: 'rgba(239,83,80,0.90)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(239,83,80,0.30)',
+      title: 'SL',
     });
     if (t.tp1) series.createPriceLine({
-      price: t.tp1, lineWidth: 1.5, lineStyle: 2,
-      color: 'rgba(38,217,107,0.85)',
-      axisLabelVisible: true, axisLabelColor: 'rgba(38,217,107,0.2)',
-      title: t.dir + ' TP1',
+      price: t.tp1, lineWidth: 2, lineStyle: 0,
+      color: 'rgba(38,217,107,0.90)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(38,217,107,0.25)',
+      title: 'TP1',
     });
     if (t.tp2) series.createPriceLine({
-      price: t.tp2, lineWidth: 1, lineStyle: 2,
-      color: 'rgba(38,217,107,0.6)',
-      axisLabelVisible: true, axisLabelColor: 'rgba(38,217,107,0.15)',
-      title: t.dir + ' TP2',
+      price: t.tp2, lineWidth: 2, lineStyle: 0,
+      color: 'rgba(79,195,247,0.70)',
+      axisLabelVisible: true, axisLabelColor: 'rgba(79,195,247,0.20)',
+      title: 'TP2',
     });
   });
 
@@ -400,36 +402,46 @@ async function loadChart() {
   const leg   = document.getElementById('sr-legend');
   const chips = [];
 
-  // Trade level chips (entry / SL / TP)
+  // Trade level chips (direction badge → entry → TP1 → TP2 → SL)
   (_trades || []).forEach(t => {
     function distChip(price) {
       if (!price || !current_price) return '';
       const d = ((price - current_price) / current_price * 100);
-      return ` · ${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
+      return ` ${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
     }
+    const isLong   = (t.dir || '').toUpperCase() === 'LONG';
+    const dirLabel = isLong ? '▲ LONG' : '▼ SHORT';
+    const dirBg    = isLong ? 'rgba(38,217,107,.18)'  : 'rgba(239,83,80,.18)';
+    const dirBd    = isLong ? 'rgba(38,217,107,.55)'  : 'rgba(239,83,80,.55)';
+    const dirTx    = isLong ? 'rgba(38,217,107,1)'    : 'rgba(239,83,80,1)';
+    chips.push(
+      `<span style="font-size:.75rem;padding:3px 10px;border-radius:4px;font-weight:700;
+        background:${dirBg};color:${dirTx};border:1px solid ${dirBd}">
+        ${dirLabel}
+      </span>`);
     if (t.entry) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
         background:rgba(79,195,247,.12);color:rgba(79,195,247,.95);
         border:1px solid rgba(79,195,247,.25)">
-        ▶ ${_esc(t.dir)} ENTRY  ${_fmtP(t.entry)}
+        Entry  ${_fmtP(t.entry)}
       </span>`);
     if (t.tp1) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-        background:rgba(38,217,107,.1);color:rgba(38,217,107,.95);
-        border:1px solid rgba(38,217,107,.22)">
-        ✦ ${_esc(t.dir)} TP1  ${_fmtP(t.tp1)}${distChip(t.tp1)}
+        background:rgba(38,217,107,.12);color:rgba(38,217,107,.97);
+        border:1px solid rgba(38,217,107,.35)">
+        TP1  ${_fmtP(t.tp1)}${distChip(t.tp1)}
       </span>`);
     if (t.tp2) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-        background:rgba(38,217,107,.07);color:rgba(38,217,107,.75);
-        border:1px solid rgba(38,217,107,.15)">
-        ✦ ${_esc(t.dir)} TP2  ${_fmtP(t.tp2)}${distChip(t.tp2)}
+        background:rgba(79,195,247,.10);color:rgba(79,195,247,.90);
+        border:1px solid rgba(79,195,247,.30)">
+        TP2  ${_fmtP(t.tp2)}${distChip(t.tp2)}
       </span>`);
     if (t.sl) chips.push(
       `<span style="font-size:.72rem;padding:3px 9px;border-radius:4px;
-        background:rgba(239,83,80,.1);color:rgba(239,83,80,.95);
-        border:1px solid rgba(239,83,80,.22)">
-        ✕ ${_esc(t.dir)} SL  ${_fmtP(t.sl)}${distChip(t.sl)}
+        background:rgba(239,83,80,.12);color:rgba(239,83,80,.97);
+        border:1px solid rgba(239,83,80,.35)">
+        SL  ${_fmtP(t.sl)}${distChip(t.sl)}
       </span>`);
   });
 

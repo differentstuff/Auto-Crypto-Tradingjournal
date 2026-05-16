@@ -1,13 +1,13 @@
 """
 agent_chart_draw.py — Annotated trade chart generator.
 
-Pure matplotlib implementation (no mplfinance) — compatible with Python 3.13
-and matplotlib ≥ 3.7. Draws candlesticks using Rectangle patches directly.
-
-Generates a dark-themed OHLCV chart with:
-  - Candlestick bodies + wicks
-  - Entry (blue dashed), SL (red dashed), TP1/TP2 (green dashed) lines
-  - Level legend (top-left)
+Pure matplotlib implementation. Draws candlesticks with trade levels:
+  - Direction badge (▲ LONG / ▼ SHORT) prominent top-left
+  - Entry zone: shaded band between entry_low and entry_high
+  - SL: thick red dashed line
+  - TP1: bright green solid line
+  - TP2: cyan solid line (clearly different from TP1)
+  - Price label on right edge of every level line
   - Decision criteria text (top-right)
   - Volume bar subplot
 
@@ -27,16 +27,17 @@ def draw(
     sl: float,
     tp1: float,
     tp2: float,
-    criteria: list,
+    criteria: list = None,
     n_candles: int = 60,
+    entry_high: float = None,
 ) -> str:
-    """Returns base64-encoded PNG or "" on failure."""
+    """Returns base64-encoded PNG or '' on failure."""
     try:
         import matplotlib
         import matplotlib.pyplot as plt
-        plt.switch_backend("Agg")      # works even after pyplot already imported
+        plt.switch_backend("Agg")
         import matplotlib.patches as mpatches
-        from matplotlib.patches import Rectangle
+        from matplotlib.patches import Rectangle, FancyBboxPatch
         from matplotlib.lines import Line2D
     except ImportError:
         return ""
@@ -45,12 +46,10 @@ def draw(
         return ""
 
     try:
-        df = candles.tail(n_candles).copy()
-        df = df.reset_index()
+        df = candles.tail(n_candles).copy().reset_index()
         n  = len(df)
-        xs = range(n)
 
-        # ── Figure setup ─────────────────────────────────────────────────────
+        # ── Palette ──────────────────────────────────────────────────────────
         BG      = "#0d1117"
         SURFACE = "#161b22"
         BORDER  = "#30363d"
@@ -58,6 +57,12 @@ def draw(
         DOWN_C  = "#ef5350"
         MUTED   = "#8b949e"
         TEXT_C  = "#e6edf3"
+        ENTRY_C = "#4A90D9"   # blue
+        SL_C    = "#E05555"   # red
+        TP1_C   = "#26D96B"   # bright green
+        TP2_C   = "#4FC3F7"   # cyan — clearly different from TP1
+        is_long = direction.lower() == "long"
+        DIR_C   = TP1_C if is_long else SL_C   # badge color matches bias
 
         fig, (ax_price, ax_vol) = plt.subplots(
             2, 1, figsize=(14, 8),
@@ -78,56 +83,84 @@ def draw(
             o, h, l, c = (float(row.get(k, 0) or 0)
                           for k in ("open", "high", "low", "close"))
             color = UP_C if c >= o else DOWN_C
-            # Body
-            body_y = min(o, c)
-            body_h = abs(c - o) or 1e-8
             ax_price.add_patch(Rectangle(
-                (i - W_BODY / 2, body_y), W_BODY, body_h,
+                (i - W_BODY / 2, min(o, c)), W_BODY, abs(c - o) or 1e-8,
                 facecolor=color, edgecolor=color, linewidth=0.5, zorder=3,
             ))
-            # Wick
             ax_price.add_patch(Rectangle(
                 (i - W_WICK / 2, l), W_WICK, h - l,
                 facecolor=color, edgecolor=color, linewidth=0, zorder=2,
             ))
 
         ax_price.set_xlim(-0.5, n - 0.5)
+
+        # ── Y-axis range (include all levels) ────────────────────────────────
         y_vals = [float(v) for col in ("low", "high") for v in df[col].dropna() if v]
-        all_levels = [v for v in (entry, sl, tp1, tp2) if v]
-        y_vals += all_levels
+        for lv in (entry, entry_high, sl, tp1, tp2):
+            if lv:
+                y_vals.append(lv)
         if y_vals:
             y_lo, y_hi = min(y_vals), max(y_vals)
-            pad = (y_hi - y_lo) * 0.08 or y_lo * 0.02
+            pad = (y_hi - y_lo) * 0.10 or y_lo * 0.02
             ax_price.set_ylim(y_lo - pad, y_hi + pad)
 
-        # ── Price levels ──────────────────────────────────────────────────────
-        levels = [
-            (entry, "#4A90D9", "--", f"Entry {entry:.4f}"),
-            (sl,    "#E05555", "--", f"SL {sl:.4f}"),
-            (tp1,   "#55A85A", "--", f"TP1 {tp1:.4f}"),
-            (tp2,   "#55A85A", ":",  f"TP2 {tp2:.4f}"),
-        ]
+        # ── Entry zone band ───────────────────────────────────────────────────
+        ez_lo = entry or 0
+        ez_hi = entry_high if (entry_high and entry_high != entry) else entry
+        if ez_lo and ez_hi and ez_hi != ez_lo:
+            ax_price.axhspan(ez_lo, ez_hi, alpha=0.13, color=ENTRY_C, zorder=1)
+
+        # ── Level lines + right-side price labels ────────────────────────────
+        def _draw_level(price, color, lw, ls, label):
+            if not price:
+                return None
+            ax_price.axhline(price, color=color, linewidth=lw,
+                             linestyle=ls, zorder=4, alpha=0.92)
+            # Price label anchored to right edge of chart
+            ax_price.text(
+                n - 0.6, price, f"  {label}  {price:.5g}",
+                color=color, fontsize=8, fontweight="bold",
+                va="center", ha="left", zorder=6,
+                bbox=dict(boxstyle="round,pad=0.2", facecolor=BG,
+                          edgecolor=color, alpha=0.75, linewidth=0.8),
+            )
+            return Line2D([0], [0], color=color, linewidth=lw,
+                          linestyle=ls, label=f"{label} {price:.5g}")
+
         legend_handles = []
-        for price, color, ls, label in levels:
-            if price:
-                ax_price.axhline(price, color=color, linewidth=1.4,
-                                  linestyle=ls, zorder=4, alpha=0.9)
-                legend_handles.append(
-                    Line2D([0], [0], color=color, linewidth=1.4,
-                           linestyle=ls, label=label)
-                )
+        for handle in [
+            _draw_level(entry, ENTRY_C, 1.8, "--", "Entry"),
+            _draw_level(sl,    SL_C,    1.8, "--", "SL"),
+            _draw_level(tp1,   TP1_C,   1.6, "-",  "TP1"),
+            _draw_level(tp2,   TP2_C,   1.6, "-",  "TP2"),
+        ]:
+            if handle:
+                legend_handles.append(handle)
 
         # ── Legend ────────────────────────────────────────────────────────────
         if legend_handles:
-            leg = ax_price.legend(
+            ax_price.legend(
                 handles=legend_handles, loc="upper left", fontsize=8,
                 facecolor=BG, edgecolor=BORDER, labelcolor=TEXT_C,
                 framealpha=0.85,
             )
 
-        # ── Criteria text ─────────────────────────────────────────────────────
-        if criteria:
-            crit = "\n".join(f"• {c}" for c in criteria[:5])
+        # ── Direction badge (top-left, above legend) ──────────────────────────
+        dir_arrow = "▲  LONG" if is_long else "▼  SHORT"
+        ax_price.text(
+            0.01, 0.99, f" {dir_arrow} ",
+            transform=ax_price.transAxes,
+            fontsize=13, fontweight="bold", va="top", ha="left",
+            color=DIR_C,
+            bbox=dict(boxstyle="round,pad=0.4", facecolor=BG,
+                      edgecolor=DIR_C, alpha=0.92, linewidth=1.5),
+            zorder=10,
+        )
+
+        # ── Criteria text (top-right) ──────────────────────────────────────────
+        crit_list = criteria or []
+        if crit_list:
+            crit = "\n".join(f"• {c}" for c in crit_list[:5])
             ax_price.text(
                 0.99, 0.99, crit,
                 transform=ax_price.transAxes,
@@ -137,12 +170,12 @@ def draw(
             )
 
         # ── Title ─────────────────────────────────────────────────────────────
-        dir_arrow = "▲ LONG" if direction.lower() == "long" else "▼ SHORT"
-        ax_price.set_title(
-            f"{symbol}  {dir_arrow}  "
-            f"Entry {entry:.4f}  SL {sl:.4f}  TP1 {tp1:.4f}  TP2 {tp2:.4f}",
-            color=TEXT_C, fontsize=9, pad=6,
-        )
+        parts = [symbol]
+        if entry: parts.append(f"Entry {entry:.5g}")
+        if sl:    parts.append(f"SL {sl:.5g}")
+        if tp1:   parts.append(f"TP1 {tp1:.5g}")
+        if tp2:   parts.append(f"TP2 {tp2:.5g}")
+        ax_price.set_title("  ·  ".join(parts), color=MUTED, fontsize=8, pad=5)
         ax_price.set_xticks([])
 
         # ── Volume bars ───────────────────────────────────────────────────────
@@ -151,14 +184,14 @@ def draw(
                 o = float(row.get("open", 0) or 0)
                 c = float(row.get("close", 0) or 0)
                 v = float(row.get("volume", 0) or 0)
-                color = UP_C if c >= o else DOWN_C
-                ax_vol.bar(i, v, width=W_BODY, color=color, alpha=0.6)
+                ax_vol.bar(i, v, width=W_BODY,
+                           color=UP_C if c >= o else DOWN_C, alpha=0.6)
         ax_vol.set_xlim(-0.5, n - 0.5)
         ax_vol.set_ylabel("Vol", color=MUTED, fontsize=7)
         ax_vol.set_xticks([])
 
-        # ── X-axis labels (date ticks) ────────────────────────────────────────
-        date_col = df.columns[0]   # first column is the DatetimeIndex after reset
+        # ── X-axis date labels ────────────────────────────────────────────────
+        date_col = df.columns[0]
         step = max(1, n // 8)
         tick_xs = list(range(0, n, step))
         tick_labels = []
