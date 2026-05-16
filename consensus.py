@@ -32,21 +32,19 @@ def compute_consensus(
     g = int(round(gemini_score))
     delta = abs(c - g)
 
-    if delta <= CONSENSUS_HIGH_DELTA:
-        score      = round((c + g) / 2, 1)
+    if delta <= CONSENSUS_HIGH_DELTA:    # ≤ 1 point
+        score      = round(c * 0.85 + g * 0.15, 1)  # Gemini as validation only
         confidence = "high"
         flag       = "✓ Confirmed"
-    elif delta <= CONSENSUS_MED_DELTA:
-        score      = round((c + g) / 2, 1)
+    elif delta <= CONSENSUS_MED_DELTA:   # ≤ 2 points
+        score      = round(c * 0.90 + g * 0.10, 1)  # Claude dominant
         confidence = "medium"
         flag       = "~ Aligned"
-    elif delta <= CONSENSUS_LOW_DELTA:
-        # Mild divergence — weight Claude higher (has full context)
-        score      = round(c * 0.60 + g * 0.40, 1)
+    elif delta <= CONSENSUS_LOW_DELTA:   # ≤ 3 points
+        score      = float(c)            # Claude only — Gemini has insufficient context
         confidence = "low"
         flag       = "⚠ Divergent"
-    else:
-        # Strong conflict — keep Claude score, surface for user review
+    else:                                # > 3 points
         score      = float(c)
         confidence = "very_low"
         flag       = "⚡ REVIEW"
@@ -102,14 +100,8 @@ def add_gemini_consensus(
                 consensus    = compute_consensus(claude_score, gem_result["score"])
                 setup["_consensus"]     = consensus
                 setup["_gemini_score"]  = gem_result
-                # Bump or penalise final rank based on consensus confidence
-                if consensus["confidence"] == "high":
-                    setup["_final_score"] = consensus["consensus_score"]
-                elif consensus["confidence"] == "very_low":
-                    # Strong conflict → demote slightly to surface for review
-                    setup["_final_score"] = consensus["consensus_score"] - 0.5
-                else:
-                    setup["_final_score"] = consensus["consensus_score"]
+                # _final_score always equals consensus_score (which is now mostly Claude's score)
+                setup["_final_score"] = consensus["consensus_score"]
             else:
                 setup["_final_score"] = float(setup.get("setup_score", 0))
 

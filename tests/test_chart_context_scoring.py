@@ -48,7 +48,7 @@ def test_mfi_weight_boundary_above_10():
 
 
 def test_confluence_score_max_val_updated():
-    """max_val in confluence_score must equal len(tfs) * 6.50 when SMT included."""
+    """max_val reflects capped group formula: SMT symbols get 5.7/TF, others 5.4/TF."""
     from chart_context import confluence_score
     import unittest.mock as mock
 
@@ -59,9 +59,14 @@ def test_confluence_score_max_val_updated():
                                "adx": {}, "wavetrend": {"mfi": 0.0}, "cvd": {}, "volume": {}}},
     }
     with mock.patch("chart_context.get_chart_context", return_value=mock_ctx):
-        result = confluence_score("BTCUSDT", ["4H", "1D"], ctx=mock_ctx)
-    assert result["max"] == pytest.approx(2 * 6.50, rel=1e-3), \
-        f"Expected max=13.0, got {result['max']}"
+        result_smt = confluence_score("BTCUSDT", ["4H", "1D"], ctx=mock_ctx)
+        result_non = confluence_score("LINKUSDT", ["4H", "1D"], ctx=mock_ctx)
+    # BTCUSDT is an SMT symbol: max = 2 * (5.4 + 0.30) = 11.4
+    assert result_smt["max"] == pytest.approx(2 * 5.7, rel=1e-3), \
+        f"Expected SMT max=11.4, got {result_smt['max']}"
+    # LINKUSDT is not an SMT symbol: max = 2 * 5.4 = 10.8
+    assert result_non["max"] == pytest.approx(2 * 5.4, rel=1e-3), \
+        f"Expected non-SMT max=10.8, got {result_non['max']}"
 
 
 def test_confluence_score_mfi_raises_bullish_score():

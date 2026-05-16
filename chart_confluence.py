@@ -238,23 +238,29 @@ def _mfi_weight(wt: dict) -> float:
 
 
 def _get_tf_weights(ctx: dict, tf: str, symbol: str = "") -> list:
-    """Return signal weights for a single timeframe."""
+    """Return signal weights for a single timeframe, with correlated-group caps applied."""
     inds = ctx.get(tf, {}).get("indicators", {})
     if not inds.get("ok"):
         return []
-    base = [
-        _rsi_weight(inds.get("rsi",  {}).get("value", 50)),
-        _macd_weight(inds.get("macd", {})),
-        _ema_weight(inds.get("ema",   {})),
-        _adx_weight(inds.get("adx",   {})),
-        _wt_weight(inds.get("wavetrend", {})),
-        _mfi_weight(inds.get("wavetrend", {})),
-        _cvd_weight(inds.get("cvd", {})),
-        _smt_weight(inds, symbol),
-        _smt_direction_weight(inds, symbol),
-    ]
-    base.append(_volume_weight(inds, sum(base)))
-    return base
+    rsi_w  = _rsi_weight(inds.get("rsi",  {}).get("value", 50))
+    macd_w = _macd_weight(inds.get("macd", {}))
+    ema_w  = _ema_weight(inds.get("ema",   {}))
+    adx_w  = _adx_weight(inds.get("adx",   {}))
+    wt_w   = _wt_weight(inds.get("wavetrend", {}))
+    mfi_w  = _mfi_weight(inds.get("wavetrend", {}))
+    cvd_w  = _cvd_weight(inds.get("cvd", {}))
+    smt_w     = _smt_weight(inds, symbol)
+    smt_dir_w = _smt_direction_weight(inds, symbol)
+
+    # Cap correlated signal groups to prevent trend-inflation
+    _momentum = max(-1.5, min(1.5, rsi_w + macd_w))
+    _oscillator = max(-1.0, min(1.0, wt_w + mfi_w))
+
+    base_score = _momentum + ema_w + adx_w + _oscillator + cvd_w + smt_w + smt_dir_w
+    vol_w = _volume_weight(inds, base_score)
+
+    # Return as flat list for bull/bear totals (capped momentum and oscillator as single entries)
+    return [_momentum, ema_w, adx_w, _oscillator, cvd_w, smt_w, smt_dir_w, vol_w]
 
 
 def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> dict:
@@ -286,14 +292,25 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         cvd_w  = _cvd_weight(inds.get("cvd", {}))
         smt_w     = _smt_weight(inds, symbol)
         smt_dir_w = _smt_direction_weight(inds, symbol)
-        base_score = rsi_w + macd_w + ema_w + adx_w + wt_w + mfi_w + cvd_w + smt_w + smt_dir_w
+
+        # Cap correlated signal groups to prevent trend-inflation
+        # RSI + MACD: both measure momentum, cap combined contribution
+        _momentum_raw = rsi_w + macd_w
+        _momentum = max(-1.5, min(1.5, _momentum_raw))
+
+        # WaveTrend + MFI: both from VMC oscillator, cap combined contribution
+        _oscillator_raw = wt_w + mfi_w
+        _oscillator = max(-1.0, min(1.0, _oscillator_raw))
+
+        base_score = _momentum + ema_w + adx_w + _oscillator + cvd_w + smt_w + smt_dir_w
         vol_w  = _volume_weight(inds, base_score)
 
         tf_score = base_score + vol_w
         total_score += tf_score
 
-        pos = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, smt_dir_w, vol_w) if w > 0), 1)
-        neg = round(sum(w for w in (rsi_w, macd_w, ema_w, adx_w, wt_w, mfi_w, cvd_w, smt_w, smt_dir_w, vol_w) if w < 0), 1)
+        all_w = (_momentum, ema_w, adx_w, _oscillator, cvd_w, smt_w, smt_dir_w, vol_w)
+        pos = round(sum(w for w in all_w if w > 0), 1)
+        neg = round(sum(w for w in all_w if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
     # Apply macro regime multiplier (VIX-based, cached 5 min)
@@ -301,7 +318,9 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
     if vix_mult != 1.0:
         total_score = round(total_score * vix_mult, 2)
 
-    max_val = float(len(tfs) * 6.50)  # cross-exchange SMT +0.15 + direction SMT +0.15 per TF
+    smt_bonus = 0.30 if symbol in SMT_SYMBOLS else 0.0
+    max_per_tf = 5.4 + smt_bonus  # 5.7 for SMT symbols, 5.4 for others
+    max_val = float(len(tfs) * max_per_tf)
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
