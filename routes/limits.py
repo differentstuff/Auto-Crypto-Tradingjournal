@@ -129,10 +129,13 @@ def api_limits_update(lim_id):
 
 @bp.route("/api/limits/<int:lim_id>", methods=["DELETE"])
 def api_limits_delete(lim_id):
-    with db_conn() as conn:
-        conn.execute("DELETE FROM pending_limits WHERE id = ?", (lim_id,))
-        conn.commit()
-    return _ok({"deleted": lim_id})
+    try:
+        with db_conn() as conn:
+            conn.execute("DELETE FROM pending_limits WHERE id = ?", (lim_id,))
+            conn.commit()
+        return _ok({"deleted": lim_id})
+    except Exception as e:
+        return _err(str(e)), 500
 
 
 @bp.route("/api/limits/<int:lim_id>/analyze", methods=["POST"])
