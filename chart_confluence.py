@@ -237,6 +237,30 @@ def _mfi_weight(wt: dict) -> float:
     return 0.0
 
 
+def _liquidation_weight(liq: dict, current_price: float) -> float:
+    """
+    +0.20: short-liq wall within 3% above current price (short-squeeze fuel, bullish).
+    -0.20: long-liq wall within 3% below current price (cascade fuel, bearish).
+    0.00 otherwise.
+    """
+    if not liq or not liq.get("ok"):
+        return 0.0
+    weight = 0.0
+    try:
+        p = float(current_price)
+        if liq.get("short_wall"):
+            dist = (float(liq["short_wall"]) - p) / p
+            if 0 < dist <= 0.03:
+                weight += 0.20
+        if liq.get("long_wall"):
+            dist = (p - float(liq["long_wall"])) / p
+            if 0 < dist <= 0.03:
+                weight -= 0.20
+    except Exception:
+        pass
+    return weight
+
+
 def _get_tf_weights(ctx: dict, tf: str, symbol: str = "") -> list:
     """Return signal weights for a single timeframe, with correlated-group caps applied."""
     inds = ctx.get(tf, {}).get("indicators", {})
@@ -313,14 +337,31 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         neg = round(sum(w for w in all_w if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
 
+    # Symbol-level signals (not per-TF)
+    liq_w = 0.0
+    try:
+        from liquidation_levels import get_liquidation_clusters
+        current_price = None
+        for tf in tfs:
+            df_tf = ctx.get(tf, {}).get("df")
+            if df_tf is not None and len(df_tf):
+                current_price = float(df_tf["close"].iloc[-1])
+                break
+        if current_price:
+            liq   = get_liquidation_clusters(symbol)
+            liq_w = _liquidation_weight(liq, current_price)
+            total_score += liq_w
+    except Exception:
+        pass
+
     # Apply macro regime multiplier (VIX-based, cached 5 min)
     vix_mult = _get_vix_multiplier()
     if vix_mult != 1.0:
         total_score = round(total_score * vix_mult, 2)
 
-    smt_bonus = 0.30 if symbol in SMT_SYMBOLS else 0.0
-    max_per_tf = 5.4 + smt_bonus  # 5.7 for SMT symbols, 5.4 for others
-    max_val = float(len(tfs) * max_per_tf)
+    smt_bonus  = 0.30 if symbol in SMT_SYMBOLS else 0.0
+    max_per_tf = 5.4 + smt_bonus          # per-TF max (unchanged)
+    max_val    = float(len(tfs) * max_per_tf) + 0.20  # +0.20 symbol-level liq
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus
