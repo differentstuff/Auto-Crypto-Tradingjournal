@@ -91,6 +91,9 @@ def get_dashboard_kpis(filters=None, conn=None):
 
     total_pnl  = _val(conn, f"SELECT SUM(realized_pnl) FROM positions {where}", params)
     total_fees = _val(conn, f"SELECT SUM(total_fees)   FROM positions {where}", params)
+    total_funding_pnl = round(
+        _val(conn, f"SELECT SUM(funding_pnl) FROM positions {where}", params) or 0.0, 4
+    )
     # position_pnl is gross; realized_pnl already net — total_fees is additional context
     net_pnl    = round(total_pnl, 4)
 
@@ -186,6 +189,7 @@ def get_dashboard_kpis(filters=None, conn=None):
         "win_rate":        win_rate,
         "total_pnl":       round(total_pnl, 4),
         "total_fees":      round(total_fees, 4),
+        "total_funding_pnl": total_funding_pnl,
         "net_pnl":         net_pnl,
         "best_trade":      round(best_trade, 4),
         "worst_trade":     round(worst_trade, 4),
@@ -967,6 +971,52 @@ def get_benchmark_comparison(filters=None, conn=None) -> dict:
         "btc_end":           btc_end,
         "assumed_capital":   int(round(assumed_capital, 0)),
         "available":         row["first_date"] is not None,
+    }
+
+
+def get_execution_quality(conn=None) -> dict:
+    """
+    Execution quality: time lag between scanner signal and actual entry,
+    and price slippage (entry_price vs signal_price).
+    Positive slippage for longs = you paid more than the signal price (bad).
+    """
+    import statistics as _st
+    if conn is None:
+        conn = get_conn()
+
+    rows = _rows(conn, """
+        SELECT execution_lag_minutes, signal_price, entry_price, direction
+        FROM positions
+        WHERE execution_lag_minutes IS NOT NULL AND realized_pnl IS NOT NULL
+        ORDER BY close_time DESC LIMIT 200
+    """)
+
+    if not rows:
+        return {"avg_lag_minutes": None, "median_lag_minutes": None,
+                "avg_slippage_pct": None, "sample_size": 0, "available": False}
+
+    lags = [r["execution_lag_minutes"] for r in rows if r["execution_lag_minutes"] is not None]
+    slippages = []
+    for r in rows:
+        sp = r.get("signal_price")
+        ep = r.get("entry_price")
+        if sp and ep and float(sp) > 0:
+            is_long = (r.get("direction") or "Long").lower() == "long"
+            raw = (float(ep) - float(sp)) / float(sp) * 100
+            slippages.append(raw if is_long else -raw)
+
+    return {
+        "avg_lag_minutes":    round(_st.mean(lags), 1)      if lags else None,
+        "median_lag_minutes": round(_st.median(lags), 1)    if lags else None,
+        "avg_slippage_pct":   round(_st.mean(slippages), 3) if slippages else None,
+        "sample_size":        len(lags),
+        "available":          bool(lags),
+        "lag_distribution": {
+            "under_30m": sum(1 for l in lags if l < 30),
+            "30m_to_2h": sum(1 for l in lags if 30 <= l < 120),
+            "2h_to_8h":  sum(1 for l in lags if 120 <= l < 480),
+            "over_8h":   sum(1 for l in lags if l >= 480),
+        },
     }
 
 

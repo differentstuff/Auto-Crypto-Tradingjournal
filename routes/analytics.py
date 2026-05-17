@@ -99,6 +99,19 @@ def api_analytics_benchmark():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/analytics/execution-quality")
+def api_analytics_execution_quality():
+    """GET /api/analytics/execution-quality -- signal lag and slippage stats."""
+    try:
+        from analytics import get_execution_quality
+        with db_conn() as conn:
+            data = get_execution_quality(conn=conn)
+        return _ok(data)
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/analytics/tearsheet")
 def api_analytics_tearsheet():
     """GET /api/analytics/tearsheet -- professional performance metrics."""

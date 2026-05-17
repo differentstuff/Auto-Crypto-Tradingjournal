@@ -346,6 +346,13 @@ def init_db():
 
     _apply(34, "positions.setup_score", "ALTER TABLE positions ADD COLUMN setup_score INTEGER DEFAULT NULL")
 
+    _apply(35, "positions.funding_pnl",
+           "ALTER TABLE positions ADD COLUMN funding_pnl REAL DEFAULT NULL")
+    _apply(36, "positions.signal_price",
+           "ALTER TABLE positions ADD COLUMN signal_price REAL DEFAULT NULL")
+    _apply(37, "positions.execution_lag_minutes",
+           "ALTER TABLE positions ADD COLUMN execution_lag_minutes INTEGER DEFAULT NULL")
+
     # ── settings ──────────────────────────────────────────────────────────────
     # Key-value store: last sync time, account equity, rulebook timestamps.
     # Also created by bitget_sync._ensure_settings_table() but must exist here

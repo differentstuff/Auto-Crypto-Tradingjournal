@@ -148,8 +148,9 @@ def _sync_positions(conn) -> int:
                size_contracts, size_usdt,
                position_pnl, realized_pnl,
                opening_fee, closing_fee, total_fees,
+               funding_pnl,
                external_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             symbol, base_asset, direction, margin,
             open_time, close_time, duration,
@@ -157,6 +158,7 @@ def _sync_positions(conn) -> int:
             size_raw + base_asset, size_usdt,
             position_pnl, realized_pnl,
             opening_fee, closing_fee, total_fees,
+            funding if funding else None,
             ext_id,
         ))
         inserted += 1

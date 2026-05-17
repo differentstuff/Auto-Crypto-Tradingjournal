@@ -323,6 +323,29 @@ def auto_match_calls(conn, exchange: str = "bitget") -> int:
               flush=True)
         _populate_setup_type_from_call(conn, pos_id, call_id)
 
+        # Compute execution lag and signal_price
+        try:
+            from datetime import datetime as _dt
+            call_row = conn.execute(
+                "SELECT created_at, entry_price FROM analyzed_calls WHERE id=?", (call_id,)
+            ).fetchone()
+            pos_row = conn.execute(
+                "SELECT open_time FROM positions WHERE id=?", (pos_id,)
+            ).fetchone()
+            if call_row and pos_row and call_row[0] and pos_row[0]:
+                fmt = "%Y-%m-%d %H:%M:%S"
+                call_dt = _dt.strptime(call_row[0][:19], fmt)
+                pos_dt  = _dt.strptime(pos_row[0][:19], fmt)
+                lag_min = max(0, int((pos_dt - call_dt).total_seconds() / 60))
+                signal_price = float(call_row[1]) if call_row[1] else None
+                cur.execute("""
+                    UPDATE positions
+                    SET execution_lag_minutes=?, signal_price=?
+                    WHERE id=? AND execution_lag_minutes IS NULL
+                """, (lag_min, signal_price, pos_id))
+        except Exception:
+            pass
+
     conn.commit()
     return matched
 
