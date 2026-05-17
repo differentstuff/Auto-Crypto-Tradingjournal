@@ -88,8 +88,12 @@ def _build_user_message(text: str, indonesian: bool) -> str:
 
 # ── Telegram API ──────────────────────────────────────────────────────────────
 def _tg(method: str, **kwargs) -> dict:
+    # getUpdates long-polls for `timeout` seconds — add 5s headroom so requests
+    # doesn't race against Telegram's own hold time.
+    tg_timeout = kwargs.get("timeout", 0)
+    read_timeout = max(30, tg_timeout + 5)
     try:
-        r = requests.post(f"{TG_BASE}/{method}", json=kwargs, timeout=30)
+        r = requests.post(f"{TG_BASE}/{method}", json=kwargs, timeout=read_timeout)
         return r.json()
     except Exception as e:
         log.warning("TG API %s failed: %s", method, e)
