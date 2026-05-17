@@ -790,6 +790,82 @@ function renderScannerResults(state) {
       ${_scanSetups.length} setup${_scanSetups.length!==1?'s':''} · min score ${_scanLastState?.min_score??6}/10 · sorted by score · click a row for details
     </div>
     ${buildScannerTable(_scanSetups)}`;
+
+  renderScannerCards(_scanSetups);
+}
+
+// Mobile: compact cards for narrow viewports (DOM-only, no innerHTML)
+function renderScannerCards(setups) {
+    const container = document.getElementById('scanner-cards');
+    if (!container) return;
+    while (container.firstChild) container.removeChild(container.firstChild);
+
+    if (!setups || !setups.length) {
+        const msg = document.createElement('p');
+        msg.className = 'muted';
+        msg.style.padding = '16px';
+        msg.textContent = 'No setups found.';
+        container.appendChild(msg);
+        return;
+    }
+
+    setups.forEach(s => {
+        const score = s.setup_score || 0;
+        const ez    = s.entry_zone || {};
+        const card  = document.createElement('div');
+        card.className = 'scan-card';
+
+        const hdr = document.createElement('div');
+        hdr.className = 'scan-card-header';
+
+        const symEl = document.createElement('span');
+        symEl.className = 'scan-card-symbol';
+        symEl.textContent = s._symbol || s.symbol || '?';
+
+        const badge = document.createElement('span');
+        const badgeCls = score >= 8 ? 'hi' : score >= 6 ? 'mid' : 'low';
+        badge.className = 'scan-score-badge ' + badgeCls;
+        badge.textContent = score + '/10';
+
+        hdr.appendChild(symEl);
+        hdr.appendChild(badge);
+
+        const rows = [
+            ['Direction', s.direction || '—'],
+            ['Entry', ez.low && ez.high
+                ? parseFloat(ez.low).toFixed(4) + '–' + parseFloat(ez.high).toFixed(4)
+                : '—'],
+            ['SL',  s.sl_price  ? parseFloat(s.sl_price).toFixed(4)  : '—'],
+            ['TP1', s.tp1_price ? parseFloat(s.tp1_price).toFixed(4) : '—'],
+            ['R:R', s.rr_ratio  || '—'],
+        ];
+
+        const rowsEl = document.createElement('div');
+        rows.forEach(([label, value]) => {
+            const row = document.createElement('div');
+            row.className = 'scan-card-row';
+            const lbl = document.createElement('span');
+            lbl.className = 'lbl';
+            lbl.textContent = label;
+            const val = document.createElement('span');
+            val.textContent = value;
+            row.appendChild(lbl);
+            row.appendChild(val);
+            rowsEl.appendChild(row);
+        });
+
+        card.appendChild(hdr);
+        card.appendChild(rowsEl);
+
+        if (s.summary) {
+            const sumEl = document.createElement('div');
+            sumEl.style.cssText = 'font-size:12px;color:var(--text-muted,#888);margin-top:8px;line-height:1.4';
+            sumEl.textContent = (s.summary || '').substring(0, 120);
+            card.appendChild(sumEl);
+        }
+
+        container.appendChild(card);
+    });
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────

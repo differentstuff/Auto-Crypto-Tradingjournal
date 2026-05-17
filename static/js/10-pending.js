@@ -321,6 +321,7 @@ async function loadPendingLimits(status) {
     return;
   }
   list.innerHTML = res.data.map(renderPendingLimitCard).join('');
+  renderLimitCards(res.data);  // mobile cards
 
   // Proximity check for waiting limits — fetch current prices and annotate cards
   if (currentLimitStatus === 'waiting' && res.data.length) {
@@ -608,4 +609,93 @@ async function loadAnalystStats() {
         }).join('')}</tbody>
       </table>
     </div>`;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MOBILE — compact limit cards (DOM-only, no innerHTML)
+// ══════════════════════════════════════════════════════════════════════════════
+// Valid statuses from routes/limits.py VALID_STATUSES allowlist:
+const _VALID_LIMIT_STATUSES = new Set(['waiting','triggered','dismissed','expired','cancelled']);
+
+function renderLimitCards(limits) {
+    const container = document.getElementById('limits-cards');
+    if (!container) return;
+    while (container.firstChild) container.removeChild(container.firstChild);
+
+    if (!limits || !limits.length) {
+        const msg = document.createElement('p');
+        msg.className = 'muted';
+        msg.style.padding = '16px';
+        msg.textContent = 'No pending limits.';
+        container.appendChild(msg);
+        return;
+    }
+
+    limits.forEach(lim => {
+        const card = document.createElement('div');
+        card.className = 'limit-card';
+
+        const hdr = document.createElement('div');
+        hdr.className = 'limit-card-header';
+
+        const symEl = document.createElement('span');
+        symEl.className = 'limit-card-symbol';
+        symEl.textContent = lim.symbol;  // exchange symbol, alphanumeric
+
+        // status comes from VALID_STATUSES allowlist — safe to use as CSS class
+        const rawStatus = _VALID_LIMIT_STATUSES.has(lim.status) ? lim.status : 'waiting';
+        const statusEl = document.createElement('span');
+        statusEl.className = 'limit-card-status ' + rawStatus;
+        statusEl.textContent = rawStatus;
+
+        hdr.appendChild(symEl);
+        hdr.appendChild(statusEl);
+
+        const dirRow = document.createElement('div');
+        dirRow.className = 'scan-card-row';
+        const dirLbl = document.createElement('span');
+        dirLbl.className = 'lbl';
+        dirLbl.textContent = 'Direction';
+        const dirVal = document.createElement('span');
+        dirVal.textContent = (lim.direction || '') + ' ' + (lim.leverage || '') + 'x';
+        dirRow.appendChild(dirLbl);
+        dirRow.appendChild(dirVal);
+
+        const priceRow = document.createElement('div');
+        priceRow.className = 'scan-card-row';
+        const priceLbl = document.createElement('span');
+        priceLbl.className = 'lbl';
+        priceLbl.textContent = 'Limit price';
+        const priceVal = document.createElement('span');
+        priceVal.textContent = lim.limit_price ? parseFloat(lim.limit_price).toFixed(4) : '—';
+        priceRow.appendChild(priceLbl);
+        priceRow.appendChild(priceVal);
+
+        const levels = document.createElement('div');
+        levels.className = 'limit-card-levels';
+        [
+            ['SL',  lim.sl_price,  'pnl-neg'],
+            ['TP1', lim.tp1_price, 'pnl-pos'],
+            ['TP2', lim.tp2_price, 'pnl-pos'],
+        ].forEach(([label, price, cls]) => {
+            const lvl = document.createElement('div');
+            lvl.className = 'lvl';
+            const lbl = document.createElement('div');
+            lbl.className = 'lbl';
+            lbl.textContent = label;
+            const val = document.createElement('div');
+            val.className = 'val ' + cls;
+            val.textContent = price ? parseFloat(price).toFixed(4) : '—';
+            lvl.appendChild(lbl);
+            lvl.appendChild(val);
+            levels.appendChild(lvl);
+        });
+
+        card.appendChild(hdr);
+        card.appendChild(dirRow);
+        card.appendChild(priceRow);
+        card.appendChild(levels);
+        container.appendChild(card);
+    });
 }

@@ -96,6 +96,7 @@ async function loadLiveTrades() {
     renderMatchBanners(pendingMatches, displayPositions);
     renderCorrelationWarning(livePositionsCache);  // keep full set for correlation analysis
     renderPositionCards(displayPositions, liveWaitingLimits);
+    renderMobilePositionCards(displayPositions);
     loadPortfolioRisk();
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
@@ -493,6 +494,82 @@ function renderCorrelationWarning(positions) {
     if (container) container.insertBefore(badge, container.firstChild);
   }, 60_000);
 })();
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MOBILE — compact position cards rendered in #positions-cards container
+// Uses DOM methods only (no innerHTML for any variable content)
+// ══════════════════════════════════════════════════════════════════════════════
+function renderMobilePositionCards(positions) {
+    const container = document.getElementById('positions-cards');
+    if (!container) return;
+    while (container.firstChild) container.removeChild(container.firstChild);
+
+    if (!positions || !positions.length) {
+        const msg = document.createElement('p');
+        msg.className = 'muted';
+        msg.style.padding = '16px';
+        msg.textContent = 'No open positions.';
+        container.appendChild(msg);
+        return;
+    }
+
+    positions.forEach(p => {
+        const isLong = p.direction === 'Long';
+        const pnl    = parseFloat(p.unrealized_pnl || 0);
+        const pnlPct = parseFloat(p.unrealized_pct || 0);
+
+        const card = document.createElement('div');
+        card.className = 'pos-card';
+
+        const hdr = document.createElement('div');
+        hdr.className = 'pos-card-header';
+
+        const sym = document.createElement('span');
+        sym.className = 'pos-card-symbol';
+        sym.textContent = p.symbol;          // exchange ticker, alphanumeric
+
+        const dir = document.createElement('span');
+        dir.className = 'pos-card-dir ' + (isLong ? 'long' : 'short');
+        dir.textContent = (isLong ? '▲' : '▼') + ' ' + (p.direction || '') + ' ' + (p.leverage || '') + 'x';
+
+        hdr.appendChild(sym);
+        hdr.appendChild(dir);
+
+        const pnlEl = document.createElement('div');
+        pnlEl.className = 'pos-card-pnl ' + (pnl >= 0 ? 'pnl-pos' : 'pnl-neg');
+        pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) +
+                            ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(1) + '%)';
+
+        const grid = document.createElement('div');
+        grid.className = 'pos-card-grid';
+        const stats = [
+            ['Entry', parseFloat(p.entry_price || 0).toFixed(4)],
+            ['Mark',  parseFloat(p.mark_price  || 0).toFixed(4)],
+            ['SL',    p.stop_loss    || 'none'],
+            ['TP',    p.take_profit  || '—'],
+            ['Size',  '$' + parseFloat(p.size_usdt || 0).toFixed(0)],
+            ['Margin','$' + parseFloat(p.margin_usdt || 0).toFixed(0)],
+        ];
+        stats.forEach(([label, value]) => {
+            const cell = document.createElement('div');
+            const lbl = document.createElement('div');
+            lbl.className = 'lbl';
+            lbl.textContent = label;
+            const val = document.createElement('div');
+            val.className = 'val';
+            val.textContent = value;
+            cell.appendChild(lbl);
+            cell.appendChild(val);
+            grid.appendChild(cell);
+        });
+
+        card.appendChild(hdr);
+        card.appendChild(pnlEl);
+        card.appendChild(grid);
+        container.appendChild(card);
+    });
+}
 
 
 // ══════════════════════════════════════════════════════════════════════════════
