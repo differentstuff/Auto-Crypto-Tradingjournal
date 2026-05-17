@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "chrome-devtools": {
-      "command": "npx",
-      "args": ["chrome-devtools-mcp@latest"]
+      "command": "/bin/bash",
+      "args": ["scripts/start_mcp_chrome.sh"]
     }
   }
 }
