@@ -1,6 +1,6 @@
 import os
 
-VERSION                = "1.5.0"
+VERSION                = "1.6.0"
 
 # ── Anthropic models ──────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY      = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -49,3 +49,11 @@ CONSENSUS_LOW_DELTA      = 3       # ≤ 3 → low (Claude 60% weight)
 MONITOR_INTERVAL           = int(os.environ.get("MONITOR_INTERVAL",   "600"))   # 10 min
 MONITOR_THRESHOLD_PCT      = float(os.environ.get("MONITOR_THRESHOLD_PCT", "-5.0"))
 MONITOR_THRESHOLD_DURATION = int(os.environ.get("MONITOR_THRESHOLD_DURATION", "240"))
+
+# v1.6.0 feature constants
+LIQ_PROXIMITY_PCT  = 0.03    # liquidation wall proximity threshold (3%)
+LIQ_TTL            = 900     # 15-min cache for liquidation clusters
+ONCHAIN_TTL        = 3600    # 1-h cache for on-chain daily metrics
+REGIME_TTL         = 14400   # 4-h retrain window for HMM
+ML_SCORER_TTL      = 86400   # 24-h retrain interval for XGBoost scorer
+ML_MIN_SAMPLES     = 20      # min labeled outcomes to activate ML scorer
