@@ -31,7 +31,7 @@ def _make_client():
 
     # Also reload helpers so it picks up real Flask's jsonify, not a stub
     for mod in ["backtest_engine", "backtest_optimizer", "backtest_metrics",
-                "chart_context", "bitget_client", "helpers", "routes.backtest"]:
+                "bitget_client", "helpers", "routes.backtest"]:
         if mod in sys.modules:
             del sys.modules[mod]
 

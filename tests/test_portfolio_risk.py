@@ -4,15 +4,26 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _real_flask():
-    """Evict the Flask stub so routes.live (which imports Blueprint) can load."""
-    for k in list(sys.modules):
-        if k == "flask" or k.startswith("flask.") or k == "routes.live" or k == "routes":
-            del sys.modules[k]
+def _real_flask(monkeypatch):
+    """Evict the Flask stub so routes.live (Blueprint) can load; restore stub after."""
+    import importlib
+    # Save stub so we can restore it after
+    _saved = {k: v for k, v in sys.modules.items()
+              if k == "flask" or k.startswith("flask.")}
+    for k in list(_saved):
+        del sys.modules[k]
+    # Also evict routes.live so it reimports with real Flask
+    for k in [k for k in sys.modules if k.startswith("routes")]:
+        del sys.modules[k]
     yield
-    for k in list(sys.modules):
-        if k == "flask" or k.startswith("flask.") or k == "routes.live" or k == "routes":
-            del sys.modules[k]
+    # Restore Flask stub for subsequent tests
+    for k in [k for k in sys.modules if k == "flask" or k.startswith("flask.")]:
+        del sys.modules[k]
+    for k in [k for k in sys.modules if k.startswith("routes")]:
+        del sys.modules[k]
+    sys.modules.update(_saved)
+    import helpers as _h
+    importlib.reload(_h)
 
 
 def test_classify_sector():

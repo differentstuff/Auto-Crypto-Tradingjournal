@@ -10,8 +10,12 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(_db, "DB_PATH", db_file)
     _db.init_db()
 
-    for mod in [k for k in sys.modules if k == "flask" or k.startswith("flask.")]:
+    # Save stub modules so we can restore them after the test
+    _saved = {k: v for k, v in sys.modules.items()
+              if k == "flask" or k.startswith("flask.")}
+    for mod in list(_saved):
         del sys.modules[mod]
+
     import flask, helpers, importlib
     importlib.reload(helpers)
 
@@ -19,7 +23,14 @@ def client(tmp_path, monkeypatch):
     importlib.reload(rs)
     app = flask.Flask(__name__)
     app.register_blueprint(rs.bp)
-    return app.test_client()
+    yield app.test_client()
+
+    # Restore Flask stub so subsequent tests that depend on it still work
+    for k in [k for k in sys.modules if k == "flask" or k.startswith("flask.")]:
+        del sys.modules[k]
+    sys.modules.update(_saved)
+    import helpers as _h
+    importlib.reload(_h)
 
 
 def test_backfill_returns_ok(client, monkeypatch):
