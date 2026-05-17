@@ -10,3 +10,4 @@ data/
 Export order history*/
 .agents/
 docs/superpowers/
+.claude/settings.local.json
