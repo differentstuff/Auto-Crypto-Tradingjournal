@@ -159,3 +159,36 @@ def get_binance_futures_symbols(min_vol_usd: float = 50_000_000) -> list:
         )[:300]
     except Exception:
         return []
+
+
+def get_binance_oi_map(symbols: list) -> dict:
+    """
+    Return {symbol: open_interest_usd} for a list of USDT-M symbols.
+    Uses Binance futures fetch_tickers which includes openInterestValue.
+    Returns empty dict on any error — OI filter is best-effort.
+    symbol format: 'BTCUSDT' (not 'BTC/USDT:USDT').
+    """
+    try:
+        import ccxt as _ccxt
+        futures_ex = _ccxt.binance({
+            "enableRateLimit": True,
+            "options": {"defaultType": "future"},
+        })
+        target = set(symbols)
+        result = {}
+        tickers = futures_ex.fetch_tickers()
+        for sym, t in tickers.items():
+            if not sym.endswith("/USDT:USDT"):
+                continue
+            journal_sym = sym.replace("/USDT:USDT", "USDT")
+            if journal_sym not in target:
+                continue
+            oi = t.get("info", {}).get("openInterestValue") or t.get("openInterestValue")
+            if oi is not None:
+                try:
+                    result[journal_sym] = float(oi)
+                except (TypeError, ValueError):
+                    pass
+        return result
+    except Exception:
+        return {}

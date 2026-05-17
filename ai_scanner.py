@@ -46,7 +46,7 @@ import agent_orchestrator
 import nansen_client
 
 # ── Re-exports from sub-modules ────────────────────────────────────────────────
-from scanner_watchlist import _BITGET_WATCHLIST, DEFAULT_WATCHLIST, _get_extended_watchlist
+from scanner_watchlist import _BITGET_WATCHLIST, DEFAULT_WATCHLIST, _get_extended_watchlist, _get_dynamic_watchlist
 from scanner_criteria import (
     CRITERIA_DEFAULTS,
     _CRITERIA_DISABLED_LABELS,
@@ -467,7 +467,7 @@ def start_scan(symbols: list = None, min_score: int = SCANNER_MIN_SCORE,
         if completed_at and (time.time() - completed_at) < SCANNER_CACHE_TTL and score_unchanged:
             return False  # still fresh with same threshold
 
-    syms = symbols or _get_extended_watchlist(500)
+    syms = symbols or _get_dynamic_watchlist()
     cr   = criteria or CRITERIA_DEFAULTS
     t = threading.Thread(target=_scan_thread, args=(syms, min_score, cr), daemon=True)
     t.start()
@@ -480,7 +480,7 @@ def force_scan(symbols: list = None, min_score: int = SCANNER_MIN_SCORE,
     with _state_lock:
         if _state["status"] == "running":
             return False
-    syms = symbols or _get_extended_watchlist(500)
+    syms = symbols or _get_dynamic_watchlist()
     cr   = criteria or CRITERIA_DEFAULTS
     t = threading.Thread(target=_scan_thread, args=(syms, min_score, cr), daemon=True)
     t.start()

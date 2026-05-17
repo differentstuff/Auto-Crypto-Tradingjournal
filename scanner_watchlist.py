@@ -66,6 +66,58 @@ def _get_default_watchlist() -> list:
 DEFAULT_WATCHLIST = _BITGET_WATCHLIST  # backward compat; callers should use _get_default_watchlist()
 
 
+# ── Dynamic watchlist: volume + OI filtered, cached 24h ──────────────────────
+_DYNAMIC_TTL = 24 * 3600  # 24 hours in seconds
+_dynamic_cache: dict = {"symbols": None, "ts": 0.0}
+
+
+def _get_dynamic_watchlist(
+    max_symbols: int = 330,
+    min_vol_usd: float = 5_000_000,
+    min_oi_usd: float = 2_000_000,
+) -> list:
+    """
+    Return up to max_symbols liquid USDT-M symbols, refreshed every 24h.
+    Filters: 24h volume >= min_vol_usd AND open interest >= min_oi_usd.
+    Falls back to _get_extended_watchlist() on any API error.
+    """
+    import time as _time
+    now = _time.time()
+    if _dynamic_cache["symbols"] is not None and (now - _dynamic_cache["ts"]) < _DYNAMIC_TTL:
+        return _dynamic_cache["symbols"]
+
+    try:
+        import ccxt_client
+        volume_syms = ccxt_client.get_binance_futures_symbols(min_vol_usd=min_vol_usd)
+        if not volume_syms:
+            raise RuntimeError("Binance volume fetch returned empty")
+
+        oi_map = ccxt_client.get_binance_oi_map(volume_syms)
+
+        # Filter by OI; symbols missing from OI map are kept (OI fetch is best-effort)
+        filtered = [
+            s for s in volume_syms
+            if oi_map.get(s, min_oi_usd) >= min_oi_usd
+        ]
+
+        # Ensure hand-picked Bitget list is always included
+        bitget_set = set(_BITGET_WATCHLIST)
+        extra = [s for s in filtered if s not in bitget_set]
+        merged = list(dict.fromkeys(_BITGET_WATCHLIST + extra))[:max_symbols]
+
+        _dynamic_cache["symbols"] = merged
+        _dynamic_cache["ts"] = now
+        print(
+            f"[Watchlist] Dynamic: {len(merged)} symbols "
+            f"(vol>${min_vol_usd/1e6:.0f}M + OI>${min_oi_usd/1e6:.0f}M)",
+            flush=True,
+        )
+        return merged
+    except Exception as e:
+        print(f"[Watchlist] Dynamic fetch failed: {e} — using extended static list", flush=True)
+        return _get_extended_watchlist(max_symbols=max_symbols, min_vol_usd=min_vol_usd)
+
+
 def _get_extended_watchlist(max_symbols: int = 500, min_vol_usd: float = 3_000_000) -> list:
     """
     Return up to max_symbols USDT futures sorted by liquidity.
