@@ -33,7 +33,7 @@ def wavetrend_series(
     hlc3 = (high + low + close) / 3
     ema1 = hlc3.ewm(span=n1, adjust=False).mean()
     d    = (hlc3 - ema1).abs().ewm(span=n1, adjust=False).mean()
-    ci   = (hlc3 - ema1) / (0.015 * d.replace(0, np.nan)).fillna(1)
+    ci   = (hlc3 - ema1) / (0.015 * d.replace(0, float("nan"))).fillna(1e-9)
     wt1  = ci.ewm(span=n2, adjust=False).mean()
     wt2  = wt1.rolling(roll, min_periods=1).mean()
     return wt1, wt2

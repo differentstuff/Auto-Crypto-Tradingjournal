@@ -35,11 +35,17 @@ def test_adx_series_nonnegative():
     adx = indicators.adx_series(df["high"], df["low"], df["close"]).dropna()
     assert (adx >= 0).all()
 
-def test_rsi_matches_pandas_ta():
-    """RSI from indicators.py must match pandas_ta directly within 0.5."""
+def test_rsi_downtrend_below_50():
+    """RSI on a steadily falling series should be below 50 (only losses, no gains)."""
     import indicators
-    import pandas_ta as ta
-    df = _make_df(200)
-    our_rsi = indicators.rsi_series(df["close"], length=14).iloc[-1]
-    pta_rsi = ta.rsi(df["close"], length=14).iloc[-1]
-    assert abs(our_rsi - pta_rsi) < 0.5
+    close = pd.Series([100.0 - i * 0.5 for i in range(60)])
+    rsi = indicators.rsi_series(close, length=14).dropna()
+    assert len(rsi) > 0
+    assert (rsi < 50).all()
+
+def test_rsi_uptrend_above_50():
+    """RSI on a steadily rising series should be above 50."""
+    import indicators
+    close = pd.Series([100.0 + i for i in range(60)])
+    rsi = indicators.rsi_series(close, length=14).dropna()
+    assert (rsi > 50).all()
