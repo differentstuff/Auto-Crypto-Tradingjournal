@@ -1321,6 +1321,56 @@ select:focus,input:focus{border-color:var(--accent)}
             </div>
           </div>
 
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">📐</div>
+              <div><div class="src-name">Dominance Indexes (USDT.D · OTHERS.D · TOTAL2 · TOTAL3)</div><div class="src-provider">CoinGecko · /global endpoint (keyless)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — derived from market_cap_percentage map</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">eth_dominance_pct; usdt_dominance_pct (USDT.D); others_dominance_pct (OTHERS.D); total2_usd (total minus BTC); total3_usd (total minus BTC+ETH)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Scanner macro header (USDT.D · OTHERS.D)</span>
+                <span class="src-tag used">GET /api/market/dominances dashboard</span>
+                <span class="src-tag used">Hermes dominance query</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">🪙</div>
+              <div><div class="src-name">Sector Caps (MEME.C · STABLE.C · STABLE.C.D)</div><div class="src-provider">CoinGecko · /coins/categories (keyless)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — category list endpoint</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">meme_cap_usd (MEME.C); stable_cap_usd (STABLE.C); stable_dominance_pct (STABLE.C.D)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Scanner macro header (MEME cap · STABLE.D)</span>
+                <span class="src-tag used">GET /api/market/dominances dashboard</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#ef5350">
+            <div class="src-card-hdr">
+              <div class="src-icon">📈</div>
+              <div><div class="src-name">ES1! — S&amp;P 500 Futures</div><div class="src-provider">CME · yfinance (ES=F)</div></div>
+              <span class="src-auth auth-free">FREE</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">No symbol — global equity risk proxy</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">es (price); es_change_pct (24h change %)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">Scanner macro header (ES1! column)</span>
+                <span class="src-tag used">GET /api/market/dominances (equity risk appetite proxy)</span>
+                <span class="src-tag used">get_macro_regime() in market_context.py</span>
+              </span>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -1422,6 +1472,24 @@ select:focus,input:focus{border-color:var(--accent)}
               <span class="src-row-val">
                 <span class="src-tag used">Call Analyzer derivatives block</span>
                 <span class="src-tag used">Funding bias in sentiment agent</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="src-card" style="border-left-color:#4fc3f7">
+            <div class="src-card-hdr">
+              <div class="src-icon">💥</div>
+              <div><div class="src-name">Historical Liquidations</div><div class="src-provider">Coinalyze · liquidation-history endpoint</div></div>
+              <span class="src-auth auth-key">API KEY</span>
+            </div>
+            <div class="src-row"><span class="src-row-label">Input</span><span class="src-row-val">Symbol + days (default 30); daily interval</span></div>
+            <div class="src-row"><span class="src-row-label">Returns</span><span class="src-row-val">longs_usd / shorts_usd per day; dominant side; peak day; available=false when plan doesn't include it</span></div>
+            <div class="src-row"><span class="src-row-label">Cache</span><span class="src-row-val">Local CSV in data/liquidations/{symbol}/ (liquidation_client.py)</span></div>
+            <div class="src-row"><span class="src-row-label">Used in</span>
+              <span class="src-row-val">
+                <span class="src-tag used">GET /api/liquidations/&lt;symbol&gt;?days=30</span>
+                <span class="src-tag used">GET /api/coin/summary (liquidations_14d field)</span>
+                <span class="src-tag used">Hermes chart + coin analysis</span>
               </span>
             </div>
           </div>

@@ -44,14 +44,17 @@ routes/*.py — import helpers + ai_* modules
 | Layer | Client | Data | Key |
 |---|---|---|---|
 | 1 — Global Macro | market_context.py | VIX/DXY (yfinance) | none |
+| 1 — Global Macro | market_context.py | ES1! — S&P 500 Futures price + 24h change (yfinance ES=F) | none |
 | 1 — Global Macro | market_context.py | Fear & Greed (alternative.me) | none |
 | 1 — Global Macro | finnhub_client.py | Economic calendar — FOMC/CPI/NFP macro risk flag | FINNHUB_API_KEY |
-| 1 — Global Macro | coingecko_client.py | BTC dominance + total market cap | none |
+| 1 — Global Macro | coingecko_client.py | BTC.D, ETH.D, USDT.D, OTHERS.D, TOTAL2, TOTAL3 (market_cap_percentage) | none |
+| 1 — Global Macro | coingecko_client.py | MEME.C, STABLE.C, STABLE.C.D — /coins/categories | none |
 | 2 — Market Structure | deribit_client.py | BTC/ETH put/call skew — institutional sentiment proxy | none |
 | 2 — Market Structure | market_context.py | BTC mempool congestion (blockchain.com) | none |
 | 2 — Market Structure | coingecko_client.py | Trending coins (top-10, last 24h) | none |
 | 3 — Symbol-Level | ccxt_client.py + market_context.py | Multi-exchange L/S ratio + retail vs smart-money divergence | none |
 | 3 — Symbol-Level | coinalyze_client.py | Aggregated OI + funding + liq trend + per-exchange funding spread | COINALYZE_API_KEY |
+| 3 — Symbol-Level | liquidation_client.py | Historical liquidations per day (longs_usd/shorts_usd); CSV cache in data/liquidations/{symbol}/ | COINALYZE_API_KEY |
 | 3 — Symbol-Level | coingecko_client.py | Cap rank, cap tier, 24h volume | none |
 | 3 — Symbol-Level | market_context.py | DefiLlama TVL (DeFi tokens only) | none |
 | 3 — Symbol-Level | chart_context.py via ccxt | OHLCV candles (Binance Futures) | none |
@@ -72,8 +75,11 @@ See Tools → Data Sources page in the UI for the full interactive reference.
 ## Scanner macro layer (scanner_stages.py)
 - _get_scan_macro_context() called ONCE per scan: VIX, F&G, Finnhub events, BTC dominance
 - _apply_macro_cap(): VIX > 35 → cap 6.0, VIX 25-35 → cap 7.5, macro event in 24h → cap 7.0
-- _build_macro_header(): prepended to every Stage 3 scoring prompt
+- _build_macro_header(): prepended to every Stage 3 scoring prompt — shows VIX | ES1! | F&G | BTC.D | USDT.D | STABLE.D | MEME cap
 - macro_ctx stored in _state["macro_ctx"] — visible in scanner status API
+- get_macro_regime() now includes ES=F (S&P 500 futures via yfinance): returns es, es_change_pct alongside vix and dxy
+- get_global_market() extended: btc_dominance_pct, eth_dominance_pct, usdt_dominance_pct (USDT.D), others_dominance_pct (OTHERS.D), total2_usd (TOTAL2), total3_usd (TOTAL3)
+- get_category_caps() in coingecko_client.py: calls /coins/categories → meme_cap_usd (MEME.C), stable_cap_usd, stable_dominance_pct (STABLE.C.D)
 
 ## Confluence Signals (chart_confluence.py)
 9 signals + 2 SMT variants → max_val = 6.50/TF:
@@ -121,6 +127,14 @@ SMT_PAIRS = {BTC↔ETH, SOL→ETH, BNB→BTC, XRP→BTC}
 - Walk-forward test: POST /api/backtest/walk-forward — splits real positions 70/30, tests generalization
 - Walk-forward poll: GET /api/backtest/walk-forward/<job_id> — dedicated poll endpoint (not /optimize/)
 - Hindsight re-run: POST /api/hindsight/run?n=200 — skips already-scored positions (LEFT JOIN fix), max 200
+
+## Market & Analytics API (routes/market.py, routes/analytics.py)
+- GET /api/price/<symbol> — live price via Binance, Bitget fallback
+- GET /api/coin/summary/<symbol> — price + 4H/1H indicators (RSI, EMA, WaveTrend, ADX, ATR) + Nansen + Coinalyze + BTC regime + F&G + liquidations_14d
+- GET /api/market/dominances — full dashboard: BTC.D, ETH.D, USDT.D, OTHERS.D, TOTAL2, TOTAL3, MEME.C, STABLE.C, STABLE.C.D, ES1! price+change
+- GET /api/chart/annotated/<symbol> — on-demand annotated chart PNG (base64); params: direction, entry, entry_high, sl, tp1, tp2, tf
+- GET /api/liquidations/<symbol>?days=30 — Coinalyze historical liquidation data (longs_usd, shorts_usd per day); available=false when plan doesn't include it
+- POST /api/scanner/cancel — cancel running scan; sets _cancel_event in ai_scanner.py; status becomes "cancelled"
 
 ## Data Sources page
 - Tools → Data Sources in left nav — lists all 14 sources grouped by macro→micro layer
