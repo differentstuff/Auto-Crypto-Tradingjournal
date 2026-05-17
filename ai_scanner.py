@@ -108,10 +108,12 @@ _state: dict = {
     "min_score":       SCANNER_MIN_SCORE,
     "macro_ctx":       {},       # macro context fetched once per scan run
 }
-_state_lock = threading.Lock()
+_state_lock   = threading.Lock()
+_cancel_event = threading.Event()   # set to request cancellation; cleared on each new scan
 
 # Completion hooks — called with the setups list when any scan finishes.
 # Registered by scanner_scheduler so both manual and scheduled scans trigger TG.
+# NOT fired on cancellation.
 _completion_hooks: list = []
 
 
@@ -124,6 +126,15 @@ def register_completion_hook(fn) -> None:
 def get_state() -> dict:
     with _state_lock:
         return copy.deepcopy(_state)
+
+
+def cancel_scan() -> bool:
+    """Request cancellation of the running scan. Returns True if a scan was running."""
+    with _state_lock:
+        if _state["status"] != "running":
+            return False
+    _cancel_event.set()
+    return True
 
 
 def _update(**kwargs):
@@ -229,9 +240,19 @@ def _score_finalists_with_agents(finalists: list, conn,
 
 # ── Background scan thread ─────────────────────────────────────────────────────
 
+def _check_cancel() -> bool:
+    """Returns True if cancellation was requested. Updates state and logs."""
+    if _cancel_event.is_set():
+        _update(status="cancelled", completed_at=time.time())
+        logger.info("[Scanner] Scan cancelled by user request")
+        return True
+    return False
+
+
 def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: dict = None):
     cr = criteria or CRITERIA_DEFAULTS
     t0 = time.time()
+    _cancel_event.clear()   # reset any previous cancellation request
 
     # Fetch macro context once at the start — passed to all scoring stages
     macro_ctx = _get_scan_macro_context()
@@ -254,6 +275,7 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
         # Stage 1 — confluence filter (emits per-symbol progress internally)
         candidates = _stage1(symbols, min_score)
         passed1 = len(candidates)
+        if _check_cancel(): return
 
         # Stage 2 — technical quality gate
         _update(
@@ -265,6 +287,7 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
         _update(scanned=len(symbols), after_filter=len(finalists),
                 stage_detail=f"{passed1} passed confluence · {len(finalists)} passed quality gate",
                 stage_progress=100)
+        if _check_cancel(): return
 
         if not finalists:
             _update(status="completed", completed_at=time.time(),
@@ -310,10 +333,9 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
         # Enrich finalists with 1H chart data before AI scoring stages
         _update(stage_detail="Fetching 1H data for finalists…")
         finalists = enrich_finalists_1h(finalists)
+        if _check_cancel(): return
 
         # Stage 3a — Quick score all finalists with Haiku (cheap pre-filter pass)
-        # Use a threshold 1 below min_score so Haiku false-negatives don't filter
-        # out setups that Sonnet would rate high enough (models score differently).
         quick_threshold = max(min_score - 1, 4)
         _update(
             stage=3, stage_label="Stage 3a — Haiku quick-score",
@@ -330,6 +352,10 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 for sym, ctx, conf, dir_ in finalists
             }
             for f in as_completed(fq):
+                if _cancel_event.is_set():
+                    ex.shutdown(wait=False, cancel_futures=True)
+                    _check_cancel()
+                    return
                 sym, ctx, conf, dir_ = fq[f]
                 qs_done[0] += 1
                 _update(
@@ -339,6 +365,8 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 r = f.result()
                 if r is not None:
                     quick_results.append((sym, ctx, conf, dir_, r["score"], r.get("reason", "")))
+
+        if _check_cancel(): return
 
         # Sort by quick score, take top N for expensive full-detail pass
         quick_results.sort(key=lambda x: -x[4])
@@ -391,6 +419,7 @@ def _scan_thread(symbols: list, min_score: int = SCANNER_MIN_SCORE, criteria: di
                 }
 
         setups.sort(key=lambda x: -x.get("setup_score", 0))
+        if _check_cancel(): return
 
         # Stage 3c — Gemini consensus for top-5 finalists (parallel, non-blocking)
         if setups and gemini_client.is_configured():

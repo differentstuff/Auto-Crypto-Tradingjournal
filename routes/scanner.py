@@ -48,6 +48,19 @@ def api_scanner_run():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/scanner/cancel", methods=["POST"])
+def api_scanner_cancel():
+    """POST /api/scanner/cancel — Request cancellation of the running scan."""
+    try:
+        cancelled = ai_scanner.cancel_scan()
+        if cancelled:
+            return _ok({"message": "Cancellation requested — scan will stop at the next stage boundary"})
+        return _ok({"message": "No scan is currently running"})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/nansen/movers")
 def api_nansen_movers():
     """

@@ -478,6 +478,20 @@ function renderScannerMeta(state) {
   scanBtn.onclick = () => startScan(false);
   row.appendChild(scanBtn);
 
+  // Cancel button — only visible while a scan is running
+  if (running) {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-sm';
+    cancelBtn.style.cssText = 'background:rgba(239,83,80,.15);color:var(--red);border:1px solid rgba(239,83,80,.35)';
+    cancelBtn.textContent = '✕ Cancel';
+    cancelBtn.onclick = async () => {
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      await api('/api/scanner/cancel', 'POST');
+    };
+    row.appendChild(cancelBtn);
+  }
+
   // Re-scan button
   if (done) {
     const rsBtn = document.createElement('button');
