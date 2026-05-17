@@ -178,3 +178,12 @@ def fetch_options_skew(symbol: str) -> dict:
         return get_options_skew(symbol)
     except Exception:
         return {}
+
+
+def fetch_onchain_metrics() -> dict:
+    """BTC on-chain: MVRV, SOPR, exchange net-flow (CoinMetrics Community, keyless)."""
+    try:
+        from onchain_client import get_btc_onchain
+        return get_btc_onchain()
+    except Exception:
+        return {}

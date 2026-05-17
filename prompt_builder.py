@@ -203,6 +203,22 @@ def build_context(
             sections.append(block)
             remaining -= len(block)
 
+        # On-chain metrics (BTC macro context for all symbols)
+        if remaining > 80:
+            try:
+                from onchain_client import get_btc_onchain
+                onchain = get_btc_onchain()
+                if onchain and onchain.get("ok"):
+                    nf_m     = onchain["exchange_net_flow_usd"] / 1_000_000
+                    flow_dir = "outflow" if onchain["exchange_net_flow_usd"] > 0 else "inflow"
+                    block    = (f"On-chain BTC: MVRV {onchain['mvrv']} | "
+                                f"SOPR {onchain['sopr']} | {onchain['regime']} | "
+                                f"exchange {flow_dir} ${abs(nf_m):.0f}M")
+                    sections.append(block)
+                    remaining -= len(block)
+            except Exception:
+                pass
+
         # Multi-exchange long/short consensus
         ls = cr.get("ls_consensus", {})
         if ls and remaining > 0:
