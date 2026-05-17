@@ -354,6 +354,8 @@ def init_db():
            "ALTER TABLE positions ADD COLUMN execution_lag_minutes INTEGER DEFAULT NULL")
     _apply(38, "analyzed_calls.regime_label",
            "ALTER TABLE analyzed_calls ADD COLUMN regime_label TEXT DEFAULT NULL")
+    _apply(39, "analyzed_calls.ml_win_prob",
+           "ALTER TABLE analyzed_calls ADD COLUMN ml_win_prob REAL DEFAULT NULL")
 
     # ── settings ──────────────────────────────────────────────────────────────
     # Key-value store: last sync time, account equity, rulebook timestamps.

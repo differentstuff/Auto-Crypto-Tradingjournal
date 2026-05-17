@@ -143,6 +143,37 @@ def build_context(
         except Exception as exc:
             logger.warning("backtest context failed: %s", exc)
 
+    # ── 1b. ML win probability (XGBoost from historical outcomes) ────────────
+    if remaining > 60 and conn is not None and symbol:
+        try:
+            from signal_scorer import get_scorer
+            scorer   = get_scorer(conn)
+            tfs_ml   = timeframes or ["4H", "1D"]
+            ctx_ml   = chart_context.get_chart_context(symbol, tfs_ml)
+            inds_4h  = ctx_ml.get("4H", {}).get("indicators", {})
+            ema_s    = inds_4h.get("ema", {}).get("stack", "")
+            wt_s     = str(inds_4h.get("wavetrend", {}).get("signal", "")).lower()
+            cvd_t    = str(inds_4h.get("cvd", {}).get("trend", "")).lower()
+            features = {
+                "setup_score":    5,
+                "rsi":            inds_4h.get("rsi", {}).get("value", 50),
+                "macd_histogram": inds_4h.get("macd", {}).get("histogram", 0),
+                "ema_alignment":  1 if "bull" in ema_s else -1 if "bear" in ema_s else 0,
+                "adx":            inds_4h.get("adx", {}).get("value", 20),
+                "wt_signal":      1 if "buy" in wt_s else -1 if "sell" in wt_s else 0,
+                "mfi":            inds_4h.get("wavetrend", {}).get("mfi", 50),
+                "cvd_trend":      1 if "bull" in cvd_t else -1 if "bear" in cvd_t else 0,
+                "volume_ratio":   inds_4h.get("volume", {}).get("ratio", 1.0),
+                "direction":      direction or "long",
+            }
+            prob = scorer.predict(features)
+            if prob is not None:
+                block = f"ML win probability: {prob:.0%} (historical pattern match)"
+                sections.append(block)
+                remaining -= len(block)
+        except Exception:
+            pass
+
     # ── 2. Market context (caller provides pre-fetched string) ───────────────
     if market_str and remaining > 0:
         block = f"CURRENT MARKET CONTEXT:\n{market_str}"
