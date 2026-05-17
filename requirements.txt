@@ -9,3 +9,4 @@ hmmlearn>=0.3.0
 joblib>=1.3.0
 scikit-learn>=1.5.0
 xgboost>=2.0.0
+backtester-mcp>=0.1.0

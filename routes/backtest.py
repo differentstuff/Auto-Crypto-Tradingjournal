@@ -1,6 +1,7 @@
 """routes/backtest.py — Backtest and optimizer API endpoints."""
 import traceback
 
+import numpy as np
 from flask import Blueprint, request
 
 from backtest_engine import BacktestParams, run_backtest
@@ -116,6 +117,27 @@ def api_walk_forward_status(job_id):
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
+
+
+@bp.route("/api/backtest/quality", methods=["POST"])
+def quality_check():
+    """
+    POST body: {"prices": [float], "signals": [float], "n_trials": int}
+    Returns PBO, deflated Sharpe, bootstrap CI.
+    """
+    from backtest_quality import run_quality_check
+    body = request.get_json(silent=True) or {}
+    try:
+        prices   = np.array(body.get("prices",   []), dtype=float)
+        signals  = np.array(body.get("signals",  []), dtype=float)
+        n_trials = int(body.get("n_trials", 1))
+    except (ValueError, TypeError) as exc:
+        return _err(f"invalid input: {exc}", 400)
+    if len(prices) < 10:
+        return _err("prices must have ≥10 points", 400)
+    if len(prices) != len(signals):
+        return _err("prices and signals must be same length", 400)
+    return _ok(run_quality_check(prices, signals, n_trials))
 
 
 @bp.get("/api/backtest/optimizer-history")
