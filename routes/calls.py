@@ -95,6 +95,20 @@ def api_calls_save():
     symbol    = (d.get("symbol") or "").strip() or "UNKNOWN"
     direction = (d.get("direction") or "Long").strip()
 
+    # Get regime label for storage
+    regime_label = None
+    try:
+        from market_regime import detect_regime
+        reg = detect_regime()
+        if reg.get("ok"):
+            regime_label = reg["label"]
+    except Exception:
+        pass
+
+    # ml_win_prob requires setup_score which is only known after analysis;
+    # write None now — can be backfilled later if needed
+    ml_win_prob = None
+
     with db_conn() as conn:
         cur = conn.cursor()
         con = d.get("_consensus") or {}
@@ -105,8 +119,9 @@ def api_calls_save():
                risk_pct, risk_amount, leverage, has_dca, has_candle_close_sl,
                setup_score, setup_label, rr_ratio, trade_type,
                sl_warning, entry_timing, analysis_json, analyst, cot_reasoning,
-               gemini_score, consensus_score, consensus_flag, chart_png_b64)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               gemini_score, consensus_score, consensus_flag, chart_png_b64,
+               regime_label, ml_win_prob)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             symbol, direction,
             d.get("_call_text", ""),
@@ -128,6 +143,8 @@ def api_calls_save():
             con.get("consensus_score"),
             con.get("flag"),
             chart_b64 or None,
+            regime_label,
+            ml_win_prob,
         ))
         new_id = cur.lastrowid
         conn.commit()

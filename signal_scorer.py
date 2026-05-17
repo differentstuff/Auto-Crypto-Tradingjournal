@@ -4,7 +4,6 @@ XGBoost win-probability scorer trained on historical analyzed_calls.
 Min 20 labeled outcomes required. Silently returns None if untrained.
 Model persisted via joblib.
 """
-import json
 import logging
 import os
 import time
@@ -18,21 +17,19 @@ _MODEL_PATH   = os.path.join(os.path.dirname(__file__), ".ml_scorer.joblib")
 
 def _extract_features(row: dict) -> list[float] | None:
     try:
-        analysis = row.get("analysis_json") or {}
-        if isinstance(analysis, str):
-            analysis = json.loads(analysis)
         direction = 1.0 if row.get("direction", "long") == "long" else -1.0
+        # Parse R:R ratio (e.g. "2.5:1" -> 2.5)
+        rr = 0.0
+        rr_str = str(row.get("rr_ratio") or "0")
+        try:
+            rr = float(rr_str.split(":")[0])
+        except Exception:
+            pass
         return [
-            float(row.get("setup_score")          or 5),
-            float(analysis.get("rsi")             or 50),
-            float(analysis.get("macd_histogram")  or 0),
-            float(analysis.get("ema_alignment")   or 0),
-            float(analysis.get("adx")             or 20),
-            float(analysis.get("wt_signal")       or 0),
-            float(analysis.get("mfi")             or 50),
-            float(analysis.get("cvd_trend")       or 0),
-            float(analysis.get("volume_ratio")    or 1),
+            float(row.get("setup_score")     or 5),
             direction,
+            min(rr, 10.0),  # cap at 10 to avoid outliers
+            float(row.get("consensus_score") or 5),
         ]
     except Exception:
         return None
@@ -66,15 +63,16 @@ class SignalScorer:
     def train(self, conn) -> bool:
         try:
             rows = conn.execute(
-                "SELECT setup_score, direction, outcome, analysis_json "
+                "SELECT setup_score, direction, outcome, rr_ratio, consensus_score "
                 "FROM analyzed_calls WHERE outcome IN ('won','lost') "
+                "AND setup_score IS NOT NULL "
                 "ORDER BY id DESC LIMIT 500"
             ).fetchall()
             if len(rows) < _MIN_SAMPLES:
                 return False
             X, y = [], []
             for r in rows:
-                row   = dict(zip(["setup_score", "direction", "outcome", "analysis_json"], r))
+                row   = dict(zip(["setup_score", "direction", "outcome", "rr_ratio", "consensus_score"], r))
                 feats = _extract_features(row)
                 if feats is None:
                     continue

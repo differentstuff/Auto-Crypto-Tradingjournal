@@ -82,10 +82,12 @@ See Tools → Data Sources page in the UI for the full interactive reference.
 - get_category_caps() in coingecko_client.py: calls /coins/categories → meme_cap_usd (MEME.C), stable_cap_usd, stable_dominance_pct (STABLE.C.D)
 
 ## Confluence Signals (chart_confluence.py)
-9 signals + 2 SMT variants → max_val = 6.50/TF:
-RSI, MACD, EMA, ADX, WaveTrend, MFI, CVD, volume,
-_smt_weight (cross-exchange price divergence ≥0.5%),
-_smt_direction_weight (24h directional divergence vs correlated pair ±0.15)
+12 signals total: 11 TF-level + 1 symbol-level → max_per_tf = 5.55 (non-SMT) / 5.85 (SMT):
+TF-level: RSI, MACD (grouped momentum cap ±1.5), EMA, ADX,
+          WaveTrend, MFI (grouped oscillator cap ±1.0), CVD, order_flow, volume,
+          _smt_weight (cross-exchange price divergence ≥0.5%),
+          _smt_direction_weight (24h directional divergence vs correlated pair ±0.15)
+Symbol-level: liquidation wall +0.20 (conditional — short-squeeze/cascade within 3%)
 VIX multiplier: score × 0.80 when VIX > 30 (5-min cached)
 SMT_SYMBOLS = {BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT}
 SMT_PAIRS = {BTC↔ETH, SOL→ETH, BNB→BTC, XRP→BTC}
