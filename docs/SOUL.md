@@ -91,6 +91,14 @@ GET /api/live/positions
 Returns list: symbol, direction, entry_price, mark_price, unrealized_pnl, unrealized_pct,
 stop_loss, take_profit, leverage, size_usdt, duration_minutes, liquidation_price
 
+### Portfolio Risk View
+```
+GET /api/live/portfolio-risk
+```
+Returns: total_long_usd, total_short_usd, net_exposure_usd, total_margin_usd,
+margin_used_pct, top_sector_pct, by_sector [{sector, usd}], position_count
+Sectors: BTC, ETH, L1, L2, DeFi, AI, Meme, BTC Eco, Gaming, Other
+
 ### Bitget Live Limit Orders
 ```
 GET /api/live/pending-orders
@@ -124,6 +132,19 @@ sl_price, tp1_price, tp2_price, rr_ratio, summary, key_conditions, urgency, char
 ```
 POST /api/scanner/cancel
 ```
+
+### Scanner Signal Accuracy Feedback
+```
+GET /api/scanner/feedback
+```
+Returns: available (bool), buckets [{score_range, tp, fp, fn, tn, fp_rate, tp_rate}],
+recommendation (raise_threshold|lower_threshold|ok), sample_size
+
+### P&L by Setup Type
+```
+GET /api/analytics/by-setup
+```
+Returns: setups [{setup_type, trade_count, total_pnl, win_rate, avg_pnl, avg_win, avg_loss, profit_factor}]
 
 ### Nansen Whale Signals (smart money)
 ```
