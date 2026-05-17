@@ -261,6 +261,23 @@ def _liquidation_weight(liq: dict, current_price: float) -> float:
     return weight
 
 
+def _order_flow_weight(of: dict | None) -> float:
+    """
+    +0.15 buying pressure (positive delta, no divergence).
+    -0.15 selling pressure OR divergence (bearish fade).
+    """
+    if not of:
+        return 0.0
+    if of.get("divergence"):
+        return -0.15
+    sig = of.get("signal", "neutral")
+    if sig == "buying_pressure":
+        return 0.15
+    if sig == "selling_pressure":
+        return -0.15
+    return 0.0
+
+
 def _get_tf_weights(ctx: dict, tf: str, symbol: str = "") -> list:
     """Return signal weights for a single timeframe, with correlated-group caps applied."""
     inds = ctx.get(tf, {}).get("indicators", {})
@@ -275,16 +292,17 @@ def _get_tf_weights(ctx: dict, tf: str, symbol: str = "") -> list:
     cvd_w  = _cvd_weight(inds.get("cvd", {}))
     smt_w     = _smt_weight(inds, symbol)
     smt_dir_w = _smt_direction_weight(inds, symbol)
+    of_w      = _order_flow_weight(inds.get("order_flow"))
 
     # Cap correlated signal groups to prevent trend-inflation
     _momentum = max(-1.5, min(1.5, rsi_w + macd_w))
     _oscillator = max(-1.0, min(1.0, wt_w + mfi_w))
 
-    base_score = _momentum + ema_w + adx_w + _oscillator + cvd_w + smt_w + smt_dir_w
+    base_score = _momentum + ema_w + adx_w + _oscillator + cvd_w + smt_w + smt_dir_w + of_w
     vol_w = _volume_weight(inds, base_score)
 
     # Return as flat list for bull/bear totals (capped momentum and oscillator as single entries)
-    return [_momentum, ema_w, adx_w, _oscillator, cvd_w, smt_w, smt_dir_w, vol_w]
+    return [_momentum, ema_w, adx_w, _oscillator, cvd_w, smt_w, smt_dir_w, of_w, vol_w]
 
 
 def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> dict:
@@ -316,6 +334,7 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         cvd_w  = _cvd_weight(inds.get("cvd", {}))
         smt_w     = _smt_weight(inds, symbol)
         smt_dir_w = _smt_direction_weight(inds, symbol)
+        of_w      = _order_flow_weight(inds.get("order_flow"))
 
         # Cap correlated signal groups to prevent trend-inflation
         # RSI + MACD: both measure momentum, cap combined contribution
@@ -326,13 +345,13 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         _oscillator_raw = wt_w + mfi_w
         _oscillator = max(-1.0, min(1.0, _oscillator_raw))
 
-        base_score = _momentum + ema_w + adx_w + _oscillator + cvd_w + smt_w + smt_dir_w
+        base_score = _momentum + ema_w + adx_w + _oscillator + cvd_w + smt_w + smt_dir_w + of_w
         vol_w  = _volume_weight(inds, base_score)
 
         tf_score = base_score + vol_w
         total_score += tf_score
 
-        all_w = (_momentum, ema_w, adx_w, _oscillator, cvd_w, smt_w, smt_dir_w, vol_w)
+        all_w = (_momentum, ema_w, adx_w, _oscillator, cvd_w, smt_w, smt_dir_w, of_w, vol_w)
         pos = round(sum(w for w in all_w if w > 0), 1)
         neg = round(sum(w for w in all_w if w < 0), 1)
         details.append(f"{tf}: +{pos}/{neg}")
@@ -360,7 +379,7 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
         total_score = round(total_score * vix_mult, 2)
 
     smt_bonus  = 0.30 if symbol in SMT_SYMBOLS else 0.0
-    max_per_tf = 5.4 + smt_bonus          # per-TF max (unchanged)
+    max_per_tf = 5.55 + smt_bonus         # +0.15 order flow vs previous 5.40
     max_val    = float(len(tfs) * max_per_tf) + 0.20  # +0.20 symbol-level liq
     pct     = total_score / max_val if max_val else 0.0
 

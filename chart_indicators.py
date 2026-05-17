@@ -525,4 +525,38 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
     if cvd:
         result["cvd"] = cvd
 
+    result["order_flow"] = compute_order_flow_delta(df)
+
     return result
+
+
+def compute_order_flow_delta(df: pd.DataFrame) -> dict | None:
+    """
+    Tick-rule proxy for per-candle aggressor delta.
+    Positive delta = net buying pressure; negative = net selling pressure.
+    Returns: {delta, cumulative_delta, signal, divergence}
+    """
+    if df is None or len(df) < 3:
+        return None
+    try:
+        body      = df["close"] - df["open"]
+        body_abs  = body.abs()
+        ratio     = (body_abs / (body_abs + 1e-9)).clip(0.10, 0.90)
+        buy_vol   = df["volume"] * ratio.where(body >= 0, 1 - ratio)
+        sell_vol  = df["volume"] - buy_vol
+        delta_bar = buy_vol - sell_vol
+
+        delta     = float(delta_bar.iloc[-1])
+        cum_delta = float(delta_bar.sum())
+
+        price_high    = df["close"].iloc[-1] > df["close"].iloc[-5:-1].max()
+        prior_avg     = float(delta_bar.iloc[-5:-1].mean()) if len(delta_bar) >= 5 else 0.0
+        divergence    = bool(price_high and delta < prior_avg)
+
+        signal = ("buying_pressure"  if delta > 0 else
+                  "selling_pressure" if delta < 0 else "neutral")
+
+        return {"delta": delta, "cumulative_delta": cum_delta,
+                "signal": signal, "divergence": divergence}
+    except Exception:
+        return None
