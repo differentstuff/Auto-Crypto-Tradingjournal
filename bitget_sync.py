@@ -363,6 +363,20 @@ def run_sync(conn=None) -> dict:
         except Exception as e:
             print(f"[Sync] auto_match failed (non-fatal): {e}", flush=True)
         try:
+            from sync_base import _populate_setup_type_from_call as _pst
+            unclassified = conn.execute("""
+                SELECT p.id, p.call_id FROM positions p
+                WHERE p.call_id IS NOT NULL
+                  AND (p.setup_type IS NULL OR p.setup_type = '')
+                LIMIT 100
+            """).fetchall()
+            for pos_id, call_id in unclassified:
+                _pst(conn, pos_id, call_id)
+            if unclassified:
+                print(f"[Sync] Backfilled setup_type for {len(unclassified)} positions", flush=True)
+        except Exception as e:
+            print(f"[Sync] setup_type backfill skipped: {e}", flush=True)
+        try:
             n_retro = retroactive_close_calls(conn)
         except Exception as e:
             print(f"[Sync] retroactive close failed (non-fatal): {e}", flush=True)

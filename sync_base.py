@@ -156,6 +156,12 @@ def auto_close_calls(conn, exchange: str = "bitget") -> int:
         """, (outcome, realized_pnl, hit_tp1, hit_tp2, hit_sl, call_id))
         closed += 1
         print(f"[Sync] Auto-closed call #{call_id} {symbol} {pos_dir} → {outcome} (PnL: {realized_pnl})", flush=True)
+        linked = cur.execute(
+            "SELECT id FROM positions WHERE call_id=? AND (setup_type IS NULL OR setup_type='')",
+            (call_id,)
+        ).fetchone()
+        if linked:
+            _populate_setup_type_from_call(conn, linked[0], call_id)
 
     conn.commit()
     return closed
@@ -315,6 +321,32 @@ def auto_match_calls(conn, exchange: str = "bitget") -> int:
         matched += 1
         print(f"[Sync] Auto-matched call #{call_id} -> position #{pos_id} ({symbol} {dir_filter})",
               flush=True)
+        _populate_setup_type_from_call(conn, pos_id, call_id)
 
     conn.commit()
     return matched
+
+
+def _populate_setup_type_from_call(conn, position_id: int, call_id: int) -> None:
+    """
+    Read trade_type from analyzed_calls.analysis_json and write to positions.setup_type.
+    No-op if analysis_json is absent or has no trade_type field.
+    """
+    import json as _json
+    try:
+        row = conn.execute(
+            "SELECT analysis_json FROM analyzed_calls WHERE id=?", (call_id,)
+        ).fetchone()
+        if not row or not row[0]:
+            return
+        data = _json.loads(row[0])
+        trade_type = (data.get("trade_type") or data.get("setup_type")
+                      or data.get("setup_label") or "")
+        if trade_type:
+            conn.execute(
+                "UPDATE positions SET setup_type=? WHERE id=? AND (setup_type IS NULL OR setup_type='')",
+                (trade_type, position_id),
+            )
+            conn.commit()
+    except Exception:
+        pass
