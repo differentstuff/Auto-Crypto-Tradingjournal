@@ -173,3 +173,20 @@ def api_scanner_calibrate():
     except Exception:
         traceback.print_exc()
         return _err("Internal server error", 500)
+
+
+@bp.route("/api/scanner/feedback")
+def api_scanner_feedback():
+    """GET /api/scanner/feedback — last hindsight recalibration result."""
+    try:
+        import json
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key='hindsight_feedback_json'"
+            ).fetchone()
+        if not row:
+            return _ok({"available": False})
+        return _ok({"available": True, **json.loads(row[0])})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)

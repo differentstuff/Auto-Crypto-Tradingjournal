@@ -404,3 +404,78 @@ def get_results(limit: int = 100, exchange: str = None) -> dict:
     }
 
     return {"rows": rows, "summary": summary}
+
+
+def compute_feedback(conn=None) -> dict:
+    """
+    Aggregate hindsight TP/FP/TN/FN into per-score-bucket accuracy.
+    Writes result to settings['hindsight_feedback_json'].
+    Score buckets: 6 | 7-8 | 9-10
+    raise_threshold: FP rate > 40% in any entered bucket with sample >= 5
+    lower_threshold: FP rate < 10% and TP rate > 60% across all entered buckets
+    """
+    import json, datetime
+    from database import get_conn
+    if conn is None:
+        conn = get_conn()
+
+    rows = conn.execute("""
+        SELECT h.verdict, h.would_enter, h.setup_score, p.realized_pnl
+        FROM trade_hindsight h
+        JOIN positions p ON p.id = h.position_id
+        WHERE h.verdict IS NOT NULL
+    """).fetchall()
+
+    if not rows:
+        return {"buckets": [], "recommendation": "ok", "sample_size": 0}
+
+    raw: dict[str, dict] = {
+        "6":    {"TP": 0, "FP": 0, "TN": 0, "FN": 0},
+        "7-8":  {"TP": 0, "FP": 0, "TN": 0, "FN": 0},
+        "9-10": {"TP": 0, "FP": 0, "TN": 0, "FN": 0},
+    }
+    for verdict, would_enter, score, pnl in rows:
+        s = int(score or 0)
+        key = "6" if s <= 6 else ("7-8" if s <= 8 else "9-10")
+        raw[key][verdict] = raw[key].get(verdict, 0) + 1
+
+    buckets = []
+    for key, b in raw.items():
+        total   = sum(b.values())
+        entered = b["TP"] + b["FP"]
+        if total == 0:
+            continue
+        buckets.append({
+            "score_range": key,
+            "tp": b["TP"], "fp": b["FP"], "tn": b["TN"], "fn": b["FN"],
+            "total": total, "entered": entered,
+            "fp_rate": round(b["FP"] / entered * 100, 1) if entered else 0.0,
+            "tp_rate": round(b["TP"] / entered * 100, 1) if entered else 0.0,
+        })
+
+    entered_buckets = [b for b in buckets if b["entered"] >= 5]
+    max_fp = max((b["fp_rate"] for b in entered_buckets), default=0)
+    min_tp = min((b["tp_rate"] for b in entered_buckets), default=100)
+
+    if max_fp >= 40:
+        recommendation = "raise_threshold"
+    elif entered_buckets and min_tp > 60 and max_fp < 10:
+        recommendation = "lower_threshold"
+    else:
+        recommendation = "ok"
+
+    result = {
+        "buckets": buckets,
+        "recommendation": recommendation,
+        "sample_size": len(rows),
+        "computed_at": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    }
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('hindsight_feedback_json', ?)",
+            (json.dumps(result),)
+        )
+        conn.commit()
+    except Exception:
+        pass
+    return result

@@ -298,6 +298,31 @@ async function loadScanner() {
   renderScannerPage(state.data);
   if (state.data.status === 'running') _startScanPoller();
   _renderCriteriaPanel();
+  loadScannerFeedback();
+}
+
+async function loadScannerFeedback() {
+    const el = document.getElementById('scanner-feedback');
+    if (!el) return;
+    try {
+        const r = await fetch('/api/scanner/feedback');
+        const d = await r.json();
+        if (!d.ok || !d.data || !d.data.available) {
+            el.textContent = '';
+            return;
+        }
+        const fb = d.data;
+        const msgMap = {
+            raise_threshold: 'Warning: High FP rate — consider raising scanner min score',
+            lower_threshold: 'Strong accuracy — you can lower min score for more setups',
+            ok: 'Signal accuracy within normal range',
+        };
+        // All msg values are hardcoded strings — no user-controlled content
+        el.textContent = (msgMap[fb.recommendation] || '') + ' (' + fb.sample_size + ' trades analyzed)';
+        el.style.color = fb.recommendation === 'raise_threshold' ? '#f0a030' : '#4caf50';
+    } catch(e) {
+        // non-fatal
+    }
 }
 
 // ── Nansen Smart Money Panel ──────────────────────────────────────────────────

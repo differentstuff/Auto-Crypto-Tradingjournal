@@ -484,6 +484,18 @@ def start_background_sync():
         except Exception as e:
             print(f"[Sync] Rulebook update skipped: {e}", flush=True)
 
+        try:
+            from database import get_conn as _gc
+            _c = _gc()
+            n = _c.execute("SELECT COUNT(*) FROM trade_hindsight WHERE verdict IS NOT NULL").fetchone()[0]
+            _c.close()
+            if n >= 10:
+                from ai_hindsight import compute_feedback as _fb
+                fb = _fb()
+                print(f"[Sync] Hindsight feedback: {fb['recommendation']} (n={fb['sample_size']})", flush=True)
+        except Exception as _e:
+            print(f"[Sync] Hindsight feedback skipped: {_e}", flush=True)
+
     def loop():
         time.sleep(10)
         while True:
