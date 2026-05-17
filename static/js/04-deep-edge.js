@@ -259,6 +259,9 @@ async function loadDeep() {
 
   // P&L by Setup Type breakdown (new endpoint with profit factor + avg win/loss)
   loadSetupBreakdown('?' + new URLSearchParams(exchFilters()));
+
+  // BTC benchmark comparison
+  loadBenchmark();
 }
 
 // Fetch setup type breakdown — uses DOM methods, no innerHTML
@@ -307,6 +310,72 @@ async function loadSetupBreakdown(filters) {
     } catch(e) {
         if (el) el.textContent = 'Could not load setup breakdown.';
     }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BTC BENCHMARK COMPARISON
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadBenchmark() {
+  const el = document.getElementById('benchmark-body');
+  if (!el) return;
+
+  try {
+    const res = await api('/api/analytics/benchmark');
+    if (!res.ok) {
+      el.textContent = 'Could not load benchmark data.';
+      return;
+    }
+    const d = res.data;
+
+    if (!d.available) {
+      el.textContent = 'No closed trades yet. Benchmark will appear once you have trade history.';
+      return;
+    }
+
+    // 3-column metric grid
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px';
+
+    const metrics = [
+      { label: 'Your Return', value: (d.trader_return_pct >= 0 ? '+' : '') + d.trader_return_pct + '%',
+        cls: d.trader_return_pct >= 0 ? 'pos' : 'neg' },
+      { label: 'BTC Return',  value: (d.btc_return_pct  >= 0 ? '+' : '') + d.btc_return_pct  + '%',
+        cls: d.btc_return_pct  >= 0 ? 'pos' : 'neg' },
+      { label: 'Alpha',       value: (d.alpha_pct       >= 0 ? '+' : '') + d.alpha_pct       + '%',
+        cls: d.alpha_pct       >= 0 ? 'pos' : 'neg' },
+    ];
+
+    metrics.forEach(m => {
+      const cell = document.createElement('div');
+      cell.style.cssText = 'background:var(--bg3);border-radius:6px;padding:12px;text-align:center';
+
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px';
+      lbl.textContent = m.label;
+
+      const val = document.createElement('div');
+      val.style.cssText = 'font-size:1.3rem;font-weight:700';
+      val.className = m.cls;
+      val.textContent = m.value;
+
+      cell.appendChild(lbl);
+      cell.appendChild(val);
+      grid.appendChild(cell);
+    });
+
+    // Note line
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:.75rem;color:var(--muted)';
+    const capital = Number(d.assumed_capital).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    note.textContent = d.period_days + '-day period · assumed capital $' + capital + ' USDT · BTC buy-and-hold from ' + (d.start_date || '—') + ' to ' + (d.end_date || '—');
+
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.appendChild(grid);
+    el.appendChild(note);
+
+  } catch (e) {
+    if (el) el.textContent = 'Could not load benchmark data.';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -11,6 +11,7 @@ filters is a dict with optional keys:
 
 import re
 import sqlite3
+import yfinance as yf
 from database import get_conn
 
 
@@ -886,3 +887,77 @@ def _calc_streaks(pnl_series):
         max_win  = max(max_win,  cur_win)
         max_loss = max(max_loss, cur_loss)
     return {"max_win_streak": max_win, "max_loss_streak": max_loss}
+
+
+def get_benchmark_comparison(filters=None, conn=None) -> dict:
+    """
+    Compare trader cumulative P&L against BTC buy-and-hold over the same period.
+    Uses yfinance BTC-USD daily closes — free, no auth required.
+
+    Returns trader_return_pct, btc_return_pct, alpha_pct (trader - BTC),
+    period_days, start_date, end_date, btc_start, btc_end,
+    assumed_capital, available.
+    """
+    if filters is None:
+        filters = {}
+    if conn is None:
+        conn = get_conn()
+
+    row = conn.execute("""
+        SELECT MIN(date(close_time)) AS first_date,
+               MAX(date(close_time)) AS last_date,
+               SUM(realized_pnl)     AS total_pnl,
+               AVG(size_usdt)        AS avg_size
+        FROM positions
+        WHERE realized_pnl IS NOT NULL
+    """).fetchone()
+
+    if not row or not row["first_date"]:
+        return {"trader_return_pct": 0.0, "btc_return_pct": 0.0,
+                "alpha_pct": 0.0, "period_days": 0,
+                "start_date": None, "end_date": None,
+                "btc_start": None, "btc_end": None,
+                "assumed_capital": 1000.0, "available": False}
+
+    start_date = row["first_date"]
+    end_date   = row["last_date"]
+    total_pnl  = float(row["total_pnl"] or 0)
+    avg_size   = float(row["avg_size"] or 200)
+    assumed_capital = max(avg_size * 5, 1000.0)
+    trader_return_pct = round(total_pnl / assumed_capital * 100, 2)
+
+    try:
+        import datetime as _dt
+        end_plus1 = (_dt.datetime.strptime(end_date, "%Y-%m-%d") +
+                     _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+        btc_data = yf.download("BTC-USD", start=start_date, end=end_plus1,
+                               progress=False, auto_adjust=True)
+        if btc_data.empty or "Close" not in btc_data.columns:
+            raise ValueError("no data")
+        close = btc_data["Close"].dropna()
+        btc_start = float(close.iloc[0])
+        btc_end   = float(close.iloc[-1])
+        btc_return_pct = round((btc_end - btc_start) / btc_start * 100, 2)
+    except Exception:
+        btc_start = btc_end = None
+        btc_return_pct = 0.0
+
+    import datetime as _dt2
+    try:
+        period_days = (_dt2.datetime.strptime(end_date, "%Y-%m-%d") -
+                       _dt2.datetime.strptime(start_date, "%Y-%m-%d")).days + 1
+    except Exception:
+        period_days = 0
+
+    return {
+        "trader_return_pct": trader_return_pct,
+        "btc_return_pct":    btc_return_pct,
+        "alpha_pct":         round(trader_return_pct - btc_return_pct, 2),
+        "period_days":       period_days,
+        "start_date":        start_date,
+        "end_date":          end_date,
+        "btc_start":         btc_start,
+        "btc_end":           btc_end,
+        "assumed_capital":   round(assumed_capital, 0),
+        "available":         btc_return_pct != 0.0 or trader_return_pct != 0.0,
+    }

@@ -86,6 +86,19 @@ def api_analytics_by_setup():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/analytics/benchmark")
+def api_analytics_benchmark():
+    """GET /api/analytics/benchmark -- trader return vs BTC buy-and-hold."""
+    try:
+        from analytics import get_benchmark_comparison
+        with db_conn() as conn:
+            data = get_benchmark_comparison(filters=_filters_from_args(), conn=conn)
+        return _ok(data)
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/chart/candles")
 def api_chart_candles():
     """
