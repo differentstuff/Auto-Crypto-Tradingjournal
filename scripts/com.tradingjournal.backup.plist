@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template: copy to ~/Library/LaunchAgents/ and replace ALL placeholder values:
+    REPLACE_WITH_REPO_PATH   — absolute path to this repo (Working copy)
+    REPLACE_WITH_PI_USER     — Pi SSH username
+    REPLACE_WITH_PI_HOST     — Pi hostname or IP
+    REPLACE_WITH_PI_DB_PATH  — absolute path to trading_journal.db on the Pi
+    REPLACE_WITH_PASSWORD    — Pi SSH password
+  Then: launchctl load ~/Library/LaunchAgents/com.tradingjournal.backup.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.tradingjournal.backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>REPLACE_WITH_REPO_PATH/scripts/backup_pi_to_mac.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TRADING_JOURNAL_PI_USER</key>
+        <string>REPLACE_WITH_PI_USER</string>
+        <key>TRADING_JOURNAL_PI_HOST</key>
+        <string>REPLACE_WITH_PI_HOST</string>
+        <key>TRADING_JOURNAL_PI_DB_PATH</key>
+        <string>REPLACE_WITH_PI_DB_PATH</string>
+        <key>TRADING_JOURNAL_PI_PASSWORD</key>
+        <string>REPLACE_WITH_PASSWORD</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+    <key>StandardOutPath</key><string>/tmp/tradingjournal-backup.log</string>
+    <key>StandardErrorPath</key><string>/tmp/tradingjournal-backup-error.log</string>
+</dict>
+</plist>
