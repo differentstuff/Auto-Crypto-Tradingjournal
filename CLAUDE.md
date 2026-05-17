@@ -113,6 +113,60 @@ SMT_PAIRS = {BTC↔ETH, SOL→ETH, BNB→BTC, XRP→BTC}
 - Daily cron backup at 04:00 Pi time
 - Restore procedure: stop service → cp backups/trading_journal_YYYYMMDD_HHMMSS.db trading_journal.db → start service
 
+## Browser Verification (major UI changes only)
+
+Run when a deploy touches `static/js/*.js`, `templates/*.html`, or adds new UI components.
+**Skip** for backend-only deploys, migrations, config changes, and bug fixes.
+
+### Starting a browser test session
+```bash
+open -a 'Google Chrome' --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/claude-chrome-debug \
+  'http://192.168.1.21:8082'
+sleep 3
+```
+
+### Running the test sequence
+Read `scripts/browser_test_sequence.json` and execute each phase using chrome-devtools-mcp tools.
+
+**CRITICAL — SPA navigation:** This app uses `showPage('name')` — there is NO URL hash routing.
+Tab navigation must use `evaluate_script`, not `navigate_page` to a different URL:
+```js
+// Switch to dashboard tab:
+evaluate_script("showPage('dashboard')")
+// Then wait for section to become active:
+wait_for("#page-dashboard.active")
+```
+
+**Per tab:** `evaluate_script("showPage(name)")` → `wait_for("#page-{name}.active")` → `take_screenshot` → `list_console_messages` → `evaluate_script("document.querySelectorAll('*').length")` (FAIL if < 20)
+
+**Lighthouse:** `lighthouse_audit` on the 4 pages in `phase2_lighthouse`. Thresholds in the JSON.
+
+**Interactions:** navigate to tab → `click` selector → `wait_for` pass selector → record elapsed.
+
+### Generating the report
+Collect all results into the JSON shape defined in `scripts/generate_browser_report.py`, save as `/tmp/browser_test_results.json`, then:
+```bash
+python3 scripts/generate_browser_report.py /tmp/browser_test_results.json
+```
+Report saved to `scripts/browser_test_report.html`.
+
+### Triage rules
+- **FAIL** (console error, DOM < 20 nodes, 5xx, a11y < 80, perf < 50): fix inline, re-test tab, verify clean.
+- **WARN obvious** (missing aria-label, button without type): one-liner fix, no re-test.
+- **WARN complex** (perf regression, heading hierarchy): append to `scripts/browser_issues.md`.
+
+### Commit when clean
+```bash
+git add scripts/browser_test_report.html
+git commit -m "test: browser check clean — vX.Y.Z"
+```
+
+### Full scan (Phase 4 — one-time baseline or after major UI overhaul)
+After standard Phases 1–3 pass, run `phase4_full_scan` from the JSON.
+Use after: new tab added, major component redesign, or v2.x milestone.
+
 ## Calculation Invariants (do not change without updating both sides)
 - WaveTrend: n1=10, n2=21, rolling(4) — must match in both chart_indicators.py AND backtest_engine.py
 - CVD: Money Flow Multiplier formula v*(2c-l-h)/(h-l) — must match in both chart_indicators.py AND backtest_engine.py
