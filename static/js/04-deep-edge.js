@@ -257,6 +257,56 @@ async function loadDeep() {
   const hmRes = await api('/api/analytics/heatmap?' + new URLSearchParams(exchFilters()));
   if (hmRes.ok) renderHeatmap(hmRes.data);
 
+  // P&L by Setup Type breakdown (new endpoint with profit factor + avg win/loss)
+  loadSetupBreakdown('?' + new URLSearchParams(exchFilters()));
+}
+
+// Fetch setup type breakdown — uses DOM methods, no innerHTML
+async function loadSetupBreakdown(filters) {
+    const el = document.getElementById('setup-breakdown-body');
+    if (!el) return;
+    try {
+        const r = await fetch('/api/analytics/by-setup' + (filters || ''));
+        const d = await r.json();
+        const setups = (d.data || {}).setups || [];
+        if (!setups.length) {
+            el.textContent = 'No setup-type data yet. Tag your trades with setup types in the journal.';
+            return;
+        }
+        const tbl = document.createElement('table');
+        tbl.className = 'data-table';
+        const thead = tbl.createTHead();
+        const hr = thead.insertRow();
+        ['Setup Type','Trades','Total P&L','Win %','Avg P&L','Avg Win','Avg Loss','Prof. Factor'].forEach(h => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            hr.appendChild(th);
+        });
+        const tbody = tbl.createTBody();
+        setups.forEach(s => {
+            const tr = tbody.insertRow();
+            const pf = s.profit_factor === 999 ? 'INF' : (s.profit_factor != null ? s.profit_factor.toFixed(2) : '-');
+            const cells = [
+                {v: s.setup_type, cls: ''},
+                {v: s.trade_count, cls: ''},
+                {v: (s.total_pnl >= 0 ? '+' : '') + '$' + (s.total_pnl || 0).toFixed(2), cls: s.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'},
+                {v: (s.win_rate || 0) + '%', cls: ''},
+                {v: (s.avg_pnl >= 0 ? '+' : '') + '$' + (s.avg_pnl || 0).toFixed(2), cls: s.avg_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'},
+                {v: '+$' + (s.avg_win || 0).toFixed(2), cls: 'pnl-pos'},
+                {v: '-$' + Math.abs(s.avg_loss || 0).toFixed(2), cls: 'pnl-neg'},
+                {v: pf, cls: (s.profit_factor || 0) >= 1.5 ? 'pnl-pos' : ''},
+            ];
+            cells.forEach(({v, cls}) => {
+                const td = tr.insertCell();
+                td.textContent = v;   // textContent — server numeric values
+                if (cls) td.className = cls;
+            });
+        });
+        while (el.firstChild) el.removeChild(el.firstChild);
+        el.appendChild(tbl);
+    } catch(e) {
+        if (el) el.textContent = 'Could not load setup breakdown.';
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

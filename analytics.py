@@ -379,6 +379,50 @@ def get_deep_stats(filters=None, conn=None):
     }
 
 
+def get_setup_type_stats(filters=None, conn=None) -> list:
+    """
+    Returns per-setup-type performance breakdown, sorted by total P&L descending.
+    Each row: setup_type, trade_count, total_pnl, win_rate, avg_pnl,
+              avg_win, avg_loss, profit_factor.
+    """
+    if filters is None:
+        filters = {}
+    if conn is None:
+        conn = get_conn()
+
+    where, params = _build_where(filters)
+    and_ = "AND" if where else "WHERE"
+
+    rows = _rows(conn, f"""
+        SELECT
+            COALESCE(setup_type, 'Unknown') AS setup_type,
+            COUNT(*) AS trade_count,
+            ROUND(SUM(realized_pnl), 2) AS total_pnl,
+            ROUND(100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS win_rate,
+            ROUND(AVG(realized_pnl), 2) AS avg_pnl,
+            ROUND(AVG(CASE WHEN realized_pnl > 0 THEN realized_pnl END), 2) AS avg_win,
+            ROUND(AVG(CASE WHEN realized_pnl < 0 THEN realized_pnl END), 2) AS avg_loss,
+            ROUND(
+                SUM(CASE WHEN realized_pnl > 0 THEN realized_pnl ELSE 0 END) /
+                NULLIF(ABS(SUM(CASE WHEN realized_pnl < 0 THEN realized_pnl ELSE 0 END)), 0),
+                2
+            ) AS profit_factor
+        FROM positions
+        {where}
+        {and_} setup_type IS NOT NULL AND setup_type != ''
+        GROUP BY setup_type
+        ORDER BY total_pnl DESC
+    """, params)
+
+    for r in rows:
+        if r["profit_factor"] is None and (r["avg_win"] or 0) > 0:
+            r["profit_factor"] = 999.0
+        r["avg_win"]  = r["avg_win"]  or 0.0
+        r["avg_loss"] = r["avg_loss"] or 0.0
+
+    return rows
+
+
 def _bucket_durations(rows):
     # Boundaries: < 60 min | 60-239 min | 240-1439 min | 1440-10079 min | ≥ 10080 min
     buckets = {

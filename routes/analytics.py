@@ -73,6 +73,19 @@ def api_analytics_rr():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/analytics/by-setup")
+def api_analytics_by_setup():
+    """GET /api/analytics/by-setup — P&L breakdown by setup type."""
+    try:
+        from analytics import get_setup_type_stats
+        with db_conn() as conn:
+            data = get_setup_type_stats(filters=_filters_from_args(), conn=conn)
+        return _ok({"setups": data})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/chart/candles")
 def api_chart_candles():
     """
