@@ -61,6 +61,23 @@ def api_exchange_symbols():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/liquidations/<symbol>")
+def api_liquidations(symbol):
+    """
+    GET /api/liquidations/BTCUSDT?days=30
+    Historical daily liquidation volume (Binance USDT-M, public data, cached locally).
+    Returns shorts_usd, longs_usd, total_usd, net_usd per day + aggregate summary.
+    Bitget-only symbols return available=False.
+    """
+    try:
+        import liquidation_client
+        days = min(90, max(1, int(request.args.get("days", 30))))
+        return _ok(liquidation_client.get_summary(symbol.upper(), days))
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/price/<symbol>")
 def api_price_single(symbol):
     """GET /api/price/BTCUSDT — live price via Binance then Bitget fallback."""
@@ -138,6 +155,22 @@ def api_coin_summary(symbol):
         # Fear & Greed
         try:
             result["fear_greed"] = market_context.get_fear_greed()
+        except Exception:
+            pass
+
+        # Historical liquidations (last 14 days summary — no wait, fast cached)
+        try:
+            import liquidation_client
+            liq = liquidation_client.get_summary(sym, days=14)
+            if liq.get("available"):
+                result["liquidations_14d"] = {
+                    "total_shorts_usd": liq["total_shorts_usd"],
+                    "total_longs_usd":  liq["total_longs_usd"],
+                    "dominant":         liq["dominant"],
+                    "dominant_ratio":   liq["dominant_ratio"],
+                    "peak_day":         liq["peak_day"],
+                    "peak_usd":         liq["peak_usd"],
+                }
         except Exception:
             pass
 
