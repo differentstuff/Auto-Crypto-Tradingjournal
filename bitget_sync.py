@@ -415,6 +415,39 @@ def run_sync(conn=None) -> dict:
             conn.close()
 
 
+def run_backfill(max_pages: int = 50) -> dict:
+    """
+    Fetch up to max_pages*100 historical positions from Bitget and insert
+    any not already in the DB. Uses same dedup logic as run_sync().
+    Returns {"inserted": N, "pages": max_pages, "fetched": N}.
+    """
+    print(f"[Backfill] Fetching up to {max_pages * 100} positions from Bitget...", flush=True)
+    try:
+        rows = bc.get_recent_positions(max_pages=max_pages)
+    except Exception as e:
+        raise RuntimeError(f"Bitget API error: {e}") from e
+
+    if not rows:
+        return {"inserted": 0, "pages": max_pages, "fetched": 0}
+
+    conn = get_conn()
+    try:
+        _ensure_settings_table(conn)
+        import bitget_client as _bc_mod
+        original = _bc_mod.get_recent_positions
+        _bc_mod.get_recent_positions = lambda max_pages=3: rows
+        try:
+            inserted = _sync_positions(conn)
+        finally:
+            _bc_mod.get_recent_positions = original
+
+        print(f"[Backfill] Done — {inserted} new positions inserted from {len(rows)} fetched",
+              flush=True)
+        return {"inserted": inserted, "pages": max_pages, "fetched": len(rows)}
+    finally:
+        conn.close()
+
+
 # ── Background auto-sync thread ────────────────────────────────────────────────
 
 _bg_thread = None

@@ -101,6 +101,51 @@ async function loadSettings() {
   _injectSettingsCSS();
   loadTokenUsage();
   _loadTelegramToggle();
+
+  // Append Bitget backfill box after Bitget card (only if configured)
+  if (bitget.configured) {
+    _appendBitgetBackfillBox(el);
+  }
+}
+
+function _appendBitgetBackfillBox(parentEl) {
+  // Find the first settings-card (Bitget) and insert backfill box right after
+  const firstCard = parentEl.querySelector('.settings-card');
+  if (!firstCard) return;
+  const box = document.createElement('div');
+  box.className = 'settings-sync-box';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-weight:600;color:var(--text);margin-bottom:8px';
+  title.textContent = 'Bitget — Historical Backfill';
+  const desc = document.createElement('div');
+  desc.style.cssText = 'font-size:.78rem;color:var(--muted);margin-bottom:8px';
+  desc.textContent = 'Fetch up to 5000 historical trades from Bitget. Useful for first-time setup or recovering missing trades.';
+  const btn = document.createElement('button');
+  btn.className = 'btn-secondary';
+  btn.style.marginTop = '8px';
+  btn.textContent = 'Backfill from Exchange (last 5000 trades)';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Backfilling...';
+    try {
+      const r = await fetch('/api/sync/backfill', { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) {
+        notify('Backfill complete: ' + d.data.inserted + ' new trades inserted', 'ok');
+      } else {
+        notify(d.error || 'Backfill failed', 'err');
+      }
+    } catch (e) {
+      notify('Backfill request failed', 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Backfill from Exchange (last 5000 trades)';
+    }
+  });
+  box.appendChild(title);
+  box.appendChild(desc);
+  box.appendChild(btn);
+  firstCard.parentNode.insertBefore(box, firstCard.nextSibling);
 }
 
 async function _loadTelegramToggle() {

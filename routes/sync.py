@@ -27,6 +27,18 @@ def api_sync():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/sync/backfill", methods=["POST"])
+def api_sync_backfill():
+    """POST /api/sync/backfill — fetch up to 5000 historical positions from Bitget API."""
+    try:
+        import bitget_sync
+        result = bitget_sync.run_backfill(max_pages=50)
+        return _ok(result)
+    except Exception as e:
+        traceback.print_exc()
+        return _err(f"Backfill failed: {str(e)[:100]}", 500)
+
+
 @bp.route("/api/sync/status")
 def api_sync_status():
     status = bitget_sync.get_status()
