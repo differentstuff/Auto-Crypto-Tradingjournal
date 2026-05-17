@@ -898,19 +898,27 @@ def get_benchmark_comparison(filters=None, conn=None) -> dict:
     period_days, start_date, end_date, btc_start, btc_end,
     assumed_capital, available.
     """
+    import datetime as _dt
     if filters is None:
         filters = {}
     if conn is None:
         conn = get_conn()
 
-    row = conn.execute("""
+    # Apply exchange filter so benchmark respects the same filter as other analytics
+    exchange_clause = ""
+    exchange_params = []
+    if filters.get("exchange") in ("bitget", "blofin"):
+        exchange_clause = "AND COALESCE(exchange, 'bitget') = ?"
+        exchange_params = [filters["exchange"]]
+
+    row = conn.execute(f"""
         SELECT MIN(date(close_time)) AS first_date,
                MAX(date(close_time)) AS last_date,
                SUM(realized_pnl)     AS total_pnl,
                AVG(size_usdt)        AS avg_size
         FROM positions
-        WHERE realized_pnl IS NOT NULL
-    """).fetchone()
+        WHERE realized_pnl IS NOT NULL {exchange_clause}
+    """, exchange_params).fetchone()
 
     if not row or not row["first_date"]:
         return {"trader_return_pct": 0.0, "btc_return_pct": 0.0,
@@ -926,29 +934,28 @@ def get_benchmark_comparison(filters=None, conn=None) -> dict:
     assumed_capital = max(avg_size * 5, 1000.0)
     trader_return_pct = round(total_pnl / assumed_capital * 100, 2)
 
+    btc_start = btc_end = None
+    btc_return_pct = 0.0
     try:
-        import datetime as _dt
         end_plus1 = (_dt.datetime.strptime(end_date, "%Y-%m-%d") +
                      _dt.timedelta(days=1)).strftime("%Y-%m-%d")
         btc_data = yf.download("BTC-USD", start=start_date, end=end_plus1,
                                progress=False, auto_adjust=True)
-        if btc_data.empty or "Close" not in btc_data.columns:
-            raise ValueError("no data")
-        close = btc_data["Close"].dropna()
-        btc_start = float(close.iloc[0])
-        btc_end   = float(close.iloc[-1])
-        btc_return_pct = round((btc_end - btc_start) / btc_start * 100, 2)
+        if not btc_data.empty and "Close" in btc_data.columns:
+            close = btc_data["Close"].dropna()
+            btc_start = float(close.iloc[0])
+            btc_end   = float(close.iloc[-1])
+            btc_return_pct = round((btc_end - btc_start) / btc_start * 100, 2)
     except Exception:
-        btc_start = btc_end = None
-        btc_return_pct = 0.0
+        pass
 
-    import datetime as _dt2
     try:
-        period_days = (_dt2.datetime.strptime(end_date, "%Y-%m-%d") -
-                       _dt2.datetime.strptime(start_date, "%Y-%m-%d")).days + 1
+        period_days = (_dt.datetime.strptime(end_date, "%Y-%m-%d") -
+                       _dt.datetime.strptime(start_date, "%Y-%m-%d")).days + 1
     except Exception:
         period_days = 0
 
+    # available = True if we have trade data, regardless of BTC fetch success
     return {
         "trader_return_pct": trader_return_pct,
         "btc_return_pct":    btc_return_pct,
@@ -958,6 +965,6 @@ def get_benchmark_comparison(filters=None, conn=None) -> dict:
         "end_date":          end_date,
         "btc_start":         btc_start,
         "btc_end":           btc_end,
-        "assumed_capital":   round(assumed_capital, 0),
-        "available":         btc_return_pct != 0.0 or trader_return_pct != 0.0,
+        "assumed_capital":   int(round(assumed_capital, 0)),
+        "available":         row["first_date"] is not None,
     }
