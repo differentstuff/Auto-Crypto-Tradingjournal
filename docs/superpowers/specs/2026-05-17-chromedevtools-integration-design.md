@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Goal:** Add browser-layer verification to the post-deploy quality loop. After every Pi deploy, Claude automatically navigates the trading journal UI using Chrome DevTools MCP tools, runs Lighthouse audits, checks interactions, reads the generated report, fixes all failures inline, and commits a clean report.
+**Goal:** Add browser-layer verification triggered on major UI changes. When a deploy includes significant frontend work (new tabs, redesigned components, new JS modules, accessibility changes), Claude runs the browser test suite against the Pi, reads the generated report, fixes all failures inline, and commits a clean report. Skipped for backend-only deploys, bug fixes, and config changes.
 
 **Plugin:** `chrome-devtools-mcp@0.22.0` (already installed at `~/.claude/plugins/cache/claude-plugins-official/chrome-devtools-mcp/`).
 
@@ -13,9 +13,9 @@
 ## Architecture
 
 ```
-systemctl restart trading-journal
+Major UI change deployed to Pi
         │
-        ▼  (PostToolUse hook)
+        ▼  (Claude judges: "does this deploy touch frontend files?")
 Launch Chrome --remote-debugging-port=9222 → http://192.168.1.21:8082
         │
         ▼  (Claude reads browser_test_sequence.json, executes with MCP tools)
@@ -35,6 +35,22 @@ WARN complex? → append to scripts/browser_issues.md
 git add scripts/browser_test_report.html && git commit -m "test: browser check clean"
 ```
 
+### When to run
+
+**Run browser tests when a deploy touches:**
+- Any `static/js/*.js` file
+- `templates/index.html` or `templates/chart.html`
+- New Flask route that a frontend page calls for the first time
+- New tab, new card, new modal, or redesigned component
+- Accessibility-relevant HTML changes
+
+**Skip browser tests when a deploy only touches:**
+- Python backend files (`.py`) with no frontend-facing changes
+- `requirements.txt`, `constants.py`, configuration
+- Bug fixes to existing API responses with unchanged shape
+- Database migrations
+- Documentation
+
 ---
 
 ## File Structure
@@ -46,8 +62,7 @@ git add scripts/browser_test_report.html && git commit -m "test: browser check c
 | `scripts/generate_browser_report.py` | Converts JSON results → HTML report with embedded screenshots |
 | `scripts/browser_test_report.html` | Generated report (committed each run — latest report is review evidence) |
 | `scripts/browser_issues.md` | Warning-tier backlog (committed, accumulates over time) |
-| `.claude/settings.json` | PostToolUse hook that launches Chrome after systemctl restart |
-| `CLAUDE.md` | Updated: browser test workflow + triage rules |
+| `CLAUDE.md` | Updated: browser test workflow, trigger criteria, triage rules |
 
 ---
 
@@ -185,29 +200,22 @@ Lighthouse "best practices" suggestions, non-critical deprecation warnings. Appe
 
 ---
 
-## PostToolUse Hook
+## Launching Chrome for Browser Tests
 
-In `.claude/settings.json`, add a hook that fires after any Bash command matching `systemctl restart trading-journal`:
+No automatic hook — browser tests are triggered by judgment when frontend files change.
 
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "systemctl restart trading-journal",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "open -a 'Google Chrome' --args --remote-debugging-port=9222 --user-data-dir=/tmp/claude-chrome-debug 'http://192.168.1.21:8082' 2>/dev/null; sleep 3 && echo 'Chrome launched for browser testing'"
-          }
-        ]
-      }
-    ]
-  }
-}
+To start a browser test session, run this manually (or Claude runs it at the start of the test sequence):
+
+```bash
+open -a 'Google Chrome' --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/claude-chrome-debug \
+  'http://192.168.1.21:8082'
+sleep 3
+echo 'Chrome ready for browser testing on port 9222'
 ```
 
-Chrome launches with a clean profile (`/tmp/claude-chrome-debug`) on port 9222. The 3s sleep gives it time to load before MCP tools connect.
+Chrome launches with a clean profile (`/tmp/claude-chrome-debug`) on port 9222. The `sleep 3` gives it time to load before MCP tools connect. The `--user-data-dir` flag isolates the test profile from the regular browser session.
 
 ---
 
@@ -216,10 +224,12 @@ Chrome launches with a clean profile (`/tmp/claude-chrome-debug`) on port 9222. 
 Add to the deployment section:
 
 ```markdown
-## Post-Deploy Browser Verification
+## Browser Verification (major UI changes only)
 
-After every `systemctl restart trading-journal`:
-1. Chrome launches automatically (PostToolUse hook, port 9222)
+Run after deploys that touch `static/js/*.js`, `templates/*.html`, or add new UI components.
+Skip for backend-only deploys, bug fixes, and config changes.
+
+1. Launch Chrome: `open -a 'Google Chrome' --args --remote-debugging-port=9222 --user-data-dir=/tmp/claude-chrome-debug 'http://192.168.1.21:8082' && sleep 3`
 2. Run browser tests: read `scripts/browser_test_sequence.json` and execute each phase
    using chrome-devtools-mcp tools
 3. Call `python3 scripts/generate_browser_report.py <results.json>` to produce
@@ -230,9 +240,9 @@ After every `systemctl restart trading-journal`:
    - WARN (complex) → append to `scripts/browser_issues.md`
 5. Commit: `git add scripts/browser_test_report.html && git commit -m "test: browser check clean — vX.Y.Z"`
 
-### Full scan (one-time or on-demand)
-After standard check passes, run Phase 4 (E2E workflows). Use this to re-baseline after
-major UI changes.
+### Full scan (one-time baseline or after major UI overhaul)
+After standard check passes, run Phase 4 (E2E workflows). Use this to establish or
+re-baseline after significant UI changes (new tab, redesigned section, etc.).
 ```
 
 ---
