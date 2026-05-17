@@ -354,6 +354,14 @@ def run_sync(conn=None) -> dict:
         n_pos    = _sync_positions(conn)
         # Auto-close any matched calls whose position has now synced
         n_closed = auto_close_calls(conn)
+        # Auto-match unlinked 'saved' calls to newly synced positions
+        try:
+            from sync_base import auto_match_calls as _auto_match
+            n_matched = _auto_match(conn, exchange="bitget")
+            if n_matched:
+                print(f"[Sync] Auto-matched {n_matched} calls to positions", flush=True)
+        except Exception as e:
+            print(f"[Sync] auto_match failed (non-fatal): {e}", flush=True)
         try:
             n_retro = retroactive_close_calls(conn)
         except Exception as e:

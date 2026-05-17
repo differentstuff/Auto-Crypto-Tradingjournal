@@ -264,3 +264,57 @@ def retroactive_close_calls(conn) -> int:
 
     conn.commit()
     return resolved
+
+
+def auto_match_calls(conn, exchange: str = "bitget") -> int:
+    """
+    For every recently-closed position with no call_id, search for a 'saved'
+    analyzed_call with the same symbol + direction created within 30 days
+    before the position opened. If found: set positions.call_id and promote
+    the call to 'matched' so auto_close_calls() resolves it next cycle.
+
+    Only touches positions closed in the last 7 days (recent sync window).
+    Safe to call repeatedly — idempotent (skips already-linked positions).
+    Returns number of positions newly linked.
+    """
+    cur = conn.cursor()
+
+    positions = cur.execute("""
+        SELECT id, symbol, direction, open_time
+        FROM positions
+        WHERE call_id IS NULL
+          AND COALESCE(exchange, 'bitget') = ?
+          AND close_time >= datetime('now', '-7 days')
+        ORDER BY close_time DESC
+    """, (exchange,)).fetchall()
+
+    matched = 0
+    for pos_id, symbol, direction, open_time in positions:
+        dir_filter = "Long" if "long" in (direction or "").lower() else "Short"
+
+        call = cur.execute("""
+            SELECT id
+            FROM analyzed_calls
+            WHERE symbol    = ?
+              AND direction LIKE ?
+              AND status    = 'saved'
+              AND entry_price IS NOT NULL
+              AND sl_price    IS NOT NULL
+              AND created_at >= datetime(?, '-30 days')
+              AND created_at <= ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (symbol, dir_filter + "%", open_time or "9999", open_time or "9999")).fetchone()
+
+        if not call:
+            continue
+
+        call_id = call[0]
+        cur.execute("UPDATE positions SET call_id=? WHERE id=?", (call_id, pos_id))
+        cur.execute("UPDATE analyzed_calls SET status='matched' WHERE id=?", (call_id,))
+        matched += 1
+        print(f"[Sync] Auto-matched call #{call_id} -> position #{pos_id} ({symbol} {dir_filter})",
+              flush=True)
+
+    conn.commit()
+    return matched
