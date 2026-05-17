@@ -114,7 +114,7 @@ def build_page1():
     ]))
     story += [hdr, sp(3),
               Paragraph("Self-hosted · Raspberry Pi 5 · Flask 3.1 · Claude Sonnet 4.6 + Haiku 4.5 · "
-                        "Bitget + Blofin · SQLite WAL · 14 live data sources", S["sub"]),
+                        "Bitget + Binance · SQLite WAL · 17 live data sources · Hermes Telegram agent", S["sub"]),
               sp(6)]
 
     # KPI strip (fake demo numbers)
@@ -151,8 +151,9 @@ def build_page1():
         ["6 Score",     "prompt_builder → Claude", "Sonnet 4.6"],
         ["7 Consensus", "agent_orchestrator",      "Gemini Flash"],
         ["8 Risk",      "agent_risk_mgmt",         "Kelly criterion + ATR"],
-        ["9 Chart",     "agent_chart_draw",        "mplfinance PNG"],
-        ["10 Alert",    "telegram_notify",         "Telegram Bot API"],
+        ["9 Chart",     "agent_chart_draw",        "matplotlib · S&R zones · direction badge"],
+        ["10 Alert",    "telegram_notify",         "Telegram Bot API (push alerts)"],
+        ["11 Interact", "Hermes agent",            "Interactive Telegram bot (pull queries)"],
     ], [2.2*cm, 3.7*cm, 3.0*cm], fs=7.5, vp=2)
 
     route = T([
@@ -202,12 +203,15 @@ def build_page2():
         ["L1 Global Macro",   "DXY US Dollar Index",       "ICE · yfinance",   "Free", "Macro regime label · Stage 3 scanner header"],
         ["L1 Global Macro",   "Fear & Greed Index",        "alternative.me",   "Free", "Scanner macro cap · Sentiment prompt · Dashboard strip"],
         ["L1 Global Macro",   "Economic Calendar",         "Finnhub API",      "Key",  "FOMC/CPI/NFP → cap 7.0 when high-impact event in 24h"],
-        ["L1 Global Macro",   "BTC Dominance + Mkt Cap",   "CoinGecko (free)", "Free", "Scanner macro header · Call Analyzer market context"],
+        ["L1 Global Macro",   "ES1! S&P 500 Futures",      "yfinance (ES=F)",  "Free", "Equity risk proxy · scanner macro header · risk-off signal"],
+        ["L1 Global Macro",   "BTC.D · USDT.D · OTHERS.D · TOTAL2/3", "CoinGecko (free)", "Free", "Derived from market_cap_percentage · dominance indexes · alt season gauge"],
+        ["L1 Global Macro",   "MEME.C · STABLE.C · STABLE.C.D", "CoinGecko /categories", "Free", "Sector caps · stablecoin dominance (falling=risk-on) · meme cap spike=top risk"],
         ["L2 Market Struct.", "Options Skew (PCR / IV)",   "Deribit (free)",   "Free", "BTC/ETH only — put/call bias, near-term IV, sentiment label"],
         ["L2 Market Struct.", "BTC Mempool",               "blockchain.com",   "Free", "On-chain congestion context injected into prompt"],
         ["L2 Market Struct.", "Trending Coins (top 10)",   "CoinGecko (free)", "Free", "Is the analyzed coin trending? Prompt context block"],
         ["L3 Symbol-Level",   "Multi-Exchange L/S Ratio",  "Binance+Bybit+OKX","Free", "Crowd positioning · contra-signal when >65% vs trade dir."],
-        ["L3 Symbol-Level",   "OI · Funding · Liquidations","Coinalyze API",   "Key",  "Derivatives block · funding bias · per-exchange spread"],
+        ["L3 Symbol-Level",   "OI · Funding · L/S · Liq trend","Coinalyze API", "Key",  "Derivatives block · funding bias · per-exchange spread"],
+        ["L3 Symbol-Level",   "Historical Liquidations (daily)","liquidation_client","Key","longs_usd/shorts_usd per day · dominant side · CSV cache"],
         ["L3 Symbol-Level",   "Cap rank · tier · volume",  "CoinGecko (free)", "Free", "Coin context · scales Grok weight (mega 30% → micro 80%)"],
         ["L3 Symbol-Level",   "DeFi TVL + 7d change",      "DefiLlama (free)", "Free", "DeFi tokens only — protocol health context"],
         ["L3 Symbol-Level",   "OHLCV Candles (4H + 1D)",   "Binance · CCXT",   "Free", "All indicators · S/R detection · SMT · Backtester · Charts"],
@@ -245,10 +249,10 @@ def build_page2():
         ("LINEBELOW",     (0,0), (-1, 0), 0.6, ACCENT),
     ]
     layer_rows = {
-        "L1 Global Macro":   [1,2,3,4,5],
-        "L2 Market Struct.": [6,7,8],
-        "L3 Symbol-Level":   [9,10,11,12,13],
-        "L4 Trade Intel.":   [14,15],
+        "L1 Global Macro":   [1,2,3,4,5,6,7],
+        "L2 Market Struct.": [8,9,10],
+        "L3 Symbol-Level":   [11,12,13,14,15,16],
+        "L4 Trade Intel.":   [17,18],
     }
     for layer, rows in layer_rows.items():
         for r in rows:
@@ -258,30 +262,30 @@ def build_page2():
                 ("FONTNAME",   (0,r), (0, r), "Helvetica-Bold"),
             ]
 
-    src_tbl = Table(src_rows, colWidths=[2.6*cm, 3.4*cm, 2.8*cm, 1.0*cm, 8.2*cm])
+    src_tbl = Table(src_rows, colWidths=[2.4*cm, 4.0*cm, 2.8*cm, 0.9*cm, 7.9*cm])
     src_tbl.setStyle(TableStyle(src_style))
     story += [src_tbl, sp(8)]
 
     # Two-column: New features | Stack + Budget
     feats = [
-        ("Walk-forward backtester",
-         "70/30 temporal split on real positions; end_offset_days prevents train/test leakage"),
-        ("Optimizer history",
-         "Last 5 Bayesian runs stored with Sharpe + best params in Analysis tab"),
-        ("Scanner macro layer",
-         "VIX / F&G / FOMC fetched once per scan; score caps applied before Stage 3 Sonnet"),
-        ("SMT Direction weight",
-         "+0.15 when symbol moves opposite its correlated pair (BTC↔ETH, SOL→ETH, BNB→BTC)"),
-        ("Calmar &amp; Sharpe fixed",
-         "Max DD vs running peak (not ATH); sample variance N−1; wallet filter &gt;$1 USDT"),
-        ("14 data sources",
-         "CoinGecko, Deribit, Finnhub, Coinalyze, DefiLlama, Blockchain.com, Nansen, Grok all wired"),
-        ("Data Sources page",
-         "Tools → 🗂️ shows all 14 sources grouped macro→micro with auth, inputs, pipeline usage"),
-        ("Scanner macro UI",
-         "Live VIX / F&G / cap + macro warnings visible per scan; Gemini consensus on top-5"),
+        ("HTF→LTF Breakdown",
+         "1H candles for entry/SL (fresher), 4H confirmation, 1D bias, 4H/1D for TPs — cuts staleness 4h→1h"),
+        ("Dominance Indexes",
+         "BTC.D · USDT.D · OTHERS.D · TOTAL2/3 · MEME.C · STABLE.C.D · ES1! — all in scanner header"),
+        ("S&amp;R Chart Improvements",
+         "Green support / red resistance zones; ATR-based width; confluence merge; at-level ⚡ highlight"),
+        ("Hermes Telegram Agent",
+         "Interactive bot on Pi: scan coins, get P&amp;L, price check, chart send, whale signals, dominances"),
+        ("Scanner Cancel Button",
+         "✕ Cancel stops running scan at next stage boundary — no DB writes, no alerts fired"),
+        ("Direction-Aware Analysis",
+         "Short position monitor now correctly treats bearish momentum as favorable; SL placed above entry"),
+        ("Pending Limit Fixes",
+         "Verdict display fixed; Bitget preset SL/TP auto-synced; scanner chart shown inline in card"),
+        ("17 Data Sources",
+         "Added ES1! (yfinance), USDT.D/TOTAL3/MEME.C (CoinGecko), liquidation history (Coinalyze)"),
     ]
-    feat_items = [Paragraph("What's New — v1.5.0", S["h2"])]
+    feat_items = [Paragraph("What's New — v1.6.0", S["h2"])]
     for title, detail in feats:
         feat_items.append(
             Paragraph(f"<b>{title}</b> — {detail}", S["bul"]))
@@ -297,7 +301,7 @@ def build_page2():
         ["Exchange",     "CCXT · Binance · Bybit · OKX"],
         ["Charts",       "mplfinance · lightweight-charts"],
         ["Hardware",     "Raspberry Pi 5 · port 8082"],
-        ["Tests",        "pytest · 351 passing"],
+        ["Tests",        "pytest · 351+ passing"],
     ], [2.5*cm, 5.4*cm], hbg=colors.HexColor("#1a3040"), fs=7.5, vp=2)
 
     budget = T([
@@ -322,7 +326,7 @@ def build_page2():
     story.append(rule(BORDER, 3))
     ft = Table([[
         Paragraph("github.com/anvilfilbert/Auto-Crypto-Tradingjournal", S["small"]),
-        Paragraph("v1.5.0 · 2026-05-15  ·  All numbers shown are illustrative only",
+        Paragraph("v1.6.0 · 2026-05-17  ·  All numbers shown are illustrative only",
                   ParagraphStyle("fc", fontSize=7, leading=10,
                                  textColor=MUTED, alignment=TA_CENTER)),
         Paragraph("localhost:8082  ·  Raspberry Pi 5", S["small"]),
@@ -345,7 +349,7 @@ def main():
         OUTPUT, pagesize=A4,
         leftMargin=1.5*cm, rightMargin=1.5*cm,
         topMargin=1.3*cm,  bottomMargin=1.0*cm,
-        title="AI Trading Journal — Factsheet v1.5.0",
+        title="AI Trading Journal — Factsheet v1.6.0",
         author="Auto Crypto Trading Journal",
     )
     doc.build(build_page1() + build_page2())
