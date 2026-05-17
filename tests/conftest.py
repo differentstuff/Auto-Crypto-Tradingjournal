@@ -33,7 +33,50 @@ if "anthropic" not in sys.modules:
     sys.modules["anthropic"] = _anthropic
 
 if "pandas_ta" not in sys.modules:
+    import numpy as _np
+    import pandas as _pd
+
+    def _pta_rsi(series, length=14):
+        delta = series.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_g = gain.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+        avg_l = loss.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+        rs = avg_g / avg_l.replace(0, _np.nan)
+        result = 100 - (100 / (1 + rs))
+        result.name = f"RSI_{length}"
+        return result
+
+    def _pta_adx(high, low, close, length=14):
+        prev_close = close.shift(1)
+        tr = _pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        dm_plus = _np.where(
+            (high - high.shift(1)) > (low.shift(1) - low),
+            (high - high.shift(1)).clip(lower=0), 0)
+        dm_minus = _np.where(
+            (low.shift(1) - low) > (high - high.shift(1)),
+            (low.shift(1) - low).clip(lower=0), 0)
+        dm_plus = _pd.Series(dm_plus, index=high.index)
+        dm_minus = _pd.Series(dm_minus, index=high.index)
+        atr = tr.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+        di_p = 100 * dm_plus.ewm(alpha=1 / length, min_periods=length, adjust=False).mean() / atr.replace(0, _np.nan)
+        di_m = 100 * dm_minus.ewm(alpha=1 / length, min_periods=length, adjust=False).mean() / atr.replace(0, _np.nan)
+        dx = 100 * (di_p - di_m).abs() / (di_p + di_m).replace(0, _np.nan)
+        adx_vals = dx.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+        col = f"ADX_{length}"
+        return _pd.DataFrame({col: adx_vals, f"DMP_{length}": di_p, f"DMN_{length}": di_m})
+
+    def _pta_ema(series, length=None, **kwargs):
+        return series.ewm(span=length, adjust=False).mean()
+
     _pandas_ta = types.ModuleType("pandas_ta")
+    _pandas_ta.rsi = _pta_rsi
+    _pandas_ta.adx = _pta_adx
+    _pandas_ta.ema = _pta_ema
     sys.modules["pandas_ta"] = _pandas_ta
 
 if "chart_indicators" not in sys.modules:

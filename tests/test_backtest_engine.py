@@ -35,7 +35,7 @@ def test_run_backtest_returns_result_shape(monkeypatch):
     from backtest_engine import BacktestParams, run_backtest
 
     df = _make_ohlcv(300)
-    monkeypatch.setattr("backtest_engine._fetch_ohlcv", lambda s, tf, limit: df)
+    monkeypatch.setattr("backtest_engine._fetch_ohlcv", lambda s, tf, limit, end_ms=None: df)
 
     params = BacktestParams()
     result = run_backtest("BTCUSDT", "4H", 180, params)

@@ -10,6 +10,7 @@ import pandas as pd
 
 import bitget_client
 from backtest_metrics import sharpe_ratio, sortino_ratio, max_drawdown, profit_factor
+from indicators import rsi_series, wavetrend_series, adx_series
 
 
 # Confluence signal weights — mirror chart_context.py directional signals
@@ -21,39 +22,6 @@ _MFI_W = 0.3    # mfi > 10
 _CVD_W = 0.4    # cvd_trend rising
 _VOL_W = 0.5    # vol_ratio > 1.5x average
 _CONFLUENCE_DENOM = _RSI_W + _EMA_W + _WT_W + _MFI_W + _CVD_W + _VOL_W
-
-
-def _rsi(series: pd.Series, length: int = 14) -> pd.Series:
-    """Wilder-smoothed RSI — mirrors pandas_ta.rsi()."""
-    delta = series.diff()
-    gain  = delta.clip(lower=0)
-    loss  = -delta.clip(upper=0)
-    avg_g = gain.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
-    avg_l = loss.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
-    rs    = avg_g / avg_l.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
-
-
-def _adx(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14) -> pd.Series:
-    """Average Directional Index — mirrors pandas_ta.adx()['ADX_<length>']."""
-    prev_close = close.shift(1)
-    tr = pd.concat([
-        high - low,
-        (high - prev_close).abs(),
-        (low  - prev_close).abs(),
-    ], axis=1).max(axis=1)
-
-    dm_plus  = np.where((high - high.shift(1)) > (low.shift(1) - low), (high - high.shift(1)).clip(lower=0), 0)
-    dm_minus = np.where((low.shift(1) - low) > (high - high.shift(1)), (low.shift(1) - low).clip(lower=0), 0)
-
-    dm_plus  = pd.Series(dm_plus,  index=high.index)
-    dm_minus = pd.Series(dm_minus, index=high.index)
-
-    atr   = tr.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
-    di_p  = 100 * dm_plus.ewm(alpha=1 / length, min_periods=length, adjust=False).mean() / atr.replace(0, np.nan)
-    di_m  = 100 * dm_minus.ewm(alpha=1 / length, min_periods=length, adjust=False).mean() / atr.replace(0, np.nan)
-    dx    = 100 * (di_p - di_m).abs() / (di_p + di_m).replace(0, np.nan)
-    return dx.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
 
 
 @dataclass
@@ -149,25 +117,21 @@ def _compute_signals(df: pd.DataFrame, params: BacktestParams) -> pd.DataFrame:
     df = df.copy()
     close, high, low, volume = df["close"], df["high"], df["low"], df["volume"]
 
-    df["rsi"] = _rsi(close, length=14)
+    df["rsi"] = rsi_series(close, length=14)
 
     df["ema_20"]  = close.ewm(span=20,  adjust=False).mean()
     df["ema_50"]  = close.ewm(span=50,  adjust=False).mean()
     df["ema_200"] = close.ewm(span=200, adjust=False).mean()
 
-    df["adx"] = _adx(high, low, close, length=14).fillna(0.0)
+    df["adx"] = adx_series(high, low, close, length=14).fillna(0.0)
 
     # WaveTrend — same formula as chart_indicators.py
     hlc3 = (high + low + close) / 3
-    ema1 = hlc3.ewm(span=10, adjust=False).mean()
-    d    = (hlc3 - ema1).abs().ewm(span=10, adjust=False).mean()
-    ci   = (hlc3 - ema1) / (0.015 * d.replace(0, np.nan)).fillna(1)
-    df["wt1"] = ci.ewm(span=21, adjust=False).mean()
-    df["wt2"] = df["wt1"].rolling(4, min_periods=1).mean()
+    df["wt1"], df["wt2"] = wavetrend_series(high, low, close)
 
     # MFI proxy (journal formula)
     hlc3_vol = hlc3 * volume
-    df["mfi"] = (_rsi(hlc3_vol, length=60) - 50) * 2
+    df["mfi"] = (rsi_series(hlc3_vol, length=60) - 50) * 2
 
     # CVD proxy — Money Flow Multiplier formula matching chart_indicators.py::compute_cvd()
     hl = (high - low).replace(0, np.nan)
