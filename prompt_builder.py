@@ -203,6 +203,19 @@ def build_context(
             sections.append(block)
             remaining -= len(block)
 
+        # HMM market regime
+        if remaining > 60:
+            try:
+                from market_regime import detect_regime
+                reg = detect_regime()
+                if reg.get("ok"):
+                    conf  = reg.get("confidence", 0)
+                    block = f"Market regime (HMM/BTC): {reg['label']} — confidence {conf:.0%}"
+                    sections.append(block)
+                    remaining -= len(block)
+            except Exception:
+                pass
+
         # On-chain metrics (BTC macro context for all symbols)
         if remaining > 80:
             try:
