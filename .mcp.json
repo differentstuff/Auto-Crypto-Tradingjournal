@@ -2,7 +2,10 @@
   "mcpServers": {
     "chrome-devtools": {
       "command": "/bin/bash",
-      "args": ["scripts/start_mcp_chrome.sh"]
+      "args": [
+        "-c",
+        "for d in $HOME/.openclaw/tools/*/bin $HOME/.nvm/versions/node/*/bin /opt/homebrew/bin /usr/local/bin; do [ -x \"$d/node\" ] && export PATH=\"$d:$PATH\" && break; done; exec npx chrome-devtools-mcp@latest --browserUrl=http://127.0.0.1:9222"
+      ]
     }
   }
 }
