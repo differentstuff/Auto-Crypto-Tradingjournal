@@ -1,0 +1,108 @@
+{
+  "_comment": "Trading Journal browser test sequence. Navigation uses evaluate_script('showPage(name)') — this SPA has no URL hash routing.",
+  "host": "http://192.168.1.21:8082",
+  "wait_after_initial_navigate_ms": 3000,
+  "wait_after_tab_switch_ms": 2000,
+  "dom_node_blank_threshold": 20,
+
+  "phase1_tabs": [
+    {"name": "Dashboard",      "page_name": "dashboard",  "section_id": "page-dashboard"},
+    {"name": "Trades",         "page_name": "trades",     "section_id": "page-trades"},
+    {"name": "Call Analyzer",  "page_name": "calls",      "section_id": "page-calls"},
+    {"name": "Pending Orders", "page_name": "pending",    "section_id": "page-pending"},
+    {"name": "Live Sync",      "page_name": "live",       "section_id": "page-live"},
+    {"name": "Journal",        "page_name": "journal",    "section_id": "page-journal"},
+    {"name": "Hindsight",      "page_name": "hindsight",  "section_id": "page-hindsight"},
+    {"name": "Chart Explorer", "page_name": "charts",     "section_id": "page-charts"},
+    {"name": "Deep Dive",      "page_name": "deep",       "section_id": "page-deep"},
+    {"name": "Edge Lab",       "page_name": "edge",       "section_id": "page-edge"},
+    {"name": "Risk",           "page_name": "risk",       "section_id": "page-risk"},
+    {"name": "AI Advisor",     "page_name": "ai",         "section_id": "page-ai"},
+    {"name": "Setup Scanner",  "page_name": "scanner",    "section_id": "page-scanner"},
+    {"name": "Import Data",    "page_name": "import",     "section_id": "page-import"},
+    {"name": "Data Sources",   "page_name": "sources",    "section_id": "page-sources"},
+    {"name": "Settings",       "page_name": "settings",   "section_id": "page-settings"}
+  ],
+
+  "phase2_lighthouse": [
+    {"page": "Dashboard",     "page_name": "dashboard", "a11y_min": 80, "perf_min": 70},
+    {"page": "Live Trades",   "page_name": "trades",    "a11y_min": 80, "perf_min": 70},
+    {"page": "Call Analyzer", "page_name": "calls",     "a11y_min": 80, "perf_min": 60},
+    {"page": "Scanner",       "page_name": "scanner",   "a11y_min": 80, "perf_min": 60}
+  ],
+
+  "phase3_interactions": [
+    {
+      "name": "Call Analyzer form",
+      "page_name": "calls",
+      "click_selector": "#call-analyze-btn",
+      "wait_ms": 2000,
+      "pass_selector": "#saved-calls-list,#analyst-stats-content,.call-result"
+    },
+    {
+      "name": "Scanner start",
+      "page_name": "scanner",
+      "click_selector": "#btn-scan",
+      "wait_ms": 3000,
+      "pass_selector": "#scanner-meta,#scanner-feedback,#scanner-results"
+    },
+    {
+      "name": "Chart Explorer canvas",
+      "page_name": "charts",
+      "click_selector": null,
+      "wait_ms": 3000,
+      "pass_selector": "canvas"
+    }
+  ],
+
+  "phase4_full_scan": [
+    {
+      "name": "Call Analyzer E2E",
+      "page_name": "calls",
+      "steps": [
+        {"action": "fill", "selector": "#sz-entry",    "value": "104000"},
+        {"action": "fill", "selector": "#sz-sl",       "value": "100000"},
+        {"action": "fill", "selector": "#sz-risk",     "value": "1"},
+        {"action": "click","selector": "#call-analyze-btn"},
+        {"action": "wait", "ms": 90000}
+      ],
+      "pass_selector": "#saved-calls-list .call-card,#analyst-stats-content"
+    },
+    {
+      "name": "Scanner full run",
+      "page_name": "scanner",
+      "steps": [
+        {"action": "click","selector": "#btn-scan"},
+        {"action": "wait", "ms": 120000}
+      ],
+      "pass_selector": ".scanner-row,#scanner-results tr"
+    },
+    {
+      "name": "Chart Explorer S&R",
+      "page_name": "charts",
+      "steps": [
+        {"action": "fill", "selector": "#explorer-symbol", "value": "BTCUSDT"},
+        {"action": "click","selector": "#btn-analyze"},
+        {"action": "wait", "ms": 5000}
+      ],
+      "pass_selector": "canvas"
+    },
+    {
+      "name": "Risk tab content",
+      "page_name": "risk",
+      "steps": [
+        {"action": "wait", "ms": 3000}
+      ],
+      "pass_selector": ".risk-card,.kpi-card,table"
+    }
+  ],
+
+  "thresholds": {
+    "fail_on_console_error": true,
+    "fail_on_dom_below_threshold": true,
+    "fail_on_5xx": true,
+    "fail_on_a11y_below_min": true,
+    "warn_on_perf_below_min": true,
+    "fail_on_perf_below_50": true
+  }
+}
