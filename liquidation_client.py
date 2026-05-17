@@ -1,34 +1,27 @@
 """
-liquidation_client.py — Historical liquidation data from Binance Vision (public, no API key).
+liquidation_client.py — Historical liquidation volume via Coinalyze.
 
-Downloads daily liquidation snapshot ZIPs, extracts CSV events, aggregates into
-Shorts/Longs USD volume per day, and caches locally.
+Uses the Coinalyze liquidation-history endpoint (already configured, COINALYZE_API_KEY).
+Aggregates across ALL major exchanges: Binance, Bybit, OKX, Bitget, Deribit, etc.
 
-Data URL:
-  https://data.binance.vision/data/futures/um/daily/liquidationSnapshot/
-  {symbol}/{symbol}-liquidationSnapshot-{YYYY-MM-DD}.zip
+Each day returns:
+  longs_usd  — USD value of long positions liquidated (price fell)
+  shorts_usd — USD value of short positions liquidated (price rose)
+  net_usd    — positive = more longs liquidated (bearish pressure dominated)
 
-Raw CSV columns: symbol, side (BUY=short liquidated / SELL=long liquidated),
-  order_type, time_in_force, original_quantity, price, average_price,
-  order_status, last_filled_quantity, time (ms)
-
-Only covers Binance USDT-M futures. Bitget-only symbols return empty data.
+Cached locally in data/liquidations/{symbol}/ to avoid re-fetching past days.
+Falls back gracefully when Coinalyze is not configured.
 """
 
 import csv
-import io
 import logging
 import os
-import zipfile
+import time
 from datetime import date, datetime, timedelta, timezone
-
-import requests
 
 logger = logging.getLogger(__name__)
 
-BASE_URL  = "https://data.binance.vision/data/futures/um/daily/liquidationSnapshot"
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "data", "liquidations")
-TIMEOUT   = 12   # seconds per file
 
 
 def _cache_path(symbol: str, day: str) -> str:
@@ -37,63 +30,17 @@ def _cache_path(symbol: str, day: str) -> str:
     return os.path.join(d, f"{day}.csv")
 
 
-def _download_day(symbol: str, day: str) -> dict | None:
-    """
-    Download and aggregate one day of liquidation data.
-    Returns {"date": day, "shorts_usd": float, "longs_usd": float} or None on failure.
-    BUY side = short positions liquidated (forced buy to close).
-    SELL side = long positions liquidated (forced sell to close).
-    """
-    url = f"{BASE_URL}/{symbol}/{symbol}-liquidationSnapshot-{day}.zip"
-    try:
-        r = requests.get(url, timeout=TIMEOUT)
-        if r.status_code == 404:
-            return None    # symbol not on Binance or date too old/future
-        r.raise_for_status()
-    except Exception as e:
-        logger.debug("liquidation download failed %s %s: %s", symbol, day, e)
-        return None
-
-    shorts_usd = 0.0
-    longs_usd  = 0.0
-    try:
-        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-            for name in zf.namelist():
-                if not name.endswith(".csv"):
-                    continue
-                with zf.open(name) as f:
-                    reader = csv.DictReader(io.TextIOWrapper(f))
-                    for row in reader:
-                        try:
-                            qty   = float(row.get("original_quantity") or 0)
-                            price = float(row.get("average_price") or row.get("price") or 0)
-                            vol   = qty * price
-                            side  = (row.get("side") or "").upper()
-                            if side == "BUY":
-                                shorts_usd += vol
-                            elif side == "SELL":
-                                longs_usd += vol
-                        except (ValueError, KeyError):
-                            continue
-    except Exception as e:
-        logger.warning("liquidation parse failed %s %s: %s", symbol, day, e)
-        return None
-
-    return {"date": day, "shorts_usd": round(shorts_usd), "longs_usd": round(longs_usd)}
-
-
 def _load_cached(symbol: str, day: str) -> dict | None:
     path = _cache_path(symbol, day)
     if not os.path.exists(path):
         return None
     try:
         with open(path) as f:
-            r = csv.DictReader(f)
-            for row in r:
+            for row in csv.DictReader(f):
                 return {
                     "date":       row["date"],
-                    "shorts_usd": float(row["shorts_usd"]),
                     "longs_usd":  float(row["longs_usd"]),
+                    "shorts_usd": float(row["shorts_usd"]),
                 }
     except Exception:
         return None
@@ -102,44 +49,107 @@ def _load_cached(symbol: str, day: str) -> dict | None:
 def _save_cached(symbol: str, entry: dict):
     path = _cache_path(symbol, entry["date"])
     with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["date", "shorts_usd", "longs_usd"])
+        w = csv.DictWriter(f, fieldnames=["date", "longs_usd", "shorts_usd"])
         w.writeheader()
-        w.writerow(entry)
+        w.writerow({k: entry[k] for k in ["date", "longs_usd", "shorts_usd"]})
+
+
+def _fetch_from_coinalyze(symbol: str, from_date: date, to_date: date) -> list[dict]:
+    """
+    Fetch daily liquidation history from Coinalyze.
+    Returns list of {"date", "longs_usd", "shorts_usd"} or [] on failure.
+
+    Coinalyze response: [{"symbol": "...", "t": <ms>, "l": <long_liq_usd>, "s": <short_liq_usd>}]
+      "l" = long liquidations USD (longs got blown up — bearish)
+      "s" = short liquidations USD (shorts got blown up — bullish)
+    """
+    try:
+        import coinalyze_client
+        if not coinalyze_client.is_configured():
+            return []
+
+        sym     = coinalyze_client._symbol(symbol)
+        from_ms = int(datetime(from_date.year, from_date.month, from_date.day,
+                               tzinfo=timezone.utc).timestamp() * 1000)
+        to_ms   = int(datetime(to_date.year, to_date.month, to_date.day, 23, 59, 59,
+                               tzinfo=timezone.utc).timestamp() * 1000)
+
+        data = coinalyze_client._get("liquidation-history", {
+            "symbols":  sym,
+            "interval": "daily",
+            "from":     from_ms,
+            "to":       to_ms,
+        })
+        if not data or not isinstance(data, list):
+            return []
+
+        results = []
+        for r in data:
+            ts_ms = int(r.get("t") or 0)
+            if not ts_ms:
+                continue
+            day_str = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            longs  = float(r.get("l") or r.get("longLiquidationUsd") or 0)
+            shorts = float(r.get("s") or r.get("shortLiquidationUsd") or 0)
+            results.append({
+                "date":       day_str,
+                "longs_usd":  round(longs),
+                "shorts_usd": round(shorts),
+            })
+        return results
+    except Exception as e:
+        logger.debug("Coinalyze liquidation fetch failed: %s", e)
+        return []
 
 
 def get_liquidations(symbol: str, days: int = 30) -> list[dict]:
     """
     Return daily liquidation data for the last `days` days.
-    Downloads missing dates from Binance Vision, caches locally.
-    Each entry: {date, shorts_usd, longs_usd, total_usd, net_usd}
-      shorts_usd: USD value of short positions liquidated
-      longs_usd:  USD value of long positions liquidated
-      net_usd:    positive = more shorts liquidated (bullish squeeze)
-    Returns [] for Bitget-only symbols not listed on Binance.
-    """
-    sym = symbol.upper()
-    today = date.today()
-    # Skip today (incomplete) and yesterday until UTC midnight to avoid partials
-    cutoff = today - timedelta(days=1)
+    Loads from cache where available, fetches missing ranges from Coinalyze in one batch.
 
+    Returns list sorted by date asc. Each entry:
+      {date, longs_usd, shorts_usd, total_usd, net_usd}
+      net_usd > 0  → more longs liquidated (bearish cascade)
+      net_usd < 0  → more shorts liquidated (bullish squeeze)
+    """
+    sym    = symbol.upper()
+    today  = date.today()
+    cutoff = today - timedelta(days=1)   # skip today (incomplete)
+
+    # Check which days need fetching
+    missing = []
+    cached  = {}
+    for i in range(days):
+        d       = cutoff - timedelta(days=i)
+        day_str = d.isoformat()
+        entry   = _load_cached(sym, day_str)
+        if entry:
+            cached[day_str] = entry
+        else:
+            missing.append(d)
+
+    # Fetch all missing days in one API call
+    if missing:
+        from_d  = min(missing)
+        to_d    = max(missing)
+        fetched = _fetch_from_coinalyze(sym, from_d, to_d)
+        for entry in fetched:
+            cached[entry["date"]] = entry
+            _save_cached(sym, entry)
+
+    # Assemble output
     results = []
     for i in range(days):
-        d = cutoff - timedelta(days=i)
+        d       = cutoff - timedelta(days=i)
         day_str = d.isoformat()
-
-        entry = _load_cached(sym, day_str)
-        if entry is None:
-            entry = _download_day(sym, day_str)
-            if entry is not None:
-                _save_cached(sym, entry)
-
+        entry   = cached.get(day_str)
         if entry:
-            total = entry["shorts_usd"] + entry["longs_usd"]
-            net   = entry["shorts_usd"] - entry["longs_usd"]
+            total = entry["longs_usd"] + entry["shorts_usd"]
+            net   = entry["longs_usd"] - entry["shorts_usd"]
             results.append({
                 "date":       entry["date"],
-                "shorts_usd": entry["shorts_usd"],
                 "longs_usd":  entry["longs_usd"],
+                "shorts_usd": entry["shorts_usd"],
                 "total_usd":  total,
                 "net_usd":    net,
             })
@@ -151,19 +161,29 @@ def get_liquidations(symbol: str, days: int = 30) -> list[dict]:
 def get_summary(symbol: str, days: int = 30) -> dict:
     """
     Aggregate summary over the last `days` days.
-    Returns: {symbol, days, total_shorts_usd, total_longs_usd, total_usd,
-              dominant, dominant_ratio, peak_day, peak_usd, data: [...]}
+
+    Returns:
+      {symbol, days, available, total_longs_usd, total_shorts_usd, total_usd,
+       dominant (longs|shorts), dominant_ratio, peak_day, peak_usd, data: [...]}
     """
+    import coinalyze_client
+    if not coinalyze_client.is_configured():
+        return {"symbol": symbol, "days": days, "available": False,
+                "reason": "COINALYZE_API_KEY not configured"}
+
     data = get_liquidations(symbol, days)
     if not data:
-        return {"symbol": symbol, "days": days, "data": [], "available": False}
+        return {"symbol": symbol, "days": days, "available": False,
+                "reason": "No data returned from Coinalyze"}
 
-    total_s = sum(r["shorts_usd"] for r in data)
     total_l = sum(r["longs_usd"]  for r in data)
-    total   = total_s + total_l
-    dominant = "shorts" if total_s > total_l else "longs"
-    dominant_usd  = max(total_s, total_l)
-    dom_ratio = round(dominant_usd / (total - dominant_usd), 2) if (total - dominant_usd) > 0 else 0
+    total_s = sum(r["shorts_usd"] for r in data)
+    total   = total_l + total_s
+
+    dominant     = "longs"  if total_l >= total_s else "shorts"
+    dominant_usd = max(total_l, total_s)
+    other_usd    = total - dominant_usd
+    dom_ratio    = round(dominant_usd / other_usd, 2) if other_usd > 0 else 0
 
     peak = max(data, key=lambda x: x["total_usd"]) if data else {}
 
@@ -171,8 +191,9 @@ def get_summary(symbol: str, days: int = 30) -> dict:
         "symbol":           symbol,
         "days":             days,
         "available":        True,
-        "total_shorts_usd": round(total_s),
+        "source":           "Coinalyze (multi-exchange aggregated)",
         "total_longs_usd":  round(total_l),
+        "total_shorts_usd": round(total_s),
         "total_usd":        round(total),
         "dominant":         dominant,
         "dominant_ratio":   dom_ratio,
