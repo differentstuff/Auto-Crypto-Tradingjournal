@@ -56,7 +56,7 @@ Self-hosted crypto futures trading journal with live exchange sync, a 7-agent AI
 - `liquidation_client.py` — Coinalyze historical liquidations, CSV cache in `data/liquidations/`
 - `coingecko_client.py` — dominance indexes (TOTAL2/3, USDT.D, OTHERS.D, MEME.C, STABLE.C.D)
 - `market_context.py` — macro regime: VIX, DXY, ES1!, F&G, BTC regime
-- Hermes agent — `/home/fbauer/.hermes/` on Pi; `hermes-gateway.service` (user systemd)
+- Hermes agent — `~/.hermes/` on Pi; `hermes-gateway.service` (user systemd)
 
 ---
 

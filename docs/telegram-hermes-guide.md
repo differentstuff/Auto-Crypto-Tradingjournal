@@ -22,7 +22,7 @@ hermes gateway stop
 journalctl --user -u hermes-gateway -f   # live logs
 ```
 
-Service files live at `/home/fbauer/.hermes/`. Key files:
+Service files live at `~/.hermes/`. Key files:
 - `SOUL.md` — full journal API documentation Hermes uses
 - `MEMORY.md` — trader profile + behavioral stats (updated by analyze_trader.py)
 - `tools/analyze_trader.py` — queries `/api/positions`, computes behavioral stats, rewrites MEMORY.md

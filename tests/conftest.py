@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def pytest_addoption(parser):
     """Register --host option for live performance baseline tests."""
     parser.addoption("--host", action="store", default=None,
-                     help="Host:port of live journal (e.g. 192.168.1.21:8082)")
+                     help="Host:port of live journal (e.g. 192.168.1.100:8082)")
 
 # Stub heavy optional deps so tests work without full pip install
 if "flask" not in sys.modules:

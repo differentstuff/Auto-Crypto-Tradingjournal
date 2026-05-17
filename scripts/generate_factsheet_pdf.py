@@ -325,7 +325,7 @@ def build_page2():
         Paragraph("v1.5.0 · 2026-05-15  ·  All numbers shown are illustrative only",
                   ParagraphStyle("fc", fontSize=7, leading=10,
                                  textColor=MUTED, alignment=TA_CENTER)),
-        Paragraph("192.168.1.21:8082  ·  Raspberry Pi 5", S["small"]),
+        Paragraph("localhost:8082  ·  Raspberry Pi 5", S["small"]),
     ]], colWidths=[6*cm, 6*cm, 6*cm])
     ft.setStyle(TableStyle([
         ("ALIGN",    (0,0), (0,0),  "LEFT"),

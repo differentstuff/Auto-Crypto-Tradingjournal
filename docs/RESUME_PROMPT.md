@@ -8,8 +8,8 @@
 
 We are continuing work on a self-hosted crypto futures trading journal.
 
-**Project:** `/Users/fbauer/Documents/ClaudeAIData/Trading-Journal/`
-**Version:** v1.5.0 (commit `2f6e029` + docs/version bump pending), Pi active at 192.168.1.21:8082
+**Project:** local clone — see CLAUDE.md for paths
+**Version:** see git log
 **Stack:** Python 3.13 / Flask 3.1 / SQLite WAL / Raspberry Pi 5
 **GitHub:** https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal
 
@@ -105,7 +105,7 @@ tests/test_performance_baseline.py  Live Pi perf tests (--host flag required)
 ---
 
 ## Deployment
-- Pi IP: 192.168.1.21, credentials in memory `feedback_pi_ssh.md`
+- Pi IP: stored locally (not in repo), credentials in local Claude memory
 - After push: `git pull && sudo systemctl restart trading-journal`
 - **NEVER use `nohup python app.py`**
 
@@ -136,4 +136,4 @@ tests/test_performance_baseline.py  Live Pi perf tests (--host flag required)
 
 ---
 
-*Memory files at `/Users/fbauer/.claude/projects/-Users-fbauer/memory/` contain full detail.*
+*Claude Code memory files contain full detail.*

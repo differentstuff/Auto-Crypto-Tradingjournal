@@ -3,7 +3,7 @@ Performance baseline tests — run against live Pi.
 Skipped unless --host is provided.
 
 Usage:
-  python3 -m pytest tests/test_performance_baseline.py -v -s --host=192.168.1.21:8082
+  python3 -m pytest tests/test_performance_baseline.py -v -s --host=<Pi-IP>:8082
 """
 import time
 import pytest
