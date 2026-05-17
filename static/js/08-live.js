@@ -96,6 +96,7 @@ async function loadLiveTrades() {
     renderMatchBanners(pendingMatches, displayPositions);
     renderCorrelationWarning(livePositionsCache);  // keep full set for correlation analysis
     renderPositionCards(displayPositions, liveWaitingLimits);
+    loadPortfolioRisk();
     document.getElementById('trades-refresh-label').textContent =
       'Live · ' + new Date().toLocaleTimeString();
     window._liveLastRefreshAt = Date.now();
@@ -492,3 +493,57 @@ function renderCorrelationWarning(positions) {
     if (container) container.insertBefore(badge, container.firstChild);
   }, 60_000);
 })();
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO RISK — uses DOM methods only (no innerHTML for variable content)
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadPortfolioRisk() {
+    const el = document.getElementById('portfolio-risk-card');
+    if (!el) return;
+    try {
+        const r = await fetch('/api/live/portfolio-risk');
+        const d = await r.json();
+        if (!d.ok) { el.textContent = 'Risk data unavailable.'; return; }
+        const risk = d.data;
+        while (el.firstChild) el.removeChild(el.firstChild);
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px';
+        [
+            ['Net Exposure', '$' + risk.net_exposure_usd.toLocaleString('en-US',{maximumFractionDigits:0}), risk.net_exposure_usd >= 0 ? 'pnl-pos' : 'pnl-neg'],
+            ['Margin Used', risk.margin_used_pct + '%', risk.margin_used_pct > 30 ? 'pnl-neg' : ''],
+            ['Long / Short', '$' + risk.total_long_usd.toFixed(0) + ' / $' + risk.total_short_usd.toFixed(0), ''],
+            ['Top Sector', risk.top_sector_pct + '%', risk.top_sector_pct > 70 ? 'pnl-neg' : ''],
+        ].forEach(([label, value, cls]) => {
+            const stat = document.createElement('div');
+            stat.style.cssText = 'background:var(--bg2,#1a1a2e);padding:12px;border-radius:6px';
+            const lbl = document.createElement('div');
+            lbl.style.cssText = 'font-size:11px;color:var(--muted,#888);text-transform:uppercase';
+            lbl.textContent = label;
+            const val = document.createElement('div');
+            val.style.cssText = 'font-size:18px;font-weight:600;margin-top:4px';
+            val.textContent = value;
+            if (cls) val.className = cls;
+            stat.appendChild(lbl);
+            stat.appendChild(val);
+            grid.appendChild(stat);
+        });
+        el.appendChild(grid);
+        const tbl = document.createElement('table');
+        tbl.className = 'data-table tbl';
+        const thead = tbl.createTHead();
+        const hr = thead.insertRow();
+        ['Sector','Notional (USD)'].forEach(h => {
+            const th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
+        });
+        const tbody = tbl.createTBody();
+        (risk.by_sector || []).forEach(s => {
+            const tr = tbody.insertRow();
+            const td1 = tr.insertCell(); td1.textContent = s.sector;
+            const td2 = tr.insertCell(); td2.textContent = '$' + s.usd.toLocaleString('en-US',{maximumFractionDigits:0});
+        });
+        el.appendChild(tbl);
+    } catch(e) {
+        if (el) el.textContent = 'Could not load portfolio risk.';
+    }
+}
