@@ -72,6 +72,7 @@ async function loadAccuracyProgress() {
     const symbolInput = document.createElement('input');
     symbolInput.id = 'backtestSymbol';
     symbolInput.type = 'text';
+    symbolInput.setAttribute('aria-label', 'Backtest symbol (e.g. BTCUSDT)');
     symbolInput.placeholder = 'BTCUSDT';
     symbolInput.value = 'BTCUSDT';
     symbolInput.style.cssText = 'flex:1;padding:4px 8px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)';
