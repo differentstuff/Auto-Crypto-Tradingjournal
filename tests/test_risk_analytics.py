@@ -57,3 +57,78 @@ def test_correlation_matrix_returns_pairs(mock_ohlcv):
         assert len(result["matrix"]) == 3
         for item in result["matrix"]:
             assert -1.0 <= item["correlation"] <= 1.0
+
+
+def test_kelly_caps_at_20_percent(tmp_path, monkeypatch):
+    import database as _db
+    db_file = str(tmp_path / "kelly.db")
+    monkeypatch.setattr(_db, "DB_PATH", db_file)
+    _db.init_db()
+    conn = _db.get_conn()
+    for i in range(10):
+        conn.execute("""
+            INSERT INTO positions (symbol, base_asset, direction, realized_pnl,
+                   setup_score, open_time, close_time, exchange)
+            VALUES ('BTCUSDT','BTC','Long',100.0,9,'2026-01-01','2026-01-02','bitget')
+        """)
+    conn.commit()
+    from risk_analytics import compute_kelly_by_bucket
+    result = compute_kelly_by_bucket(conn)
+    if result["available"]:
+        for b in result["buckets"]:
+            assert b["recommended_size_pct"] <= 20.0
+    conn.close()
+
+
+def test_alpha_decay_no_data(tmp_path, monkeypatch):
+    import database as _db
+    db_file = str(tmp_path / "decay.db")
+    monkeypatch.setattr(_db, "DB_PATH", db_file)
+    _db.init_db()
+    conn = _db.get_conn()
+    from risk_analytics import compute_alpha_decay
+    assert compute_alpha_decay(conn)["available"] is False
+    conn.close()
+
+
+def test_alpha_decay_with_data(tmp_path, monkeypatch):
+    import database as _db
+    db_file = str(tmp_path / "decay2.db")
+    monkeypatch.setattr(_db, "DB_PATH", db_file)
+    _db.init_db()
+    conn = _db.get_conn()
+    for lag, pnl in [(10, 30), (15, 25), (60, 10), (90, 5), (300, -10), (400, -15)]:
+        conn.execute("""
+            INSERT INTO positions (symbol, base_asset, direction, realized_pnl,
+                   execution_lag_minutes, open_time, close_time, exchange)
+            VALUES ('BTCUSDT','BTC','Long',?,?,'2026-01-01','2026-01-02','bitget')
+        """, (float(pnl), lag))
+    conn.commit()
+    from risk_analytics import compute_alpha_decay
+    result = compute_alpha_decay(conn)
+    assert result["available"] is True
+    assert "correlation" in result
+    assert len(result["lag_buckets"]) > 0
+    conn.close()
+
+
+def test_pnl_attribution_returns_keys(tmp_path, monkeypatch):
+    import database as _db, unittest.mock, pandas as pd
+    db_file = str(tmp_path / "attr.db")
+    monkeypatch.setattr(_db, "DB_PATH", db_file)
+    _db.init_db()
+    conn = _db.get_conn()
+    conn.execute("""
+        INSERT INTO positions (symbol, base_asset, direction, realized_pnl, size_usdt,
+               open_time, close_time, exchange)
+        VALUES ('BTCUSDT','BTC','Long',50.0,300.0,'2026-01-01','2026-01-02','bitget')
+    """)
+    conn.commit()
+    fake_btc = pd.DataFrame({"Close": [40000.0, 41000.0]},
+                            index=pd.date_range("2026-01-01", periods=2))
+    monkeypatch.setattr("risk_analytics.yf.download",
+                        unittest.mock.MagicMock(return_value=fake_btc))
+    from risk_analytics import compute_pnl_attribution
+    result = compute_pnl_attribution(conn, lookback_days=90)
+    assert "alpha_pnl" in result and "beta_pnl" in result and "total_pnl" in result
+    conn.close()
