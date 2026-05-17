@@ -968,3 +968,72 @@ def get_benchmark_comparison(filters=None, conn=None) -> dict:
         "assumed_capital":   int(round(assumed_capital, 0)),
         "available":         row["first_date"] is not None,
     }
+
+
+def get_tearsheet_metrics(conn=None) -> dict:
+    """
+    Build a daily returns series from wallet_snapshots and compute
+    professional performance metrics. Full HTML tearsheet via /tearsheet/download.
+    Requires at least 20 distinct trading days of wallet snapshot data.
+    """
+    import pandas as pd, statistics as _st
+
+    if conn is None:
+        conn = get_conn()
+
+    rows = _rows(conn, """
+        SELECT date(date) AS day, MAX(wallet_balance) AS balance
+        FROM wallet_snapshots
+        WHERE wallet_balance IS NOT NULL AND wallet_balance > 1
+        GROUP BY day
+        ORDER BY day ASC
+    """)
+
+    if len(rows) < 20:
+        return {"available": False, "reason": f"Need 20+ days of data, have {len(rows)}"}
+
+    balances = pd.Series(
+        [float(r["balance"]) for r in rows],
+        index=pd.to_datetime([r["day"] for r in rows]),
+        dtype=float,
+    )
+    returns = balances.pct_change().dropna()
+
+    if returns.empty or float(returns.std()) == 0:
+        return {"available": False, "reason": "Insufficient variance in returns"}
+
+    ann = 365
+    mean_d = float(returns.mean())
+    std_d  = float(returns.std())
+    sharpe = round(mean_d / std_d * (ann ** 0.5), 2) if std_d > 0 else 0.0
+
+    cum   = (1 + returns).cumprod()
+    peak  = cum.cummax()
+    max_dd = round(float(((cum - peak) / peak).min()) * 100, 2)
+
+    n_years = len(returns) / ann
+    cagr = round((float(cum.iloc[-1]) ** (1 / n_years) - 1) * 100, 2) if n_years > 0 else 0.0
+    vol  = round(std_d * (ann ** 0.5) * 100, 2)
+
+    wins     = returns[returns > 0]
+    losses   = returns[returns < 0]
+    win_rate = round(len(wins) / len(returns) * 100, 1) if len(returns) else 0.0
+    pf       = round(float(wins.sum()) / abs(float(losses.sum())), 2) if float(losses.sum()) != 0 else 999.0
+
+    monthly = returns.resample("ME").apply(lambda x: float((1 + x).prod() - 1))
+    monthly_dict = {str(k.date())[:7]: round(float(v) * 100, 2) for k, v in monthly.items()}
+
+    return {
+        "available":          True,
+        "sharpe":             sharpe,
+        "max_drawdown_pct":   max_dd,
+        "cagr_pct":           cagr,
+        "volatility_pct":     vol,
+        "win_rate_daily":     win_rate,
+        "profit_factor":      pf,
+        "total_days":         len(returns),
+        "start_balance":      round(float(balances.iloc[0]), 2),
+        "end_balance":        round(float(balances.iloc[-1]), 2),
+        "total_return_pct":   round((float(balances.iloc[-1]) / float(balances.iloc[0]) - 1) * 100, 2),
+        "monthly_returns":    monthly_dict,
+    }

@@ -99,6 +99,51 @@ def api_analytics_benchmark():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/analytics/tearsheet")
+def api_analytics_tearsheet():
+    """GET /api/analytics/tearsheet -- professional performance metrics."""
+    try:
+        from analytics import get_tearsheet_metrics
+        with db_conn() as conn:
+            data = get_tearsheet_metrics(conn=conn)
+        return _ok(data)
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/analytics/tearsheet/download")
+def api_analytics_tearsheet_download():
+    """GET /api/analytics/tearsheet/download -- full quantstats HTML report."""
+    try:
+        import io, pandas as pd
+        import quantstats as qs
+        from flask import Response
+        rows = []
+        with db_conn() as conn:
+            rows = conn.execute("""
+                SELECT date(date) AS day, MAX(wallet_balance) AS balance
+                FROM wallet_snapshots
+                WHERE wallet_balance IS NOT NULL AND wallet_balance > 1
+                GROUP BY day ORDER BY day ASC
+            """).fetchall()
+        if len(rows) < 20:
+            return _err("Need at least 20 days of wallet data", 400)
+        balances = pd.Series(
+            [float(r["balance"]) for r in rows],
+            index=pd.to_datetime([r["day"] for r in rows]),
+        )
+        returns = balances.pct_change().dropna()
+        buf = io.StringIO()
+        qs.reports.html(returns, output=buf, title="Trading Journal Tearsheet",
+                        benchmark=None, download_filename=None)
+        return Response(buf.getvalue(), mimetype="text/html",
+                        headers={"Content-Disposition": "attachment; filename=tearsheet.html"})
+    except Exception:
+        traceback.print_exc()
+        return _err("Tearsheet generation failed", 500)
+
+
 @bp.route("/api/chart/candles")
 def api_chart_candles():
     """

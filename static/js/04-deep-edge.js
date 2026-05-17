@@ -262,6 +262,56 @@ async function loadDeep() {
 
   // BTC benchmark comparison
   loadBenchmark();
+
+  // Professional Performance Metrics (quantstats summary)
+  loadTearsheetSummary();
+}
+
+async function loadTearsheetSummary() {
+    const el = document.getElementById('tearsheet-summary');
+    if (!el) return;
+    try {
+        const r = await fetch('/api/analytics/tearsheet');
+        const d = await r.json();
+        if (!d.ok || !d.data || !d.data.available) {
+            el.textContent = d.data?.reason || 'Need 20+ trading days of wallet history.';
+            return;
+        }
+        const m = d.data;
+        while (el.firstChild) el.removeChild(el.firstChild);
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px';
+        [
+            ['Sharpe',       m.sharpe != null ? m.sharpe.toFixed(2) : '--', m.sharpe >= 1 ? 'pnl-pos' : m.sharpe < 0 ? 'pnl-neg' : ''],
+            ['Max Drawdown', m.max_drawdown_pct + '%', 'pnl-neg'],
+            ['CAGR',         (m.cagr_pct >= 0 ? '+' : '') + m.cagr_pct + '%', m.cagr_pct >= 0 ? 'pnl-pos' : 'pnl-neg'],
+            ['Volatility',   m.volatility_pct + '%/yr', ''],
+            ['Daily Win%',   m.win_rate_daily + '%', m.win_rate_daily >= 50 ? 'pnl-pos' : 'pnl-neg'],
+            ['Total Return', (m.total_return_pct >= 0 ? '+' : '') + m.total_return_pct + '%', m.total_return_pct >= 0 ? 'pnl-pos' : 'pnl-neg'],
+        ].forEach(([label, value, cls]) => {
+            const stat = document.createElement('div');
+            stat.style.cssText = 'background:var(--bg-secondary,#1a1a2e);padding:10px;border-radius:6px;text-align:center';
+            const lbl = document.createElement('div');
+            lbl.style.cssText = 'font-size:10px;color:var(--text-muted,#888);text-transform:uppercase';
+            lbl.textContent = label;
+            const val = document.createElement('div');
+            val.style.cssText = 'font-size:16px;font-weight:700;margin-top:4px';
+            val.textContent = value;
+            if (cls) val.className = cls;
+            stat.appendChild(lbl);
+            stat.appendChild(val);
+            grid.appendChild(stat);
+        });
+        el.appendChild(grid);
+        const link = document.createElement('a');
+        link.href = '/api/analytics/tearsheet/download';
+        link.target = '_blank';
+        link.className = 'btn btn-secondary';
+        link.textContent = 'Download Full Tearsheet (HTML)';
+        el.appendChild(link);
+    } catch(e) {
+        if (el) el.textContent = 'Could not load tearsheet.';
+    }
 }
 
 // Fetch setup type breakdown — uses DOM methods, no innerHTML
