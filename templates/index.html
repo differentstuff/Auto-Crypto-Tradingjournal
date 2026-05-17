@@ -777,27 +777,46 @@ select:focus,input:focus{border-color:var(--accent)}
     <!-- ══════════════════════════════════════════════════════════════════ -->
     <div id="page-risk" class="page-view">
       <div class="page-title">Risk Dashboard</div>
-      <div class="page-subtitle">Value-at-Risk, position correlation, P&amp;L attribution, Kelly sizing and alpha decay.</div>
+      <div class="page-subtitle">Institutional-grade risk metrics — VaR, correlation, P&amp;L attribution, Kelly sizing and alpha decay. All computed from free Binance data.</div>
 
-      <div class="card">
-        <div class="card-header">Value at Risk (1-Day, 90-Day Historical)</div>
-        <div id="risk-var" style="padding:14px">Loading...</div>
+      <div class="table-card">
+        <div class="table-header">
+          <span style="font-weight:600">Value at Risk (1-Day)</span>
+          <span style="font-size:.75rem;color:var(--muted)">90-day historical simulation · updates on page load</span>
+        </div>
+        <div id="risk-var" style="padding:16px">Loading...</div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <div class="card-header">Position Correlation Matrix</div>
-        <div id="risk-correlation" style="padding:14px">Loading...</div>
+
+      <div class="table-card" style="margin-top:20px">
+        <div class="table-header">
+          <span style="font-weight:600">Position Correlation</span>
+          <span style="font-size:.75rem;color:var(--muted)">30-day daily returns · Pearson coefficient</span>
+        </div>
+        <div id="risk-correlation" style="padding:16px">Loading...</div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <div class="card-header">P&amp;L Attribution &mdash; Alpha vs Beta (Last 90 Days)</div>
-        <div id="risk-attribution" style="padding:14px">Loading...</div>
+
+      <div class="table-card" style="margin-top:20px">
+        <div class="table-header">
+          <span style="font-weight:600">P&amp;L Attribution — Alpha vs Beta</span>
+          <span style="font-size:.75rem;color:var(--muted)">Last 90 days · BTC benchmark via yfinance</span>
+        </div>
+        <div id="risk-attribution" style="padding:16px">Loading...</div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <div class="card-header">Kelly Criterion &mdash; Optimal Position Size by Score</div>
-        <div id="risk-kelly" style="padding:14px">Loading...</div>
+
+      <div class="table-card" style="margin-top:20px">
+        <div class="table-header">
+          <span style="font-weight:600">Kelly Criterion — Optimal Bet Size</span>
+          <span style="font-size:.75rem;color:var(--muted)">Per scanner score bucket · half-Kelly · cap 20%</span>
+        </div>
+        <div id="risk-kelly" style="padding:16px">Loading...</div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <div class="card-header">Alpha Decay &mdash; Does Edge Fade with Entry Delay?</div>
-        <div id="risk-alpha-decay" style="padding:14px">Loading...</div>
+
+      <div class="table-card" style="margin-top:20px">
+        <div class="table-header">
+          <span style="font-weight:600">Alpha Decay — Entry Timing vs Edge</span>
+          <span style="font-size:.75rem;color:var(--muted)">Does your edge fade the longer you wait to enter?</span>
+        </div>
+        <div id="risk-alpha-decay" style="padding:16px">Loading...</div>
       </div>
     </div>
 
@@ -2006,7 +2025,7 @@ select:focus,input:focus{border-color:var(--accent)}
 <script src="/static/js/14-scanner.js?v=4.0"></script>
 <script src="/static/js/15-hindsight.js?v=2.8"></script>
 <script src="/static/js/16-settings.js?v=2.7"></script>
-<script src="/static/js/17-risk.js?v=1.0"></script>
+<script src="/static/js/17-risk.js?v=2.0"></script>
 
 <nav class="bottom-nav" style="display:none" id="bottom-nav">
   <button class="bottom-nav-item" data-tab="trades">
