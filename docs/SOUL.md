@@ -146,6 +146,57 @@ GET /api/analytics/by-setup
 ```
 Returns: setups [{setup_type, trade_count, total_pnl, win_rate, avg_pnl, avg_win, avg_loss, profit_factor}]
 
+### Benchmark — Trader Return vs BTC Buy-and-Hold
+```
+GET /api/analytics/benchmark
+```
+Returns: trader_return_pct, btc_return_pct, alpha_pct (trader - BTC), period_days,
+start_date, end_date, btc_start, btc_end, assumed_capital, available
+
+### Execution Quality — Entry Lag and Slippage
+```
+GET /api/analytics/execution-quality
+```
+Returns: avg_lag_minutes, median_lag_minutes, avg_slippage_pct, sample_size,
+lag_distribution {under_30m, 30m_to_2h, 2h_to_8h, over_8h}, available
+
+### Risk — Value at Risk (Historical Simulation, 1-Day)
+```
+GET /api/risk/var
+```
+Returns: var_95_usd, var_99_usd, var_95_pct, var_99_pct, total_notional,
+horizon_days, sample_days, available
+Uses 90 days of Binance 4H OHLCV, weighted by position size.
+
+### Risk — Position Correlation Matrix
+```
+GET /api/risk/correlation
+```
+Returns: matrix [{symbol_a, symbol_b, correlation}], high_risk_pairs (r > 0.70, same direction),
+symbols, lookback_days, sample_days, available
+
+### Risk — P&L Attribution (Alpha vs Beta)
+```
+GET /api/risk/attribution?days=90
+```
+Returns: alpha_pnl (your skill), beta_pnl (BTC market move), total_pnl,
+alpha_pct, sample_size, attributed, available, lookback_days
+
+### Risk — Kelly Criterion Position Sizing
+```
+GET /api/risk/kelly
+```
+Returns: buckets [{score_range, trade_count, win_rate, avg_win_usd, avg_loss_usd,
+kelly_full_pct, kelly_half_pct, recommended_size_pct}], available
+Half-Kelly applied, hard cap 20% of capital.
+
+### Risk — Alpha Decay (Edge vs Entry Lag)
+```
+GET /api/risk/alpha-decay
+```
+Returns: lag_buckets [{lag_range, trade_count, avg_pnl, win_rate}],
+correlation (negative = edge decays as lag increases), edge_decays, sample_size, available
+
 ### Nansen Whale Signals (smart money)
 ```
 GET /api/nansen/signal/BTCUSDT    # single coin

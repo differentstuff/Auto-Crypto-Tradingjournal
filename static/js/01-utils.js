@@ -71,7 +71,8 @@ function _reloadCurrentPage() {
     case 'ai':        if (typeof loadAdvisor    === 'function') loadAdvisor();    break;
     case 'hindsight': if (typeof loadHindsight    === 'function') loadHindsight();    break;
     case 'import':    if (typeof loadImportStatus === 'function') loadImportStatus(); break;
-    case 'trades':    if (typeof loadLiveTrades   === 'function') loadLiveTrades();   break;
+    case 'trades':    if (typeof loadLiveTrades      === 'function') loadLiveTrades();      break;
+    case 'risk':      if (typeof loadRiskDashboard   === 'function') loadRiskDashboard();   break;
   }
 }
 
