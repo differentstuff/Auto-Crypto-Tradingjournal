@@ -91,6 +91,57 @@ def api_chart_candles():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/chart/annotated/<symbol>")
+def api_chart_annotated(symbol):
+    """
+    GET /api/chart/annotated/CHZUSDT?direction=Long&entry=0.044&sl=0.041&tp1=0.048&tp2=0.053
+    Generate annotated chart PNG (base64) for any symbol.
+    All trade level params are optional — omit for a plain S/R chart.
+    Used by Hermes to send charts via Telegram.
+    """
+    try:
+        import agent_chart_draw
+        from chart_context import get_candles
+        from chart_sr import detect_support_resistance
+
+        sym       = symbol.strip().upper()
+        direction = request.args.get("direction", "Long")
+
+        def _flt(key):
+            v = request.args.get(key)
+            return float(v) if v else None
+
+        entry      = _flt("entry") or 0
+        entry_high = _flt("entry_high")
+        sl         = _flt("sl") or 0
+        tp1        = _flt("tp1") or 0
+        tp2        = _flt("tp2") or 0
+        tf         = request.args.get("tf", "4H")
+
+        candles = get_candles(sym, tf)
+        if candles is None or candles.empty:
+            return _err(f"No candle data for {sym}")
+
+        sr_levels = detect_support_resistance(candles)
+        chart_b64 = agent_chart_draw.draw(
+            candles    = candles,
+            symbol     = sym,
+            direction  = direction,
+            entry      = entry,
+            entry_high = entry_high,
+            sl         = sl,
+            tp1        = tp1,
+            tp2        = tp2,
+            sr_levels  = sr_levels,
+        )
+        if not chart_b64:
+            return _err("Chart generation failed")
+        return _ok({"symbol": sym, "direction": direction, "chart_b64": chart_b64})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/analytics/mfe-mae")
 def api_mfe_mae():
     try:
