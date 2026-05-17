@@ -84,12 +84,12 @@ def test_confluence_score_max_val_updated():
     with mock.patch("chart_context.get_chart_context", return_value=mock_ctx):
         result_smt = confluence_score("BTCUSDT", ["4H", "1D"], ctx=mock_ctx)
         result_non = confluence_score("LINKUSDT", ["4H", "1D"], ctx=mock_ctx)
-    # BTCUSDT is an SMT symbol: max = 2 * (5.55 + 0.30) + 0.20 = 11.90
-    assert result_smt["max"] == pytest.approx(2 * 5.85 + 0.20, rel=1e-3), \
-        f"Expected SMT max=11.90, got {result_smt['max']}"
-    # LINKUSDT is not an SMT symbol: max = 2 * 5.55 + 0.20 = 11.30
-    assert result_non["max"] == pytest.approx(2 * 5.55 + 0.20, rel=1e-3), \
-        f"Expected non-SMT max=11.30, got {result_non['max']}"
+    # BTCUSDT is an SMT symbol: max = 2 * (5.55 + 0.30) = 11.70 (liq_w=0 → no +0.20)
+    assert result_smt["max"] == pytest.approx(2 * 5.85, rel=1e-3), \
+        f"Expected SMT max=11.70, got {result_smt['max']}"
+    # LINKUSDT is not an SMT symbol: max = 2 * 5.55 = 11.10 (liq_w=0 → no +0.20)
+    assert result_non["max"] == pytest.approx(2 * 5.55, rel=1e-3), \
+        f"Expected non-SMT max=11.10, got {result_non['max']}"
 
 
 def test_confluence_score_mfi_raises_bullish_score():

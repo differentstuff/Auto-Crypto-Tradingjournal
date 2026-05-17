@@ -380,7 +380,7 @@ def confluence_score(symbol: str, timeframes: list = None, ctx: dict = None) -> 
 
     smt_bonus  = 0.30 if symbol in SMT_SYMBOLS else 0.0
     max_per_tf = 5.55 + smt_bonus         # +0.15 order flow vs previous 5.40
-    max_val    = float(len(tfs) * max_per_tf) + 0.20  # +0.20 symbol-level liq
+    max_val    = float(len(tfs) * max_per_tf) + (0.20 if liq_w != 0.0 else 0.0)
     pct     = total_score / max_val if max_val else 0.0
 
     # Thresholds: ±0.33 ≈ net 1/3 of max weight aligned; ±0.60 = strong consensus

@@ -2,7 +2,7 @@
 """
 BTC on-chain metrics via CoinMetrics Community API (keyless).
 Same data source as checkonchain (github.com/Tsunekazu/checkonchain).
-Metrics: MVRV (mvrv_cur), SOPR (sopr), exchange in/out flows.
+Metrics: MVRV (CapMVRVCur), exchange in/out flows.
 """
 import logging
 import time
@@ -17,7 +17,7 @@ _CACHE: dict[str, tuple[float, dict]] = {}
 def _fetch() -> dict:
     params = {
         "assets":          "btc",
-        "metrics":         "mvrv_cur,sopr,FlowInExUSD,FlowOutExUSD",
+        "metrics":         "CapMVRVCur,FlowInExUSD,FlowOutExUSD",
         "frequency":       "1d",
         "page_size":       1,
         "sort":            "time",
@@ -30,21 +30,19 @@ def _fetch() -> dict:
         if not rows:
             return {"ok": False, "reason": "empty response"}
         row     = rows[-1]
-        mvrv    = float(row.get("mvrv_cur")    or 0)
-        sopr    = float(row.get("sopr")        or 1)
+        mvrv    = float(row.get("CapMVRVCur")  or 0)
         inflow  = float(row.get("FlowInExUSD") or 0)
         outflow = float(row.get("FlowOutExUSD") or 0)
         net_flow = outflow - inflow   # positive = net outflow = accumulation
-        if mvrv > 3.5 or sopr > 1.04:
+        if mvrv > 3.5:
             regime = "overvalued"
-        elif mvrv < 1.0 or sopr < 0.98:
+        elif mvrv < 1.0:
             regime = "undervalued"
         else:
             regime = "fair_value"
         return {
             "ok":                    True,
             "mvrv":                  round(mvrv, 3),
-            "sopr":                  round(sopr, 4),
             "exchange_net_flow_usd": round(net_flow, 0),
             "regime":                regime,
             "date":                  row.get("time", ""),
