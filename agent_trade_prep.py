@@ -16,6 +16,7 @@ import gemini_client
 from consensus import compute_consensus
 import agent_chart_draw
 import agent_data_interpreter
+import agent_risk_mgmt
 
 from agent_types import TradePrepInput, TradePrepResult
 
@@ -53,12 +54,13 @@ def run(inp: TradePrepInput, conn) -> TradePrepResult:
     prompt = _build_prompt(call_text, equity, setup_type)
 
     gemini_result = {}
+    system_prompt = agent_data_interpreter.ANALYST_INSTRUCTIONS + "\n\n" + agent_risk_mgmt.RISK_INSTRUCTIONS
     with ThreadPoolExecutor(max_workers=2) as ex:
         f_claude = ex.submit(
             ai_send, "call_analyzer", MODEL,
             build_cached_messages(dynamic_ctx, prompt, stable_prefix=stable),
             4096,
-            agent_data_interpreter.ANALYST_INSTRUCTIONS,
+            system_prompt,
         )
         if gemini_client.is_configured() and call_text:
             f_gemini = ex.submit(gemini_client.score_call, call_text, symbol, direction)
