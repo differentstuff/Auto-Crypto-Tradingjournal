@@ -61,6 +61,92 @@ def api_exchange_symbols():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/price/<symbol>")
+def api_price_single(symbol):
+    """GET /api/price/BTCUSDT — live price via Binance then Bitget fallback."""
+    try:
+        from ccxt_client import get_live_price, get_binance_price
+        sym   = symbol.strip().upper()
+        price = get_live_price(sym)
+        if price is None:
+            return _ok({"symbol": sym, "price": None, "source": None})
+        source = "binance" if get_binance_price(sym) is not None else "bitget"
+        return _ok({"symbol": sym, "price": price, "source": source})
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
+@bp.route("/api/coin/summary/<symbol>")
+def api_coin_summary(symbol):
+    """
+    GET /api/coin/summary/BTCUSDT — rich single-coin snapshot for Hermes.
+    Aggregates: live price, 4H/1H indicators, Nansen smart money, Coinalyze
+    derivatives, market regime, funding rate. All sources degrade gracefully.
+    """
+    try:
+        sym = symbol.strip().upper()
+        result = {"symbol": sym}
+
+        # Live price
+        try:
+            from ccxt_client import get_live_price
+            result["price"] = get_live_price(sym)
+        except Exception:
+            result["price"] = None
+
+        # Technical indicators (4H + 1H)
+        try:
+            from chart_context import get_chart_context
+            ctx = get_chart_context(sym, ["4H", "1H"])
+            for tf in ("4H", "1H"):
+                inds = ctx.get(tf, {}).get("indicators", {})
+                if inds.get("ok"):
+                    result[f"indicators_{tf}"] = {
+                        "rsi":      (inds.get("rsi") or {}).get("value"),
+                        "trend":    (inds.get("ema") or {}).get("alignment"),
+                        "macd":     (inds.get("macd") or {}).get("trend"),
+                        "adx":      (inds.get("adx") or {}).get("value"),
+                        "wt_signal":(inds.get("wavetrend") or {}).get("signal"),
+                        "atr":      (inds.get("atr") or {}).get("value"),
+                    }
+        except Exception:
+            pass
+
+        # Nansen smart money
+        try:
+            import nansen_client
+            if nansen_client.is_configured():
+                ns = nansen_client.get_signals_for_symbols([sym])
+                result["nansen"] = ns.get(sym, {})
+        except Exception:
+            pass
+
+        # Coinalyze derivatives (OI, funding, liq trend)
+        try:
+            import coinalyze_client
+            result["derivatives"] = coinalyze_client.get_all(sym)
+        except Exception:
+            pass
+
+        # BTC market regime
+        try:
+            result["btc_regime"] = market_context.get_btc_regime()
+        except Exception:
+            pass
+
+        # Fear & Greed
+        try:
+            result["fear_greed"] = market_context.get_fear_greed()
+        except Exception:
+            pass
+
+        return _ok(result)
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/market/prices")
 def api_market_prices():
     """GET /api/market/prices?symbols=BTCUSDT,ETHUSDT — mark prices, 60-second cache."""
