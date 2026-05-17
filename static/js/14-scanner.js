@@ -599,6 +599,7 @@ function renderScannerMeta(state) {
   const symInput = document.createElement('input');
   symInput.type = 'text';
   symInput.id = 'scan-single-symbol';
+  symInput.setAttribute('aria-label', 'Scan single symbol (e.g. BTCUSDT)');
   symInput.placeholder = 'Symbol e.g. BTC';
   symInput.style.cssText = [
     'padding:5px 10px', 'font-size:.82rem', 'background:var(--bg2)',
