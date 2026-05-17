@@ -161,9 +161,30 @@ def detect_all_trendlines(symbol: str) -> list:
 
 # ── Fibonacci retracement detection ───────────────────────────────────────────
 
-FIB_LEVELS = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
-FIB_LABELS = {0.0: "0%", 0.236: "23.6%", 0.382: "38.2%",
-              0.5: "50%", 0.618: "61.8%", 0.786: "78.6%", 1.0: "100%"}
+# Fibonacci levels matching TradingView settings (screenshot 2026-05-17).
+# Retracements: 0–1.0 · Extensions: >1.0 · 0.66 = ICT OTE marker (shown in red).
+# 1.414 excluded (disabled in TradingView settings).
+FIB_LEVELS = [0.0, 0.236, 0.382, 0.5, 0.618, 0.66, 0.786, 1.0,
+              1.618, 2.618, 3.618, 4.236]
+
+FIB_LABELS = {
+    0.0:   "0%",
+    0.236: "23.6%",
+    0.382: "38.2%",
+    0.5:   "50%",
+    0.618: "61.8%",
+    0.66:  "66% OTE",      # ICT Optimal Trade Entry marker
+    0.786: "78.6%",
+    1.0:   "100%",
+    1.618: "161.8%",       # most common first extension TP target
+    2.618: "261.8%",
+    3.618: "361.8%",
+    4.236: "423.6%",
+}
+
+FIB_COLORS = {
+    0.66: "#ef5350",        # red — OTE zone marker
+}
 
 
 def detect_fibonacci(df: pd.DataFrame, n_swing: int = 10) -> dict | None:
@@ -204,18 +225,23 @@ def detect_fibonacci(df: pd.DataFrame, n_swing: int = 10) -> dict | None:
     direction = "up" if last_low_idx > last_high_idx else "down"
 
     levels = []
+    rng = swing_high - swing_low
     for ratio in FIB_LEVELS:
         if direction == "up":
-            # Measuring from low to high: 0% = low, 100% = high
-            price = swing_low + ratio * (swing_high - swing_low)
+            # 0% = swing_low, 100% = swing_high, >100% extends above high
+            price = swing_low + ratio * rng
         else:
-            # Measuring from high to low: 0% = high, 100% = low
-            price = swing_high - ratio * (swing_high - swing_low)
-        levels.append({
-            "ratio": ratio,
-            "price": round(float(price), 8),
-            "label": FIB_LABELS[ratio],
-        })
+            # 0% = swing_high, 100% = swing_low, >100% extends below low
+            price = swing_high - ratio * rng
+        entry = {
+            "ratio":     ratio,
+            "price":     round(float(price), 8),
+            "label":     FIB_LABELS[ratio],
+            "extension": ratio > 1.0,
+        }
+        if ratio in FIB_COLORS:
+            entry["color"] = FIB_COLORS[ratio]
+        levels.append(entry)
 
     return {
         "swing_high": round(float(swing_high), 8),

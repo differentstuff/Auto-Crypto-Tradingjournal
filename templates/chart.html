@@ -433,10 +433,31 @@ async function loadChart() {
   _chart.timeScale().fitContent();
 
   // Fibonacci levels — stored for toggle
+  // Extensions (>100%) shown dashed and slightly dimmer; OTE 0.66 shown in red.
   if (fibonacci && fibonacci.levels) {
     fibonacci.levels.forEach(fib => {
-      const col = 'rgba(180,130,255,0.55)';
-      const pl = series.createPriceLine({ price: fib.price, lineWidth: 1, lineStyle: 1, color: col, axisLabelVisible: true, title: `Fib ${fib.label}` });
+      let col, lw, ls;
+      if (fib.color) {
+        // Custom color (e.g. OTE 0.66 = red)
+        col = fib.color;
+        lw  = 1.5;
+        ls  = 0;   // solid
+      } else if (fib.extension) {
+        // Extension levels >100%: amber, dashed
+        col = 'rgba(255,179,0,0.50)';
+        lw  = 1;
+        ls  = 2;
+      } else {
+        // Standard retracement: purple, dotted
+        col = 'rgba(180,130,255,0.55)';
+        lw  = 1;
+        ls  = 1;
+      }
+      const pl = series.createPriceLine({
+        price: fib.price, lineWidth: lw, lineStyle: ls,
+        color: col, axisLabelVisible: true,
+        title: `Fib ${fib.label}`,
+      });
       pl.__col = col;
       _fibLines.push(pl);
     });
