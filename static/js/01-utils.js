@@ -329,6 +329,7 @@ function showPage(name) {
   if (name === 'journal')   { loadSymbols(); journalLoad(1); }
   if (name === 'deep')      loadDeep();
   if (name === 'edge')      loadEdge();
+  if (name === 'risk')      loadRiskDashboard();
   if (name === 'import')    loadImportLog();
 }
 

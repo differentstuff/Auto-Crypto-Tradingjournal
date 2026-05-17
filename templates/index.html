@@ -421,6 +421,9 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="nav-item" onclick="showPage('edge')" id="nav-edge">
       <span class="nav-icon">🔬</span><span>Edge Lab</span>
     </div>
+    <div class="nav-item" onclick="showPage('risk')" id="nav-risk">
+      <span class="nav-icon">⚠️</span><span>Risk</span>
+    </div>
     <div class="nav-item" onclick="showPage('ai')" id="nav-ai">
       <span class="nav-icon">🤖</span><span>AI Advisor</span>
     </div>
@@ -766,6 +769,35 @@ select:focus,input:focus{border-color:var(--accent)}
           </tr></thead>
           <tbody id="deep-rr-tbody"><tr><td colspan="8" style="color:var(--muted);text-align:center">Link trades to analyst calls to see R:R data here</td></tr></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- RISK DASHBOARD                                                     -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="page-risk" class="page-view">
+      <div class="page-title">Risk Dashboard</div>
+      <div class="page-subtitle">Value-at-Risk, position correlation, P&amp;L attribution, Kelly sizing and alpha decay.</div>
+
+      <div class="card">
+        <div class="card-header">Value at Risk (1-Day, 90-Day Historical)</div>
+        <div id="risk-var" style="padding:14px">Loading...</div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">Position Correlation Matrix</div>
+        <div id="risk-correlation" style="padding:14px">Loading...</div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">P&amp;L Attribution &mdash; Alpha vs Beta (Last 90 Days)</div>
+        <div id="risk-attribution" style="padding:14px">Loading...</div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">Kelly Criterion &mdash; Optimal Position Size by Score</div>
+        <div id="risk-kelly" style="padding:14px">Loading...</div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">Alpha Decay &mdash; Does Edge Fade with Entry Delay?</div>
+        <div id="risk-alpha-decay" style="padding:14px">Loading...</div>
       </div>
     </div>
 
@@ -1957,7 +1989,7 @@ select:focus,input:focus{border-color:var(--accent)}
   </div>
 </div>
 
-<script src="/static/js/01-utils.js?v=3.1"></script>
+<script src="/static/js/01-utils.js?v=3.2"></script>
 <script src="/static/js/02-dashboard.js?v=2.8"></script>
 <script src="/static/js/03-journal.js?v=2.8"></script>
 <script src="/static/js/04-deep-edge.js?v=3.1"></script>
@@ -1974,6 +2006,7 @@ select:focus,input:focus{border-color:var(--accent)}
 <script src="/static/js/14-scanner.js?v=4.0"></script>
 <script src="/static/js/15-hindsight.js?v=2.8"></script>
 <script src="/static/js/16-settings.js?v=2.7"></script>
+<script src="/static/js/17-risk.js?v=1.0"></script>
 
 <nav class="bottom-nav" style="display:none" id="bottom-nav">
   <button class="bottom-nav-item" data-tab="trades">
