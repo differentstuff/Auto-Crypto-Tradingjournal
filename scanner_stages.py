@@ -19,21 +19,26 @@ logger = logging.getLogger(__name__)
 def _get_scan_macro_context() -> dict:
     """
     Fetch global macro context for scanner. Called once per scan run, not per symbol.
-    Returns {"vix": float|None, "regime": str, "macro_risk": bool,
-             "btc_dominance": float|None, "fear_greed": int|None,
-             "next_event": str|None, "hours_until": float|None}
     Degrades gracefully on any failure.
     """
     result = {
-        "vix": None, "regime": "unknown", "macro_risk": False,
-        "btc_dominance": None, "fear_greed": None,
+        "vix": None, "dxy": None, "es": None, "es_change_pct": None,
+        "regime": "unknown", "macro_risk": False,
+        "btc_dominance": None, "eth_dominance": None,
+        "usdt_dominance": None, "others_dominance": None,
+        "total2_usd": None, "total3_usd": None,
+        "fear_greed": None,
+        "meme_cap_usd": None, "stable_dominance_pct": None,
         "next_event": None, "hours_until": None,
     }
     try:
         from market_context import get_macro_regime
         mr = get_macro_regime()
-        result["vix"]    = mr.get("vix")
-        result["regime"] = mr.get("regime", "unknown")
+        result["vix"]           = mr.get("vix")
+        result["dxy"]           = mr.get("dxy")
+        result["es"]            = mr.get("es")
+        result["es_change_pct"] = mr.get("es_change_pct")
+        result["regime"]        = mr.get("regime", "unknown")
     except Exception:
         pass
     try:
@@ -45,15 +50,27 @@ def _get_scan_macro_context() -> dict:
     try:
         from finnhub_client import get_upcoming_events
         eco = get_upcoming_events(hours_ahead=24)
-        result["macro_risk"]   = eco.get("macro_risk", False)
-        result["next_event"]   = eco.get("next_event")
-        result["hours_until"]  = eco.get("hours_until")
+        result["macro_risk"]  = eco.get("macro_risk", False)
+        result["next_event"]  = eco.get("next_event")
+        result["hours_until"] = eco.get("hours_until")
     except Exception:
         pass
     try:
         from coingecko_client import get_global_market
         gm = get_global_market()
-        result["btc_dominance"] = gm.get("btc_dominance_pct")
+        result["btc_dominance"]    = gm.get("btc_dominance_pct")
+        result["eth_dominance"]    = gm.get("eth_dominance_pct")
+        result["usdt_dominance"]   = gm.get("usdt_dominance_pct")
+        result["others_dominance"] = gm.get("others_dominance_pct")
+        result["total2_usd"]       = gm.get("total2_usd")
+        result["total3_usd"]       = gm.get("total3_usd")
+    except Exception:
+        pass
+    try:
+        from coingecko_client import get_category_caps
+        cats = get_category_caps()
+        result["meme_cap_usd"]        = cats.get("meme_cap_usd")
+        result["stable_dominance_pct"] = cats.get("stable_dominance_pct")
     except Exception:
         pass
     return result

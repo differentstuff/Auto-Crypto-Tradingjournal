@@ -77,28 +77,98 @@ def _get(path: str, params: dict = None) -> dict | list | None:
 
 def get_global_market() -> dict:
     """
-    Global crypto market stats: BTC dominance, total market cap, altcoin season.
+    Global crypto market stats with full dominance breakdown.
+
+    Derived indexes (no extra API calls):
+      TOTAL2  = total_mcap - BTC mcap           (alts including ETH)
+      TOTAL3  = total_mcap - BTC mcap - ETH mcap (alts excluding ETH)
+      USDT.D  = USDT % of total (stablecoin fear gauge: rising = risk-off)
+      OTHERS.D = 100 - top-10 coins % (small-cap dominance)
+
     Returns {} on failure.
     """
     data = _get("global")
     try:
-        d = data.get("data", {}) if isinstance(data, dict) else {}
-        btc_dom = round(float(d.get("market_cap_percentage", {}).get("btc", 0)), 1)
+        d    = data.get("data", {}) if isinstance(data, dict) else {}
+        pcts = d.get("market_cap_percentage", {})   # {"btc": 60.7, "eth": 8.2, "usdt": 5.1, ...}
+
         total_mcap = float((d.get("total_market_cap") or {}).get("usd", 0))
-        total_vol  = float((d.get("total_volume") or {}).get("usd", 0))
-        # Altcoin season: BTC dominance < 50% suggests alts outperforming
+        total_vol  = float((d.get("total_volume")     or {}).get("usd", 0))
+
+        btc_dom  = round(float(pcts.get("btc",  0)), 2)
+        eth_dom  = round(float(pcts.get("eth",  0)), 2)
+        usdt_dom = round(float(pcts.get("usdt", 0)), 2)
+
+        # TOTAL2 and TOTAL3 derived from dominance percentages
+        btc_mcap   = total_mcap * btc_dom  / 100
+        eth_mcap   = total_mcap * eth_dom  / 100
+        total2     = round(total_mcap - btc_mcap, 0)
+        total3     = round(total_mcap - btc_mcap - eth_mcap, 0)
+
+        # OTHERS.D: everything outside the top tracked coins in market_cap_percentage
+        top_pct_sum = sum(float(v) for v in pcts.values())
+        others_dom  = round(max(0.0, 100.0 - top_pct_sum), 2)
+
         if btc_dom < 45:
             regime = "altcoin_season"
         elif btc_dom < 55:
             regime = "mixed"
         else:
             regime = "btc_dominant"
+
         return {
             "btc_dominance_pct":    btc_dom,
+            "eth_dominance_pct":    eth_dom,
+            "usdt_dominance_pct":   usdt_dom,    # USDT.D  — rising = fear/risk-off
+            "others_dominance_pct": others_dom,  # OTHERS.D — rising = alt-season rotation
             "total_market_cap_usd": round(total_mcap, 0),
+            "total2_usd":           total2,      # TOTAL2 — alts incl. ETH
+            "total3_usd":           total3,      # TOTAL3 — alts excl. ETH
             "total_volume_24h_usd": round(total_vol, 0),
             "market_regime":        regime,
             "active_coins":         d.get("active_cryptocurrencies", 0),
+        }
+    except Exception:
+        return {}
+
+
+def get_category_caps() -> dict:
+    """
+    Fetch meme coin and stablecoin sector market caps from CoinGecko categories.
+
+    MEME.C  — meme-token category total market cap
+    STABLE.C — stablecoins category total market cap
+    STABLE.C.D — stablecoin dominance % (STABLE.C / total market cap)
+
+    MEME.C rising sharply = speculative top risk, consider tighter stops on longs.
+    STABLE.C.D falling = stablecoins deploying into market = bullish.
+    STABLE.C.D rising = capital fleeing to safety = bearish/risk-off.
+
+    One API call. Returns {} on failure or rate limit.
+    """
+    data = _get("coins/categories")
+    if not data or not isinstance(data, list):
+        return {}
+    try:
+        meme_cap   = 0.0
+        stable_cap = 0.0
+        for cat in data:
+            cat_id = (cat.get("id") or "").lower()
+            mcap   = float(cat.get("market_cap") or 0)
+            if "meme" in cat_id:
+                meme_cap += mcap
+            elif "stablecoin" in cat_id or "stable" in cat_id:
+                stable_cap += mcap
+
+        # Stable dominance = stable_cap / total market cap
+        gm = get_global_market()
+        total = gm.get("total_market_cap_usd", 0)
+        stable_dom = round(stable_cap / total * 100, 2) if total else None
+
+        return {
+            "meme_cap_usd":          round(meme_cap, 0),
+            "stable_cap_usd":        round(stable_cap, 0),
+            "stable_dominance_pct":  stable_dom,   # STABLE.C.D — falling = risk-on
         }
     except Exception:
         return {}

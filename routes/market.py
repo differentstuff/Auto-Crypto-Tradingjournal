@@ -38,6 +38,40 @@ def api_market_context():
         return _err("Internal server error", 500)
 
 
+@bp.route("/api/market/dominances")
+def api_market_dominances():
+    """
+    GET /api/market/dominances — full dominance index snapshot.
+    Returns BTC.D, ETH.D, USDT.D, OTHERS.D, TOTAL2, TOTAL3,
+    MEME.C, STABLE.C, STABLE.C.D, ES1! from one call.
+    """
+    try:
+        import coingecko_client
+        gm   = coingecko_client.get_global_market()
+        cats = coingecko_client.get_category_caps()
+        mr   = market_context.get_macro_regime()
+        return _ok({
+            "btc_dominance_pct":    gm.get("btc_dominance_pct"),
+            "eth_dominance_pct":    gm.get("eth_dominance_pct"),
+            "usdt_dominance_pct":   gm.get("usdt_dominance_pct"),
+            "others_dominance_pct": gm.get("others_dominance_pct"),
+            "total_market_cap_usd": gm.get("total_market_cap_usd"),
+            "total2_usd":           gm.get("total2_usd"),
+            "total3_usd":           gm.get("total3_usd"),
+            "market_regime":        gm.get("market_regime"),
+            "meme_cap_usd":         cats.get("meme_cap_usd"),
+            "stable_cap_usd":       cats.get("stable_cap_usd"),
+            "stable_dominance_pct": cats.get("stable_dominance_pct"),
+            "es":                   mr.get("es"),
+            "es_change_pct":        mr.get("es_change_pct"),
+            "vix":                  mr.get("vix"),
+            "dxy":                  mr.get("dxy"),
+        })
+    except Exception:
+        traceback.print_exc()
+        return _err("Internal server error", 500)
+
+
 @bp.route("/api/market/calendar")
 def api_market_calendar():
     try:

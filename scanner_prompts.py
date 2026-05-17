@@ -108,17 +108,32 @@ def _build_macro_header(macro_ctx: dict) -> str:
     if not macro_ctx:
         return ""
     parts = []
+
     vix = macro_ctx.get("vix")
     fg  = macro_ctx.get("fear_greed")
-    dom = macro_ctx.get("btc_dominance")
+    btc_dom = macro_ctx.get("btc_dominance")
+    usdt_dom = macro_ctx.get("usdt_dominance")
+    es_chg   = macro_ctx.get("es_change_pct")
+    stable_dom = macro_ctx.get("stable_dominance_pct")
+    meme_cap   = macro_ctx.get("meme_cap_usd")
+
     if vix:
         regime = macro_ctx.get("regime", "").replace("_", " ").upper()
         parts.append(f"VIX {vix:.0f} ({regime})")
+    if es_chg is not None:
+        arrow = "▲" if es_chg >= 0 else "▼"
+        parts.append(f"ES1! {arrow}{abs(es_chg):.1f}%")
     if fg is not None:
         fg_label = "Extreme Fear" if fg < 25 else "Fear" if fg < 45 else "Neutral" if fg < 55 else "Greed" if fg < 75 else "Extreme Greed"
         parts.append(f"F&G {fg}/100 ({fg_label})")
-    if dom:
-        parts.append(f"BTC dom {dom:.0f}%")
+    if btc_dom:
+        parts.append(f"BTC.D {btc_dom:.1f}%")
+    if usdt_dom:
+        parts.append(f"USDT.D {usdt_dom:.1f}%")
+    if stable_dom:
+        parts.append(f"STABLE.D {stable_dom:.1f}%")
+    if meme_cap:
+        parts.append(f"MEME ${meme_cap/1e9:.1f}B")
     if macro_ctx.get("macro_risk"):
         hrs = macro_ctx.get("hours_until")
         evt = macro_ctx.get("next_event", "macro event")
