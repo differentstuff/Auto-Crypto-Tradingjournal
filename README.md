@@ -2,7 +2,7 @@
 
 > **Disclaimer:** Vibe-coded with [Claude Code](https://claude.ai/code). Not reviewed by professional security experts. Use at your own risk.
 
-> ** I decided to remove versioning at the moment, as updates are pushed often. I'm now concentrating in scanner and setup improvements.
+> **I decided to remove versioning at the moment, as updates are pushed often. I'm now concentrating in scanner and setup improvements.
 
 Self-hosted crypto futures trading journal with live exchange sync, a 7-agent AI pipeline, interactive Telegram assistant, and deep performance analytics. Runs on a Raspberry Pi 5 (or any Linux box).
 
