@@ -164,7 +164,8 @@ def get_binance_futures_symbols(min_vol_usd: float = 50_000_000) -> list:
 def get_binance_oi_map(symbols: list) -> dict:
     """
     Return {symbol: open_interest_usd} for a list of USDT-M symbols.
-    Uses Binance futures fetch_tickers which includes openInterestValue.
+    Computes OI in USD as openInterest (contracts) × last price from fetch_tickers().
+    Avoids a separate API call — reuses the same futures ticker data.
     Returns empty dict on any error — OI filter is best-effort.
     symbol format: 'BTCUSDT' (not 'BTC/USDT:USDT').
     """
@@ -183,12 +184,11 @@ def get_binance_oi_map(symbols: list) -> dict:
             journal_sym = sym.replace("/USDT:USDT", "USDT")
             if journal_sym not in target:
                 continue
-            oi = t.get("info", {}).get("openInterestValue") or t.get("openInterestValue")
-            if oi is not None:
-                try:
-                    result[journal_sym] = float(oi)
-                except (TypeError, ValueError):
-                    pass
+            # openInterest is in base contracts; multiply by price to get USD notional
+            oi_contracts = t.get("openInterest") or 0
+            price = t.get("last") or t.get("close") or 0
+            if oi_contracts and price:
+                result[journal_sym] = float(oi_contracts) * float(price)
         return result
     except Exception:
         return {}
