@@ -12,6 +12,7 @@ No external dependencies — pure stdlib.
 import json
 import sys
 import os
+import html
 from datetime import datetime
 
 _DEFAULT_OUT = os.path.join(os.path.dirname(__file__), "browser_test_report.html")
@@ -116,12 +117,14 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
         errs  = t.get("console_errors", [])
         if errs:
             all_errors.append((t["name"], errs))
-        err_html = f'<div class="errors">' + "<br>".join(errs[:3]) + "</div>" if errs else ""
+        err_html = f'<div class="errors">' + "<br>".join(html.escape(e) for e in errs[:3]) + "</div>" if errs else ""
         ss   = t.get("screenshot_b64", "")
         img  = f'<img class="screenshot" src="data:image/png;base64,{ss}" alt="">' if ss else "—"
+        status = t.get('status', 'unknown')
+        status_cls = 'pass' if status == 'pass' else 'warn' if status == 'warn' else 'fail'
         tab_rows += (
-            f"<tr><td>{t.get('name','?')}</td>"
-            f"<td class=\"{'pass' if t.get('status')=='pass' else 'fail'}\">{icon}</td>"
+            f"<tr><td>{html.escape(t.get('name','?'))}</td>"
+            f"<td class=\"{status_cls}\">{icon}</td>"
             f"<td>{err_html or '—'}</td>"
             f"<td>{t.get('dom_node_count','?')}</td>"
             f"<td>{t.get('load_ms','?')}</td>"
@@ -135,7 +138,7 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
         a_c = _lighthouse_class(a, 80)
         p_c = _lighthouse_class(p, 70)
         lh_rows += (
-            f"<tr><td>{l.get('page','?')}</td>"
+            f"<tr><td>{html.escape(l.get('page','?'))}</td>"
             f"<td class=\"score-{a_c}\">{a} {'✅' if a_c=='pass' else '⚠️' if a_c=='warn' else '❌'}</td>"
             f"<td class=\"score-{p_c}\">{p} {'✅' if p_c=='pass' else '⚠️' if p_c=='warn' else '❌'}</td></tr>\n"
         )
@@ -144,7 +147,7 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
     for i in interactions:
         icon = _status_icon(i.get("status", "unknown"))
         ix_rows += (
-            f"<tr><td>{i.get('name','?')}</td>"
+            f"<tr><td>{html.escape(i.get('name','?'))}</td>"
             f"<td class=\"{'pass' if i.get('status')=='pass' else 'fail'}\">{icon}</td>"
             f"<td>{i.get('elapsed_ms','?')}</td></tr>\n"
         )
@@ -152,8 +155,8 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
     errors_section = ""
     if all_errors:
         rows = "".join(
-            f"<tr><td><b>{name}</b></td><td><div class='errors'>"
-            + "<br>".join(errs) + "</div></td></tr>"
+            f"<tr><td><b>{html.escape(name)}</b></td><td><div class='errors'>"
+            + "<br>".join(html.escape(e) for e in errs[:10]) + "</div></td></tr>"
             for name, errs in all_errors
         )
         errors_section = (
@@ -163,10 +166,10 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
         )
 
     ts = results.get("timestamp", datetime.now().isoformat())
-    html = _HTML.format(
+    html_obj = _HTML.format(
         css=_CSS,
-        timestamp=ts,
-        host=results.get("host", ""),
+        timestamp=html.escape(ts),
+        host=html.escape(results.get("host", "")),
         tabs_pass=tabs_pass,
         tabs_total=len(tabs),
         tabs_cls=_pill_cls(tabs_pass, len(tabs)) if tabs else "ok",
@@ -187,7 +190,7 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
     )
 
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_obj)
     return out_path
 
 
