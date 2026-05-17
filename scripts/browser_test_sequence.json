@@ -81,9 +81,9 @@
       "name": "Chart Explorer S&R",
       "page_name": "charts",
       "steps": [
-        {"action": "fill", "selector": "#explorer-symbol", "value": "BTCUSDT"},
-        {"action": "click","selector": "#btn-analyze"},
-        {"action": "wait", "ms": 5000}
+        {"action": "fill",  "selector": "#explorer-symbol", "value": "BTCUSDT"},
+        {"action": "click", "selector": "[onclick='drawExplorerChart()']"},
+        {"action": "wait",  "ms": 5000}
       ],
       "pass_selector": "canvas"
     },

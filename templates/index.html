@@ -495,7 +495,7 @@ select:focus,input:focus{border-color:var(--accent)}
               <div class="target-bar-wrap" id="dash-target-bar-wrap" style="display:none"><div class="target-bar" id="dash-target-bar"></div></div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-              <input type="number" id="dash-target-input" placeholder="Target USDT" style="width:130px" step="any">
+              <input type="number" id="dash-target-input" placeholder="Target USDT" style="width:130px" step="any" aria-label="Target P&L (USDT)">
               <button class="btn btn-secondary btn-sm" onclick="setMonthlyTarget()">Set</button>
               <button class="btn btn-danger btn-sm" onclick="clearMonthlyTarget()" id="dash-target-clear" style="display:none">✕</button>
             </div>
@@ -556,7 +556,7 @@ select:focus,input:focus{border-color:var(--accent)}
       <div class="filters">
         <div class="filter-group">
           <label>Search</label>
-          <input type="text" id="j-search" placeholder="symbol or notes…" style="width:160px">
+          <input type="text" id="j-search" placeholder="symbol or notes…" style="width:160px" aria-label="Search journal">
         </div>
         <div class="filter-group">
           <label>Symbol</label>
@@ -594,11 +594,11 @@ select:focus,input:focus{border-color:var(--accent)}
         </div>
         <div class="filter-group">
           <label>From</label>
-          <input type="date" id="j-from">
+          <input type="date" id="j-from" aria-label="Date from">
         </div>
         <div class="filter-group">
           <label>To</label>
-          <input type="date" id="j-to">
+          <input type="date" id="j-to" aria-label="Date to">
         </div>
         <button class="btn btn-primary" onclick="journalLoad(1)">Filter</button>
         <button class="btn btn-secondary" onclick="journalReset()">Reset</button>
@@ -834,7 +834,7 @@ select:focus,input:focus{border-color:var(--accent)}
                placeholder="Symbol — e.g. BTCUSDT, ETH, SOL"
                style="padding:8px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;
                       color:var(--text);font-size:.9rem;width:260px;outline:none"
-               onkeydown="if(event.key==='Enter')drawExplorerChart()" />
+               onkeydown="if(event.key==='Enter')drawExplorerChart()" aria-label="Chart symbol (e.g. BTCUSDT)">
         <div id="explorer-tf-btns" style="display:flex;gap:6px"></div>
         <button class="btn btn-primary" onclick="drawExplorerChart()">📈 Draw Chart</button>
         <button class="btn" onclick="explorerPopout()" style="font-size:.82rem;padding:6px 12px">↗ Pop Out</button>
@@ -895,7 +895,7 @@ select:focus,input:focus{border-color:var(--accent)}
         <div style="font-size:2.5rem">📂</div>
         <div style="font-weight:600;margin-top:8px">Click to select file or drag &amp; drop</div>
         <p>Accepts ZIP archive or individual CSV files from Bitget export</p>
-        <input type="file" id="file-input" style="display:none" accept=".csv,.zip" onchange="handleFile(this.files[0])">
+        <input type="file" id="file-input" style="display:none" accept=".csv,.zip" onchange="handleFile(this.files[0])" aria-label="Upload positions file (CSV or ZIP)">
       </div>
 
       <div id="upload-result"></div>
@@ -1021,13 +1021,13 @@ select:focus,input:focus{border-color:var(--accent)}
             <p>TradingView screenshot · PNG / JPG / WEBP</p>
             <img id="call-img-preview" class="img-preview" alt="chart preview">
             <input type="file" id="call-img-input" style="display:none"
-                   accept="image/*" onchange="handleCallImageFile(this.files[0])">
+                   accept="image/*" onchange="handleCallImageFile(this.files[0])" aria-label="Upload chart image">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">
             <div>
               <h3 style="margin-bottom:6px">Analyst / Source</h3>
               <input type="text" id="call-analyst" placeholder="e.g. CryptoGuru…"
-                     style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:.85rem">
+                     style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:.85rem" aria-label="Signal source or analyst name">
             </div>
             <div>
               <h3 style="margin-bottom:6px">Market Regime</h3>
@@ -1054,15 +1054,15 @@ select:focus,input:focus{border-color:var(--accent)}
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
               <div class="filter-group">
                 <label>Entry</label>
-                <input type="number" id="sz-entry" placeholder="0.00" step="any" oninput="calcSizing()">
+                <input type="number" id="sz-entry" placeholder="0.00" step="any" oninput="calcSizing()" aria-label="Entry price">
               </div>
               <div class="filter-group">
                 <label>Stop Loss</label>
-                <input type="number" id="sz-sl" placeholder="0.00" step="any" oninput="calcSizing()">
+                <input type="number" id="sz-sl" placeholder="0.00" step="any" oninput="calcSizing()" aria-label="Stop loss price">
               </div>
               <div class="filter-group">
                 <label>Risk %</label>
-                <input type="number" id="sz-risk" value="1" min="0.1" max="10" step="0.1" oninput="calcSizing()">
+                <input type="number" id="sz-risk" value="1" min="0.1" max="10" step="0.1" oninput="calcSizing()" aria-label="Risk percentage">
               </div>
             </div>
             <div id="sz-result" style="font-size:.82rem;min-height:24px"></div>
@@ -1738,7 +1738,7 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="form-grid">
       <div class="form-group">
         <label>Symbol (e.g. BTCUSDT)</label>
-        <input type="text" id="m-symbol" placeholder="BTCUSDT">
+        <input type="text" id="m-symbol" placeholder="BTCUSDT" aria-label="Symbol (e.g. BTCUSDT)">
       </div>
       <div class="form-group">
         <label>Direction</label>
@@ -1746,31 +1746,31 @@ select:focus,input:focus{border-color:var(--accent)}
       </div>
       <div class="form-group">
         <label>Open Time (YYYY-MM-DD HH:MM:SS)</label>
-        <input type="text" id="m-open" placeholder="2026-01-15 09:30:00">
+        <input type="text" id="m-open" placeholder="2026-01-15 09:30:00" aria-label="Open time (YYYY-MM-DD HH:MM:SS)">
       </div>
       <div class="form-group">
         <label>Close Time</label>
-        <input type="text" id="m-close" placeholder="2026-01-15 14:00:00">
+        <input type="text" id="m-close" placeholder="2026-01-15 14:00:00" aria-label="Close time (YYYY-MM-DD HH:MM:SS)">
       </div>
       <div class="form-group">
         <label>Entry Price</label>
-        <input type="number" id="m-entry" placeholder="0.00" step="any">
+        <input type="number" id="m-entry" placeholder="0.00" step="any" aria-label="Entry price">
       </div>
       <div class="form-group">
         <label>Exit Price</label>
-        <input type="number" id="m-exit" placeholder="0.00" step="any">
+        <input type="number" id="m-exit" placeholder="0.00" step="any" aria-label="Exit price">
       </div>
       <div class="form-group">
         <label>Position Size (USDT)</label>
-        <input type="number" id="m-size" placeholder="0.00" step="any">
+        <input type="number" id="m-size" placeholder="0.00" step="any" aria-label="Position size (USDT)">
       </div>
       <div class="form-group">
         <label>Realized P&amp;L (USDT)</label>
-        <input type="number" id="m-pnl" placeholder="0.00" step="any">
+        <input type="number" id="m-pnl" placeholder="0.00" step="any" aria-label="Realised P&L (USDT)">
       </div>
       <div class="form-group">
         <label>Total Fees (USDT, negative)</label>
-        <input type="number" id="m-fees" placeholder="-0.00" step="any">
+        <input type="number" id="m-fees" placeholder="-0.00" step="any" aria-label="Fees paid (USDT)">
       </div>
       <div class="form-group">
         <label>Margin Mode</label>
@@ -1795,7 +1795,7 @@ select:focus,input:focus{border-color:var(--accent)}
       </div>
       <div class="form-group full">
         <label>Tags (comma-separated)</label>
-        <input type="text" id="m-tags" placeholder="scalp, breakout, news-trade">
+        <input type="text" id="m-tags" placeholder="scalp, breakout, news-trade" aria-label="Tags (comma-separated)">
       </div>
     </div>
     <div class="modal-actions">
@@ -1834,19 +1834,19 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="form-grid">
       <div class="form-group">
         <label>Actual PnL (USDT)</label>
-        <input type="number" id="outcome-pnl" placeholder="+25.50 or -18.00" step="any">
+        <input type="number" id="outcome-pnl" placeholder="+25.50 or -18.00" step="any" aria-label="Actual P&L">
       </div>
       <div class="form-group" style="justify-content:flex-end;gap:12px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="outcome-hit-tp1" style="width:16px;height:16px;accent-color:var(--accent3)">
+          <input type="checkbox" id="outcome-hit-tp1" style="width:16px;height:16px;accent-color:var(--accent3)" aria-label="Hit TP1">
           <span>TP1 hit</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="outcome-hit-tp2" style="width:16px;height:16px;accent-color:var(--accent3)">
+          <input type="checkbox" id="outcome-hit-tp2" style="width:16px;height:16px;accent-color:var(--accent3)" aria-label="Hit TP2">
           <span>TP2 hit</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="outcome-hit-sl" style="width:16px;height:16px;accent-color:var(--red)">
+          <input type="checkbox" id="outcome-hit-sl" style="width:16px;height:16px;accent-color:var(--red)" aria-label="Hit stop loss">
           <span>SL triggered</span>
         </label>
       </div>
@@ -1867,7 +1867,7 @@ select:focus,input:focus{border-color:var(--accent)}
     <div class="form-grid">
       <div class="form-group">
         <label>Symbol *</label>
-        <input type="text" id="lm-symbol" placeholder="BTCUSDT" style="text-transform:uppercase">
+        <input type="text" id="lm-symbol" placeholder="BTCUSDT" style="text-transform:uppercase" aria-label="Symbol">
       </div>
       <div class="form-group">
         <label>Direction *</label>
@@ -1875,35 +1875,35 @@ select:focus,input:focus{border-color:var(--accent)}
       </div>
       <div class="form-group">
         <label>Limit Price * (entry level)</label>
-        <input type="number" id="lm-limit-price" placeholder="e.g. 0.0485" step="any">
+        <input type="number" id="lm-limit-price" placeholder="e.g. 0.0485" step="any" aria-label="Limit price">
       </div>
       <div class="form-group">
         <label>Size USDT (notional at full fill)</label>
-        <input type="number" id="lm-size-usdt" placeholder="e.g. 2500" step="any">
+        <input type="number" id="lm-size-usdt" placeholder="e.g. 2500" step="any" aria-label="Position size (USDT)">
       </div>
       <div class="form-group">
         <label>Leverage</label>
-        <input type="number" id="lm-leverage" placeholder="10" value="10" min="1" max="125">
+        <input type="number" id="lm-leverage" placeholder="10" value="10" min="1" max="125" aria-label="Leverage">
       </div>
       <div class="form-group">
         <label>Stop Loss Price</label>
-        <input type="number" id="lm-sl-price" placeholder="SL level" step="any">
+        <input type="number" id="lm-sl-price" placeholder="SL level" step="any" aria-label="Stop loss price">
       </div>
       <div class="form-group">
         <label>Take Profit 1</label>
-        <input type="number" id="lm-tp1-price" placeholder="TP1 level" step="any">
+        <input type="number" id="lm-tp1-price" placeholder="TP1 level" step="any" aria-label="Take profit 1 price">
       </div>
       <div class="form-group">
         <label>Take Profit 2</label>
-        <input type="number" id="lm-tp2-price" placeholder="TP2 level (optional)" step="any">
+        <input type="number" id="lm-tp2-price" placeholder="TP2 level (optional)" step="any" aria-label="Take profit 2 price (optional)">
       </div>
       <div class="form-group">
         <label>Analyst / Signal Source</label>
-        <input type="text" id="lm-analyst" placeholder="e.g. CryptoSignals">
+        <input type="text" id="lm-analyst" placeholder="e.g. CryptoSignals" aria-label="Signal source">
       </div>
       <div class="form-group">
         <label>Notes</label>
-        <input type="text" id="lm-notes" placeholder="Additional context">
+        <input type="text" id="lm-notes" placeholder="Additional context" aria-label="Notes">
       </div>
     </div>
     <div class="modal-actions">
@@ -1928,19 +1928,19 @@ select:focus,input:focus{border-color:var(--accent)}
       <div class="form-grid">
         <div class="form-group">
           <label>Stop Loss Price</label>
-          <input type="number" id="match-sl-price" placeholder="SL level" step="any">
+          <input type="number" id="match-sl-price" placeholder="SL level" step="any" aria-label="Stop loss price">
         </div>
         <div class="form-group">
           <label>Take Profit 1</label>
-          <input type="number" id="match-tp1-price" placeholder="TP1 level" step="any">
+          <input type="number" id="match-tp1-price" placeholder="TP1 level" step="any" aria-label="Take profit 1 price">
         </div>
         <div class="form-group">
           <label>Take Profit 2</label>
-          <input type="number" id="match-tp2-price" placeholder="TP2 level (optional)" step="any">
+          <input type="number" id="match-tp2-price" placeholder="TP2 level (optional)" step="any" aria-label="Take profit 2 price (optional)">
         </div>
         <div class="form-group">
           <label>Notes</label>
-          <input type="text" id="match-notes" placeholder="Any context">
+          <input type="text" id="match-notes" placeholder="Any context" aria-label="Notes">
         </div>
       </div>
     </div>
@@ -1968,7 +1968,7 @@ select:focus,input:focus{border-color:var(--accent)}
     <input type="hidden" id="edit-id">
     <div class="form-group" style="margin-bottom:12px">
       <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Analyst</label>
-      <input type="text" id="edit-analyst" style="width:100%" placeholder="e.g. CryptoGuru">
+      <input type="text" id="edit-analyst" style="width:100%" placeholder="e.g. CryptoGuru" aria-label="Analyst or signal source">
     </div>
     <div class="form-group" style="margin-bottom:12px">
       <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Setup Type</label>
@@ -1989,11 +1989,11 @@ select:focus,input:focus{border-color:var(--accent)}
     </div>
     <div class="form-group" style="margin-bottom:12px">
       <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Tags</label>
-      <input type="text" id="edit-tags" style="width:100%" placeholder="comma-separated tags">
+      <input type="text" id="edit-tags" style="width:100%" placeholder="comma-separated tags" aria-label="Tags (comma-separated)">
     </div>
     <div class="form-group" style="margin-bottom:20px">
       <label style="font-size:.78rem;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Link to Analyst Call <span style="color:var(--muted);font-weight:400;text-transform:none">(call ID — enables R:R analysis)</span></label>
-      <input type="number" id="edit-call-id" style="width:100%" placeholder="e.g. 42">
+      <input type="number" id="edit-call-id" style="width:100%" placeholder="e.g. 42" aria-label="Call ID to link">
     </div>
     <div id="edit-grade-box" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:16px;font-size:.82rem">
       <span style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:700">Execution Grade</span>
