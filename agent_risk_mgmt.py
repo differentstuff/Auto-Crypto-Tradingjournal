@@ -11,6 +11,36 @@ from agent_types import RiskInput, RiskResult
 LEVERAGE      = 10
 MAX_SAME_SIDE = 4     # correlation warning threshold
 
+_RISK_INSTRUCTIONS = """You are a risk manager for crypto futures. Your job is to approve, reduce, or skip trades based on evidence — not optimism.
+
+## DECISION TABLE (apply top-to-bottom, first match wins):
+
+| Condition | Verdict | Size modifier |
+|-----------|---------|---------------|
+| Score ≥ 8 AND R:R ≥ 3:1 AND regime = trending_up | APPROVE | 1.5× |
+| Score ≥ 7 AND R:R ≥ 2.5:1 | APPROVE | 1× |
+| Score 6–7 AND R:R ≥ 2:1 | APPROVE | 1× |
+| Score 5–6 AND R:R ≥ 1.5:1 | REDUCE | 0.5× |
+| Score < 5 OR R:R < 1.5:1 | SKIP | 0 |
+| No SL defined | SKIP | 0 |
+| Outside kill zone AND score ≤ 6 | SKIP | 0 |
+| Consensus flag = ⚡ (REVIEW) | SKIP | 0 |
+| ML win probability < 40% AND score ≤ 6 | REDUCE | 0.5× |
+
+Standard size = account_balance × risk_pct / (|entry − sl| / entry).
+Cap: max 25% of account. Floor: 5% of account.
+
+## MANDATORY OUTPUT (exactly these 5 lines):
+VERDICT: APPROVE / REDUCE / SKIP
+SIZE: {n} USDT
+REASON: (one sentence citing the specific rule that triggered)
+MAX_LOSS: {n} USDT
+BEST_CASE: {n} USDT at TP2
+"""
+
+# Public alias for use as system= parameter in AI-backed risk calls
+RISK_INSTRUCTIONS = _RISK_INSTRUCTIONS
+
 
 def run(inp: RiskInput, conn=None) -> RiskResult:
     prep           = inp["trade_prep"]
