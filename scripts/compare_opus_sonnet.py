@@ -78,8 +78,10 @@ def rescore_with_opus(setup: dict, conn) -> dict:
             "collected": collected, "interpreted": interpreted,
         })
         reviewed    = agent_data_reviewer.run({
-            "collected": collected, "interpreted": interpreted,
-            "sentiment": sentiment,
+            "interpreted": interpreted,
+            "symbol":      symbol,
+            "direction":   direction,
+            "setup_type":  "scanner",
         }, conn)
         result = run_scanner_prep(
             symbol=symbol, direction=direction,
@@ -93,8 +95,8 @@ def rescore_with_opus(setup: dict, conn) -> dict:
             "opus_conditions": result.get("key_conditions", []),
             "opus_entry":      result.get("entry_price", 0),
             "opus_sl":         result.get("sl_price", 0),
-            "opus_tp1":        result.get("tp1", 0),
-            "opus_tp2":        result.get("tp2", 0),
+            "opus_tp1":        result.get("tp1_price", 0),
+            "opus_tp2":        result.get("tp2_price", 0),
             "opus_rr":         result.get("rr_ratio", 0),
             "error":           None,
         }
