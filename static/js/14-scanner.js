@@ -1063,7 +1063,16 @@ function openScannerChart(sym, setup, evt) {
     });
   }
 
-  let url = `/chart?symbol=${encodeURIComponent(sym)}&timeframe=${setup.timeframe||'4H'}`;
+  // Normalize timeframe: "Multi-TF (1D/4H/1H)" is a display label, not a valid
+  // Bitget granularity — strip it down to a real timeframe or default to 4H.
+  const _VALID_TF = new Set(['1m','3m','5m','15m','30m','1H','2H','4H','6H','12H','1D','3D','1W']);
+  const rawTf  = (setup.timeframe || '4H').toUpperCase();
+  const chartTf = _VALID_TF.has(rawTf) ? rawTf
+                : rawTf.includes('1H')  ? '1H'
+                : rawTf.includes('4H')  ? '4H'
+                : rawTf.includes('1D')  ? '1D'
+                : '4H';
+  let url = `/chart?symbol=${encodeURIComponent(sym)}&timeframe=${chartTf}`;
   if (trades.length) url += '&trades=' + encodeURIComponent(JSON.stringify(trades));
   const w = window.open(url, 'chart_' + sym,
     'width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');
