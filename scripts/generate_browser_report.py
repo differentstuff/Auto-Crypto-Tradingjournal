@@ -81,7 +81,9 @@ def _status_icon(status: str) -> str:
     return {"pass": "✅", "fail": "❌", "warn": "⚠️"}.get(status, "❓")
 
 
-def _lighthouse_class(score: float, threshold: float) -> str:
+def _lighthouse_class(score, threshold: float) -> str:
+    if score is None:
+        return "warn"
     if score < threshold:
         return "fail"
     if score >= 70:
@@ -96,12 +98,14 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
 
     tabs_pass = sum(1 for t in tabs if t.get("status") == "pass")
     lh_pass   = sum(1 for l in lighthouse
-                    if l.get("accessibility", 0) >= 80 and l.get("performance", 0) >= 50)
+                    if (l.get("accessibility") or 0) >= 80
+                    and ((l.get("performance") or 100) >= 50))
     ix_pass   = sum(1 for i in interactions if i.get("status") == "pass")
     fail_count = sum(1 for t in tabs if t.get("status") == "fail")
     warn_count = sum(1 for t in tabs if t.get("status") == "warn") + \
                  sum(1 for l in lighthouse
-                     if 50 <= l.get("performance", 100) < 70 or 50 <= l.get("accessibility", 100) < 80)
+                     if (50 <= (l.get("performance") or 100) < 70)
+                     or (50 <= (l.get("accessibility") or 100) < 80))
 
     def _pill_cls(n_pass, n_total):
         if n_pass == n_total:
@@ -134,13 +138,14 @@ def generate_report(results: dict, out_path: str = _DEFAULT_OUT) -> str:
     lh_rows = ""
     for l in lighthouse:
         a   = l.get("accessibility", 0)
-        p   = l.get("performance", 0)
+        p   = l.get("performance")  # may be None (Playwright only, no Lighthouse)
         a_c = _lighthouse_class(a, 80)
         p_c = _lighthouse_class(p, 70)
+        p_display = str(p) if p is not None else "N/A"
         lh_rows += (
             f"<tr><td>{html.escape(l.get('page','?'))}</td>"
             f"<td class=\"score-{a_c}\">{a} {'✅' if a_c=='pass' else '⚠️' if a_c=='warn' else '❌'}</td>"
-            f"<td class=\"score-{p_c}\">{p} {'✅' if p_c=='pass' else '⚠️' if p_c=='warn' else '❌'}</td></tr>\n"
+            f"<td class=\"score-{p_c}\">{p_display} {'✅' if p_c=='pass' else '⚠️' if p_c=='warn' else '—'}</td></tr>\n"
         )
 
     ix_rows = ""
