@@ -458,7 +458,7 @@ function renderPendingLimitCard(lim) {
         tp2:   lim.tp2_price    || null,
       }]);
       const chartUrl = `/chart?symbol=${encodeURIComponent(lim.symbol)}&timeframe=4H&trades=${encodeURIComponent(trades)}`;
-      return `<div style="padding:0 18px 12px;position:relative;display:inline-block;max-width:680px;width:100%">
+      return `<div style="padding:0 18px 12px;position:relative;display:block;max-width:680px">
         <img src="data:image/png;base64,${lim.chart_png_b64}"
              style="width:100%;border-radius:8px;border:1px solid var(--border);display:block" alt="Setup chart">
         <button onclick="window.open('${chartUrl}','chart_${lim.symbol}','width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');event.stopPropagation()"
