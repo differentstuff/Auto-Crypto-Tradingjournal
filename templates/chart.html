@@ -31,6 +31,17 @@ header{display:flex;align-items:center;justify-content:space-between;
 #sr-legend{padding:7px 14px;background:var(--bg2);border-top:1px solid var(--border);
            display:flex;gap:6px;flex-wrap:wrap;min-height:34px;align-items:center;flex-shrink:0;
            max-height:60px;overflow-y:auto}
+#legend-info{display:none;background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:12px 16px 14px;overflow-y:auto;max-height:280px;flex-shrink:0}
+#legend-info.open{display:block}
+.li-head{font-size:.64rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:7px}
+.li-row{display:flex;align-items:center;gap:7px;margin-bottom:5px;font-size:.72rem}
+.li-line{width:22px;height:0;flex-shrink:0}
+.li-box{width:14px;height:14px;border-radius:2px;flex-shrink:0}
+.li-spacer{width:14px;flex-shrink:0}
+.li-lbl{color:var(--fg);min-width:80px;font-weight:600;flex-shrink:0}
+.li-desc{color:#9fa8c9}
 #status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
         color:var(--muted);font-size:.85rem;pointer-events:none;z-index:10}
 </style>
@@ -40,7 +51,69 @@ header{display:flex;align-items:center;justify-content:space-between;
   <span id="chart-title">Loading…</span>
   <div id="tf-btns"></div>
   <div id="layer-btns" style="display:flex;gap:5px;margin-left:auto;flex-wrap:wrap"></div>
+  <button id="btn-info" class="tf-btn" onclick="toggleInfo()" title="Explain chart symbols" aria-label="Show chart legend explanation" style="margin-left:4px;font-weight:700">?</button>
 </header>
+<div id="legend-info">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:14px 28px;font-family:'Segoe UI',system-ui,sans-serif">
+
+  <div>
+    <div class="li-head">Trade Levels</div>
+    <div class="li-row"><span class="li-line" style="border-top:2px solid #4fc3f7"></span><span class="li-lbl">Entry</span><span class="li-desc">Your planned entry price</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px solid #26d96b"></span><span class="li-lbl">TP1</span><span class="li-desc">Take Profit 1 — first target price</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px solid #4fc3f7"></span><span class="li-lbl">TP2</span><span class="li-desc">Take Profit 2 — extended / runner target</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px dashed #ef5350"></span><span class="li-lbl">SL</span><span class="li-desc">Stop Loss — trade auto-closes here to cap losses</span></div>
+  </div>
+
+  <div>
+    <div class="li-head">Support &amp; Resistance (S/R)</div>
+    <div class="li-row"><span class="li-box" style="background:rgba(38,217,107,.55)"></span><span class="li-lbl">▲ S</span><span class="li-desc">Support — price floor; buyers tend to step in here</span></div>
+    <div class="li-row"><span class="li-box" style="background:rgba(239,83,80,.55)"></span><span class="li-lbl">▼ R</span><span class="li-desc">Resistance — price ceiling; sellers dominate here</span></div>
+    <div class="li-row"><span class="li-box" style="background:rgba(255,193,60,.55)"></span><span class="li-lbl">1W S / 1W R</span><span class="li-desc">Weekly timeframe level — strong structural zone</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">(N×)</span><span class="li-desc">Touch count — more touches = stronger, proven level</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">Confluence ×N</span><span class="li-desc">Multiple nearby levels merged into one extra-strong zone</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">⚡ AT LEVEL</span><span class="li-desc">Price is within 0.5% of this zone right now — active!</span></div>
+  </div>
+
+  <div>
+    <div class="li-head">Trendlines</div>
+    <div class="li-row"><span class="li-line" style="border-top:2px dashed #26d96b"></span><span class="li-lbl">↗ Up TL</span><span class="li-desc">Uptrend — connects higher lows (bullish structure)</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px dashed #ef5350"></span><span class="li-lbl">↘ Down TL</span><span class="li-desc">Downtrend — connects lower highs (bearish structure)</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px dashed #ffb300"></span><span class="li-lbl">⚠ At risk</span><span class="li-desc">Price is close to breaking through this trendline</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">(N×)</span><span class="li-desc">Touch count: how many times price bounced off this line</span></div>
+  </div>
+
+  <div>
+    <div class="li-head">Fibonacci (Fib)</div>
+    <div class="li-row"><span class="li-line" style="border-top:2px dotted rgba(180,130,255,.85)"></span><span class="li-lbl">Retracement</span><span class="li-desc">0–100%: pullback stall zones (0.382, 0.5, 0.618…)</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px dashed rgba(255,179,0,.85)"></span><span class="li-lbl">Extension</span><span class="li-desc">&gt;100%: price targets beyond the last swing</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px solid #ef5350"></span><span class="li-lbl">OTE 0.66</span><span class="li-desc">Optimal Trade Entry — high-probability reversal zone</span></div>
+  </div>
+
+  <div>
+    <div class="li-head">Liquidation Levels</div>
+    <div class="li-row"><span class="li-line" style="border-top:2px dashed #ffd53d"></span><span class="li-lbl">⚡ LIQ</span><span class="li-desc">Cluster of forced-closures at this price — acts as a price magnet for short-term spikes</span></div>
+  </div>
+
+  <div>
+    <div class="li-head">WaveTrend (WT) — bottom pane</div>
+    <div class="li-row"><span class="li-line" style="border-top:2px solid #4fc3f7"></span><span class="li-lbl">WT1</span><span class="li-desc">Main momentum line (teal) — direction of current momentum</span></div>
+    <div class="li-row"><span class="li-line" style="border-top:2px solid #ef5350"></span><span class="li-lbl">WT2</span><span class="li-desc">Signal line — WT1/WT2 crossover signals a momentum shift</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">OB &gt; 53</span><span class="li-desc">Overbought — momentum stretched upward, watch for reversal</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">OS &lt; −53</span><span class="li-desc">Oversold — momentum stretched downward, watch for reversal</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">GOLD &lt; −80</span><span class="li-desc">Extreme oversold — historically the strongest buy signal</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">● green</span><span class="li-desc">Buy signal: WT1 crosses WT2 upward from oversold zone</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">● gold</span><span class="li-desc">Gold buy: extreme oversold crossover — highest conviction signal</span></div>
+    <div class="li-row"><span class="li-spacer"></span><span class="li-lbl">▼ red</span><span class="li-desc">Sell signal: WT1 crosses WT2 downward from overbought zone</span></div>
+  </div>
+
+  <div>
+    <div class="li-head">Volume — bottom of main chart</div>
+    <div class="li-row"><span class="li-box" style="background:rgba(38,217,107,.55)"></span><span class="li-lbl">Green bar</span><span class="li-desc">Up candle: buying pressure dominated this candle period</span></div>
+    <div class="li-row"><span class="li-box" style="background:rgba(239,83,80,.55)"></span><span class="li-lbl">Red bar</span><span class="li-desc">Down candle: selling pressure dominated this candle period</span></div>
+  </div>
+
+</div>
+</div>
 <div id="chart-wrap"><div id="status">Loading chart…</div></div>
 <div id="wt-wrap"><div id="wt-label">VMC Cipher B — WaveTrend</div></div>
 <div id="sr-legend"></div>
@@ -679,6 +752,14 @@ window.addEventListener('resize', () => {
     _wtChart.applyOptions({ width: wtWrap.clientWidth });
   }
 });
+
+// ── Chart Legend Info panel (? button) ───────────────────────────────────────
+function toggleInfo() {
+  const panel = document.getElementById('legend-info');
+  const btn   = document.getElementById('btn-info');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('active', open);
+}
 
 renderTfBtns();
 loadChart();
