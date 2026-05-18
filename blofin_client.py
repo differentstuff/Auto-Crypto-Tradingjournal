@@ -41,22 +41,54 @@ def get_account_equity() -> dict:
 
 
 def get_open_positions() -> list:
-    """Return list of open position dicts matching existing DB shape. Empty list on error."""
+    """Return open positions normalised to the same shape as bitget_client.get_open_positions()."""
+    import time as _time
     try:
-        exchange = get_blofin_exchange()
+        exchange  = get_blofin_exchange()
         positions = exchange.fetch_positions()
-        result = []
+        now_ms    = int(_time.time() * 1000)
+        result    = []
         for p in positions:
-            sym_raw = p.get("symbol") or ""
-            symbol = sym_raw.replace("/USDT:USDT", "USDT").replace("/USD:BTC", "USD")
+            sym_raw     = p.get("symbol") or ""
+            symbol      = sym_raw.replace("/USDT:USDT", "USDT").replace("/USD:BTC", "USD")
+            side        = (p.get("side") or "long").lower()
+            direction   = "Long" if side == "long" else "Short"
+
+            entry_px    = float(p.get("entryPrice")       or 0)
+            mark_px     = float(p.get("markPrice")        or 0)
+            contracts   = float(p.get("contracts")        or 0)
+            notional    = float(p.get("notional")         or contracts * entry_px)
+            margin      = float(p.get("initialMargin")    or p.get("maintenanceMargin") or 0)
+            unrl        = float(p.get("unrealizedPnl")    or 0)
+            unrl_pct    = float(p.get("percentage")       or (unrl / margin * 100 if margin else 0))
+            liq_px      = float(p.get("liquidationPrice") or 0) or None
+            leverage    = int(float(p.get("leverage")     or 1))
+            margin_mode = (p.get("marginMode") or "cross").lower()
+            open_ms     = int(p.get("timestamp") or 0)
+            dur_min     = int((now_ms - open_ms) / 60000) if open_ms else None
+
+            # CCXT Blofin may expose SL/TP in the info dict
+            info        = p.get("info") or {}
+            sl          = str(info.get("stopLossPrice") or p.get("stopLossPrice") or "")
+            tp          = str(info.get("takeProfitPrice") or p.get("takeProfitPrice") or "")
+
             result.append({
-                "symbol":         symbol,
-                "side":           p.get("side"),
-                "size":           float(p.get("contracts") or 0),
-                "entry_price":    float(p.get("entryPrice") or 0),
-                "unrealized_pnl": float(p.get("unrealizedPnl") or 0),
-                "leverage":       int(p.get("leverage") or 1),
-                "notional":       float(p.get("notional") or 0),
+                "symbol":            symbol,
+                "direction":         direction,
+                "leverage":          leverage,
+                "margin_mode":       "Cross" if "cross" in margin_mode else "Isolated",
+                "total":             contracts,
+                "size_usdt":         round(notional, 2),
+                "margin_usdt":       round(margin, 2),
+                "entry_price":       str(entry_px) if entry_px else None,
+                "mark_price":        str(mark_px)  if mark_px  else None,
+                "liquidation_price": str(liq_px)   if liq_px   else None,
+                "unrealized_pnl":    round(unrl, 4),
+                "unrealized_pct":    round(unrl_pct, 2),
+                "take_profit":       tp,
+                "stop_loss":         sl,
+                "duration_minutes":  dur_min,
+                "exchange":          "blofin",
             })
         return result
     except Exception:

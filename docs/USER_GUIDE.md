@@ -242,6 +242,20 @@ The chart title shows the full symbol + active timeframe as an overlay in the to
 
 Below the chart: chips for each trendline (with timeframe label and touch count) and each S/R level (with distance % from current price).
 
+### Chart Symbol Reference (? button)
+
+Every chart popup (pop-out from scanner setups, pending orders, and the Chart Explorer pop-out) has a **?** button in the top-right header bar. Clicking it expands an inline panel that explains every abbreviation on the chart:
+
+- **Trade Levels** — Entry (blue), TP1 (green), TP2 (cyan), SL (red dashed)
+- **S/R** — ▲ S (support, green), ▼ R (resistance, red), 1W S/R (weekly, gold), touch count (N×), Confluence ×N, ⚡ AT LEVEL
+- **Trendlines** — ↗ Up TL / ↘ Down TL / ⚠ at-risk, touch count
+- **Fibonacci** — Retracement (purple dotted), Extension (amber dashed), OTE 0.66 (red)
+- **Liquidation** — ⚡ LIQ (yellow dashed) — price magnet for short-term spikes
+- **WaveTrend** — WT1 (teal), WT2 (red), OB/OS/GOLD zones, buy/sell signals
+- **Volume** — green = up candle, red = down candle
+
+Click **?** again to collapse the panel.
+
 ### Indicator Panel
 
 Below the legend: 9 indicator cards for the selected timeframe:
@@ -528,6 +542,8 @@ Each card shows:
 - **📍 X.X% from limit** proximity badge (Waiting tab only) — appears automatically when the current mark price is within 5% of your limit price. Red = <1% away, yellow = <3%, blue = <5%. This tells you limits that may fill soon.
 
 ### Actions
+
+**↗ Pop Out** (chart thumbnail) — If a chart is shown below the AI verdict, a small `↗ Pop Out` button appears in the top-right corner of the chart image. Clicking it opens the full interactive chart in a new popup window (same as the scanner pop-out), letting you zoom, switch timeframes, and see the live S/R overlay.
 
 **🤖 AI Analysis** — Claude reviews the limit setup and gives:
 - **Verdict:** Keep / Adjust / Cancel

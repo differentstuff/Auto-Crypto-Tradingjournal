@@ -3,7 +3,7 @@
 **Version:** v1.6.0  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
-**Tests:** 442 passing  
+**Tests:** 467 passing  
 **Project path:** `/home/<your-user>/trading-journal/`
 
 ---
@@ -49,7 +49,7 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_limit.py             ← Pending limit analysis (delegates to agent pipeline (v1.1.0))
     ├── constants.py            ← All shared constants: models, cache TTLs, thresholds (v2.8)
     ├── prompt_fragments.py      ← Shared AI prompt text blocks (v2.8)
-    ├── ai_client.py              ← Singleton Anthropic wrapper + auto token logging (v2.8)
+    ├── ai_client.py              ← Anthropic wrapper + Gemini fallback + auto token logging; send() retries transparently on any APIError
     ├── trade_history.py          ← Unified symbol history: get_recent_trades/get_trade_stats (v2.8)
     ├── chart_indicators.py       ← Pure RSI/EMA/MACD/ADX computation (v2.8)
     ├── chart_sr.py               ← Pure S/R pivot detection (v2.8)
@@ -58,11 +58,11 @@ Browser (http://<your-pi-ip>:8082)
     ├── ai_pattern_detector.py  ← Detect statistical patterns in trade history via Claude
     ├── ai_rulebook.py          ← Self-learning personalised rulebook (Claude synthesises rules from trade history)
     ├── ai_scanner.py           ← Proactive setup scanner: 3-stage pipeline + agent pipeline Stage 3b
-    ├── gemini_client.py        ← Google Gemini 2.0 Flash pre-proof consensus scoring
+    ├── gemini_client.py        ← Google Gemini 2.0 Flash; send_json() for pre-proof consensus, send_text() for plain-text fallback calls
     ├── grok_client.py          ← xAI Grok social intelligence, MC-weighted (micro-cap 80%, large 0%)
     ├── agent_orchestrator.py   ← Consensus scoring + pipeline runners (run_call_analysis, run_monitor)
     ├── ai_hindsight.py         ← Retroactive blind scoring + P&L comparison (historical candles)
-    ├── scanner_scheduler.py    ← Background daemon: force_scan() every 30 min + Telegram alert on findings
+    ├── scanner_scheduler.py    ← Background daemon: force_scan() every 30 min + Telegram alert on findings; _enrich_and_filter_setups() has 4-layer price proximity guard (no entry_ref / >20% gap / >5% drift / exception → drop)
     ├── monitor_scheduler.py    ← Background daemon: polls open positions every 10 min, Telegram alert on risk≥7
     ├── telegram_notify.py      ← Telegram Bot API client (stdlib only); send_setup_alert(), send_photo(), send_message()
     ├── market_context.py       ← Fear & Greed, funding rate, long/short ratio (5-min cache) + get_market_str()
@@ -82,7 +82,7 @@ Browser (http://<your-pi-ip>:8082)
     └── trading_journal.db      ← SQLite database (auto-created, excluded from git)
 
 templates/index.html            ← Frontend: HTML structure only (~910 lines)
-templates/chart.html            ← Detached chart window (LightweightCharts, S/R boxes, trendlines, liquidation levels)
+templates/chart.html            ← Detached chart window (LightweightCharts, S/R boxes, trendlines, liquidation levels); ? button toggles inline legend panel explaining all abbreviations
 static/style.css                ← All dark-theme CSS (extracted from index.html)
 static/app.js                   ← Legacy entry point (kept for cache compat); JS now split into static/js/
 static/js/01-utils.js           ← Globals, openChart, S/R overlay, symbol picker, nav, helpers, makeChart, tooltip engine
@@ -95,11 +95,11 @@ static/js/07-calls.js           ← Call Analyzer, saved calls, analyst stats
 static/js/08-live.js            ← Live Trades, position cards, correlation warning, KPI rendering
 static/js/08b-live-calls.js     ← Call match banners, confirmMatch, dismissMatch, renderCallTargetsPanel (split v2.1)
 static/js/09-analysis.js        ← Prediction accuracy, postmortem, call sizing
-static/js/10-pending.js         ← Pending limits, Bitget live orders, bulk operations
+static/js/10-pending.js         ← Pending limits, Bitget live orders, bulk operations; chart thumbnail has ↗ pop-out button; JSON-in-summary detection with retry hint
 static/js/11-sync.js            ← Live Sync page
 static/js/12-explorer.js        ← Chart Explorer (inline LightweightCharts)
 static/js/13-init.js            ← showPage extension, app startup
-static/js/14-scanner.js         ← Setup Scanner: table, click-to-expand detail, chart with levels
+static/js/14-scanner.js         ← Setup Scanner: table, click-to-expand detail, chart with levels; timeframe normalization for Multi-TF display labels before Bitget candle API calls
 static/js/15-hindsight.js       ← Hindsight Analysis: progress bar, comparison view, verdict table
 data/                           ← CSV files for import
 docs/GUIDE.md                   ← This file (technical)

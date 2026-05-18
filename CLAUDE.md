@@ -37,6 +37,7 @@ routes/*.py — import helpers + ai_* modules
 - Token logging: log_token_usage(module, model, in, out, cached) — import from helpers or token_log
 - Prompt caching: build_cached_messages() — ephemeral cache on context blocks >= 4096 chars
 - Error fallbacks: use empty_interpreter/empty_sentiment/empty_reviewer from agent_types (not private _empty_* functions)
+- **Gemini API fallback**: `ai_client.send()` catches `anthropic.APIError` → calls `gemini_client.send_text()` transparently; all modules get fallback with no per-module changes; usage logged as `{module}+gemini / gemini-fallback`
 - Data pipeline: agent_data_collector → 15 parallel workers → CollectorResult → prompt_builder → Claude
 - Adding a new data source: add fetch_X() to data_sources.py + field to CollectorResult in agent_types.py
 
@@ -243,6 +244,7 @@ agent_chart_draw.draw(
 - `_startOverlay(wrap, series, mergedLvls, htf_levels, liquidations, atr)`: uses ATR × 0.15 for singleton zone half-width
 - At-level zones: 2px border rect + brighter fill + `⚡AT LEVEL` chip in legend
 - Weekly S&R stays gold, unchanged
+- **? Legend panel** — `#btn-info` button toggles `#legend-info` div (static HTML, no innerHTML); 7 sections explain every abbreviation with color-coded indicators; CSS classes: `.li-head/.li-row/.li-line/.li-box/.li-spacer/.li-lbl/.li-desc`
 
 ## Pending Limit Orders (routes/limits.py + static/js/10-pending.js)
 
@@ -258,9 +260,17 @@ agent_chart_draw.draw(
 ### Scanner Chart in Limit Card
 - `GET /api/limits` JOINs `analyzed_calls.analysis_json` for rows with a `call_id` and extracts `chart_png_b64`
 - Pending limit card renders the chart as inline `<img>` below the AI verdict
+- Chart container uses `display:block` so image fills full card width
+- `↗ Pop Out` button overlaid top-right on chart image; opens `chart.html` popup
+- If `analysis_json.summary` starts with `{` (truncated Gemini JSON): tries to extract `entry_reason`; on parse failure shows `⚠ Analysis was truncated — click AI Analysis to retry.`
+- `ai_limit.py` max_tokens: 768 → 1024 (Gemini fallback verbosity)
 
 ### Delete Route
 - `DELETE /api/limits/<id>` now has try/except → returns JSON error instead of HTML 500
+
+### Scanner Timeframe Normalization (14-scanner.js)
+- `setup.timeframe` may be `"Multi-TF (1D/4H/1H)"` display label — normalised against `_VALID_TF` Set before chart URL
+- Prevents "no candle data" errors on scanner chart popups (Bitget rejects invalid granularity strings)
 
 ## Live Trade Analysis (agent_trade_monitor.py)
 

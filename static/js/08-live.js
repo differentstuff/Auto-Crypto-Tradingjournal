@@ -221,7 +221,7 @@ function renderPositionCards(positions, waitingLimits) {
         <div>
           <div class="pos-symbol">${p.symbol}</div>
           <div class="pos-badge" style="margin-top:4px">
-            <span class="badge ${p.direction.toLowerCase()}">${p.direction}</span>
+            <span class="badge ${(p.direction||'long').toLowerCase()}">${p.direction||'—'}</span>
             <span class="badge" style="background:rgba(108,99,255,.15);color:var(--accent)">${p.leverage}x</span>
             ${p.exchange && p.exchange !== 'bitget' ? `<span class="badge" style="background:rgba(79,195,247,.15);color:rgba(79,195,247,.9);font-size:.62rem">${p.exchange}</span>` : ''}
             ${noSl ? '<span class="badge" style="background:rgba(239,83,80,.15);color:var(--red);font-size:.65rem">NO SL</span>' : ''}

@@ -1,6 +1,6 @@
 # Trading Journal — Architecture & Data Flow
 
-*v1.6.0 · Updated 2026-05-17*
+*v1.6.0 · Updated 2026-05-18*
 
 ---
 
@@ -50,7 +50,32 @@ max_per_tf = 5.55 (non-SMT) / 5.85 (SMT) + 0.20 symbol-level conditional
 - 16/16 tabs: zero JS errors, DOM counts 1590–4740
 - 4/4 pages: accessibility 100/100 (42 aria-label fixes across HTML + dynamic JS inputs)
 - 3/3 interaction checks: Call Analyzer, Scanner, Chart Explorer
-- Test suite: 442 passing
+- Test suite: 467 passing
+
+---
+
+## Post-v1.6.0 additions (2026-05-18)
+
+### Gemini AI Fallback (`ai_client.py`)
+`ai_client.send()` wraps the Anthropic call in a try/except on `anthropic.APIError`. On failure it delegates to `gemini_client.send_text()`, converts the flat prompt, and returns a compatible `(text, cached)` tuple. All 10+ AI modules get transparent fallback with no per-module changes. Token usage is logged as `{module}+gemini / gemini-fallback`.
+
+### Scanner Price Proximity Guard (`scanner_scheduler.py`)
+`_enrich_and_filter_setups()` now runs 4 checks before passing setups to the alert pipeline:
+1. No `entry_ref` (missing entry_zone + entry_price) → drop
+2. `|live_price - entry_ref| / live_price > 20%` → drop (fixes stale KITE-style alerts)
+3. Directional drift > 5% (existing guard, kept)
+4. Exception in `get_live_price()` → drop (fail-closed)
+
+### Chart Legend Panel (`templates/chart.html`)
+`?` button added in the chart header alongside the layer toggles. Clicking expands an inline collapsible panel (max-height 280px, scrollable) with 7 sections: Trade Levels · S/R · Trendlines · Fibonacci · Liquidation · WaveTrend · Volume. Each entry has a color-coded visual indicator (line/box/spacer) + label + plain-English description. All content is static HTML — no `innerHTML` assignment.
+
+### Pending Orders UX (`static/js/10-pending.js`)
+- `↗ Pop Out` button overlaid top-right on the chart thumbnail; opens `chart.html` popup
+- JSON-in-summary detection: if `summary` starts with `{`, tries to extract `entry_reason`; on parse failure shows `⚠ Analysis was truncated — click AI Analysis to retry.`
+- `ai_limit.py` `max_tokens` increased 768 → 1024 to accommodate Gemini fallback verbosity
+
+### Scanner Timeframe Normalization (`static/js/14-scanner.js`)
+Normalizes `setup.timeframe` against a `_VALID_TF` set before building the chart URL. Converts `"Multi-TF (1D/4H/1H)"` display labels to a valid Bitget granularity string, preventing "no candle data" errors on scanner-generated chart popups.
 
 ---
 
@@ -203,7 +228,7 @@ call_analyzer (TradePrep) Sonnet    4096         Complex structured JSON + CoT
 scanner_batch (TradePrep) Sonnet    4096/symbol  Per-finalist via agent pipeline
 advisor                  Sonnet     4096         Portfolio-level strategy
 rulebook                 Sonnet     2048         Synthesis of full history
-limit_analyzer           Sonnet     768          Risk decision (keep accuracy)
+limit_analyzer           Sonnet     1024         Risk decision (increased for Gemini fallback verbosity)
 pattern_detector         Sonnet     1200         Cross-pattern reasoning
 
 scanner_quick            Haiku      120          Score + 1 sentence (fast pre-filter)

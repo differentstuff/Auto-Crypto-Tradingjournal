@@ -34,6 +34,10 @@ Self-hosted crypto futures trading journal with live exchange sync, a 7-agent AI
 - **Backtesting Quality** — PBO (Probability of Backtest Overfitting), Deflated Sharpe, Bootstrap CI via `POST /api/backtest/quality`
 - **Structured AI Rubrics** — 6-section technical analyst template (TREND/MOMENTUM/STRUCTURE/SIGNAL COUNT/BIAS/CONFIDENCE) + explicit risk decision table in agent_trade_prep.py
 - **Browser Accessibility Baseline** — 16/16 tabs clean, 4/4 pages 100% accessibility score, 42 aria-label fixes across all form inputs
+- **Gemini AI Fallback** — `ai_client.send()` transparently retries on any Anthropic API error; all 10+ AI modules get fallback with no code changes required
+- **Chart Legend Panel** — `?` button in every chart popup opens a toggleable reference panel explaining all abbreviations (S/R, Fib, WaveTrend, liquidation, trendlines, etc.) with color-coded visual indicators
+- **Scanner Stale-Alert Guard** — 4-layer price proximity filter drops setups where entry is missing, >20% from current price, >5% directional drift, or price fetch fails; fixes false Telegram alerts on stale scanner setups
+- **Pending Orders UX** — pop-out button on chart thumbnail opens full interactive chart; AI verdict JSON display fix with retry hint on truncated Gemini responses
 
 ---
 
@@ -81,7 +85,7 @@ Self-hosted crypto futures trading journal with live exchange sync, a 7-agent AI
 - **Backtest quality** — PBO, Deflated Sharpe, Bootstrap CI (`POST /api/backtest/quality`)
 - **Structured agent prompts** — 6-section analyst template + risk decision rubric in agent_trade_prep.py
 - **Browser baseline** — 16/16 tabs clean, 42 aria-label fixes, 4/4 pages 100% accessibility score
-- **442 tests** — up from 351 at v1.5.0
+- **467 tests** — up from 351 at v1.5.0; +25 since v1.6.0 (Gemini fallback + scanner price filter)
 
 ---
 
