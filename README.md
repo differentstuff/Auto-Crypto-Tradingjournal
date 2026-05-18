@@ -28,6 +28,12 @@ Self-hosted crypto futures trading journal with live exchange sync, a 7-agent AI
 - **Backtester + Optimizer** — vectorized 4H backtest, Optuna Bayesian optimizer, walk-forward validation
 - **AI Learning** — personalised rulebook, hindsight scoring, token usage dashboard, prompt caching (40-60% savings)
 - **Hermes Bot** — interactive Telegram assistant (separate from alert bot); queries journal API, sends charts, runs scans, tracks behavioral stats
+- **12-Signal Confluence Engine** — liquidation cluster walls (11th signal), order flow delta/divergence (12th signal); HMM 3-state regime detection (trending/ranging/volatile) injected into every AI prompt
+- **On-Chain Metrics** — MVRV, exchange net-flow via CoinMetrics Community API (keyless); injected as macro context
+- **ML Win-Probability Scorer** — XGBoost trained on historical outcomes; predicts win probability per setup, injected into prompts after 20+ labeled trades
+- **Backtesting Quality** — PBO (Probability of Backtest Overfitting), Deflated Sharpe, Bootstrap CI via `POST /api/backtest/quality`
+- **Structured AI Rubrics** — 6-section technical analyst template (TREND/MOMENTUM/STRUCTURE/SIGNAL COUNT/BIAS/CONFIDENCE) + explicit risk decision table in agent_trade_prep.py
+- **Browser Accessibility Baseline** — 16/16 tabs clean, 4/4 pages 100% accessibility score, 42 aria-label fixes across all form inputs
 
 ---
 
@@ -44,6 +50,7 @@ Self-hosted crypto futures trading journal with live exchange sync, a 7-agent AI
 | AI — social | xAI Grok (X/Twitter sentiment) |
 | On-chain | Nansen.ai smart money |
 | Market data | Binance · Bitget · Bybit · OKX · Coinalyze · CoinGecko · yfinance |
+| ML / Regime | `hmmlearn` · `scikit-learn` · `xgboost` · `joblib` |
 | Alerts | Telegram Bot API |
 | Host | Raspberry Pi 5 / systemd |
 
@@ -56,19 +63,25 @@ Self-hosted crypto futures trading journal with live exchange sync, a 7-agent AI
 - `liquidation_client.py` — Coinalyze historical liquidations, CSV cache in `data/liquidations/`
 - `coingecko_client.py` — dominance indexes (TOTAL2/3, USDT.D, OTHERS.D, MEME.C, STABLE.C.D)
 - `market_context.py` — macro regime: VIX, DXY, ES1!, F&G, BTC regime
+- `liquidation_levels.py` — CCXT-based forced liquidation cluster detection (TTL-cached)
+- `onchain_client.py` — CoinMetrics Community MVRV + exchange flow
+- `market_regime.py` — GaussianHMM 3-state regime classifier on BTC 4H data
+- `signal_scorer.py` — XGBoost win-probability from historical analyzed_calls
+- `backtest_quality.py` — PBO + Deflated Sharpe + Bootstrap CI (Bailey et al. 2014)
 - Hermes agent — `~/.hermes/` on Pi; `hermes-gateway.service` (user systemd)
 
 ---
 
 ## Recent Additions
 
-- **Dominance indexes** — TOTAL2/3, USDT.D, OTHERS.D, MEME.C, STABLE.C.D, ES1! in scanner macro header
-- **Hermes interactive bot** — two-bot setup, SOUL.md API doc, MEMORY.md trader profile, analyze_trader.py
-- **S/R chart improvements** — color-coded zones, confluence merging, at-level highlight, ATR-based width
-- **HTF→LTF scanner** — 1H candles enriched for all finalists before Stage 3 scoring
-- **Scanner cancel** — `POST /api/scanner/cancel` stops in-flight scan cleanly
-- **Pending limit fixes** — correct field names for AI verdict display, Bitget preset SL/TP backfill
-- **Live trade monitor fix** — correct field names (direction/entry_price/mark_price), direction-aware prompt for Shorts
+- **12-signal confluence engine** — order flow delta (12th signal), liquidation wall (11th signal)
+- **HMM market regime** — 3-state GaussianHMM (trending/ranging/volatile), injected into every prompt
+- **On-chain: MVRV, exchange net-flow** — CoinMetrics Community API, keyless, macro context block
+- **ML win-probability scorer** — XGBoost, activates after 20 labeled outcomes
+- **Backtest quality** — PBO, Deflated Sharpe, Bootstrap CI (`POST /api/backtest/quality`)
+- **Structured agent prompts** — 6-section analyst template + risk decision rubric in agent_trade_prep.py
+- **Browser baseline** — 16/16 tabs clean, 42 aria-label fixes, 4/4 pages 100% accessibility score
+- **442 tests** — up from 351 at v1.5.0
 
 ---
 
