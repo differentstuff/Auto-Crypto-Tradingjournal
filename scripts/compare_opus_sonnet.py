@@ -76,6 +76,7 @@ def rescore_with_opus(setup: dict, conn) -> dict:
         interpreted = agent_data_interpreter.run({"collected": collected})
         sentiment   = agent_market_sentiment.run({
             "collected": collected, "interpreted": interpreted,
+            "symbol": symbol, "direction": direction,
         })
         reviewed    = agent_data_reviewer.run({
             "interpreted": interpreted,
