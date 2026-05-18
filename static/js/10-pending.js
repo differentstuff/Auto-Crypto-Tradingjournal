@@ -393,7 +393,22 @@ function renderPendingLimitCard(lim) {
           <span style="font-weight:700;color:${vColor}">${rec}</span>
           ${score != null ? `<span style="color:var(--muted)"> · Score ${score}/10</span>` : ''}
           ${risk ? `<span style="color:var(--muted)"> · ${escHtml(risk)}</span>` : ''}
-          <div style="margin-top:6px;color:var(--muted);font-size:.8rem">${escHtml(a.summary||'')}</div>
+          <div style="margin-top:6px;color:var(--muted);font-size:.8rem">${(() => {
+            // summary may be a raw JSON string if the AI response was truncated
+            let sumText = a.summary || '';
+            if (sumText.trimStart().startsWith('{')) {
+              try {
+                const inner = JSON.parse(sumText);
+                sumText = inner.entry_reason || inner.summary || inner.recommendation || '';
+              } catch(_) {
+                // truncated JSON — show a retry hint instead of raw text
+                sumText = a.setup_quality?.label === 'Parse Error'
+                  ? '⚠ Analysis was truncated — click AI Analysis to retry.'
+                  : sumText.replace(/[{}"]/g, '').slice(0, 200);
+              }
+            }
+            return escHtml(sumText);
+          })()}</div>
           ${adjList.length ? `<div style="margin-top:8px;font-size:.78rem">${adjList.map(x=>`<div style="padding:3px 0;border-bottom:1px solid var(--border)">→ ${escHtml(x)}</div>`).join('')}</div>` : ''}
           ${a.key_risks?.length && !adjList.includes(a.key_risks[0]) ? `<div style="margin-top:6px;font-size:.75rem;color:var(--red)">${a.key_risks.map(r=>`<div>⚠ ${escHtml(r)}</div>`).join('')}</div>` : ''}
         </div>`;
@@ -434,7 +449,24 @@ function renderPendingLimitCard(lim) {
       <span style="margin-left:8px">· Added: ${(lim.created_at||'').slice(0,10)}</span>
     </div>` : ''}
     ${verdictHtml}
-    ${lim.chart_png_b64 ? `<div style="padding:0 18px 12px"><img src="data:image/png;base64,${lim.chart_png_b64}" style="width:100%;max-width:680px;border-radius:8px;border:1px solid var(--border);display:block" alt="Setup chart"></div>` : ''}
+    ${lim.chart_png_b64 ? (() => {
+      const trades = JSON.stringify([{
+        dir:   lim.direction || 'Long',
+        entry: lim.limit_price  || null,
+        sl:    lim.sl_price     || null,
+        tp1:   lim.tp1_price    || null,
+        tp2:   lim.tp2_price    || null,
+      }]);
+      const chartUrl = `/chart?symbol=${encodeURIComponent(lim.symbol)}&timeframe=4H&trades=${encodeURIComponent(trades)}`;
+      return `<div style="padding:0 18px 12px;position:relative;display:inline-block;max-width:680px;width:100%">
+        <img src="data:image/png;base64,${lim.chart_png_b64}"
+             style="width:100%;border-radius:8px;border:1px solid var(--border);display:block" alt="Setup chart">
+        <button onclick="window.open('${chartUrl}','chart_${lim.symbol}','width=1060,height=680,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');event.stopPropagation()"
+                style="position:absolute;top:8px;right:8px;background:rgba(15,17,23,.85);border:1px solid var(--border);
+                       color:var(--text);border-radius:6px;padding:3px 9px;font-size:.72rem;cursor:pointer;
+                       backdrop-filter:blur(4px)" title="Open interactive chart">↗ Pop Out</button>
+      </div>`;
+    })() : ''}
     <div id="pending-analyze-${lim.id}" style="display:none;padding:0 18px 12px"></div>
     <div style="display:flex;gap:8px;padding:10px 18px 14px;flex-wrap:wrap">${waitingActions}</div>
   </div>`;

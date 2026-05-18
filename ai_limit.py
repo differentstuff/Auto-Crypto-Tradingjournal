@@ -144,7 +144,7 @@ def analyze_pending_limit(lim: dict, equity: float, open_positions: list,
     raw_text, cached = ai_send(
         "limit_analyzer", MODEL,
         [{"role": "user", "content": prompt}],
-        max_tokens=768,
+        max_tokens=1024,  # increased: Gemini fallback is more verbose than Haiku
     )
     raw = strip_fence(raw_text.strip())
 
