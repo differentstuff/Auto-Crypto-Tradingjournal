@@ -76,9 +76,26 @@ def _enrich_and_filter_setups(setups: list) -> list:
         entry_ref = ez.get("high") or ez.get("low") or s.get("entry_price") or 0
 
         # ── Price freshness ────────────────────────────────────────────────
+        # Guard 1: entry_ref=0 means no entry zone at all — drop, don't pass through
+        if not entry_ref:
+            print(f"[Scanner Scheduler] {sym} has no entry zone — skipping")
+            continue
+
         try:
             live = get_live_price(sym)
             if live and entry_ref:
+                # Guard 2: absolute distance from current price (catches historical
+                # support levels far from current price — e.g. entry $0.146 when
+                # current price is $0.24, which the directional drift alone may miss
+                # if the exception path is taken).
+                abs_pct_from_current = abs(live - entry_ref) / live * 100
+                if abs_pct_from_current > 20.0:
+                    print(f"[Scanner Scheduler] {sym} entry {entry_ref} is "
+                          f"{abs_pct_from_current:.1f}% from current price {live:.6g} "
+                          f"— skipping unreachable setup")
+                    continue
+
+                # Guard 3: directional drift — price moved past entry zone
                 # For Long: positive drift = price moved above entry (missed move)
                 # For Short: positive drift = price dropped below entry (missed move)
                 if direction == "long":
@@ -95,7 +112,10 @@ def _enrich_and_filter_setups(setups: list) -> list:
                 elif drift > 2.0:
                     s["_price_warning"] = f"Price moved {drift:.1f}% from entry zone — act fast or wait for pullback"
         except Exception as e:
-            print(f"[Scanner Scheduler] Price check failed for {sym}: {e}")
+            # If we can't verify price proximity, drop the setup — don't risk
+            # sending a stale alert just because the price check failed.
+            print(f"[Scanner Scheduler] Price check failed for {sym}: {e} — skipping")
+            continue
 
         # ── Chart generation ──────────────────────────────────────────────
         try:
