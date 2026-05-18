@@ -21,7 +21,7 @@ import agent_risk_mgmt
 from agent_types import TradePrepInput, TradePrepResult
 
 
-def run(inp: TradePrepInput, conn) -> TradePrepResult:
+def run(inp: TradePrepInput, conn, model: str = MODEL) -> TradePrepResult:
     collected   = inp["collected"]
     interpreted = inp["interpreted"]
     reviewed    = inp["reviewed"]
@@ -57,7 +57,7 @@ def run(inp: TradePrepInput, conn) -> TradePrepResult:
     system_prompt = agent_data_interpreter.ANALYST_INSTRUCTIONS + "\n\n" + agent_risk_mgmt.RISK_INSTRUCTIONS
     with ThreadPoolExecutor(max_workers=2) as ex:
         f_claude = ex.submit(
-            ai_send, "call_analyzer", MODEL,
+            ai_send, "call_analyzer", model,
             build_cached_messages(dynamic_ctx, prompt, stable_prefix=stable),
             4096,
             system_prompt,
@@ -125,7 +125,7 @@ def run(inp: TradePrepInput, conn) -> TradePrepResult:
         consensus        = consensus,
         raw_json         = data,
         chart_png_b64    = chart_b64,
-        _model           = MODEL,
+        _model           = model,
         _cached_tokens   = cached if isinstance(cached, int) else 0,
     )
 

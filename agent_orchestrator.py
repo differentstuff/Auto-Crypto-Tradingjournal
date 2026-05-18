@@ -152,13 +152,14 @@ def run_call_analysis(
 
 
 def run_scanner_prep(symbol: str, direction: str, collected, interpreted,
-                     reviewed, sentiment, conn):
+                     reviewed, sentiment, conn, model: str | None = None):
     """Stage 3b entry point for the scanner — replaces inline Sonnet batch call."""
+    from constants import MODEL as _DEFAULT_MODEL
     return agent_trade_prep.run(TradePrepInput(
         collected=collected, interpreted=interpreted,
         reviewed=reviewed, sentiment=sentiment,
         call_text="", account_equity=0.0, setup_type="scanner",
-    ), conn)
+    ), conn, model=model or _DEFAULT_MODEL)
 
 
 def run_monitor(position: dict, original_prep: dict):
