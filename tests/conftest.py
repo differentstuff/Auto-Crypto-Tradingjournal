@@ -30,6 +30,10 @@ if "flask" not in sys.modules:
 if "anthropic" not in sys.modules:
     _anthropic = types.ModuleType("anthropic")
     _anthropic.Anthropic = unittest.mock.MagicMock()
+    # Minimal exception class so tests can raise/catch anthropic.APIError
+    class _APIError(Exception):
+        pass
+    _anthropic.APIError = _APIError
     sys.modules["anthropic"] = _anthropic
 
 if "pandas_ta" not in sys.modules:

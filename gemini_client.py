@@ -80,6 +80,41 @@ def _call(prompt: str, model: str = None, max_tokens: int = 256,
     return None
 
 
+def send_text(prompt: str, system: str = None,
+              max_tokens: int = 2048, model: str = None) -> str | None:
+    """
+    General-purpose plain-text Gemini call. Used as Anthropic fallback.
+    Unlike _call(), does NOT force JSON output — returns raw text.
+    system is prepended to the prompt if provided.
+    Returns text string or None on failure.
+    """
+    if not GEMINI_API_KEY:
+        return None
+    mdl = model or _ACTIVE_MODEL
+    url = f"{GEMINI_BASE}/{mdl}:generateContent?key={GEMINI_API_KEY}"
+    full_prompt = f"{system}\n\n{prompt}" if system else prompt
+    payload = json.dumps({
+        "contents": [{"role": "user", "parts": [{"text": full_prompt}]}],
+        "generationConfig": {
+            "temperature":     0.15,
+            "maxOutputTokens": max_tokens,
+        },
+    }).encode()
+    req = urllib.request.Request(url, data=payload)
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
+            resp = json.loads(r.read())
+        return resp["candidates"][0]["content"]["parts"][0]["text"]
+    except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+        print(f"[Gemini fallback] HTTP error: {exc}", flush=True)
+    except (KeyError, IndexError, json.JSONDecodeError) as exc:
+        print(f"[Gemini fallback] Parse error: {exc}", flush=True)
+    except Exception as exc:
+        print(f"[Gemini fallback] Unexpected error: {exc}", flush=True)
+    return None
+
+
 # ── Trade call pre-proof ───────────────────────────────────────────────────────
 
 def score_call(call_text: str, symbol: str, direction: str) -> dict | None:
