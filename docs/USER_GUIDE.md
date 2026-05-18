@@ -1,6 +1,6 @@
 # Crypto Trading Journal — User Guide
 
-**Version:** v1.1.0  
+**Version:** v1.6.0  
 **App URL:** http://`<your-host>`:8082  
 **Exchanges:** Bitget USDT-M Futures · Blofin USDT-M Futures
 
@@ -913,6 +913,19 @@ A summary of the most user-visible changes:
 - **Rulebook** — Regen guard (needs 5+ new trades). Stale rules annotated after 30 days.
 - **Settings** — Token usage dashboard.
 - **Telegram Community** — Announcement channel [@autocryptotradingjournal](https://t.me/autocryptotradingjournal) and discussion forum [@autotradingjournal](https://t.me/autotradingjournal) with 5 topics: Welcome, Updates, Feature Requests, Bug Reports, General. GitHub releases auto-post to both.
+
+---
+
+## New in v1.6.0 (2026-05-17)
+
+**Analysis tab enhancements** — Three new tools available under the Analysis tab:
+- **Backtest Quality Check** — runs a statistical over-fit test on any backtest result. Use `POST /api/backtest/quality` or the Quality button in the Analysis tab. Returns PBO (probability of back-test over-fitting), deflated Sharpe ratio, and a bootstrap confidence interval so you know whether a backtest result is likely to hold out-of-sample.
+- **HMM Market Regime** — the scanner and call analyzer now tag each setup with a 3-state Hidden Markov Model regime label (Bull/Bear/Range) based on BTC 4H price action.
+- **ML Win Probability** — setups above the quality gate are scored by an XGBoost model trained on your own hindsight outcomes. The `ml_win_prob` field appears in scanner results when the model has ≥20 labeled outcomes to work from.
+
+**Accessibility** — All form inputs across the UI now have `aria-label` attributes. The app is fully screen-reader compatible as of v1.6.0.
+
+**Confluence scoring** — The signal engine now uses **12 confluence signals** (up from 10): the two new signals are order flow delta (tick-rule buy/sell pressure proxy) and liquidation cluster walls (identifies nearby liquidation concentrations that act as magnet levels).
 
 ---
 

@@ -1,8 +1,9 @@
 # Crypto Trading Journal — Full Technical Reference
 
-**Version:** v1.1.0  
+**Version:** v1.6.0  
 **Deployed on:** Raspberry Pi 5 (8GB), aarch64, Debian Bookworm  
 **Built:** May 2026  
+**Tests:** 442 passing  
 **Project path:** `/home/<your-user>/trading-journal/`
 
 ---
@@ -846,6 +847,8 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 
 **Criteria system (v2.6.0):** POST body accepts `criteria` dict with 11 boolean flags: `rsi`, `macd`, `ema_stack`, `adx`, `sr_anchor`, `wavetrend`, `volume`, `funding`, `fear_greed`, `atr_sl`, `rr_minimum`. Disabled criteria are skipped in both the stage-2 quality gate and the Claude prompt. Persisted in browser localStorage. Presets: Full / Trend Momentum / Structure-only / Meme.
 
+**Confluence signals (v1.6.0):** The confluence scoring system now has **12 signals** total — 11 TF-level signals (RSI, MACD, EMA, ADX, WaveTrend, MFI, CVD, order_flow, volume, SMT price-divergence, SMT direction-divergence) plus 1 symbol-level signal (liquidation cluster wall ±0.20). `max_per_tf` = 5.55 (non-SMT) / 5.85 (SMT). VIX multiplier: score × 0.80 when VIX > 30.
+
 **Progress state:** `/status` now includes `stage` (1-3), `stage_label`, `stage_detail`, `stage_progress` (0-100) updated live during the scan.
 
 **Stage 3 batching (v2.6.0):** All top-N finalists scored in a single Sonnet prompt (`_batch_ai_score()`), ~40% token saving. Falls back to parallel individual calls if batch response is malformed or incomplete.
@@ -861,6 +864,18 @@ All routes return: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "...
 | DELETE | `/api/hindsight/results` | Clear all stored results from DB |
 
 Results are persistent in `trade_hindsight` table. `/results` returns `{rows, summary}` where summary includes actual vs hypothetical P&L, win rates, signal accuracy (TP/FP/TN/FN counts).
+
+### Backtest & Analysis (routes/backtest.py) — v1.4.0+
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/backtest/run` | Run vectorized backtest. Body: `{symbol, timeframe, days}` |
+| GET | `/api/backtest/optimize` | Start async Bayesian optimizer job; returns `{job_id}` immediately |
+| GET | `/api/backtest/optimize/<job_id>` | Poll optimizer job status and results |
+| GET | `/api/backtest/optimizer-history` | Last 5 optimizer runs with Sharpe + params |
+| POST | `/api/backtest/walk-forward` | 70/30 walk-forward split on real positions; returns `{job_id}` |
+| GET | `/api/backtest/walk-forward/<job_id>` | Poll walk-forward job |
+| POST | `/api/backtest/quality` | **v1.6.0** — PBO + deflated-Sharpe + bootstrap-CI quality check (`backtest_quality.py`). Body: `{symbol, timeframe, days}`. Returns over-fit probability, deflated Sharpe, bootstrap confidence interval |
 
 ### Telegram Alerts (routes/sync.py)
 
@@ -1903,6 +1918,21 @@ The **Live Sync page** shows a Telegram Alerts section with configured/unconfigu
 ### JS cleanup
 - **`renderMarketBadges(symbol)`** — extracted from an IIFE inside a template literal in `08-live.js`; now a named function.
 - **Correlation warning loop** — 4-branch copy-paste for long/short×2/3+ replaced with a single `for` loop over `[['LONG', longs], ['SHORT', shorts]]`.
+
+---
+
+## v1.6.0 Additions (2026-05-17)
+
+- **Liquidation cluster signal** (`liquidation_levels.py`, `_liquidation_weight()` ±0.20) — 11th confluence signal
+- **Order flow delta** (`compute_order_flow_delta()` tick-rule proxy, `_order_flow_weight()` ±0.15 per-TF) — 12th confluence signal
+- **On-chain metrics** (`onchain_client.py`, CoinMetrics Community API: CapMVRVCur + exchange flows) injected into prompts
+- **HMM regime detection** (`market_regime.py`, 3-state GaussianHMM on BTC 4H, DB migration 38: `regime_label`)
+- **ML signal scorer** (`signal_scorer.py`, XGBoost win-probability from setup_score/direction/rr_ratio/consensus_score, DB migration 39: `ml_win_prob`, 24h retrain)
+- **Structured AI prompts** — `ANALYST_INSTRUCTIONS` (6-section) + `RISK_INSTRUCTIONS` (decision table) in `agent_trade_prep.py`
+- **Backtest quality** — `backtest_quality.py` (PBO + deflated-Sharpe + bootstrap-CI), `POST /api/backtest/quality`
+- **Chrome DevTools MCP** — `.mcp.json` + `scripts/browser_test_sequence.json` (16-tab, 4 Lighthouse, 3 interactions, 4 E2E)
+- **New deps:** `hmmlearn`, `joblib`, `scikit-learn`, `xgboost`, `backtester-mcp`
+- **Test count:** 442 passing
 
 ---
 
