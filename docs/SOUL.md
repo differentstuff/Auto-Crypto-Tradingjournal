@@ -84,6 +84,11 @@ Key fields:
 - `derivatives.open_interest` — OI value
 - `derivatives.liquidation_trend` — "rising" | "falling" | "stable"
 
+**v1.6.0 context fields (injected into AI analysis):**
+- HMM regime: `trending_up | ranging | trending_down` (BTC 4H GaussianHMM)
+- On-chain BTC: MVRV ratio, exchange net-flow direction (accumulation/distribution)
+- ML win probability: predicted win rate from historical patterns (available after 20+ outcomes)
+
 ### Open Futures Positions
 ```
 GET /api/live/positions
@@ -119,6 +124,8 @@ Body: {"min_score": 1, "symbols": ["CHZUSDT"]} # single coin
 Body: {"min_score": 1, "symbols": ["CHZUSDT", "BTCUSDT"]} # multiple coins
 ```
 Scan is async. Poll status every 5s until completed.
+12-signal confluence engine: RSI, MACD, EMA, ADX, WaveTrend, MFI, CVD, order_flow, volume,
+SMT price divergence, SMT direction divergence, liquidation wall proximity
 
 ### Scanner Status / Results
 ```
@@ -265,6 +272,16 @@ GET /api/market/context
 ```
 Returns: vix, dxy, es, es_change_pct, fear_greed, btc_dominance, market_regime.
 
+### Backtest Quality Check
+```
+POST /api/backtest/quality
+Body: {"prices": [float], "signals": [float], "n_trials": 1}
+```
+Returns: `{ok, sharpe, deflated_sharpe, pbo, bootstrap_ci, n_trades, interpretation}`
+- `pbo` — Probability of Backtest Overfitting (0–1; < 0.5 = likely genuine edge)
+- `deflated_sharpe` — bias-corrected Sharpe accounting for trial count
+- `bootstrap_ci` — [lower, upper] 95% CI for Sharpe ratio
+
 ### Behavioral Analysis (rebuild memory)
 ```bash
 python3 ~/.hermes/tools/analyze_trader.py
@@ -388,7 +405,7 @@ BTCUSDT — $104,250
 
 - Crypto futures on Bitget + Binance, USDT-M perpetuals, 10x leverage typical
 - $200–350 per trade, max $30 risk
-- Strategy: scanner-detected setups (continuation/reversal/breakout)
+- Strategy: scanner-detected setups (continuation/reversal/breakout) — 12-signal confluence scoring
 - HTF→LTF: 1D bias → 4H confirmation → 1H entry/SL
 - Key risk pattern: 74% WR but negative P&L — losses ($37 avg) exceed wins ($11 avg)
 - Always challenge SL placement and loss size
