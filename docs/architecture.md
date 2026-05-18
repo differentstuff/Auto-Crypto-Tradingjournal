@@ -1,6 +1,56 @@
 # Trading Journal — Architecture & Data Flow
 
-*v1.1.0 · Updated 2026-05-13*
+*v1.6.0 · Updated 2026-05-17*
+
+---
+
+## v1.6.0 additions (2026-05-17)
+
+### New Modules
+| Module | Purpose |
+|--------|---------|
+| `liquidation_levels.py` | CCXT Binance USDM forced-liquidation cluster detection; TTL-cached 15 min |
+| `order_flow` (chart_indicators.py) | Tick-rule proxy for per-candle buy/sell aggressor delta + divergence |
+| `onchain_client.py` | CoinMetrics Community API — MVRV, exchange net-flow; TTL-cached 1 h |
+| `market_regime.py` | GaussianHMM 3-state regime classifier on BTC 4H (trending_up/ranging/trending_down); retrained 4 h |
+| `signal_scorer.py` | XGBoost win-probability from historical analyzed_calls; 24 h retrain, activates at 20+ outcomes |
+| `backtest_quality.py` | PBO (CSCV), Deflated Sharpe (Bailey et al. 2014), Bootstrap Sharpe CI |
+
+### Confluence Signals (12, up from 9)
+| Signal | Weight | Notes |
+|--------|--------|-------|
+| RSI | grouped momentum ±1.5 | with MACD |
+| MACD | grouped momentum ±1.5 | capped with RSI |
+| EMA stack | ±1.0 | |
+| ADX | ±strength | |
+| WaveTrend | grouped oscillator ±1.0 | with MFI |
+| MFI | grouped oscillator ±1.0 | capped with WT |
+| CVD | ±0.4 | |
+| order_flow | ±0.15 per-TF | tick-rule delta, new v1.6.0 |
+| volume | ±0.5/−0.25 amplifier | |
+| smt_weight | +0.15 | cross-exchange price divergence |
+| smt_direction_weight | ±0.15 | 24h directional divergence |
+| liquidation_wall | ±0.20 symbol-level | conditional on 3% proximity, new v1.6.0 |
+
+max_per_tf = 5.55 (non-SMT) / 5.85 (SMT) + 0.20 symbol-level conditional
+
+### New DB Columns
+- `analyzed_calls.regime_label TEXT` (migration 38) — HMM state label at time of analysis
+- `analyzed_calls.ml_win_prob REAL` (migration 39) — ML scorer output
+
+### New Endpoints
+- `POST /api/backtest/quality` — PBO, Deflated Sharpe, Bootstrap CI on submitted equity curve
+
+### Prompt Injections Added
+- HMM regime: `"Market regime (HMM/BTC): trending_up — confidence 78%"`
+- On-chain: `"On-chain BTC: MVRV 2.3 | fair_value | exchange outflow $30M"`
+- ML scorer: `"ML win probability: 68% (historical pattern match)"`
+
+### Browser Baseline
+- 16/16 tabs: zero JS errors, DOM counts 1590–4740
+- 4/4 pages: accessibility 100/100 (42 aria-label fixes across HTML + dynamic JS inputs)
+- 3/3 interaction checks: Call Analyzer, Scanner, Chart Explorer
+- Test suite: 442 passing
 
 ---
 

@@ -35,6 +35,8 @@ Every setup is evaluated across eight factors. Each factor contributes to the fi
 | Market conditions (funding, F&G, L/S) | Medium |
 | Chart pattern / setup type clarity | Medium |
 | Rulebook compliance (known weaknesses) | Medium |
+| ML win-probability signal (when available) | Low |
+| HMM market regime (trending/ranging/volatile) | Low |
 
 ---
 
@@ -238,7 +240,7 @@ Every setup is evaluated across eight factors. Each factor contributes to the fi
 
 A concise summary of how each factor maps to each score level:
 
-### Technical Confluence (signals aligned out of possible 8 across 4H+1D)
+### Technical Confluence (signals aligned out of possible 12 across 4H+1D)
 
 | Score | Bullish/Bearish signals | Trend confirmed? |
 |-------|------------------------|-----------------|
@@ -328,5 +330,17 @@ The jump from 7 to 9 requires **three specific upgrades**:
 A 10 additionally requires that all of the above happen simultaneously with favorable market conditions and a textbook pattern structure. It should feel rare and obvious at the same time.
 
 ---
+
+---
+
+## ML Win-Probability Integration
+
+When 20+ historical trade outcomes are recorded, the ML scorer (`signal_scorer.py`) injects a win-probability estimate into every AI prompt:
+
+> `"ML win probability: 68% (historical pattern match)"`
+
+This is based on: setup_score, direction, R:R ratio, and consensus score. A predicted win probability below 40% on a score ≤ 6 setup will trigger the REDUCE verdict in the risk manager rubric.
+
+The score itself does not change based on ML probability — the ML signal is advisory context for the AI, not a scoring factor.
 
 *This guide is used internally by the Setup Scanner (`ai_scanner.py`), Call Analyzer (`ai_call.py`), and Hindsight Analysis (`ai_hindsight.py`) when prompting Claude to score setups.*
