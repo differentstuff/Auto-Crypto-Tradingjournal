@@ -62,45 +62,46 @@ def get_latest_scan_setups(conn, limit: int = 15) -> list[dict]:
     return results
 
 
-def rescore_with_opus(setup: dict, conn) -> dict:
+def rescore_with_opus(setup: dict) -> dict:
     """Re-run the full data pipeline + trade prep with Opus for one setup."""
     symbol    = setup["symbol"]
     direction = setup["direction"]
     print(f"  Opus scoring: {symbol} {direction}...", flush=True)
     try:
-        collected   = agent_data_collector.run({
-            "symbol":     symbol,
-            "direction":  direction,
-            "timeframes": ["4H", "1D"],
-        })
-        interpreted = agent_data_interpreter.run({"collected": collected})
-        sentiment   = agent_market_sentiment.run({
-            "collected": collected, "interpreted": interpreted,
-            "symbol": symbol, "direction": direction,
-        })
-        reviewed    = agent_data_reviewer.run({
-            "interpreted": interpreted,
-            "symbol":      symbol,
-            "direction":   direction,
-            "setup_type":  "scanner",
-        }, conn)
-        result = run_scanner_prep(
-            symbol=symbol, direction=direction,
-            collected=collected, interpreted=interpreted,
-            reviewed=reviewed, sentiment=sentiment,
-            conn=conn, model=OPUS_MODEL,
-        )
-        return {
-            "opus_score":      result.get("setup_score", 0),
-            "opus_cot":        result.get("cot_reasoning", ""),
-            "opus_conditions": result.get("key_conditions", []),
-            "opus_entry":      result.get("entry_price", 0),
-            "opus_sl":         result.get("sl_price", 0),
-            "opus_tp1":        result.get("tp1_price", 0),
-            "opus_tp2":        result.get("tp2_price", 0),
-            "opus_rr":         result.get("rr_ratio", 0),
-            "error":           None,
-        }
+        with db_conn() as conn:
+            collected   = agent_data_collector.run({
+                "symbol":     symbol,
+                "direction":  direction,
+                "timeframes": ["4H", "1D"],
+            })
+            interpreted = agent_data_interpreter.run({"collected": collected})
+            sentiment   = agent_market_sentiment.run({
+                "collected": collected, "interpreted": interpreted,
+                "symbol": symbol, "direction": direction,
+            })
+            reviewed    = agent_data_reviewer.run({
+                "interpreted": interpreted,
+                "symbol":      symbol,
+                "direction":   direction,
+                "setup_type":  "scanner",
+            }, conn)
+            result = run_scanner_prep(
+                symbol=symbol, direction=direction,
+                collected=collected, interpreted=interpreted,
+                reviewed=reviewed, sentiment=sentiment,
+                conn=conn, model=OPUS_MODEL,
+            )
+            return {
+                "opus_score":      result.get("setup_score", 0),
+                "opus_cot":        result.get("cot_reasoning", ""),
+                "opus_conditions": result.get("key_conditions", []),
+                "opus_entry":      result.get("entry_price", 0),
+                "opus_sl":         result.get("sl_price", 0),
+                "opus_tp1":        result.get("tp1_price", 0),
+                "opus_tp2":        result.get("tp2_price", 0),
+                "opus_rr":         result.get("rr_ratio", 0),
+                "error":           None,
+            }
     except Exception as e:
         return {"opus_score": 0, "opus_cot": "", "opus_conditions": [], "error": str(e)}
 
@@ -237,11 +238,10 @@ def main():
     print(f"Found {len(setups)} setups to re-score with Opus.")
     print(f"This will make {len(setups)} Opus API calls — estimated cost: ~${len(setups) * 0.05:.2f}\n")
 
-    # Re-score with Opus (parallel, max 3 at once to avoid rate limits)
-    with db_conn() as conn:
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            futures = {ex.submit(rescore_with_opus, s, conn): s for s in setups}
-            for fut in as_completed(futures):
+    # Re-score with Opus (parallel, max 3 at once; each worker opens its own conn)
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        futures = {ex.submit(rescore_with_opus, s): s for s in setups}
+        for fut in as_completed(futures):
                 s = futures[fut]
                 try:
                     opus_result = fut.result()
