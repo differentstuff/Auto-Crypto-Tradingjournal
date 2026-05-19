@@ -59,9 +59,16 @@ def test_get_open_positions_returns_list_with_correct_shape():
     assert isinstance(result, list)
     assert len(result) == 1
     pos = result[0]
+    # Bitget-compatible shape — must expose direction, not raw side
     assert "symbol" in pos
-    assert "side" in pos
+    assert "direction" in pos
     assert pos["symbol"] == "BTCUSDT"
+    assert pos["direction"] in ("Long", "Short")
+    # Required normalised fields for the unified live-positions UI
+    for key in ("margin_usdt", "size_usdt", "entry_price", "mark_price",
+                "unrealized_pnl", "exchange"):
+        assert key in pos, f"missing key {key}"
+    assert pos["exchange"] == "blofin"
 
 
 def test_get_open_positions_returns_empty_on_error():
