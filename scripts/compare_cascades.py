@@ -65,17 +65,40 @@ MAX_PARALLEL = 2  # provider concurrency — keep low to respect free-tier RPM
 _SKIP_RUNS = set(filter(None, (os.environ.get("SKIP_RUNS") or "").split(",")))
 _SKIP_RUNS = {s.strip() for s in _SKIP_RUNS}
 
+# Pin the setup list to specific symbols (comma-separated) so cache hits work
+# across multiple invocations even if the journal's auto-scanner shifts the
+# DB's "latest 12" window. Example:
+#   SETUPS_OVERRIDE="KERNELUSDT,SPACEUSDT,...,KITEUSDT"
+_SETUPS_OVERRIDE = [s.strip() for s in (os.environ.get("SETUPS_OVERRIDE") or "").split(",") if s.strip()]
+
 
 def get_latest_scan_setups(conn, limit: int = N_SETUPS) -> list[dict]:
-    """Fetch the most recent scanner setups from analyzed_calls."""
-    rows = conn.execute("""
-        SELECT symbol, direction, setup_score, analysis_json, created_at
-        FROM analyzed_calls
-        WHERE analyst = 'scanner' AND analysis_json IS NOT NULL
-        ORDER BY created_at DESC LIMIT ?
-    """, (limit,)).fetchall()
+    """Fetch scanner setups from analyzed_calls. If SETUPS_OVERRIDE env var is
+    set, fetch those specific symbols (in that order) instead of latest-N.
+    Lets us pin the test universe across invocations for cache reuse."""
+    if _SETUPS_OVERRIDE:
+        placeholders = ",".join("?" * len(_SETUPS_OVERRIDE))
+        rows = conn.execute(f"""
+            SELECT symbol, direction, setup_score, analysis_json
+            FROM analyzed_calls
+            WHERE analyst='scanner' AND analysis_json IS NOT NULL
+              AND symbol IN ({placeholders})
+            ORDER BY created_at DESC
+        """, _SETUPS_OVERRIDE).fetchall()
+        # Keep latest row per symbol and order to match _SETUPS_OVERRIDE
+        by_symbol = {}
+        for r in rows:
+            by_symbol.setdefault(r["symbol"], r)
+        ordered = [by_symbol[s] for s in _SETUPS_OVERRIDE if s in by_symbol]
+    else:
+        ordered = conn.execute("""
+            SELECT symbol, direction, setup_score, analysis_json
+            FROM analyzed_calls
+            WHERE analyst='scanner' AND analysis_json IS NOT NULL
+            ORDER BY created_at DESC LIMIT ?
+        """, (limit,)).fetchall()
     out = []
-    for r in rows:
+    for r in ordered:
         try:
             aj = json.loads(r["analysis_json"])
         except Exception:
@@ -193,8 +216,12 @@ def generate_report(setups: list[dict], all_results: dict) -> str:
             continue
         deltas, sound, errors, latencies = [], 0, 0, []
         for i, _setup in enumerate(setups):
-            r  = all_results[label][i]
-            br = all_results[baseline_label][i]
+            r  = all_results[label].get(i)
+            br = all_results[baseline_label].get(i)
+            if r is None:
+                continue          # provider didn't reach this setup (e.g. crash mid-run)
+            if br is None:
+                continue          # no baseline entry for this setup — can't compare
             if r["error"]:
                 errors += 1; continue
             if br["error"]:
@@ -235,8 +262,20 @@ def generate_report(setups: list[dict], all_results: dict) -> str:
 
     for i, setup in enumerate(setups):
         sym, dir_ = setup["symbol"], setup["direction"]
-        b = all_results[baseline_label][i]
+        b = all_results[baseline_label].get(i)
         lines += [f"---", f"### {sym} — {dir_}", ""]
+        if b is None:
+            lines += ["⚠ No baseline data for this setup — listing provider outputs only.", ""]
+            for label, _prov, _model in RUNS:
+                if label == baseline_label: continue
+                r = all_results[label].get(i)
+                if r is None or r.get("error"):
+                    lines.append(f"- **{label}:** ERROR")
+                else:
+                    lines.append(f"- **{label}:** score {r['score']}, entry {r['entry']:.6g}, "
+                                 f"SL {r['sl']:.6g}, TPs {r['tp1']:.6g}/{r['tp2']:.6g}, R:R {r['rr']:.2f}")
+            lines.append("")
+            continue
         if b["error"]:
             lines += [f"⚠ Baseline errored: `{b['error']}` — skipping setup", ""]
             continue
@@ -245,7 +284,10 @@ def generate_report(setups: list[dict], all_results: dict) -> str:
         lines += ["", "| Run | Score | Δ | Entry | SL | TP1 | TP2 | R:R | Sound | Latency |",
                   "|---|---|---|---|---|---|---|---|---|---|"]
         for label, _prov, _model in RUNS:
-            r = all_results[label][i]
+            r = all_results[label].get(i)
+            if r is None:
+                lines.append(f"| {label} | — | — | — | — | — | — | — | — | not run |")
+                continue
             if r["error"]:
                 lines.append(f"| {label} | — | — | — | — | — | — | — | — | ERROR |")
                 continue
