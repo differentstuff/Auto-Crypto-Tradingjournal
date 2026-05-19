@@ -5,6 +5,7 @@ Owns the main Claude Sonnet call. Assembles prompt from all upstream
 agent outputs + stable_prefix for caching. Runs Gemini in parallel.
 Generates annotated chart after Claude responds.
 """
+import contextvars
 import json
 from concurrent.futures import ThreadPoolExecutor
 
@@ -59,15 +60,20 @@ def run(inp: TradePrepInput, conn, model: str = MODEL) -> TradePrepResult:
     # cache minimum; combined with rulebook/calibration it's ~1540 tokens and caches).
     instructions  = agent_data_interpreter.ANALYST_INSTRUCTIONS + "\n\n" + agent_risk_mgmt.RISK_INSTRUCTIONS
     cached_prefix = instructions + "\n\n" + stable
+    # Copy the current context so contextvars (e.g. ai_client.force_provider)
+    # propagate into the worker threads — by default ThreadPoolExecutor does not
+    # carry context across thread boundaries.
+    ctx = contextvars.copy_context()
     with ThreadPoolExecutor(max_workers=2) as ex:
         f_claude = ex.submit(
+            ctx.run,
             ai_send, "call_analyzer", model,
             build_cached_messages(dynamic_ctx, prompt, stable_prefix=cached_prefix),
             4096,
             None,
         )
         if gemini_client.is_configured() and call_text:
-            f_gemini = ex.submit(gemini_client.score_call, call_text, symbol, direction)
+            f_gemini = ex.submit(ctx.run, gemini_client.score_call, call_text, symbol, direction)
         else:
             f_gemini = None
 

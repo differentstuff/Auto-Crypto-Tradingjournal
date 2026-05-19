@@ -59,6 +59,12 @@ RUNS = [
 N_SETUPS = 12     # how many scanner finalists to re-score
 MAX_PARALLEL = 2  # provider concurrency — keep low to respect free-tier RPM
 
+# Skip-list for partial re-runs. Pass via env: SKIP_RUNS="Baseline (Opus 4.7)"
+# (comma-separated). Used when fixing bugs in providers without re-burning the
+# baseline cost (~$5 Anthropic for Opus 4.7 across 12 setups).
+_SKIP_RUNS = set(filter(None, (os.environ.get("SKIP_RUNS") or "").split(",")))
+_SKIP_RUNS = {s.strip() for s in _SKIP_RUNS}
+
 
 def get_latest_scan_setups(conn, limit: int = N_SETUPS) -> list[dict]:
     """Fetch the most recent scanner setups from analyzed_calls."""
@@ -255,6 +261,58 @@ def generate_report(setups: list[dict], all_results: dict) -> str:
     return "\n".join(lines)
 
 
+def _load_prior_results(report_path: str, setups: list[dict]) -> dict[str, dict[int, dict]]:
+    """
+    Parse a previous cascade_comparison.md and extract per-setup scores/levels
+    for each run. Used to reuse prior baseline results without re-running them.
+    Best-effort — returns {} on parse failure.
+    """
+    out: dict[str, dict[int, dict]] = {}
+    try:
+        with open(report_path) as f:
+            text = f.read()
+    except Exception:
+        return out
+    # Map symbol → setup index from the current run
+    sym_to_idx = {s["symbol"]: i for i, s in enumerate(setups)}
+    # The report has per-setup tables of form:
+    # ### SYMBOL — Direction
+    # ...
+    # | Baseline (Opus 4.7) | 6 | — | 0.0638 | 0.06149 | 0.0675 | 0.071 | 3.12 | ✓ | 11.1s |
+    sections = re.split(r"\n###\s+([A-Z0-9]+)\s+—\s+(\w+)", text)
+    # sections[0] is preamble; then [symbol, direction, body, symbol, direction, body, ...]
+    for i in range(1, len(sections) - 2, 3):
+        sym = sections[i].strip()
+        body = sections[i + 2]
+        if sym not in sym_to_idx:
+            continue
+        idx = sym_to_idx[sym]
+        # Parse each row of the per-setup table
+        for line in body.splitlines():
+            if not line.startswith("| ") or "| ERROR |" in line or "| — |" in line:
+                continue
+            parts = [p.strip() for p in line.strip("|").split("|")]
+            if len(parts) < 10:
+                continue
+            label = parts[0]
+            try:
+                score = int(parts[1]) if parts[1] not in ("—", "") else 0
+                entry = float(parts[3])
+                sl    = float(parts[4])
+                tp1   = float(parts[5])
+                tp2   = float(parts[6])
+                rr    = float(parts[7])
+                elapsed = float(parts[9].rstrip("s")) if parts[9].endswith("s") else 0
+            except (ValueError, IndexError):
+                continue
+            out.setdefault(label, {})[idx] = {
+                "score": score, "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2,
+                "rr": rr, "conditions": [], "reasoning": "", "elapsed_s": elapsed,
+                "error": None,
+            }
+    return out
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -268,6 +326,17 @@ def main():
     print(f"  Found {len(setups)} setups.")
     print(f"  Will execute {len(RUNS)} runs × {len(setups)} setups = {len(RUNS)*len(setups)} pipelines.")
     print()
+
+    # If a run is in SKIP_RUNS, try to load its results from the prior report
+    # so the agreement comparison still works (baseline is the expensive one to
+    # re-run; if we already have it we want to keep using it).
+    prior_results: dict[str, dict[int, dict]] = {}
+    prior_path = os.path.join(_ROOT, "docs", "cascade_comparison.md")
+    if _SKIP_RUNS and os.path.exists(prior_path):
+        prior_results = _load_prior_results(prior_path, setups)
+        for label in _SKIP_RUNS:
+            if label in prior_results:
+                print(f"  ↻ Reusing prior results for {label} ({len(prior_results[label])} setups)")
 
     # Phase 1: collect market data once per setup (no AI, but external API hits)
     print("━━ Phase 1: collecting market data (once per setup) ━━")
@@ -285,6 +354,14 @@ def main():
     all_results: dict[str, dict[int, dict]] = {label: {} for label, _, _ in RUNS}
 
     for label, prov, model in RUNS:
+        if label in _SKIP_RUNS:
+            # Reuse prior results if we have them, otherwise leave empty
+            if label in prior_results:
+                all_results[label] = prior_results[label]
+                print(f"━━ [SKIP] {label} — using {len(prior_results[label])} cached results ━━\n")
+            else:
+                print(f"━━ [SKIP] {label} — no prior data, leaving empty ━━\n")
+            continue
         print(f"━━ {label} ({prov} / {model}) ━━")
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as ex:
             futures = {}

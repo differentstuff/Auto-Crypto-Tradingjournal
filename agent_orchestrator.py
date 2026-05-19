@@ -21,6 +21,7 @@ Model routing — task → optimal model:
   Tasks that need structured reasoning, long JSON, or code → MODEL (Sonnet)
 """
 
+import contextvars
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
@@ -90,9 +91,11 @@ def run_call_analysis(
         return _degraded(str(e))
 
     try:
+        # Carry contextvars (force_provider, etc.) into worker threads
+        ctx = contextvars.copy_context()
         with ThreadPoolExecutor(max_workers=2) as ex:
-            f_interp = ex.submit(agent_data_interpreter.run, {"collected": collected})
-            f_sent   = ex.submit(agent_market_sentiment.run,
+            f_interp = ex.submit(ctx.run, agent_data_interpreter.run, {"collected": collected})
+            f_sent   = ex.submit(ctx.run, agent_market_sentiment.run,
                                  {"symbol": symbol, "direction": direction,
                                   "collected": collected})
             interpreted = f_interp.result()
