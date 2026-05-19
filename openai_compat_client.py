@@ -60,6 +60,11 @@ def chat_completion(
     req = urllib.request.Request(url, data=payload)
     req.add_header("Authorization", f"Bearer {api_key}")
     req.add_header("Content-Type",  "application/json")
+    # Cerebras and Groq sit behind Cloudflare; default urllib UA
+    # ("Python-urllib/3.x") gets HTTP 403 with code 1010 (ASN ban).
+    # Identifying ourselves as a normal browser bypasses the heuristic.
+    req.add_header("User-Agent",
+                   "Mozilla/5.0 (X11; Linux aarch64) trading-journal/1.6")
     if extra_headers:
         for k, v in extra_headers.items():
             req.add_header(k, v)
