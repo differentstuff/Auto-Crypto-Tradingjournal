@@ -3,9 +3,14 @@
 Singleton Anthropic client with automatic token logging.
 All AI modules import send() instead of constructing their own client.
 
-Gemini fallback: if Anthropic raises ANY APIError (billing, auth, rate-limit,
-overload), send() transparently retries through gemini_client.send_text().
-Logged under module name with suffix '+gemini' so token_usage tracks it.
+Production cascade (when Anthropic fails):
+  1. Groq Llama 4 Scout       (best |Δ|/sound, fast)
+  2. Cerebras Qwen 3 235B     (lowest avg |Δ|, different family)
+  3. Cerebras Llama 3.1 8B    (economy backup)
+  4. OpenRouter DeepSeek V4   (slow but reliable)
+  5. Gemini (internal cascade across 4 models)
+Each step skipped if the provider's per-model rate-limit cooldown is active.
+Order derived from docs/cascade_comparison.md (2026-05-19 clean run).
 """
 import logging
 from contextlib import contextmanager
@@ -18,6 +23,18 @@ from helpers import log_token_usage
 
 _log    = logging.getLogger(__name__)
 _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+# ── Production cascade order ───────────────────────────────────────────────────
+# (provider_name, model_for_provider)
+# Walked sequentially when Anthropic raises APIError. Each entry is skipped if
+# openai_compat_client.is_in_cooldown() reports an active rate-limit cooldown.
+_PROVIDER_CASCADE: list[tuple[str, str | None]] = [
+    ("groq",       "meta-llama/llama-4-scout-17b-16e-instruct"),
+    ("cerebras",   "qwen-3-235b-a22b-instruct-2507"),
+    ("cerebras",   "llama3.1-8b"),
+    ("openrouter", "deepseek/deepseek-v4-flash:free"),
+    ("gemini",     None),   # Gemini has its own internal model cascade
+]
 
 # ── Provider override (for cascade testing) ────────────────────────────────────
 # When set, every send() call routes through the named provider/model regardless
@@ -110,12 +127,55 @@ def send(module: str, model: str, messages: list, max_tokens: int,
         return text, cached
 
     except anthropic.APIError as exc:
-        _log.warning("Anthropic API error (%s) — falling back to Gemini: %s",
+        _log.warning("Anthropic API error (%s) — walking provider cascade: %s",
                      type(exc).__name__, exc)
 
-    # --- Default fallback: Gemini ---
-    return _call_via_provider("gemini", module, model, messages, max_tokens, system,
-                              fallback_tag="+gemini")
+    # --- Production cascade: try ranked providers in order, skipping cooldowns ---
+    last_err: Exception | None = None
+    for prov, prov_model in _PROVIDER_CASCADE:
+        if not _provider_available(prov, prov_model):
+            continue
+        try:
+            return _call_via_provider(prov, module, prov_model or model,
+                                      messages, max_tokens, system,
+                                      fallback_tag=f"+{prov}")
+        except Exception as e:
+            last_err = e
+            _log.warning("Cascade step %s failed, trying next: %s", prov, e)
+            continue
+    raise RuntimeError(
+        f"All cascade providers exhausted for module={module}. Last error: {last_err}"
+    )
+
+
+def _provider_available(provider: str, model: str | None) -> bool:
+    """Return False if the provider isn't configured OR is currently in cooldown."""
+    try:
+        if provider == "gemini":
+            import gemini_client
+            return gemini_client.is_configured()
+        if provider == "grok":
+            import grok_client
+            return grok_client.is_configured()
+        if provider in ("cerebras", "groq", "openrouter"):
+            mod_map = {"cerebras": "cerebras_client",
+                       "groq":     "groq_client",
+                       "openrouter": "openrouter_client"}
+            import importlib
+            client = importlib.import_module(mod_map[provider])
+            if not client.is_configured():
+                return False
+            # Check the cooldown registry for this specific (base_url, model)
+            from openai_compat_client import is_in_cooldown
+            base_attr_map = {"cerebras": "CEREBRAS_BASE",
+                             "groq":     "GROQ_BASE",
+                             "openrouter": "OPENROUTER_BASE"}
+            base_url = getattr(client, base_attr_map[provider])
+            target_model = model or getattr(client, "DEFAULT_MODEL", "")
+            return not is_in_cooldown(base_url, target_model)
+    except Exception:
+        pass
+    return False
 
 
 def _call_via_provider(provider: str, module: str, model: str,
