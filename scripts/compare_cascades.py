@@ -331,10 +331,16 @@ def _load_prior_results(report_path: str, setups: list[dict]) -> dict[str, dict[
         idx = sym_to_idx[sym]
         # Parse each row of the per-setup table
         for line in body.splitlines():
-            if not line.startswith("| ") or "| ERROR |" in line or "| — |" in line:
+            if not line.startswith("| ") or "| ERROR |" in line or "| not run |" in line:
+                continue
+            # Skip the markdown header/separator rows ("| Run |..." or "|---|...")
+            if line.startswith("| Run |") or line.startswith("|---"):
                 continue
             parts = [p.strip() for p in line.strip("|").split("|")]
             if len(parts) < 10:
+                continue
+            # Skip rows where the trade levels are all dashes (e.g. partial errors)
+            if parts[3] == "—" or parts[4] == "—":
                 continue
             label = parts[0]
             try:
@@ -446,8 +452,9 @@ def main():
         if label == baseline_label: continue
         deltas = []
         for i in range(len(setups)):
-            r  = all_results[label][i]
-            br = all_results[baseline_label][i]
+            r  = all_results[label].get(i)
+            br = all_results[baseline_label].get(i)
+            if r is None or br is None: continue
             if r["error"] or br["error"]: continue
             deltas.append(abs(r["score"] - br["score"]))
         if deltas:
