@@ -1,0 +1,517 @@
+# Enzyme Definitions
+# All enzymes (skills) in the reaction network.
+# Each enzyme has: class, activation conditions, output, instructions, and priority.
+# Enzymes only fire when their activation conditions are met.
+# Regulator enzymes always have priority over other classes.
+#
+# LLM Key Rotation:
+# All enzymes that use LLM calls go through the KeyManager (see key_manager.py).
+# Multiple API keys per provider are configured in config/exchange.yaml.
+# On 429/529 (overload): automatic key rotation with 30s cooldown.
+# On 401/403 (auth error): key disabled, alert logged.
+# This applies to ALL LLM providers: anthropic (small/large), google (fallback).
+
+# SENSOR ENZYMES (collect data, zero LLM)
+
+- name: "CollectOHLCV"
+  class: "Sensor"
+  priority: 0
+  activation:
+    requires:
+      - "substrate.strategy.name is set"
+      - "substrate.strategy.cycle_interval_minutes elapsed since last scan"
+    prohibits:
+      - "substrate.market.indicators fresh (age < TTL)"
+  output:
+    writes: "substrate.market.indicators"
+    clears: "substrate.analysis.candidates, substrate.analysis.entry_zones"
+  instructions: |
+    Fetch OHLCV candles for all symbols in substrate.strategy.symbols_watched.
+    Compute ONLY the indicators enabled in the active strategy config.
+    Store results in substrate.market.indicators as {SYMBOL: {indicator: value}}.
+    Also update substrate.market.symbols_watched and substrate.market.last_scan_at.
+    Do NOT compute indicators that the strategy has not enabled.
+  llm_required: false
+  source_port: "agent_data_collector.py, chart_indicators.py, indicators.py"
+
+- name: "CollectPreTradeContext"
+  class: "Sensor"
+  priority: 0
+  activation:
+    requires:
+      - "substrate.analysis.candidates not empty"
+    prohibits:
+      - "substrate.market.pre_trade_context already populated for these candidates"
+  output:
+    writes: "substrate.market.pre_trade_context"
+    clears: ""
+  instructions: |
+    For each candidate symbol, fetch the last 12 bars (3 days on 4H) of indicator history.
+    Record the trajectory of each enabled indicator over those bars.
+    Classify the trajectory pattern:
+      - gradual_alignment: signals rose/fell together over 6+ bars (low coincidence risk)
+      - sudden_snap: signals aligned in 1-2 bars only (high coincidence risk)
+      - oscillating: signals flip back and forth (noise, not actionable)
+      - flat: no meaningful change in indicators
+    Set coincidence_risk based on trajectory pattern.
+    This data feeds the learning engine to distinguish real patterns from lucky alignment.
+  llm_required: false
+  source_port: "chart_indicators.py (historical computation)"
+
+- name: "CollectMacroContext"
+  class: "Sensor"
+  priority: 0
+  activation:
+    requires:
+      - "substrate.strategy.modules.macro_context == true"
+      - "substrate.market.macro stale (age > TTL)"
+    prohibits:
+      - "substrate.strategy.modules.macro_context == false"
+  output:
+    writes: "substrate.market.macro"
+    clears: ""
+  instructions: |
+    Fetch VIX, DXY, BTC dominance, Fear and Greed index.
+    Only runs when strategy config enables macro_context module.
+    Data is cached with TTL from config (default 5 min for F&G, 30 min for dominance).
+    Macro data informs position sizing and noise detection, not entry decisions directly.
+  llm_required: false
+  source_port: "market_context.py, coingecko_client.py, finnhub_client.py"
+
+- name: "CollectLiquidations"
+  class: "Sensor"
+  priority: 0
+  activation:
+    requires:
+      - "substrate.strategy.modules.liquidation == true"
+      - "substrate.analysis.candidates not empty"
+    prohibits:
+      - "substrate.strategy.modules.liquidation == false"
+  output:
+    writes: "substrate.market.liquidations"
+    clears: ""
+  instructions: |
+    Fetch liquidation cluster walls for candidate symbols.
+    Only runs when strategy config enables liquidation module.
+    TTL-cached 15 min.
+  llm_required: false
+  source_port: "liquidation_client.py, liquidation_levels.py"
+
+- name: "CollectOnchain"
+  class: "Sensor"
+  priority: 0
+  activation:
+    requires:
+      - "substrate.strategy.modules.onchain == true"
+      - "substrate.market.onchain stale (age > TTL)"
+    prohibits:
+      - "substrate.strategy.modules.onchain == false"
+  output:
+    writes: "substrate.market.onchain"
+    clears: ""
+  instructions: |
+    Fetch MVRV ratio, exchange net flow from CoinMetrics Community API.
+    Only runs when strategy config enables onchain module.
+    TTL-cached 1 hour.
+  llm_required: false
+  source_port: "onchain_client.py"
+
+- name: "CollectSentiment"
+  class: "Sensor"
+  priority: 0
+  activation:
+    requires:
+      - "substrate.strategy.modules.sentiment == true"
+      - "substrate.analysis.candidates not empty"
+    prohibits:
+      - "substrate.strategy.modules.sentiment == false"
+  output:
+    writes: "substrate.market.sentiment"
+    clears: ""
+  instructions: |
+    Fetch Fear and Greed index, long/short ratio, funding rates.
+    When used as contrarian signal: extreme greed = bearish, extreme fear = bullish.
+    Only runs when strategy config enables sentiment module.
+  llm_required: false
+  source_port: "market_context.py, coinalyze_client.py"
+
+# OXIDOREDUCTASE ENZYMES (evaluate, score, rank)
+
+- name: "ScoreConfluence"
+  class: "Oxidoreductase"
+  priority: 1
+  activation:
+    requires:
+      - "substrate.market.indicators fresh"
+      - "substrate.analysis.candidates is empty or stale"
+    prohibits:
+      - "substrate.analysis.noise_flag == true"
+  output:
+    writes: "substrate.analysis.candidates, substrate.analysis.signal_states"
+    clears: "substrate.analysis.entry_zones"
+  instructions: |
+    For each watched symbol, compute confluence score using:
+    1. ONLY enabled indicators from strategy config
+    2. CURRENT weights (from learning engine, adjusted over time)
+    3. SUPPRESSED signals excluded (below 55% accuracy)
+    4. HIGHLIGHTED signals boosted (above 75% accuracy)
+    5. Rulebook rules applied as modifiers
+    
+    Score = sum of (indicator_weight * indicator_signal) for enabled, non-suppressed indicators.
+    Normalized to 0-10 scale.
+    
+    Candidates = symbols where score >= entry_threshold.
+    Also record which indicators were aligned for each candidate.
+    
+    If no candidates: set substrate.learning.idle_reasons to include "no candidates above threshold".
+  llm_required: false
+  skill_override: "substrate.learning.rulebook"
+  source_port: "chart_confluence.py, chart_context.py"
+
+- name: "ValidateEntryZone"
+  class: "Oxidoreductase"
+  priority: 1
+  activation:
+    requires:
+      - "substrate.analysis.candidates not empty"
+      - "substrate.analysis.entry_zones is empty or stale for these candidates"
+      - "substrate.market.pre_trade_context populated for these candidates"
+    prohibits:
+      - "substrate.analysis.candidates is empty"
+  output:
+    writes: "substrate.analysis.entry_zones"
+    clears: ""
+  instructions: |
+    For each candidate, compute structural entry zone:
+    1. Detect S/R levels from candle data (port from chart_sr.py)
+    2. Set entry zone low/high based on nearest S/R cluster
+    3. Set SL below support (long) or above resistance (short), using ATR for width
+    4. Set TP1 at next resistance/support, TP2 at extended target
+    5. Compute R:R ratio (must be >= minimum from strategy config)
+    6. Validate against pre_trade_context:
+       - If coincidence_risk == "high": reduce score by 1.0
+       - If trajectory_pattern == "oscillating": flag as noise candidate
+    7. List key_conditions for monitoring (what must remain true for the trade to work)
+    
+    Optional LLM call (Sonnet) if pattern is complex and strategy allows it.
+    Most validation is pure math -- LLM is for ambiguous chart patterns only.
+  llm_required: "optional"
+  llm_model: "sonnet"
+  llm_max_tokens: 1024
+  llm_key_rotation: true           # uses KeyManager for multi-key rotation on overload
+  source_port: "chart_sr.py, chart_patterns.py, agent_trade_prep.py"
+
+- name: "DetectNoise"
+  class: "Oxidoreductase"
+  priority: 2
+  activation:
+    requires:
+      - "substrate.analysis.candidates not empty"
+    prohibits: []
+  output:
+    writes: "substrate.analysis.noise_flag, substrate.analysis.noise_reason"
+    clears: ""
+  instructions: |
+    Check whether current market conditions are too noisy for entry:
+    1. Volume check: 24h volume below 1M USDT for candidate = noise
+    2. Spread check: bid-ask spread > 0.1% = noise
+    3. Kill zone check: are we in a low-liquidity time window?
+    4. Conflicting signals: multiple candidates in opposite directions = uncertain market
+    5. Macro check (if enabled): VIX > 35 = noise, F&G extremes = caution
+    6. Regime check (if enabled): volatile regime = reduce position sizes, not block
+    
+    If noise detected: set noise_flag = true, record reason.
+    Default: noise_flag = false (give the market a chance).
+    "Waiting is always an option" -- but we do not wait by default without reason.
+  llm_required: false
+  source_port: "scanner_criteria.py (kill zone, criteria)"
+
+# REGULATOR ENZYMES (RiskManager -- THE MASTER)
+
+- name: "ApproveTrade"
+  class: "Regulator"
+  priority: 10
+  activation:
+    requires:
+      - "substrate.analysis.candidates not empty"
+      - "substrate.analysis.noise_flag == false"
+      - "substrate.analysis.entry_zones populated"
+      - "substrate.portfolio.available_margin sufficient"
+      - "substrate.portfolio.open_positions count < strategy.max_positions"
+      - "ISC-001 through ISC-007 can be verified"
+    prohibits:
+      - "substrate.decisions.trade_approved is not null"
+  output:
+    writes: "substrate.decisions.trade_approved, substrate.decisions.action"
+    clears: ""
+  instructions: |
+    RiskManager approval gate. Only this enzyme can approve a trade.
+    
+    1. Position sizing: Kelly criterion * risk_per_trade_pct
+       - size_usdt = equity * risk_per_trade_pct / 100
+       - Adjust for correlation: if open positions are correlated, reduce size
+    2. Leverage check: ensure leverage within strategy limit
+    3. Margin check: available_margin >= margin_usdt required
+    4. SL validation: SL price is structurally sound (not arbitrary)
+    5. R:R validation: rr_ratio >= strategy.scoring.rr_minimum
+    6. Pre-trade trajectory: coincidence_risk == "high" = reduce size by 50%
+    7. ISC verification: all ISC entries must pass before approval
+    
+    If approved: set trade_approved = {symbol, direction, size, sl, tp1, tp2}
+    If not approved: leave trade_approved = null, record reason in idle_reasons.
+    
+    This enzyme has OVERRIDE authority. No other enzyme can bypass it.
+  llm_required: false
+  source_port: "agent_risk_mgmt.py, risk_analytics.py"
+
+- name: "ApproveExit"
+  class: "Regulator"
+  priority: 10
+  activation:
+    requires:
+      - "substrate.portfolio.open_positions not empty"
+      - "substrate.decisions.exit_request is not null OR hard_stop_condition_met OR trailing_stop_triggered"
+    prohibits:
+      - "substrate.decisions.exit_approved is not null"
+  output:
+    writes: "substrate.decisions.exit_approved, substrate.decisions.exit_reason"
+    clears: "substrate.decisions.exit_request"
+  instructions: |
+    RiskManager exit approval gate. Only this enzyme can approve an exit.
+    
+    Hard conditions (always approved immediately):
+    - Stop loss hit: current price <= sl_price (long) or >= sl_price (short)
+    - Trailing stop hit: price retraced trailing_distance_pct from peak
+    
+    Soft conditions (need verification):
+    - Signal reversal: at least 2 indicators now point opposite direction
+    - Risk rating >= 7: monitor system flagged elevated risk
+    - Momentum lost: momentum indicators returned to neutral
+    
+    For soft exits: verify the signal is real, not noise.
+    Check if the reversal is confirmed on the confirmation timeframe.
+    "Waiting is always an option" -- do not exit on unconfirmed signals.
+    
+    If approved: set exit_approved = {position_id, reason}
+    If not approved: clear exit_request, keep position open.
+  llm_required: false
+  source_port: "agent_risk_mgmt.py, agent_trade_monitor.py"
+
+- name: "RequestExit"
+  class: "Sensor"
+  priority: 0
+  activation:
+    requires:
+      - "substrate.portfolio.open_positions not empty"
+      - "one or more exit trigger conditions detected"
+    prohibits:
+      - "substrate.decisions.exit_request is not null"
+  output:
+    writes: "substrate.decisions.exit_request"
+    clears: ""
+  instructions: |
+    Any enzyme can request an exit, but this enzyme formalizes the request.
+    
+    Exit trigger conditions (any one is sufficient):
+    - Signal reversed: indicators now point opposite to trade direction
+    - Risk rating >= 7 (from monitor data)
+    - Momentum lost: momentum indicators returned to neutral zone
+    - Duration exceeded: position open longer than max_duration_hours
+    
+    Set exit_request = {position_id, reason, urgency: "soft"|"hard"}
+    This does NOT execute the exit. RiskManager (ApproveExit) decides.
+  llm_required: false
+  source_port: "agent_trade_monitor.py, entry_watcher.py"
+
+# TRANSPORTER ENZYMES (execute on exchange)
+
+- name: "ExecuteTrade"
+  class: "Transporter"
+  priority: 5
+  activation:
+    requires:
+      - "substrate.decisions.trade_approved is not null"
+      - "ISC-001 through ISC-004 verified"
+    prohibits:
+      - "substrate.market.trade_executed is not null"
+  output:
+    writes: "substrate.market.trade_executed"
+    clears: "substrate.decisions.trade_approved"
+  instructions: |
+    Execute the approved trade on the exchange via CCXT.
+    
+    1. Place market order with approved size and direction
+    2. Set stop loss order immediately after fill
+    3. Set trailing stop parameters if strategy enables it
+    4. Record the trade in database with ALL indicator states at entry:
+       - All enabled indicator values
+       - Confluence score
+       - Pre-trade trajectory pattern and coincidence risk
+       - Rulebook version
+    5. Update substrate.portfolio.open_positions
+    6. Clear substrate.decisions.trade_approved (action taken)
+    
+    If order fails: log error, do NOT retry automatically.
+    Set substrate.decisions.action = "wait" and record failure reason.
+  llm_required: false
+  source_port: "bitget_client.py, blofin_client.py, ccxt_client.py"
+
+- name: "ExecuteExit"
+  class: "Transporter"
+  priority: 5
+  activation:
+    requires:
+      - "substrate.decisions.exit_approved is not null"
+    prohibits:
+      - "substrate.market.exit_executed is not null"
+  output:
+    writes: "substrate.market.exit_executed"
+    clears: "substrate.decisions.exit_approved, substrate.decisions.exit_request"
+  instructions: |
+    Execute the approved exit on the exchange.
+    
+    1. Close position via market order
+    2. Cancel any remaining SL/TP orders
+    3. Record outcome in database:
+       - PnL, duration, MAE, MFE
+       - Which exit reason triggered
+       - SL hit, trailing stop hit, or signal reversal
+    4. Update substrate.portfolio.open_positions
+    5. Update substrate.learning with trade outcome
+    6. Clear substrate.decisions.exit_approved and exit_request
+    
+    Trigger UpdateRulebook on next cycle if conditions are met.
+  llm_required: false
+  source_port: "ccxt_client.py, bitget_client.py"
+
+- name: "SendTelegramLog"
+  class: "Transporter"
+  priority: 3
+  activation:
+    requires:
+      - "substrate.strategy.modules.telegram_logs == true"
+      - "significant event occurred (trade opened, trade closed, risk alert)"
+    prohibits:
+      - "substrate.strategy.modules.telegram_logs == false"
+  output:
+    writes: "external (Telegram channel)"
+    clears: ""
+  instructions: |
+    Send a clean, structured log message to the configured Telegram channel.
+    No interactive commands. One-way push only.
+    
+    Message format:
+    - Trade opened: symbol, direction, entry, SL, TP1, TP2, score
+    - Trade closed: symbol, outcome, PnL, duration, exit reason
+    - Risk alert: symbol, risk_rating, recommended action
+    - Daily summary: total PnL, win rate, positions, rulebook changes
+    
+    Disabled by default. Does not affect trading logic when disabled.
+  llm_required: false
+  source_port: "telegram_notify.py"
+
+# SYNTHASE ENZYMES (build new knowledge)
+
+- name: "UpdateRulebook"
+  class: "Synthase"
+  priority: 2
+  activation:
+    requires:
+      - "substrate.learning.total_trades_recorded >= min_trades_for_learning"
+      - "substrate.learning.rulebook stale (age > retrain_interval)"
+      - "substrate.learning.signal_accuracy has at least 1 entry with sufficient data"
+    prohibits:
+      - "substrate.learning.rulebook fresh (age < retrain_interval)"
+  output:
+    writes: "substrate.learning.rulebook, substrate.learning.suppressed_signals, substrate.learning.highlight_signals"
+    clears: ""
+  instructions: |
+    Generate updated rulebook from learning data.
+    
+    1. Read all signal_accuracy entries:
+       - SUPPRESS signals with accuracy < 55% (coin flip)
+       - HIGHLIGHT signals with accuracy >= 75% (strong signal)
+       - REVIEW signals with accuracy 55-60% (borderline)
+    
+    2. Read combination_accuracy entries:
+       - Only include combinations with p_value < 0.05 (statistically significant)
+       - Format: "RSI+MACD both bullish: 83% win rate (10/12, p=0.008)"
+    
+    3. Read idle cycle data:
+       - "During VIX>30: waiting was correct 80% of the time (n=15)"
+       - "During kill_zone: waiting was correct 90% of the time (n=20)"
+    
+    4. Generate max 10 rules, prioritized by:
+       - Statistical significance (p_value)
+       - Sample size (more trades = more reliable)
+       - Effect size (higher win rate difference = more actionable)
+    
+    5. Format rulebook for injection into prompts:
+       - Each rule is 1-2 sentences
+       - Use CHECK for valid rules, CROSS for suppress rules
+       - Include sample size and confidence
+    
+    6. Update suppressed_signals and highlight_signals lists
+       - These modify which indicators ScoreConfluence uses
+    
+    The rulebook is self-improving: it adjusts weights based on real outcomes.
+  llm_required: "optional"
+  llm_model: "haiku"
+  llm_max_tokens: 512
+  source_port: "ai_hindsight.py, ai_rulebook.py, signal_scorer.py"
+
+- name: "RecordIdleCycle"
+  class: "Synthase"
+  priority: 1
+  activation:
+    requires:
+      - "substrate.learning.idle_cycles > 0"
+      - "substrate.decisions.action == 'wait'"
+    prohibits:
+      - "substrate.portfolio.open_positions not empty AND trade activity occurred"
+  output:
+    writes: "substrate.learning.idle_reasons, substrate.learning.total_idle_cycles_recorded"
+    clears: ""
+  instructions: |
+    Record why the system chose not to trade this cycle.
+    
+    Idle reasons to track:
+    - "no candidates above threshold" -- market not providing setups
+    - "noise_flag" -- market too noisy for entry
+    - "max_positions reached" -- already fully invested
+    - "insufficient margin" -- not enough capital
+    - "coincidence_risk high" -- signals look coincidental
+    - "no entry zone found" -- S/R structure missing
+    
+    Over time, this data tells the learning engine:
+    - "When VIX>30 and no candidates appear, waiting saved us from losses."
+    - "When kill_zone is active, entering would have lost 70% of the time."
+    
+    This prevents the system from inflating its win rate by cherry-picking easy trades.
+    A good system knows when NOT to trade.
+  llm_required: false
+  source_port: "NEW (not in current codebase)"
+
+# ISOMERASE ENZYMES (transform, default state)
+
+- name: "Wait"
+  class: "Isomerase"
+  priority: -1
+  activation:
+    requires: []                  # always activatable
+    prohibits: []
+  output:
+    writes: "substrate.decisions.action = 'wait'"
+    clears: ""
+  instructions: |
+    Default enzyme. No strong signal detected, no actionable setup found.
+    Keep watching. The market owes us nothing.
+    
+    This is the default state of the system.
+    It is chosen when no other enzyme has a positive flux score.
+    It is NOT an error condition -- it is the healthy resting state.
+    
+    The best traders know when to sit on their hands.
+  llm_required: false
+  flux_score: 0                   # neutral -- only chosen when all other scores <= 0
+  source_port: "NEW"

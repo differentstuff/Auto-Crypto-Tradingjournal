@@ -1,0 +1,196 @@
+# Substrate Schema
+# The single shared state container that all enzymes read from and write to.
+# Each enzyme modifies only its designated output fields.
+# The substrate persists across cycles and is stored in the database.
+
+substrate:
+  # WHO: Strategy identity and portfolio state
+  strategy:
+    name: ""                      # loaded from config/strategies/*.yaml
+    description: ""               # human-readable thesis
+    timeframe: ""                 # primary timeframe (e.g. "4H")
+    confirmation_tf: ""           # entry precision timeframe (e.g. "1H")
+    cycle_interval_minutes: 15    # how often the daemon runs a cycle
+    max_positions: 3              # from strategy config
+    last_loaded_at: ""            # timestamp of last config reload
+
+  portfolio:
+    equity: 0.0                   # current account equity in USDT
+    available_margin: 0.0         # margin available for new positions
+    open_positions: []            # list of open position dicts (MULTI-TRADE: can hold up to max_positions)
+    # Each position is tracked INDEPENDENTLY with its own SL, trailing, and exit logic:
+    # {position_id, symbol, direction, entry_price, size_usdt,
+    #  sl_price, tp1_price, tp2_price, trailing_active, trailing_peak_price,
+    #  unrealized_pnl_pct, duration_minutes, entry_score,
+    #  key_conditions: [conditions that must remain true for this trade]}
+    max_positions: 3              # from strategy config (0 = unlimited, not recommended)
+    total_risk_exposure_pct: 0.0  # sum of risk across all open positions
+    correlation_matrix: {}        # {SYMBOL_PAIR: correlation_pct} -- used to reject correlated entries
+    # e.g. {"BTCUSDT-ETHUSDT": 0.92} -- if already long BTC, reject long ETH (correlated)
+
+  # WHAT WE SEE: Market data (updated by Sensor enzymes)
+  market:
+    symbols_watched: []           # dynamic symbol list from strategy config
+    last_scan_at: ""              # timestamp of last full scan
+    indicators: {}                # {SYMBOLUSDT: {rsi: 28.5, macd: "bullish_cross", ...}}
+    # Only contains indicators enabled in the active strategy
+    pre_trade_context: {}         # {SYMBOLUSDT: {trajectory pattern, coincidence risk}}
+    # See: pre_trade_context structure below
+    macro: {}                     # {vix, dxy, btc_dominance, fear_greed}
+    # Only populated if strategy.modules.macro_context is true
+    liquidations: {}              # {SYMBOLUSDT: {cluster_walls, proximity}}
+    # Only populated if strategy.modules.liquidation is true
+    onchain: {}                   # {mvrv, exchange_net_flow}
+    # Only populated if strategy.modules.onchain is true
+
+  # WHAT WE THINK: Analysis results (updated by Oxidoreductase enzymes)
+  analysis:
+    candidates: []                # [{symbol, score, direction, rationale, indicators_aligned}]
+    # Symbols that passed confluence scoring above entry_threshold
+    entry_zones: {}               # {SYMBOLUSDT: {low, high, sl, tp1, tp2, key_conditions}}
+    # Structural entry zones with S/R validation
+    noise_flag: false             # true = current signals are noise, wait
+    noise_reason: ""              # "low volume" | "kill_zone" | "conflicting signals"
+    signal_states: {}             # {SYMBOLUSDT: {rsi: "bullish", macd: "bullish", ema: "neutral"}}
+    # Raw signal alignment state for each watched symbol
+
+  # WHAT WE DECIDE: Decision state (updated by Regulator enzymes)
+  decisions:
+    action: "wait"                # "wait" | "enter" | "exit" | "manage" | "halt_all"
+    # Default is ALWAYS wait. Only RiskManager can change this.
+    trade_approved: null          # null | {symbol, direction, size, sl, tp1, tp2}
+    # Only set by ApproveTrade (Regulator). Null = no trade approved.
+    exit_request: null            # null | {position_id, reason, urgency}
+    # Any enzyme can set this. Does NOT execute exit.
+    exit_approved: null           # null | {position_id, reason}
+    # Only set by ApproveExit (Regulator). Null = no exit approved.
+    exit_reason: ""               # "sl_hit" | "trailing_stop" | "signal_reversed" | "risk_override"
+
+  # WHAT WE LEARN: Learning state (updated by Synthase enzymes)
+  learning:
+    idle_cycles: 0                # consecutive cycles with no trade action
+    # Tracks when the system chose not to trade. Prevents false "high win rate"
+    # from simply avoiding all difficult situations.
+    idle_reasons: []              # ["no candidates above threshold", "noise_flag", "max_positions reached"]
+    # Why the system waited. Feeds into learning: "during VIX>30, waiting was correct."
+    rulebook: ""                  # auto-generated from signal accuracy data
+    # Max 10 rules. Sharp, not verbose. Injected into prompts.
+    rulebook_generated_at: ""     # timestamp of last rulebook generation
+    signal_accuracy: {}           # {indicator_name: {accuracy, verdict, sample_size}}
+    # See: signal_accuracy structure below
+    combination_accuracy: {}      # {"rsi+macd": {both_bullish: {win_rate, trades, p_value}}}
+    # See: combination_accuracy structure below
+    suppressed_signals: []        # indicators below 55% accuracy (coin flip territory)
+    highlight_signals: []         # indicators above 75% accuracy (strong signal territory)
+    total_trades_recorded: 0      # total trades with full signal recording
+    total_idle_cycles_recorded: 0 # total cycles where no trade was made
+    last_retrain_at: ""           # timestamp of last learning engine retrain
+
+  # WHAT MUST BE TRUE: ISC (hard-to-vary conditions)
+  validity:
+    - id: "ISC-001"
+      criterion: "entry_threshold met before any trade opens"
+      verification: "analysis.candidates not empty AND score >= threshold"
+      status: "pending"           # "pending" | "verified" | "failed"
+
+    - id: "ISC-002"
+      criterion: "stop loss always set before position opens"
+      verification: "decisions.trade_approved.sl_price > 0"
+      status: "pending"
+
+    - id: "ISC-003"
+      criterion: "position size within risk limit"
+      verification: "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100"
+      status: "pending"
+
+    - id: "ISC-004"
+      criterion: "max concurrent positions not exceeded"
+      verification: "portfolio.open_positions.count < strategy.max_positions"
+      status: "pending"
+
+    - id: "ISC-005"
+      criterion: "no trade when noise_flag is true"
+      verification: "analysis.noise_flag == false OR decisions.action == 'wait'"
+      status: "pending"
+
+    - id: "ISC-006"
+      criterion: "confluence minimum signals aligned"
+      verification: "candidate.indicators_aligned >= strategy.confluence_min_signals"
+      status: "pending"
+
+    - id: "ISC-007"
+      criterion: "pre_trade trajectory not sudden coincidence"
+      verification: "pre_trade_context.coincidence_risk != 'high'"
+      status: "pending"
+
+  pending: []                     # ISC IDs with status "pending"
+
+# Pre-trade context structure (per candidate symbol)
+pre_trade_context_entry:
+  symbol: ""
+  bars_before_entry: 12           # number of bars to look back (3 days on 4H)
+  indicator_trajectory:
+    # {indicator_name: [value_bar1, value_bar2, ..., value_bar12]}
+    # Shows how each indicator evolved over the last N bars
+    rsi: []
+    macd_histogram: []
+    ema_alignment: []             # [True, True, False, False, True, True, ...]
+  trajectory_pattern: ""          # "gradual_alignment" | "sudden_snap" | "oscillating" | "flat"
+  # gradual_alignment = signals rose/fell together over multiple bars (low coincidence risk)
+  # sudden_snap = signals aligned in 1-2 bars only (high coincidence risk)
+  # oscillating = signals flip back and forth (noise, not actionable)
+  # flat = no meaningful change in indicators
+  coincidence_risk: ""            # "low" | "medium" | "high"
+  # low = trajectory_pattern is gradual_alignment
+  # medium = oscillating or mixed
+  # high = sudden_snap
+
+# Per-signal accuracy structure
+signal_accuracy_entry:
+  indicator_name: ""              # e.g. "rsi_14", "macd_12_26_9"
+  total_fired: 0                  # times this signal was bullish/bearish at entry
+  correct: 0                      # times outcome matched signal direction
+  accuracy_pct: 0.0               # correct / total_fired * 100
+  confidence_95: [0.0, 0.0]       # Wilson score interval (statistical confidence)
+  verdict: ""                     # "valid" | "suppress" | "review" | "insufficient_data"
+  # valid = accuracy >= 55% with sufficient sample
+  # suppress = accuracy < 55% (coin flip, do not use in scoring)
+  # review = accuracy between 55-60% (borderline, keep watching)
+  # insufficient_data = sample_size < min_trades_per_signal
+  sample_size: 0
+
+# Combination accuracy structure
+combination_accuracy_entry:
+  combination_name: ""            # e.g. "rsi_14+macd_12_26_9"
+  direction_state: ""             # "both_bullish" | "both_bearish" | "conflicting"
+  trades: 0                       # number of trades with this combination state
+  won: 0                          # number that won
+  win_rate_pct: 0.0               # won / trades * 100
+  avg_pnl_pct: 0.0                # average PnL percentage
+  p_value: 0.0                    # statistical significance (chi-squared)
+  # p < 0.05 = statistically significant pattern
+  # p >= 0.05 = likely random, do not form rule from this
+  significance: ""                # "significant" | "not_significant" | "insufficient_data"
+
+# Trade learning record (stored in database)
+trade_learning_record:
+  trade_id: 0
+  symbol: ""
+  direction: ""                   # "long" | "short"
+  strategy_name: ""
+  entry_time: ""
+  exit_time: ""
+  outcome: ""                     # "won" | "lost" | "breakeven"
+  pnl_pct: 0.0
+  pnl_usdt: 0.0
+  duration_minutes: 0
+  confluence_score_at_entry: 0.0
+  signals_at_entry: {}            # {indicator_name: {value, signal, strength}}
+  pre_trade_trajectory_pattern: ""  # from pre_trade_context
+  pre_trade_coincidence_risk: ""    # from pre_trade_context
+  max_favorable_excursion_pct: 0.0  # MFE: max profit reached during trade
+  max_adverse_excursion_pct: 0.0    # MAE: max loss reached during trade
+  sl_hit: false                   # was the hard stop loss hit?
+  trailing_stop_hit: false        # was the trailing stop hit?
+  exit_reason: ""                 # "sl" | "trailing" | "tp" | "manual" | "signal_reversed"
+  rulebook_version: ""            # which rulebook was active at entry time

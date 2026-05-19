@@ -1,0 +1,254 @@
+# Strategy Template
+# Copy this file to config/strategies/your_strategy.yaml and customize.
+# All fields have defaults. Only override what you need.
+# The system reads this config on every cycle. No restart required.
+
+# HUMAN: Describe your strategy in plain language 
+# This is your thesis. The system validates it over time.
+# A prompt translator can derive sub-prompts per enzyme from this description.
+# Use clear, unambiguous terms. Avoid jargon the LLM might misunderstand.
+
+description: |
+  Enter long when momentum indicators start rising before price moves.
+  This happens at structural support levels on 4H candles.
+  Confirm with 1H price action before entry.
+  Always set stop loss below the support level.
+  Trail stops once price moves 0.5% in our direction.
+  Never enter when the market is noisy or conflicting.
+  Maximum 3 positions at once, 1% risk per trade.
+
+# MACHINE: Structured settings (derived from description)
+
+strategy:
+  name: momentum_rising            # unique identifier, used in DB and logs
+  timeframe: "4H"                  # primary analysis timeframe
+  confirmation_tf: "1H"            # entry precision timeframe
+  max_positions: 3                 # concurrent open positions allowed
+  cycle_interval_minutes: 15       # daemon cycle frequency
+  max_position_duration_hours: 12  # soft exit trigger if position stays open too long
+
+# SYMBOLS: What to watch
+
+symbols:
+  # These symbols are always watched, regardless of dynamic filtering
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+
+  # These symbols are never traded, even if they appear in dynamic results
+  never_trade:
+    - SHIBUSDT
+    - BOMEUSDT
+
+  # Dynamic filter: automatically add symbols based on criteria
+  # mode: "off" = only use always_watch list
+  # mode: "dynamic" = always_watch + top N by filter criteria
+  # mode: "static" = only use always_watch list (same as off)
+  dynamic_filter:
+    mode: "dynamic"
+    limit: 15                      # max symbols from dynamic filter
+    criteria: "momentum"           # "momentum" | "volume" | "marketcap" | "oi_growth"
+    min_volume_24h_usd: 10_000_000 # minimum 24h volume threshold
+    min_open_interest_usd: 2_000_000 # minimum open interest threshold
+
+# INDICATORS: Which signals to compute and their weights 
+# All indicators exist in code. Only listed ones are computed.
+# Starting weights are set here. The learning engine adjusts them over time.
+# "weight" is the starting value. The system learns what works.
+
+indicators:
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.25
+    description: "RSI below 30 = oversold. RSI above 70 = overbought. Look for bullish divergence at support."
+
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.25
+    description: "MACD histogram rising = momentum building before price confirms. Cross above signal = bullish."
+
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.30
+    description: "EMA 21 above 55 above 200 = bullish trend structure. Confirms directional bias."
+
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.20
+    description: "ADX between 25 and 35 = healthy trend. Avoid entries when ADX above 40 (overextended) or below 15 (no trend)."
+
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0                   # ATR is used for SL width and position sizing, not scoring
+    description: "ATR determines stop loss width and entry zone size. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004            # 0.4% clustering tolerance
+      min_touches: 3
+    weight: 0.0                   # S/R is used for entry zone validation, not scoring
+    description: "Support and resistance levels define entry zones. Require at least 3 touches for validity."
+
+# SCORING: How candidates are evaluated
+
+scoring:
+  entry_threshold: 6.5            # minimum confluence score to become a candidate (0-10 scale)
+  confluence_min_signals: 3       # at least N indicators must be aligned in same direction
+  rr_minimum: 2.0                 # minimum risk:reward ratio for entry
+  score_calibration:              # how the learning engine adjusts scoring
+    suppress_below_pct: 55        # signals below this accuracy are suppressed (coin flip)
+    highlight_above_pct: 75       # signals above this accuracy are boosted (strong signal)
+    review_range_pct: [55, 60]    # borderline signals: keep watching, do not suppress yet
+
+# EXIT: How positions are managed
+
+exit_rules:
+  # Hard stop loss: always set, never removed
+  hard_stop:
+    placement: "below_support"    # "below_support" (long) | "above_resistance" (short)
+    width_atr_multiplier: 1.5     # SL = support - ATR * multiplier (gives room for noise)
+    always_active: true           # SL cannot be removed, only moved to break-even later
+
+  # Trailing stop: activates once trade is profitable
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.5    # start trailing after 0.5% profit
+    distance_pct: 1.0             # trail at 1.0% from highest peak price
+    move_to_breakeven_at_pct: 1.5 # move SL to entry price after 1.5% profit
+
+  # Soft exit: triggered by signal reversal (RequestExit enzyme)
+  soft_exit:
+    requires_indicators_reversed: 2 # at least 2 indicators must reverse direction
+    requires_confirmation_tf: true  # reversal must be confirmed on 1H timeframe
+    urgency: "soft"                # "soft" = needs RiskManager verification, "hard" = immediate
+
+  # Duration-based exit: if position stays open too long
+  duration_exit:
+    max_hours: 12                  # soft exit trigger after 12 hours
+    max_hours_extreme: 24          # hard exit (RiskManager overrides) after 24 hours
+
+# ISC: Hard-to-vary entry conditions
+# These cannot be removed without fundamentally changing the strategy.
+# They are enforced by the substrate validity system.
+# No trade can open without ALL ISC conditions verified.
+
+entry_conditions:
+  - "at least 3 enabled indicators aligned in same direction"
+  - "confluence score above entry_threshold"
+  - "support or resistance level within 1% of entry zone"
+  - "stop loss set below support for long, above resistance for short"
+  - "risk per trade within configured limit"
+  - "pre_trade trajectory coincidence_risk is not high"
+  - "not in kill_zone time window (if macro module enabled)"
+
+# LEARNING: Self-improvement configuration
+
+learning:
+  min_trades_before_adjusting: 30  # system needs 30 trades before it starts adjusting weights
+  min_trades_per_signal: 15       # need 15 observations per signal for statistical significance
+  significance_level: 0.05        # p-value threshold for combination rules (chi-squared test)
+  rulebook_max_rules: 10          # maximum rules in auto-generated rulebook
+  retrain_every_hours: 12         # how often the learning engine rebuilds the rulebook
+  track_idle_cycles: true         # record why the system chose not to trade each cycle
+  trajectory_lookback_bars: 12    # bars of indicator history before entry (3 days on 4H)
+
+# PORTFOLIO: Multiple concurrent positions 
+# The system supports multiple active trades simultaneously.
+# Each position is tracked independently with its own SL, trailing, and exit logic.
+# The RiskManager ensures total risk stays within bounds.
+
+portfolio:
+  max_positions: 3                 # max concurrent open positions (0 = unlimited, not recommended)
+  risk_per_trade_pct: 1.0          # percentage of equity risked per trade
+  leverage: 5                      # default leverage for positions
+  max_total_risk_pct: 3.0          # total risk across all positions (risk_per_trade * max_positions)
+  fallback_equity_usdt: 1000.0     # used only when ALL exchange equity calls fail
+  correlation_check: true          # reject new trade if too correlated with existing positions
+  # e.g. if already long BTCUSDT, reject long ETHUSDT (highly correlated)
+
+# LLM: Cost-aware model configuration
+
+llm:
+  cost_budget_daily_usd: 2.00     # hard cap on daily LLM spending
+  routing:
+    pre_filter: "haiku"           # cheap model for initial scoring
+    analysis: "sonnet"            # deep model for complex pattern validation
+    fallback: "gemini-2.0-flash"  # resilience when Anthropic API fails
+  max_tokens:
+    analysis: 1024                # max output tokens for ValidateEntryZone (optional LLM)
+    rulebook: 512                 # max output tokens for UpdateRulebook (optional LLM)
+  max_context_chars: 4000         # prompt context budget (reduced from current 5600)
+  prompt_priority_order:          # what gets included first when budget is tight
+    - "strategy_description"      # always included
+    - "rulebook"                  # self-improving rules (protected, not truncated first)
+    - "signal_states"             # current indicator alignment
+    - "pre_trade_context"         # trajectory pattern
+    - "similar_trades"            # recent history for this symbol+direction
+
+# LLM KEYS: API key rotation (in exchange.yaml, not here)
+# Key rotation is configured in config/exchange.yaml under the llm_keys section.
+# Each provider can have multiple keys. The KeyManager rotates automatically on overload.
+# See: key_manager.py for the rotation logic.
+#
+# Example exchange.yaml structure:
+#   llm_keys:
+#     anthropic:
+#       - key: "sk-ant-api-key-1"
+#         label: "anthropic-key-1"
+#       - key: "sk-ant-api-key-2"
+#         label: "anthropic-key-2"
+#     google:
+#       - key: "AIza-sy-key-1"
+#         label: "gemini-key-1"
+#       - key: "AIza-sy-key-2"
+#         label: "gemini-key-2"
+#
+# Rotation behavior:
+#   - On 429/529 (overload): switch to next healthy key, cooldown 30s
+#   - On 500/502/503 (server error): switch to next key, cooldown 10s
+#   - On 401/403 (auth error): disable key, log alert
+#   - Round-robin among healthy keys to distribute load
+#   - If all keys in cooldown: wait for earliest expiry
+
+# MODULES: Optional features, disabled by default
+# All modules exist in code. Enable per strategy.
+# "true" = enzyme activates, "false" = enzyme skips (activation condition not met).
+
+modules:
+  macro_context: false            # VIX, DXY, BTC dominance, Fear & Greed
+  regime_detection: false         # HMM 3-state (trending/ranging/volatile)
+  sentiment: false                # Fear & Greed, L/S ratio, funding (contrarian or confirming)
+  onchain: false                  # MVRV, exchange net flow
+  liquidation: false              # liquidation cluster walls
+  model_consensus: false          # Gemini second opinion (configurable addon)
+  telegram_logs: false            # one-way log push to Telegram channel
+  telegram_interaction: false     # two-way Telegram bot (not recommended for automated systems)
+
+# DATA: Cache TTLs and data source settings
+
+data:
+  candle_cache_ttl_minutes: 10    # OHLCV candle cache
+  indicator_cache_ttl_minutes: 15 # computed indicator cache
+  macro_cache_ttl_minutes: 5      # F&G, funding rates
+  dominance_cache_ttl_minutes: 30 # BTC.D, TOTAL2, etc.
+  onchain_cache_ttl_hours: 1      # MVRV, exchange flow
+  regime_cache_ttl_hours: 4       # HMM retrain interval
+  liquidation_cache_ttl_minutes: 15 # liquidation cluster detection
+
+# EXCHANGE: Which exchange(s) to use 
+# Actual API keys are in config/exchange.yaml, not here.
+# This section defines which exchanges the strategy uses for trading.
+
+exchange:
+  primary: "bitget"               # main trading exchange
+  data_source: "binance"          # preferred source for OHLCV and market data
+  fallback: "bybit"               # fallback if primary data source is unavailable
+  sync_interval_minutes: 5        # how often to sync positions from exchange
