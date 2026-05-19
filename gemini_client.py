@@ -120,10 +120,10 @@ def _call(prompt: str, model: str = None, max_tokens: int = 256,
             text = resp["candidates"][0]["content"]["parts"][0]["text"]
             return json.loads(text)
         except urllib.error.HTTPError as exc:
-            if exc.code == 429:
-                retry = _parse_retry_seconds(exc) or 60
+            if exc.code in (429, 503):
+                retry = _parse_retry_seconds(exc) or (60 if exc.code == 429 else 15)
                 _mark_cooldown(mdl, retry)
-                print(f"[Gemini] 429 on {mdl} — cooldown {retry}s, trying next model", flush=True)
+                print(f"[Gemini] {exc.code} on {mdl} — cooldown {retry}s, trying next model", flush=True)
                 continue
             print(f"[Gemini] HTTP error ({mdl}): {exc}", flush=True)
             return None
@@ -192,10 +192,10 @@ def send_text(prompt: str, system: str = None,
                 continue  # try next model — empty parts likely thinking-exhaustion
             return parts[0].get("text")
         except urllib.error.HTTPError as exc:
-            if exc.code == 429:
-                retry = _parse_retry_seconds(exc) or 60
+            if exc.code in (429, 503):
+                retry = _parse_retry_seconds(exc) or (60 if exc.code == 429 else 15)
                 _mark_cooldown(mdl, retry)
-                print(f"[Gemini fallback] 429 on {mdl} — cooldown {retry}s, trying next model", flush=True)
+                print(f"[Gemini fallback] {exc.code} on {mdl} — cooldown {retry}s, trying next model", flush=True)
                 continue
             print(f"[Gemini fallback] HTTP error ({mdl}): {exc}", flush=True)
             return None
