@@ -82,16 +82,25 @@ def get_latest_scan_setups(conn, limit: int = N_SETUPS) -> list[dict]:
     return out
 
 
-def run_pipeline_for_setup(setup: dict, provider: str, model: str) -> dict:
-    """Execute the full agent pipeline for one setup under a forced provider."""
+def collect_once(setup: dict) -> dict:
+    """Run agent_data_collector once per setup — external market data only,
+    no AI calls. The result is reused across all provider runs so every
+    provider scores on identical inputs."""
+    return agent_data_collector.run({
+        "symbol":     setup["symbol"],
+        "direction":  setup["direction"],
+        "timeframes": ["4H", "1D"],
+    })
+
+
+def run_pipeline_for_setup(setup: dict, collected: dict, provider: str, model: str) -> dict:
+    """Execute the AI pipeline for one setup under a forced provider,
+    reusing the pre-fetched `collected` market data for fairness."""
     symbol    = setup["symbol"]
     direction = setup["direction"]
     started   = time.time()
     try:
         with force_provider(provider, model), db_conn() as conn:
-            collected   = agent_data_collector.run({
-                "symbol": symbol, "direction": direction, "timeframes": ["4H","1D"],
-            })
             interpreted = agent_data_interpreter.run({"collected": collected})
             sentiment   = agent_market_sentiment.run({
                 "collected": collected, "interpreted": interpreted,
@@ -260,17 +269,33 @@ def main():
     print(f"  Will execute {len(RUNS)} runs × {len(setups)} setups = {len(RUNS)*len(setups)} pipelines.")
     print()
 
+    # Phase 1: collect market data once per setup (no AI, but external API hits)
+    print("━━ Phase 1: collecting market data (once per setup) ━━")
+    setup_data: dict[int, dict] = {}
+    for i, s in enumerate(setups):
+        try:
+            setup_data[i] = collect_once(s)
+            print(f"    ✓ {s['symbol']:14s} data collected")
+        except Exception as e:
+            print(f"    ✗ {s['symbol']:14s} collect failed: {e}")
+            setup_data[i] = None
+    print()
+
+    # Phase 2: score each (setup, provider) combo using the cached collected data
     all_results: dict[str, dict[int, dict]] = {label: {} for label, _, _ in RUNS}
 
     for label, prov, model in RUNS:
         print(f"━━ {label} ({prov} / {model}) ━━")
-        # Parallel within a run (different setups, same provider).
-        # Lower parallel limit for free-tier providers to respect RPM.
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as ex:
-            futures = {
-                ex.submit(run_pipeline_for_setup, s, prov, model): i
-                for i, s in enumerate(setups)
-            }
+            futures = {}
+            for i, s in enumerate(setups):
+                if setup_data[i] is None:
+                    all_results[label][i] = {"score": 0, "entry": 0, "sl": 0, "tp1": 0,
+                                              "tp2": 0, "rr": 0, "conditions": [],
+                                              "reasoning": "", "elapsed_s": 0,
+                                              "error": "no market data"}
+                    continue
+                futures[ex.submit(run_pipeline_for_setup, s, setup_data[i], prov, model)] = i
             for fut in as_completed(futures):
                 i = futures[fut]
                 try:
@@ -281,8 +306,9 @@ def main():
                            "error": str(e)[:200]}
                 all_results[label][i] = res
                 err_mark = "✗" if res["error"] else "✓"
+                err_suffix = ' err=' + res['error'][:50] if res['error'] else ''
                 print(f"    {err_mark} {setups[i]['symbol']:14s} score={res['score']:>2} "
-                      f"{res['elapsed_s']}s{' err='+res['error'][:50] if res['error'] else ''}")
+                      f"{res['elapsed_s']}s{err_suffix}")
         print()
 
     # Save report
