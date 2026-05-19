@@ -64,6 +64,24 @@ def is_configured() -> bool:
     return bool(GROK_API_KEY)
 
 
+def send_text(prompt: str, system: str = None,
+              max_tokens: int = 2048, model: str = None) -> str | None:
+    """
+    Generic chat-completion shim — uses X.AI's OpenAI-compatible
+    /chat/completions endpoint so this client can be used in the cascade
+    alongside Cerebras, Groq, OpenRouter, etc. Defaults to grok-3.
+    """
+    from openai_compat_client import chat_completion
+    return chat_completion(
+        base_url=GROK_BASE,
+        api_key=GROK_API_KEY,
+        model=model or "grok-3",
+        prompt=prompt,
+        system=system,
+        max_tokens=max_tokens,
+    )
+
+
 def _base(symbol: str) -> str:
     """Strip exchange suffixes: ARKMUSTDT → ARKM."""
     return symbol.upper().replace("USDT", "").replace("PERP", "").replace("USD", "").strip()
