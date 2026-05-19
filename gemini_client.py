@@ -61,6 +61,7 @@ def _call(prompt: str, model: str = None, max_tokens: int = 256,
             "temperature":       temperature,
             "maxOutputTokens":   max_tokens,
             "responseMimeType":  "application/json",
+            "thinkingConfig":    {"thinkingBudget": 0},
         },
     }).encode()
     req = urllib.request.Request(url, data=payload)
@@ -98,6 +99,7 @@ def send_text(prompt: str, system: str = None,
         "generationConfig": {
             "temperature":     0.15,
             "maxOutputTokens": max_tokens,
+            "thinkingConfig":  {"thinkingBudget": 0},
         },
     }).encode()
     req = urllib.request.Request(url, data=payload)
@@ -105,9 +107,21 @@ def send_text(prompt: str, system: str = None,
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
             resp = json.loads(r.read())
-        return resp["candidates"][0]["content"]["parts"][0]["text"]
+        cand   = (resp.get("candidates") or [{}])[0]
+        parts  = (cand.get("content") or {}).get("parts") or []
+        if not parts:
+            finish = cand.get("finishReason", "?")
+            print(f"[Gemini fallback] Empty response (finishReason={finish}) — "
+                  f"likely max_tokens exhausted by thinking tokens", flush=True)
+            return None
+        return parts[0].get("text")
     except (urllib.error.HTTPError, urllib.error.URLError) as exc:
-        print(f"[Gemini fallback] HTTP error: {exc}", flush=True)
+        body = ""
+        try:
+            body = exc.read().decode()[:200] if hasattr(exc, "read") else ""
+        except Exception:
+            pass
+        print(f"[Gemini fallback] HTTP error: {exc} body={body}", flush=True)
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
         print(f"[Gemini fallback] Parse error: {exc}", flush=True)
     except Exception as exc:
