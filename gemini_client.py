@@ -33,6 +33,44 @@ GEMINI_BASE      = "https://generativelanguage.googleapis.com/v1beta/models"
 _ACTIVE_MODEL    = os.environ.get("GEMINI_MODEL", GEMINI_FAST_MODEL)
 _TIMEOUT         = 20  # seconds
 
+# ── Model cascade ──────────────────────────────────────────────────────────────
+# Each Gemini model has its own per-project free-tier daily + per-minute quota.
+# When the primary model 429s, fall through to the next available bucket.
+# Order = preferred first; less-preferred models still produce usable output.
+_FALLBACK_MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash",
+]
+# Build cascade: primary first, then fallbacks (deduped, order preserved)
+_CASCADE: list[str] = []
+for _m in [_ACTIVE_MODEL, *_FALLBACK_MODELS]:
+    if _m and _m not in _CASCADE:
+        _CASCADE.append(_m)
+
+# Track when each model is next allowed to be tried (epoch sec).
+# When a model 429s, we mark it cool-down for the duration Google's retryDelay
+# indicates (or 60s default). Subsequent calls skip the model until it expires.
+_COOLDOWN: dict[str, float] = {}
+_COOLDOWN_LOCK = threading.Lock()
+
+
+def _next_available_model() -> str | None:
+    """Return the first cascade model that's not in active cooldown."""
+    now = time.time()
+    with _COOLDOWN_LOCK:
+        for m in _CASCADE:
+            if _COOLDOWN.get(m, 0) <= now:
+                return m
+    return None
+
+
+def _mark_cooldown(model: str, seconds: float) -> None:
+    with _COOLDOWN_LOCK:
+        _COOLDOWN[model] = time.time() + max(seconds, 5)
+
+
 # ── Caches ─────────────────────────────────────────────────────────────────────
 
 _score_cache: dict = {}   # key → (ts, result)
@@ -49,13 +87,13 @@ def _call(prompt: str, model: str = None, max_tokens: int = 256,
           temperature: float = 0.15) -> dict | None:
     """
     POST to Gemini generateContent. Returns parsed JSON dict or None on failure.
-    Forces JSON output via responseMimeType.
+    Forces JSON output via responseMimeType. Cascades through fallback models
+    if the preferred one is rate-limited (per-model daily quota is independent).
     """
     if not GEMINI_API_KEY:
         return None
-    mdl = model or _ACTIVE_MODEL
-    url = f"{GEMINI_BASE}/{mdl}:generateContent?key={GEMINI_API_KEY}"
-    payload = json.dumps({
+
+    body = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature":       temperature,
@@ -63,21 +101,54 @@ def _call(prompt: str, model: str = None, max_tokens: int = 256,
             "responseMimeType":  "application/json",
             "thinkingConfig":    {"thinkingBudget": 0},
         },
-    }).encode()
-    req = urllib.request.Request(url, data=payload)
-    req.add_header("Content-Type", "application/json")
+    }
+    payload = json.dumps(body).encode()
+
+    # If caller pinned a model, only try that one. Else use the cascade.
+    candidates = [model] if model else list(_CASCADE)
+    for mdl in candidates:
+        if not mdl:
+            continue
+        if not model and _COOLDOWN.get(mdl, 0) > time.time():
+            continue  # skip exhausted bucket
+        url = f"{GEMINI_BASE}/{mdl}:generateContent?key={GEMINI_API_KEY}"
+        req = urllib.request.Request(url, data=payload)
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
+                resp = json.loads(r.read())
+            text = resp["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(text)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                retry = _parse_retry_seconds(exc) or 60
+                _mark_cooldown(mdl, retry)
+                print(f"[Gemini] 429 on {mdl} — cooldown {retry}s, trying next model", flush=True)
+                continue
+            print(f"[Gemini] HTTP error ({mdl}): {exc}", flush=True)
+            return None
+        except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError) as exc:
+            print(f"[Gemini] {type(exc).__name__} ({mdl}): {exc}", flush=True)
+            return None
+        except Exception as exc:
+            print(f"[Gemini] Unexpected error ({mdl}): {exc}", flush=True)
+            return None
+    print("[Gemini] All cascade models exhausted (cooldown)", flush=True)
+    return None
+
+
+def _parse_retry_seconds(http_err) -> int:
+    """Extract retryDelay seconds from a Gemini 429 error body. None if absent."""
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
-            resp = json.loads(r.read())
-        # Extract text from candidates[0].content.parts[0].text
-        text = resp["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
-    except (urllib.error.HTTPError, urllib.error.URLError) as exc:
-        print(f"[Gemini] HTTP error: {exc}", flush=True)
-    except (KeyError, IndexError, json.JSONDecodeError) as exc:
-        print(f"[Gemini] Parse error: {exc}", flush=True)
-    except Exception as exc:
-        print(f"[Gemini] Unexpected error: {exc}", flush=True)
+        body = http_err.read().decode() if hasattr(http_err, "read") else ""
+        data = json.loads(body or "{}")
+        for d in data.get("error", {}).get("details", []):
+            rd = d.get("retryDelay")
+            if rd:
+                # e.g. "56s" → 56
+                return int(str(rd).rstrip("s") or 0)
+    except Exception:
+        pass
     return None
 
 
@@ -85,47 +156,56 @@ def send_text(prompt: str, system: str = None,
               max_tokens: int = 2048, model: str = None) -> str | None:
     """
     General-purpose plain-text Gemini call. Used as Anthropic fallback.
-    Unlike _call(), does NOT force JSON output — returns raw text.
-    system is prepended to the prompt if provided.
+    Cascades through fallback models when the primary is rate-limited.
     Returns text string or None on failure.
     """
     if not GEMINI_API_KEY:
         return None
-    mdl = model or _ACTIVE_MODEL
-    url = f"{GEMINI_BASE}/{mdl}:generateContent?key={GEMINI_API_KEY}"
     full_prompt = f"{system}\n\n{prompt}" if system else prompt
-    payload = json.dumps({
+    body = {
         "contents": [{"role": "user", "parts": [{"text": full_prompt}]}],
         "generationConfig": {
             "temperature":     0.15,
             "maxOutputTokens": max_tokens,
             "thinkingConfig":  {"thinkingBudget": 0},
         },
-    }).encode()
-    req = urllib.request.Request(url, data=payload)
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
-            resp = json.loads(r.read())
-        cand   = (resp.get("candidates") or [{}])[0]
-        parts  = (cand.get("content") or {}).get("parts") or []
-        if not parts:
-            finish = cand.get("finishReason", "?")
-            print(f"[Gemini fallback] Empty response (finishReason={finish}) — "
-                  f"likely max_tokens exhausted by thinking tokens", flush=True)
-            return None
-        return parts[0].get("text")
-    except (urllib.error.HTTPError, urllib.error.URLError) as exc:
-        body = ""
+    }
+    payload = json.dumps(body).encode()
+
+    candidates = [model] if model else list(_CASCADE)
+    for mdl in candidates:
+        if not mdl:
+            continue
+        if not model and _COOLDOWN.get(mdl, 0) > time.time():
+            continue
+        url = f"{GEMINI_BASE}/{mdl}:generateContent?key={GEMINI_API_KEY}"
+        req = urllib.request.Request(url, data=payload)
+        req.add_header("Content-Type", "application/json")
         try:
-            body = exc.read().decode()[:200] if hasattr(exc, "read") else ""
-        except Exception:
-            pass
-        print(f"[Gemini fallback] HTTP error: {exc} body={body}", flush=True)
-    except (KeyError, IndexError, json.JSONDecodeError) as exc:
-        print(f"[Gemini fallback] Parse error: {exc}", flush=True)
-    except Exception as exc:
-        print(f"[Gemini fallback] Unexpected error: {exc}", flush=True)
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
+                resp = json.loads(r.read())
+            cand  = (resp.get("candidates") or [{}])[0]
+            parts = (cand.get("content") or {}).get("parts") or []
+            if not parts:
+                finish = cand.get("finishReason", "?")
+                print(f"[Gemini fallback] Empty response on {mdl} (finishReason={finish})", flush=True)
+                continue  # try next model — empty parts likely thinking-exhaustion
+            return parts[0].get("text")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                retry = _parse_retry_seconds(exc) or 60
+                _mark_cooldown(mdl, retry)
+                print(f"[Gemini fallback] 429 on {mdl} — cooldown {retry}s, trying next model", flush=True)
+                continue
+            print(f"[Gemini fallback] HTTP error ({mdl}): {exc}", flush=True)
+            return None
+        except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError) as exc:
+            print(f"[Gemini fallback] {type(exc).__name__} ({mdl}): {exc}", flush=True)
+            return None
+        except Exception as exc:
+            print(f"[Gemini fallback] Unexpected error ({mdl}): {exc}", flush=True)
+            return None
+    print("[Gemini fallback] All cascade models exhausted (cooldown)", flush=True)
     return None
 
 
