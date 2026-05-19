@@ -54,13 +54,17 @@ def run(inp: TradePrepInput, conn, model: str = MODEL) -> TradePrepResult:
     prompt = _build_prompt(call_text, equity, setup_type)
 
     gemini_result = {}
-    system_prompt = agent_data_interpreter.ANALYST_INSTRUCTIONS + "\n\n" + agent_risk_mgmt.RISK_INSTRUCTIONS
+    # Merge ANALYST + RISK instructions into stable_prefix so they sit inside the
+    # cached block (system_prompt alone is ~520 tokens — below Anthropic's 1024-token
+    # cache minimum; combined with rulebook/calibration it's ~1540 tokens and caches).
+    instructions  = agent_data_interpreter.ANALYST_INSTRUCTIONS + "\n\n" + agent_risk_mgmt.RISK_INSTRUCTIONS
+    cached_prefix = instructions + "\n\n" + stable
     with ThreadPoolExecutor(max_workers=2) as ex:
         f_claude = ex.submit(
             ai_send, "call_analyzer", model,
-            build_cached_messages(dynamic_ctx, prompt, stable_prefix=stable),
+            build_cached_messages(dynamic_ctx, prompt, stable_prefix=cached_prefix),
             4096,
-            system_prompt,
+            None,
         )
         if gemini_client.is_configured() and call_text:
             f_gemini = ex.submit(gemini_client.score_call, call_text, symbol, direction)
