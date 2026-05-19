@@ -16,11 +16,61 @@ urllib only — no extra deps, matches gemini_client.
 """
 import json
 import os
+import re
+import threading
+import time
 import urllib.request
 import urllib.error
 from typing import Optional, Iterable
 
 _TIMEOUT = 30  # seconds (some free-tier providers are slow under load)
+
+# ── Per-(provider,model) rate-limit cooldown ──────────────────────────────────
+# When a model returns 429, we mark it cool down for the retry-delay window
+# from the response (defaulting to 60s). is_in_cooldown() lets ai_client.py
+# skip a model entirely instead of wasting a roundtrip when we know it'll fail.
+_COOLDOWN: dict[str, float] = {}        # key → epoch expiry
+_COOLDOWN_LOCK = threading.Lock()
+
+
+def _cooldown_key(base_url: str, model: str) -> str:
+    return f"{base_url}|{model}"
+
+
+def is_in_cooldown(base_url: str, model: str) -> bool:
+    """True if this (provider, model) is currently rate-limited."""
+    key = _cooldown_key(base_url, model)
+    with _COOLDOWN_LOCK:
+        return _COOLDOWN.get(key, 0) > time.time()
+
+
+def mark_cooldown(base_url: str, model: str, seconds: float) -> None:
+    key = _cooldown_key(base_url, model)
+    with _COOLDOWN_LOCK:
+        _COOLDOWN[key] = time.time() + max(float(seconds), 5)
+
+
+def cooldown_remaining(base_url: str, model: str) -> int:
+    """Seconds left in cooldown, or 0 if not cooling down."""
+    key = _cooldown_key(base_url, model)
+    with _COOLDOWN_LOCK:
+        return max(0, int(_COOLDOWN.get(key, 0) - time.time()))
+
+
+_RETRY_DELAY_RE = re.compile(r"retry[- ]?(?:after|delay)['\":\s]+(\d+)", re.IGNORECASE)
+
+
+def _parse_retry_seconds(body: str, default: int = 60) -> int:
+    """Pull a retry-after hint from a 429 body. Default 60s if not found."""
+    if not body:
+        return default
+    m = _RETRY_DELAY_RE.search(body)
+    if m:
+        try:
+            return max(int(m.group(1)), 5)
+        except ValueError:
+            pass
+    return default
 
 
 def chat_completion(
@@ -42,6 +92,13 @@ def chat_completion(
     base_url + api_key + model and we do the rest.
     """
     if not api_key:
+        return None
+
+    # Skip if this provider/model is currently rate-limited
+    if is_in_cooldown(base_url, model):
+        remaining = cooldown_remaining(base_url, model)
+        print(f"[{_short(base_url)}] {model} in cooldown ({remaining}s left) — skip",
+              flush=True)
         return None
 
     messages = []
@@ -90,10 +147,16 @@ def chat_completion(
     except urllib.error.HTTPError as exc:
         body = ""
         try:
-            body = exc.read().decode()[:200] if hasattr(exc, "read") else ""
+            body = exc.read().decode()[:400] if hasattr(exc, "read") else ""
         except Exception:
             pass
-        print(f"[{_short(base_url)}] HTTP {exc.code} on {model}: {body}", flush=True)
+        if exc.code == 429:
+            retry = _parse_retry_seconds(body, default=60)
+            mark_cooldown(base_url, model, retry)
+            print(f"[{_short(base_url)}] 429 on {model} — cooldown {retry}s", flush=True)
+        else:
+            print(f"[{_short(base_url)}] HTTP {exc.code} on {model}: {body[:120]}",
+                  flush=True)
     except urllib.error.URLError as exc:
         print(f"[{_short(base_url)}] URL error on {model}: {exc}", flush=True)
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
