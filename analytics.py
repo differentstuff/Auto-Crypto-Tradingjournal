@@ -945,6 +945,9 @@ def get_benchmark_comparison(filters=None, conn=None) -> dict:
                      _dt.timedelta(days=1)).strftime("%Y-%m-%d")
         btc_data = yf.download("BTC-USD", start=start_date, end=end_plus1,
                                progress=False, auto_adjust=True)
+        # yfinance 1.x returns MultiIndex columns for single-ticker downloads — flatten
+        if isinstance(btc_data.columns, __import__("pandas").MultiIndex):
+            btc_data.columns = btc_data.columns.get_level_values(0)
         if not btc_data.empty and "Close" in btc_data.columns:
             close = btc_data["Close"].dropna()
             btc_start = float(close.iloc[0])
