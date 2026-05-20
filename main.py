@@ -22,7 +22,11 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
 from core.daemon import Daemon
-from core.enzyme import WaitEnzyme
+from core.enzyme import create_enzyme, list_enzymes
+from core.exchange import Exchange
+
+# Import enzymes package to trigger @register_enzyme decorators
+import enzymes  # noqa: F401
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -92,11 +96,65 @@ def main() -> None:
         log.error("Failed to initialize daemon: %s", e, exc_info=True)
         sys.exit(1)
 
-    # Register Wait enzyme (always available)
-    daemon.register_enzyme(WaitEnzyme())
+    # --- Register enzymes by phase -------------------------------------------
+    # Each enzyme is created via the registry (no direct class imports).
+    # If an enzyme is missing from the registry, a warning is logged
+    # and the system continues without it.
+
+    # Phase B: Sensors and Evaluators
+    phase_b_enzymes = [
+        "CollectOHLCV",
+        "ScoreConfluence",
+        "DetectNoise",
+        "ValidateEntryZone",
+        "CollectPreTradeContext",
+        "CollectMacroContext",
+    ]
+    for ename in phase_b_enzymes:
+        enz = create_enzyme(ename, config=daemon.substrate._config)
+        if enz:
+            daemon.register_enzyme(enz)
+        else:
+            log.warning("Enzyme %s not found in registry (available: %s)", ename, list_enzymes())
+
+    # Phase C: Regulators and Transporters
+    # Exchange instance is created once and injected into enzymes that need it.
+    exchange = Exchange(daemon.config) if daemon.config else None
+
+    phase_c_enzymes = [
+        "ApproveTrade",
+        "ApproveExit",
+        "RequestExit",
+        "ExecuteTrade",
+        "ExecuteExit",
+        "SendTelegramLog",
+    ]
+    for ename in phase_c_enzymes:
+        enz = create_enzyme(ename, config=daemon.substrate._config)
+        if enz:
+            daemon.register_enzyme(enz)
+        else:
+            log.warning("Enzyme %s not found in registry (available: %s)", ename, list_enzymes())
+
+    # SyncPositions requires the Exchange instance for live mode
+    sync_enz = create_enzyme("SyncPositions", config=daemon.substrate._config)
+    if sync_enz and exchange:
+        sync_enz.exchange = exchange
+    if sync_enz:
+        daemon.register_enzyme(sync_enz)
+    else:
+        log.warning("Enzyme SyncPositions not found in registry")
+
+    # Wait enzyme (always available, lowest priority)
+    wait_enz = create_enzyme("Wait", config=daemon.substrate._config)
+    if wait_enz:
+        daemon.register_enzyme(wait_enz)
+    else:
+        log.warning("Enzyme Wait not found in registry")
 
     # Log registered enzymes
     log.info("Registered enzymes: %s", [e.name for e in daemon.enzymes])
+    log.info("Enzyme registry: %s", list_enzymes())
 
     if args.cycle_once:
         # Single cycle mode (for testing)
