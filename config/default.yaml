@@ -14,6 +14,12 @@ daemon:
   max_cycle_steps: 20
   paper_mode: false
   # If true, orders are written to log files instead of exchange
+  substrate_state_max_rows: 200
+  # How many substrate snapshots to keep per strategy in the database.
+  # Each row is a full persistent state blob (~5-20KB). At 15-min cycles,
+  # 200 rows = ~2 days of history. Older rows are pruned automatically
+  # on every save. Increase if you want longer restart-recovery history;
+  # decrease to save disk space on low-storage devices (e.g. Raspberry Pi).
 
 exchange:
   primary: "bitget"
