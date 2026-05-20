@@ -240,32 +240,6 @@ def create_enzyme(name: str, config: Optional[dict] = None) -> Optional[Enzyme]:
     return cls(config=config)
 
 
-# --- Wait Enzyme (default, always activatable) --------------------------------
-
-class WaitEnzyme(Enzyme):
-    """
-    Default enzyme. No strong signal detected, no actionable setup found.
-    Keep watching. The market owes us nothing.
-    """
-
-    name = "Wait"
-    enzyme_class = EnzymeClass.ISOMERASE
-    priority = -1
-
-    def can_activate(self, substrate: Substrate) -> bool:
-        # Always activatable -- the healthy resting state of the system
-        return True
-
-    def transform(self, substrate: Substrate) -> Substrate:
-        substrate.decisions["action"] = "wait"
-        substrate._updated_at = substrate._now_iso()
-        self._log.info("Wait: no actionable signal, staying idle")
-        return substrate
-
-    def flux_score(self, substrate: Substrate) -> float:
-        # Neutral -- only chosen when all other scores <= 0
-        return 0.0
-
-
-# Register WaitEnzyme so it can be looked up by name
-register_enzyme(WaitEnzyme)
+# --- WaitEnzyme has moved to enzymes/wait.py ---
+# It is registered via @register_enzyme when enzymes/ is imported.
+# This keeps the schema: every enzyme = one file in enzymes/.
