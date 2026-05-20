@@ -3,10 +3,18 @@ core/daemon.py -- 24/7 daemon loop for the reaction network.
 
 The daemon:
   1. Loads config (hot-reload on every cycle)
-  2. Initializes substrate from config (or restores from DB)
-  3. Runs the reaction network (find activatable enzymes, fire best one)
-  4. Persists substrate state to database
-  5. Sleeps until next cycle
+  2. Builds a secrets-free strategy config slice for the substrate
+  3. Initializes substrate from config (or restores from DB)
+  4. Runs the reaction network (find activatable enzymes, fire best one)
+  5. Persists substrate state to database
+  6. Sleeps until next cycle
+
+Security note:
+    The substrate receives only the strategy-safe config slice (thresholds,
+    risk limits, ISC definitions, indicator weights). Exchange credentials
+    and LLM API keys are stripped before passing config to the substrate.
+    Enzymes that need credentials receive the full ConfigLoader reference
+    directly from the daemon, not via the substrate.
 
 Based on: docs/reaction-design/README.md execution loop
 """
@@ -26,6 +34,20 @@ from core.substrate import Substrate
 
 _log = logging.getLogger(__name__)
 
+# Config keys that contain secrets -- stripped before passing to substrate
+_SECRET_KEYS = {"exchange", "llm_keys"}
+
+
+def _strategy_config_slice(full_config: dict) -> dict:
+    """
+    Return a copy of the config with all secret keys removed.
+
+    The substrate only needs strategy-level config (thresholds, risk limits,
+    ISC definitions, indicator weights, module toggles). Exchange credentials
+    and LLM API keys must never be stored on the substrate object.
+    """
+    return {k: v for k, v in full_config.items() if k not in _SECRET_KEYS}
+
 
 class Daemon:
     """
@@ -38,9 +60,11 @@ class Daemon:
         self,
         strategy_name: str = "momentum_rising",
         paper_mode: bool = False,
+        config_dir: Optional[str] = None,
     ):
         self.strategy_name = strategy_name
         self.paper_mode = paper_mode
+        self._config_dir = config_dir  # None = use default project config/
         self.config: Optional[ConfigLoader] = None
         self.substrate: Optional[Substrate] = None
         self.scheduler: Optional[Scheduler] = None
@@ -55,8 +79,11 @@ class Daemon:
         # Initialize database (creates tables if needed)
         init_db()
 
-        # Load configuration
-        self.config = ConfigLoader(strategy_name=self.strategy_name)
+        # Load configuration (config_dir=None uses default project config/)
+        self.config = ConfigLoader(
+            strategy_name=self.strategy_name,
+            config_dir=self._config_dir,
+        )
 
         # Override paper mode if specified on command line
         if self.paper_mode:
@@ -82,15 +109,16 @@ class Daemon:
 
     def _init_substrate(self) -> None:
         """Initialize substrate from config or restore from database."""
+        # Build secrets-free config slice for the substrate
+        safe_config = _strategy_config_slice(self.config.config)
+
         last_state = load_latest_substrate(self.strategy_name)
         if last_state:
             _log.info("Restoring substrate from database")
-            self.substrate = Substrate.from_dict(last_state, config=self.config.config)
-            # Refresh config reference so ISC checks can access current config
-            self.substrate._config = self.config.config
+            self.substrate = Substrate.from_persistent_dict(last_state, config=safe_config)
         else:
             _log.info("Creating new substrate from config")
-            self.substrate = Substrate(config=self.config.config)
+            self.substrate = Substrate(config=safe_config)
 
         _log.info("Substrate: %s", self.substrate)
 
@@ -102,7 +130,7 @@ class Daemon:
         2. Reset per-cycle substrate fields
         3. Find activatable enzymes
         4. Fire the best one (regulators first)
-        5. Verify ISC conditions
+        5. Verify ISC conditions after each step
         6. Persist state
         7. Log cycle
 
@@ -116,8 +144,8 @@ class Daemon:
         if config_changed:
             interval = self.config.get("strategy.cycle_interval_minutes", 15)
             self.scheduler.update_interval(interval)
-            # Refresh config reference in substrate so ISC checks use current config
-            self.substrate._config = self.config.config
+            # Refresh secrets-free config slice in substrate
+            self.substrate._config = _strategy_config_slice(self.config.config)
             _log.info("Config reloaded, interval updated to %dm", interval)
 
         # 2. Reset per-cycle fields
@@ -182,12 +210,11 @@ class Daemon:
         if not self.enzymes:
             _log.info("No enzymes registered yet (skeleton mode)")
             self.substrate.mark_idle("skeleton mode - no enzymes registered")
+            isc_results = self.substrate.verify_iscs()
 
-        # Verify final ISC state
-        isc_results = self.substrate.verify_iscs()
-
-        # Persist substrate
-        save_substrate(self.substrate)
+        # Persist substrate (using max_rows from config)
+        max_rows = self.config.get("daemon.substrate_state_max_rows", 200)
+        save_substrate(self.substrate, max_rows=max_rows)
 
         # Log cycle
         cycle_end = time.time()
