@@ -1,13 +1,29 @@
+# Auto-Crypto-Tradingjournal
+
+# API keys and secrets -- NEVER commit
+config/exchange.yaml
 *.db
-*.db-shm
 *.db-wal
-*.pyc
+*.db-shm
 __pycache__/
-.DS_Store
-*.log
+*.pyc
+*.pyo
 .env
-data/
-Export order history*/
-.agents/
-docs/superpowers/
-.claude/settings.local.json
+.venv/
+venv/
+node_modules/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# Data files
+data/reports/*.txt
+data/reports/*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

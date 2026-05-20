@@ -1,0 +1,155 @@
+# momentum_rising.yaml -- Primary strategy configuration
+# Derived from strategy-template.yaml with momentum_rising defaults.
+# The daemon reads this on every cycle. No restart needed to adjust.
+
+description: |
+  Enter long when momentum indicators start rising before price moves.
+  This happens at structural support levels on 4H candles.
+  Confirm with 1H price action before entry.
+  Always set stop loss below the support level.
+  Trail stops once price moves 0.5% in our direction.
+  Never enter when the market is noisy or conflicting.
+  Maximum 3 positions at once, 1% risk per trade.
+
+strategy:
+  name: momentum_rising
+  timeframe: "4H"
+  confirmation_tf: "1H"
+  max_positions: 3
+  cycle_interval_minutes: 15
+  max_position_duration_hours: 12
+
+symbols:
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+  never_trade:
+    - SHIBUSDT
+    - BOMEUSDT
+  dynamic_filter:
+    mode: "dynamic"
+    limit: 15
+    criteria: "momentum"
+    min_volume_24h_usd: 10000000
+    min_open_interest_usd: 2000000
+
+indicators:
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.25
+    description: "RSI below 30 = oversold. RSI above 70 = overbought. Look for bullish divergence at support."
+
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.25
+    description: "MACD histogram rising = momentum building before price confirms. Cross above signal = bullish."
+
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.30
+    description: "EMA 21 above 55 above 200 = bullish trend structure. Confirms directional bias."
+
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.20
+    description: "ADX between 25 and 35 = healthy trend. Avoid entries when ADX above 40 (overextended) or below 15 (no trend)."
+
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR determines stop loss width and entry zone size. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "Support and resistance levels define entry zones. Require at least 3 touches for validity."
+
+scoring:
+  entry_threshold: 6.5
+  confluence_min_signals: 3
+  rr_minimum: 2.0
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 1.5
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.5
+    distance_pct: 1.0
+    move_to_breakeven_at_pct: 1.5
+  soft_exit:
+    requires_indicators_reversed: 2
+    requires_confirmation_tf: true
+    urgency: "soft"
+  duration_exit:
+    max_hours: 12
+    max_hours_extreme: 24
+
+entry_conditions:
+  - "at least 3 enabled indicators aligned in same direction"
+  - "confluence score above entry_threshold"
+  - "support or resistance level within 1% of entry zone"
+  - "stop loss set below support for long, above resistance for short"
+  - "risk per trade within configured limit"
+  - "pre_trade trajectory coincidence_risk is not high"
+  - "not in kill_zone time window (if macro module enabled)"
+
+learning:
+  min_trades_before_adjusting: 30
+  min_trades_per_signal: 15
+  significance_level: 0.05
+  rulebook_max_rules: 10
+  retrain_every_hours: 12
+  track_idle_cycles: true
+  trajectory_lookback_bars: 12
+
+portfolio:
+  max_positions: 3
+  risk_per_trade_pct: 1.0
+  leverage: 5
+  max_total_risk_pct: 3.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: true
+
+llm:
+  cost_budget_daily_usd: 2.00
+  routing:
+    pre_filter: "claude-haiku-4-5-20251001"
+    analysis: "claude-sonnet-4-6"
+    fallback: "gemini-2.0-flash"
+  max_tokens:
+    analysis: 1024
+    rulebook: 512
+  max_context_chars: 4000
+  prompt_priority_order:
+    - "strategy_description"
+    - "rulebook"
+    - "signal_states"
+    - "pre_trade_context"
+    - "similar_trades"
+
+modules:
+  macro_context: false
+  regime_detection: false
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false

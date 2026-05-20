@@ -1,0 +1,165 @@
+# default.yaml -- All system defaults.
+# Never hand-edit this file. Override values in strategy YAML or exchange.yaml.
+# The config loader merges: default.yaml < strategy.yaml < exchange.yaml
+
+system:
+  version: "2.0.0"
+  name: "auto-trader"
+  log_level: "INFO"
+  data_dir: "data"
+  reports_dir: "data/reports"
+
+daemon:
+  cycle_interval_minutes: 15
+  max_cycle_steps: 20
+  paper_mode: false
+  # If true, orders are written to log files instead of exchange
+
+exchange:
+  primary: "bitget"
+  data_source: "binance"
+  fallback: "bybit"
+  sync_interval_minutes: 5
+
+  # Paper trading mode: all enzymes run, no real orders
+  # Set to "paper" to log orders instead of placing them
+  mode: "live"
+
+llm:
+  cost_budget_daily_usd: 2.00
+  routing:
+    pre_filter: "claude-haiku-4-5-20251001"
+    analysis: "claude-sonnet-4-6"
+    fallback: "gemini-2.0-flash"
+  max_tokens:
+    analysis: 1024
+    rulebook: 512
+  max_context_chars: 4000
+  prompt_priority_order:
+    - "strategy_description"
+    - "rulebook"
+    - "signal_states"
+    - "pre_trade_context"
+    - "similar_trades"
+
+# Cache TTLs (seconds)
+cache:
+  candle_ttl: 600        # 10 min
+  indicator_ttl: 900     # 15 min
+  macro_ttl: 300         # 5 min
+  dominance_ttl: 1800    # 30 min
+  onchain_ttl: 3600      # 1 hour
+  regime_ttl: 14400      # 4 hours
+  liquidation_ttl: 900   # 15 min
+
+# Position sizing defaults
+portfolio:
+  risk_per_trade_pct: 1.0
+  leverage: 5
+  max_positions: 3
+  max_total_risk_pct: 3.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: true
+
+# Exit defaults
+exit_rules:
+  hard_stop:
+    width_atr_multiplier: 1.5
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.5
+    distance_pct: 1.0
+    move_to_breakeven_at_pct: 1.5
+  soft_exit:
+    requires_indicators_reversed: 2
+    requires_confirmation_tf: true
+    urgency: "soft"
+  duration_exit:
+    max_hours: 12
+    max_hours_extreme: 24
+
+# Scoring defaults
+scoring:
+  entry_threshold: 6.5
+  confluence_min_signals: 3
+  rr_minimum: 2.0
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct:
+      - 55
+      - 60
+
+# Learning defaults
+learning:
+  min_trades_before_adjusting: 30
+  min_trades_per_signal: 15
+  significance_level: 0.05
+  rulebook_max_rules: 10
+  retrain_every_hours: 12
+  track_idle_cycles: true
+  trajectory_lookback_bars: 12
+
+# Default indicator config (overridden by strategy)
+indicators:
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.25
+    description: "RSI below 30 = oversold. RSI above 70 = overbought."
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.25
+    description: "MACD histogram rising = momentum building."
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.30
+    description: "EMA 21 above 55 above 200 = bullish trend structure."
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.20
+    description: "ADX 25-35 = healthy trend. Avoid >40 or <15."
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR for SL width and position sizing, not scoring."
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "S/R levels for entry zone validation, not scoring."
+
+# Modules (all off by default)
+modules:
+  macro_context: false
+  regime_detection: false
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false
+
+# Default symbol watchlist
+symbols:
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+  never_trade:
+    - SHIBUSDT
+    - BOMEUSDT
+  dynamic_filter:
+    mode: "dynamic"
+    limit: 15
+    criteria: "momentum"
+    min_volume_24h_usd: 10000000
+    min_open_interest_usd: 2000000

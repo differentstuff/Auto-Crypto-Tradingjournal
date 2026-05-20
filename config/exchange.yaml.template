@@ -1,0 +1,49 @@
+# exchange.yaml.template -- Copy to exchange.yaml and fill in your API keys.
+# NEVER commit exchange.yaml with real keys. Use .gitignore to exclude it.
+# The KeyManager reads llm_keys from this file for multi-key rotation.
+
+exchange:
+  # Trading exchange configuration
+  bitget:
+    api_key: "YOUR_BITGET_API_KEY"
+    secret_key: "YOUR_BITGET_SECRET_KEY"
+    passphrase: "YOUR_BITGET_PASSPHRASE"
+    sandbox: false
+
+  binance:
+    api_key: "YOUR_BINANCE_API_KEY"
+    secret_key: "YOUR_BINANCE_SECRET_KEY"
+    sandbox: false
+
+  bybit:
+    api_key: "YOUR_BYBIT_API_KEY"
+    secret_key: "YOUR_BYBIT_SECRET_KEY"
+    sandbox: false
+
+# LLM API key rotation (KeyManager)
+# Each provider can have multiple keys. The KeyManager rotates automatically on overload.
+# On 429/529 (overload): switch to next healthy key, cooldown 30s
+# On 500/502/503 (server error): switch to next key, cooldown 10s
+# On 401/403 (auth error): disable key, log alert
+llm_keys:
+  anthropic:
+    - key: "sk-ant-api03-YOUR-KEY-1"
+      label: "anthropic-key-1"
+    # - key: "sk-ant-api03-YOUR-KEY-2"
+    #   label: "anthropic-key-2"
+
+  google:
+    - key: "AIza-YOUR-KEY-1"
+      label: "gemini-key-1"
+    # - key: "AIza-YOUR-KEY-2"
+    #   label: "gemini-key-2"
+
+# Telegram (optional, for one-way log push)
+telegram:
+  bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
+  chat_id: "YOUR_TELEGRAM_CHAT_ID"
+  enabled: false
+
+# Database path (default: trading_journal.db in project root)
+database:
+  path: "trading_journal.db"
