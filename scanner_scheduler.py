@@ -274,16 +274,21 @@ def _loop():
           f"then every {INTERVAL // 60} min")
     time.sleep(FIRST_DELAY)
     last_watcher_review = 0.0
+    import journal_paused
     while True:
         try:
-            _run_once()
+            if journal_paused.is_paused():
+                print("[Scanner Scheduler] paused — skipping scan cycle")
+            else:
+                _run_once()
         except Exception as e:
             print(f"[Scanner Scheduler] Unhandled error: {e}")
         # Run watcher review every 45 min independently of scan cycle
         if time.time() - last_watcher_review >= WATCHER_INTERVAL:
             try:
-                import entry_watcher
-                entry_watcher.run_review_cycle()
+                if not journal_paused.is_paused():
+                    import entry_watcher
+                    entry_watcher.run_review_cycle()
                 last_watcher_review = time.time()
             except Exception as e:
                 print(f"[Scanner Scheduler] Watcher review error: {e}")

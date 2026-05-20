@@ -32,6 +32,13 @@ def send_message(text: str) -> bool:
     """Send HTML-formatted message. Returns True on success."""
     if not is_configured():
         return False
+    try:
+        import journal_paused
+        if journal_paused.is_paused():
+            print(f"[Telegram] paused — suppressed: {text[:60]}...", flush=True)
+            return False
+    except Exception:
+        pass
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     body = json.dumps({
         "chat_id":                  TELEGRAM_CHAT,
@@ -58,6 +65,13 @@ def send_photo(caption: str, png_b64: str) -> bool:
     """
     if not is_configured() or not png_b64:
         return send_message(caption)
+    try:
+        import journal_paused
+        if journal_paused.is_paused():
+            print(f"[Telegram] paused — suppressed photo: {caption[:60]}...", flush=True)
+            return False
+    except Exception:
+        pass
     try:
         import base64
         img_bytes = base64.b64decode(png_b64)
