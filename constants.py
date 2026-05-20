@@ -18,7 +18,7 @@ ACCURACY_TARGET        = 35     # calls needed for 85% statistical confidence
 
 # ── Scanner pipeline ──────────────────────────────────────────────────────────
 SCANNER_MIN_SCORE         = 6
-SCANNER_FULL_DETAIL_TOP_N = 12
+SCANNER_FULL_DETAIL_TOP_N = 6   # was 12 — halved to fit free-tier 30 RPM cascade burst budget (2026-05-20)
 SCANNER_MAX_WORKERS       = 4   # ThreadPoolExecutor — tuned to Pi 4-core CPU
 
 # ── Position sizing ───────────────────────────────────────────────────────────
