@@ -9,6 +9,15 @@ Each enzyme has:
   - priority: Regulator enzymes always fire first
 
 Based on: docs/reaction-design/enzyme-definitions.yaml
+
+Condition syntax for requires()/prohibits():
+  Paths must NOT include the "substrate." prefix -- the evaluator strips it.
+  Examples:
+    "strategy.name is set"
+    "analysis.candidates not empty"
+    "decisions.action == 'wait'"
+    "analysis.noise_flag != 'true'"
+    "market.indicators fresh"
 """
 
 from __future__ import annotations
@@ -40,7 +49,7 @@ class Enzyme(ABC):
     highest-flux-score enzyme that can activate each step.
     """
 
-    # Subclasses override these
+    # Subclasses override these as class attributes
     name: str = "UnnamedEnzyme"
     enzyme_class: EnzymeClass = EnzymeClass.ISOMERASE
     priority: int = 0
@@ -83,48 +92,64 @@ class Enzyme(ABC):
         """
         Evaluate a condition string against the substrate.
 
-        Supported conditions:
-          - "substrate.section.field is set" -- field is not empty/None/False
-          - "substrate.section.field == 'value'" -- equality check
-          - "substrate.section.field not empty" -- list/dict is not empty
-          - "substrate.section.field fresh" -- timestamp is recent (within TTL)
-          - Custom conditions handled by subclass overrides
+        The "substrate." prefix is stripped automatically so condition
+        strings can be written either way:
+            "substrate.strategy.name is set"  -- from enzyme-definitions.yaml
+            "strategy.name is set"            -- shorthand in code
+
+        Supported condition forms:
+          "<path> is set"          -- value is not None/empty/0/False
+          "<path> not empty"       -- list or dict is non-empty
+          "<path> is empty"        -- list or dict is empty (or missing)
+          "<path> is empty or stale" -- same as is empty (stale handled by subclass)
+          "<path> == 'value'"      -- string equality
+          "<path> != 'value'"      -- string inequality
+          "<path> fresh"           -- TTL check (always True here; subclasses override)
         """
+        # Strip "substrate." prefix so both forms work identically
+        cond = condition.strip()
+        if cond.startswith("substrate."):
+            cond = cond[len("substrate."):]
+
         s = substrate
 
-        # Handle common conditions
-        if "is set" in condition:
-            path = condition.replace(" is set", "").strip()
+        if "is set" in cond:
+            path = cond.replace(" is set", "").strip()
             val = s.get(path)
             return val is not None and val != "" and val != 0 and val != []
 
-        if "not empty" in condition:
-            path = condition.split("not empty")[0].strip()
+        if "not empty" in cond:
+            path = cond.split("not empty")[0].strip()
             val = s.get(path)
             return bool(val)
 
-        if "is empty" in condition or "is empty or stale" in condition:
-            path = condition.split("is empty")[0].strip()
+        if "is empty or stale" in cond:
+            path = cond.split("is empty or stale")[0].strip()
             val = s.get(path)
             return not bool(val)
 
-        if "==" in condition:
-            parts = condition.split("==")
+        if "is empty" in cond:
+            path = cond.split("is empty")[0].strip()
+            val = s.get(path)
+            return not bool(val)
+
+        if "==" in cond:
+            parts = cond.split("==")
             path = parts[0].strip()
             expected = parts[1].strip().strip("'\"")
             actual = s.get(path)
             return str(actual) == expected
 
-        if "!=" in condition:
-            parts = condition.split("!=")
+        if "!=" in cond:
+            parts = cond.split("!=")
             path = parts[0].strip()
             expected = parts[1].strip().strip("'\"")
             actual = s.get(path)
             return str(actual) != expected
 
-        if "fresh" in condition:
-            # For freshness checks, we assume True for now
-            # (TTL checks implemented in subclasses with cache awareness)
+        if "fresh" in cond:
+            # TTL freshness checks are implemented in subclasses with
+            # cache awareness. Default: assume fresh (do not block activation).
             return True
 
         self._log.warning("Unknown condition format: %s", condition)
@@ -186,9 +211,14 @@ _enzyme_registry: dict[str, type[Enzyme]] = {}
 
 
 def register_enzyme(cls: type[Enzyme]) -> type[Enzyme]:
-    """Decorator to register an enzyme class by name."""
-    instance = cls()
-    _enzyme_registry[instance.name] = cls
+    """
+    Decorator to register an enzyme class by name.
+
+    Reads the name from the class attribute directly -- does NOT
+    instantiate the class (which would require a config argument
+    and create a throwaway object just to read a class-level string).
+    """
+    _enzyme_registry[cls.name] = cls
     return cls
 
 
@@ -223,15 +253,19 @@ class WaitEnzyme(Enzyme):
     priority = -1
 
     def can_activate(self, substrate: Substrate) -> bool:
-        # Always activatable
+        # Always activatable -- the healthy resting state of the system
         return True
 
     def transform(self, substrate: Substrate) -> Substrate:
         substrate.decisions["action"] = "wait"
-        substrate._updated_at = Substrate._now_iso()
+        substrate._updated_at = substrate._now_iso()
         self._log.info("Wait: no actionable signal, staying idle")
         return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
         # Neutral -- only chosen when all other scores <= 0
         return 0.0
+
+
+# Register WaitEnzyme so it can be looked up by name
+register_enzyme(WaitEnzyme)
