@@ -284,9 +284,10 @@ Enzymes never import a specific client directly. They call `router.call_llm(role
 | `ai_limit.py` | Merged into risk manager enzymes |
 | `ai_pattern_detector.py` | Merged into validate_entry_zone (optional LLM) |
 | `ai_trade_grader.py` | Merged into learning analyzer |
-| `backtest_engine.py` | Backtesting dropped (per user decision: "backtests don't work in reality") |
-| `backtest_metrics.py` | Same reason |
-| `backtest_optimizer.py` | Same reason |
+| `backtest_engine.py` | → `tools/backtest/backtest_engine.py` (nice-to-have addon, not core) |
+| `backtest_metrics.py` | → `tools/backtest/backtest_metrics.py` |
+| `backtest_optimizer.py` | → `tools/backtest/backtest_optimizer.py` |
+| `backtest_quality.py` | → `tools/backtest/backtest_quality.py` |
 | `analytics.py` | Dashboard analytics -- replaced by learning engine + log reports |
 | `data_sources.py` | Merged into indicator modules |
 | `importer.py` | CSV import -- replaced by exchange sync |
@@ -413,3 +414,59 @@ Set `exchange.primary: "paper"` in strategy config. The system runs all enzymes,
 | LLM integrated | E | Optional Sonnet validation works, budget tracked |
 | Live trading starts | E+ | Paper mode validated for 7+ days, switch to live |
 | Self-improving confirmed | E+2 | After 50 live trades, accuracy metrics show meaningful patterns |
+| Root is clean | F | Only `main.py` + config/docs/requirements in root |
+
+---
+
+## Phase F: Root Cleanup (after Phase E)
+
+### Goal: Clean root directory — only entrypoint, config, docs, and requirements remain
+
+Once the reaction network is fully operational (Phases A–E complete), the old system files are deleted or moved. The old Flask web UI, agent pipeline, and scanner files have no place in the new architecture.
+
+### Target root state
+
+After Phase F, only these files remain in root:
+
+```
+main.py                    ← daemon entrypoint
+requirements.txt
+README.md
+CLAUDE.md
+SECURITY.md
+LICENSE
+.env.example
+.gitignore
+trading-journal.service
+```
+
+All logic lives in subdirectories: `core/`, `enzymes/`, `indicators/`, `learning/`, `llm/`, `tools/`, `config/`, `docs/`, `tests_new/`.
+
+### Tasks
+
+| Task | Action | Notes |
+|------|--------|-------|
+| Move backtest files | `backtest_engine.py`, `backtest_metrics.py`, `backtest_optimizer.py`, `backtest_quality.py` → `tools/backtest/` | Nice-to-have addon; update all internal imports |
+| Delete agent pipeline | `agent_*.py` (8 files) | All ported to `enzymes/` in Phase B/C |
+| Delete AI layer | `ai_*.py` (9 files) | All ported to `llm/` or `learning/` in Phase D/E |
+| Delete scanner files | `scanner_*.py` (5 files) | All ported to `enzymes/` + `config/` in Phase B |
+| Delete chart files | `chart_*.py` (6 files) | All ported to `indicators/` in Phase B |
+| Delete exchange clients | `bitget_client.py`, `blofin_client.py`, `ccxt_client.py`, `deribit_client.py` | Ported to `core/exchange.py` in Phase B |
+| Delete sync files | `bitget_sync.py`, `blofin_sync.py`, `sync_base.py` | Ported to daemon position sync in Phase C |
+| Delete data clients | `coinalyze_client.py`, `coingecko_client.py`, `finnhub_client.py`, `nansen_client.py`, `onchain_client.py`, `liquidation_client.py` | Ported to optional `indicators/` modules in Phase E |
+| Delete old LLM clients | `ai_client.py`, `cerebras_client.py`, `gemini_client.py`, `grok_client.py`, `groq_client.py`, `openai_compat_client.py`, `openrouter_client.py` | Ported to `llm/` in Phase E |
+| Delete old infra files | `analytics.py`, `database.py`, `constants.py`, `helpers.py`, `data_sources.py`, `importer.py`, `indicators.py`, `signal_scorer.py` | Replaced by new architecture |
+| Delete scheduler files | `monitor_scheduler.py`, `scanner_scheduler.py`, `entry_watcher.py` | Merged into `core/daemon.py` + `core/scheduler.py` |
+| Delete misc files | `consensus.py`, `market_context.py`, `market_regime.py`, `liquidation_levels.py`, `risk_analytics.py`, `trade_history.py`, `trade_utils.py`, `token_log.py`, `prompt_builder.py`, `prompt_fragments.py` | Ported or superseded |
+| Delete Flask web UI | `app.py`, `routes/`, `static/`, `templates/` | Web UI retired; daemon + logs replace it |
+| Delete old tests | `tests/` directory | Replaced by `tests_new/` |
+| Delete scripts | `scripts/browser_*`, `scripts/compare_*`, `scripts/generate_*` | Dev tools; irrelevant for daemon |
+| Final import audit | Run `python -m pytest tests_new/` | All tests must pass after cleanup |
+
+### What We Get
+
+- Root contains only what a new developer needs to understand the entry point
+- No dead code, no legacy files, no confusion about which system is active
+- `tools/backtest/` available as an optional CLI tool for manual backtesting
+- `tests_new/` is the single source of truth for tests
+- Clean git history: one commit per phase, Phase F is "The Great Cleanup"
