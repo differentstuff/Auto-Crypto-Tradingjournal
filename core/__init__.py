@@ -8,7 +8,6 @@ from core.substrate import Substrate, ISCCheck
 from core.enzyme import (
     Enzyme,
     EnzymeClass,
-    WaitEnzyme,
     register_enzyme,
     get_enzyme,
     list_enzymes,
@@ -24,7 +23,6 @@ __all__ = [
     "ISCCheck",
     "Enzyme",
     "EnzymeClass",
-    "WaitEnzyme",
     "register_enzyme",
     "get_enzyme",
     "list_enzymes",
