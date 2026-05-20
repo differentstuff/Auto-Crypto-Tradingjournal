@@ -144,24 +144,76 @@ We create a new branch `feature/auto-trader` from the current `main`. The curren
 
 ## Phase E: LLM Integration and Polish (Week 5)
 
-### Goal: Cost-aware LLM routing, prompt builder, optional modules
+### Goal: Provider-agnostic LLM routing, prompt builder, optional modules
+
+### Provider-Agnostic Routing Principle
+
+The LLM layer is **provider-agnostic by design**. No enzyme hardcodes a provider name or model string. All routing decisions are driven by config:
+
+```yaml
+# config/default.yaml (or strategy YAML override)
+llm:
+  routing:
+    pre_filter:
+      provider: "openrouter"
+      model: "deepseek/deepseek-v4-0324:free"
+    analysis:
+      provider: "anthropic"
+      model: "claude-sonnet-4-6"
+    rulebook:
+      provider: "openrouter"
+      model: "meta-llama/llama-3.3-70b-instruct:free"
+    fallback:
+      provider: "openrouter"
+      model: "deepseek/deepseek-v4-0324:free"
+```
+
+**Supported providers** (all via `llm/router.py`):
+- `anthropic` -- Claude models via Anthropic SDK
+- `google` -- Gemini models via Google SDK
+- `openrouter` -- 200+ models via OpenAI-compatible API (free-tier available)
+
+**Cost strategy**: High-frequency roles (`pre_filter`, `rulebook`) use OpenRouter free-tier models. Low-frequency, high-stakes roles (`analysis`) use Anthropic Sonnet. Any role can be swapped per-strategy in the strategy YAML without touching code.
+
+**KeyManager** handles key rotation for all providers identically. Provider names in `llm_keys` (exchange.yaml) must match `llm.routing.<role>.provider` values.
 
 ### Tasks
 
 | Task | Description | Source to Port |
 |------|-------------|---------------|
-| Port ai_client.py | Anthropic client with Gemini fallback | `ai_client.py`, `gemini_client.py` |
-| Build router.py | Cost-aware model selection, daily budget tracking | NEW (extends `token_log.py` concept) |
-| Build prompt_builder.py | Dynamic context allocation with rulebook priority | `prompt_builder.py` (rewrite with new priority order) |
-| Wire ValidateEntryZone LLM call | Optional Sonnet call for complex patterns | `agent_trade_prep.py` (prompt structure) |
-| Wire UpdateRulebook LLM call | Optional Haiku call for rulebook formatting | `ai_rulebook.py` |
+| Build `llm/anthropic_client.py` | Anthropic SDK client, reads key from KeyManager | `ai_client.py` |
+| Build `llm/gemini_client.py` | Gemini SDK client, reads key from KeyManager | `gemini_client.py` |
+| Build `llm/openrouter_client.py` | OpenAI-compatible client for OpenRouter, reads key from KeyManager, sends required HTTP-Referer + X-Title headers | `openrouter_client.py` (port to new location) |
+| Build `llm/router.py` | Provider-agnostic dispatcher: reads `llm.routing.<role>`, calls correct client, tracks daily budget, falls back to `llm.routing.fallback` on None key | NEW (extends `token_log.py` concept) |
+| Build `llm/prompt_builder.py` | Dynamic context allocation with rulebook priority | `prompt_builder.py` (rewrite with new priority order) |
+| Wire ValidateEntryZone LLM call | Optional call for complex patterns -- role: `analysis` | `agent_trade_prep.py` (prompt structure) |
+| Wire UpdateRulebook LLM call | Optional call for rulebook formatting -- role: `rulebook` | `ai_rulebook.py` |
 | Build regime_detector.py (optional) | HMM 3-state, off by default | `market_regime.py` |
 | Build sentiment module (optional) | F&G, L/S ratio, contrarian signal, off by default | `market_context.py`, `coinalyze_client.py` |
 | Build onchain module (optional) | MVRV, exchange flow, off by default | `onchain_client.py` |
 | Build liquidation module (optional) | Cluster walls, off by default | `liquidation_client.py`, `liquidation_levels.py` |
-| Build model consensus (optional) | Gemini second opinion, off by default | `consensus.py`, `gemini_client.py` |
+| Build model consensus (optional) | Second-opinion call on any provider, off by default | `consensus.py` |
 | End-to-end testing | Run full system in paper mode for 24 hours | NEW |
 | Performance baseline | Verify: cycle time < 30s, memory < 500MB | NEW |
+
+### Router Contract
+
+`llm/router.py` exposes a single function that all enzymes call:
+
+```python
+def call_llm(role: str, prompt: str, system: str = None) -> str | None:
+    """
+    Call the LLM configured for the given role.
+
+    Reads llm.routing.<role> from config to determine provider + model.
+    Gets key from KeyManager (returns None if all keys in cooldown).
+    If key is None: logs idle reason, returns None -- enzyme handles gracefully.
+    If provider call fails: tries llm.routing.fallback before giving up.
+    Tracks token usage against daily budget (llm.cost_budget_daily_usd).
+    """
+```
+
+Enzymes never import a specific client directly. They call `router.call_llm(role, prompt)` and handle `None` as "skip LLM this cycle, use rule-based fallback".
 
 ---
 
