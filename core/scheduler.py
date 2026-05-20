@@ -67,7 +67,10 @@ class Scheduler:
         """Mark the start of a new cycle."""
         self._last_cycle_start = time.time()
         self._cycle_count += 1
-        self._shutdown_event.clear()
+        # Do NOT clear the shutdown event here. If SIGTERM arrives between
+        # _handle_shutdown() setting the event and start_cycle() running,
+        # clearing it would silently swallow the shutdown signal and cause
+        # the daemon to run another full cycle before stopping.
         _log.info(
             "Cycle %d started (interval=%dm)",
             self._cycle_count,
