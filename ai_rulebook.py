@@ -17,12 +17,30 @@ Minimum 15 trades required before generating a rulebook.
 """
 
 import json
+import os
+import re
 import traceback
 from datetime import datetime, timezone
 
 from constants import MODEL
 from ai_client import send as ai_send
 from database import get_conn
+
+# Patterns to suppress from rulebook regeneration. When the AI synthesises a
+# rule whose title or body matches any of these (case-insensitive), it is
+# dropped before storage and prompt-injection. Configured via env:
+#   RULEBOOK_SUPPRESS_PATTERNS="short trade,avoid short,reduce short"
+# Used to pause specific learnings (e.g. user wants short trades surfaced
+# despite historical underperformance — see 2026-05-20).
+_SUPPRESS_RAW = os.environ.get("RULEBOOK_SUPPRESS_PATTERNS", "").strip()
+_RULEBOOK_SUPPRESS = [p.strip().lower() for p in _SUPPRESS_RAW.split(",") if p.strip()]
+
+
+def _should_suppress(rule: dict) -> bool:
+    if not _RULEBOOK_SUPPRESS:
+        return False
+    blob = f"{rule.get('title','')} {rule.get('rule','')}".lower()
+    return any(pat in blob for pat in _RULEBOOK_SUPPRESS)
 from helpers  import strip_fence
 
 MIN_TRADES   = 15
@@ -443,13 +461,19 @@ def update_rulebook(conn=None, force: bool = False) -> dict:
             )
 
         conn.execute("DELETE FROM trader_rulebook")
+        suppressed = 0
         for r in rules:
+            if _should_suppress(r):
+                suppressed += 1
+                continue
             conn.execute(
                 "INSERT INTO trader_rulebook (rule_type, title, rule, confidence, data_points) "
                 "VALUES (?,?,?,?,?)",
                 (r.get("type","insight"), r.get("title",""),
                  r.get("rule",""), r.get("confidence","medium"), r.get("data_points",0))
             )
+        if suppressed:
+            print(f"[rulebook] suppressed {suppressed} rule(s) matching RULEBOOK_SUPPRESS_PATTERNS")
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         conn.execute(
             "INSERT OR REPLACE INTO settings (key,value) VALUES ('rulebook_updated_at',?)", (now,)

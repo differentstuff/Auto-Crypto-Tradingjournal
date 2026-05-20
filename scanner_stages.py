@@ -168,10 +168,14 @@ def _stage1(symbols: list, min_score: int = SCANNER_MIN_SCORE,
                 )
             if ctx is None or conf is None:
                 continue
-            if conf["bullish"] >= threshold:
-                out.append((symbol, ctx, conf, "Long"))
-            elif conf["bearish"] >= threshold:
-                out.append((symbol, ctx, conf, "Short"))
+            # Pick the dominant direction by net signal strength (not first-match
+            # if/elif which suppressed Shorts whenever bullish merely met threshold
+            # even with much stronger bearish signals — see 2026-05-20 bias audit).
+            bull = conf["bullish"]
+            bear = conf["bearish"]
+            if max(bull, bear) >= threshold:
+                direction = "Long" if bull > bear else "Short"
+                out.append((symbol, ctx, conf, direction))
     return out
 
 
