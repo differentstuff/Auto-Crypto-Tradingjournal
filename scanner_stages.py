@@ -191,7 +191,7 @@ def _stage2(candidates: list, min_score: int = SCANNER_MIN_SCORE,
 
     if min_score <= 4:
         out = list(candidates)
-        out.sort(key=lambda x: -x[2].get("score", 0))
+        out.sort(key=lambda x: -abs(x[2].get("score", 0)))
         return out[:30]
 
     out = []
@@ -254,5 +254,5 @@ def _stage2(candidates: list, min_score: int = SCANNER_MIN_SCORE,
 
         out.append((symbol, ctx, conf, direction))
 
-    out.sort(key=lambda x: -x[2].get("score", 0))
+    out.sort(key=lambda x: -abs(x[2].get("score", 0)))
     return out[:30]
