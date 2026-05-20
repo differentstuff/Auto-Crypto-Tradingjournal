@@ -33,7 +33,7 @@ class TestDaemonInit:
 
     def test_daemon_initialize(self, config_dir, temp_db):
         """Daemon initializes config, substrate, and scheduler."""
-        daemon = Daemon(strategy_name="test_strategy")
+        daemon = Daemon(strategy_name="test_strategy", config_dir=str(config_dir))
         daemon.initialize()
         assert daemon.config is not None
         assert daemon.substrate is not None
@@ -54,7 +54,7 @@ class TestDaemonCycle:
 
     def test_single_cycle(self, config_dir, temp_db):
         """Daemon can run a single cycle (skeleton mode)."""
-        daemon = Daemon(strategy_name="test_strategy")
+        daemon = Daemon(strategy_name="test_strategy", config_dir=str(config_dir))
         daemon.initialize()
         daemon.register_enzyme(WaitEnzyme())
 
@@ -68,7 +68,7 @@ class TestDaemonCycle:
 
     def test_cycle_without_enzymes(self, config_dir, temp_db):
         """Daemon handles running with no enzymes (skeleton mode)."""
-        daemon = Daemon(strategy_name="test_strategy")
+        daemon = Daemon(strategy_name="test_strategy", config_dir=str(config_dir))
         daemon.initialize()
 
         result = daemon.run_cycle()
@@ -77,8 +77,8 @@ class TestDaemonCycle:
         assert result["enzymes_fired"] == []
 
     def test_substrate_persists_after_cycle(self, config_dir, temp_db):
-        """Substrate state is persisted to database after cycle."""
-        daemon = Daemon(strategy_name="test_strategy")
+        """Substrate durable state is persisted to database after cycle."""
+        daemon = Daemon(strategy_name="test_strategy", config_dir=str(config_dir))
         daemon.initialize()
         daemon.register_enzyme(WaitEnzyme())
 
@@ -91,10 +91,10 @@ class TestDaemonCycle:
 
     def test_config_hot_reload(self, config_dir, temp_db):
         """Daemon detects config changes on reload."""
-        daemon = Daemon(strategy_name="test_strategy")
+        daemon = Daemon(strategy_name="test_strategy", config_dir=str(config_dir))
         daemon.initialize()
 
-        # Modify the strategy YAML
+        # Modify the strategy YAML to add max_positions override
         strat_path = config_dir / "strategies" / "test_strategy.yaml"
         with open(strat_path, "w") as f:
             yaml.dump({"strategy": {"name": "test_strategy", "max_positions": 10}}, f)
