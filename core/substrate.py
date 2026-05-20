@@ -6,6 +6,22 @@ Each enzyme modifies only its designated output fields.
 The substrate persists across cycles and is stored in the database.
 
 Based on: docs/reaction-design/substrate-schema.yaml
+
+Security note:
+    The substrate stores only strategy config (thresholds, risk limits,
+    ISC definitions). Exchange credentials and LLM API keys are NEVER
+    stored on the substrate. Those are handled by KeyManager and accessed
+    directly from ConfigLoader by enzymes that need them.
+
+Serialization:
+    to_persistent_dict() -- durable state (survives restart). Stored in DB.
+        Contains: strategy, portfolio, learning, validity, cycle metadata.
+        Does NOT contain: market (stale on restart), analysis (recomputed),
+        per-cycle decisions (cleared on reset).
+    to_cycle_snapshot() -- full cycle state for debugging/audit.
+        Can be pruned aggressively (last 50 cycles).
+    from_persistent_dict() -- restore from DB on daemon restart.
+        Market and analysis start empty; sensors repopulate on first cycle.
 """
 
 from __future__ import annotations
@@ -18,14 +34,46 @@ from typing import Any, Dict, List, Optional
 
 _log = logging.getLogger(__name__)
 
+# Sentinel for "key not found" -- distinguishes missing from None/False/0/""
+_MISSING = object()
+
 
 class ISCCheck:
-    """A single hard-to-vary condition that must be verified before actions."""
+    """
+    A single hard-to-vary condition that must be verified before actions.
 
-    def __init__(self, isc_id: str, criterion: str, verification: str):
+    Conditions are config-driven: field, operator, and value_ref are read
+    from the strategy YAML. No ISC IDs are hardcoded in evaluation logic.
+
+    Supported operators:
+        any_score_gte   -- any item in list has score >= value_ref
+        lte             -- field value <= resolved value_ref
+        lt              -- field value < resolved value_ref
+        eq              -- field value == value_ref (string or bool)
+        not_empty       -- field is a non-empty list/dict
+        is_false        -- field is falsy (False, 0, None, "")
+        all_gte         -- all items in list have field_key >= value_ref
+        none_eq         -- no item in list has field_key == value_ref
+    """
+
+    def __init__(
+        self,
+        isc_id: str,
+        criterion: str,
+        verification: str,
+        field: str = "",
+        operator: str = "",
+        value_ref: str = "",
+        field_key: str = "",
+    ):
         self.id = isc_id
         self.criterion = criterion
         self.verification = verification
+        # Config-driven evaluation fields
+        self.field = field          # dotted path into substrate state
+        self.operator = operator    # evaluation operator
+        self.value_ref = value_ref  # dotted config path or literal value
+        self.field_key = field_key  # for list operators: key within each item
         self.status: str = "pending"  # "pending" | "verified" | "failed"
 
     def to_dict(self) -> dict:
@@ -33,12 +81,24 @@ class ISCCheck:
             "id": self.id,
             "criterion": self.criterion,
             "verification": self.verification,
+            "field": self.field,
+            "operator": self.operator,
+            "value_ref": self.value_ref,
+            "field_key": self.field_key,
             "status": self.status,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "ISCCheck":
-        isc = cls(d["id"], d["criterion"], d["verification"])
+        isc = cls(
+            isc_id=d["id"],
+            criterion=d["criterion"],
+            verification=d.get("verification", ""),
+            field=d.get("field", ""),
+            operator=d.get("operator", ""),
+            value_ref=d.get("value_ref", ""),
+            field_key=d.get("field_key", ""),
+        )
         isc.status = d.get("status", "pending")
         return isc
 
@@ -50,65 +110,102 @@ class Substrate:
     Provides dot-access to nested structures while keeping everything
     serializable. Enzymes read from and write to this object.
 
-    The substrate holds a reference to the full config dict so that
-    ISC checks and enzymes can look up config values (scoring thresholds,
-    risk limits, etc.) that are not part of the substrate state itself.
+    The substrate holds a reference to the STRATEGY config slice only
+    (scoring thresholds, risk limits, ISC definitions, indicator weights).
+    Exchange credentials and LLM keys are NOT stored here.
 
     Sections:
       strategy   - strategy identity and config
-      portfolio   - account state and positions
-      market      - market data (updated by Sensor enzymes)
-      analysis    - analysis results (updated by Oxidoreductase enzymes)
-      decisions   - decision state (updated by Regulator enzymes)
-      learning    - learning state (updated by Synthase enzymes)
-      validity    - ISC conditions (hard-to-vary constraints)
+      portfolio  - account state and positions
+      market     - market data (updated by Sensor enzymes)
+      analysis   - analysis results (updated by Oxidoreductase enzymes)
+      decisions  - decision state (updated by Regulator enzymes)
+      learning   - learning state (updated by Synthase enzymes)
+      validity   - ISC conditions (hard-to-vary constraints)
     """
 
-    # Default ISC conditions (from substrate-schema.yaml)
+    # Default ISC conditions (from substrate-schema.yaml).
+    # Each condition is fully config-driven: field + operator + value_ref.
+    # No ISC IDs are referenced in evaluation code.
     DEFAULT_ISCS = [
         {
             "id": "ISC-001",
             "criterion": "entry_threshold met before any trade opens",
             "verification": "analysis.candidates not empty AND score >= threshold",
+            "field": "analysis.candidates",
+            "operator": "any_score_gte",
+            "value_ref": "scoring.entry_threshold",
+            "field_key": "score",
         },
         {
             "id": "ISC-002",
             "criterion": "stop loss always set before position opens",
             "verification": "decisions.trade_approved.sl_price > 0",
+            "field": "decisions.trade_approved",
+            "operator": "sl_set_or_no_trade",
+            "value_ref": "",
+            "field_key": "sl_price",
         },
         {
             "id": "ISC-003",
             "criterion": "position size within risk limit",
             "verification": "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100",
+            "field": "decisions.trade_approved",
+            "operator": "size_within_risk",
+            "value_ref": "",
+            "field_key": "size_usdt",
         },
         {
             "id": "ISC-004",
             "criterion": "max concurrent positions not exceeded",
             "verification": "portfolio.open_positions count < strategy.max_positions",
+            "field": "portfolio.open_positions",
+            "operator": "count_lt",
+            "value_ref": "strategy.max_positions",
+            "field_key": "",
         },
         {
             "id": "ISC-005",
             "criterion": "no trade when noise_flag is true",
             "verification": "analysis.noise_flag == false OR decisions.action == 'wait'",
+            "field": "analysis.noise_flag",
+            "operator": "false_or_action_wait",
+            "value_ref": "decisions.action",
+            "field_key": "",
         },
         {
             "id": "ISC-006",
             "criterion": "confluence minimum signals aligned",
             "verification": "candidate.indicators_aligned >= strategy.confluence_min_signals",
+            "field": "analysis.candidates",
+            "operator": "all_field_gte",
+            "value_ref": "scoring.confluence_min_signals",
+            "field_key": "indicators_aligned",
         },
         {
             "id": "ISC-007",
             "criterion": "pre_trade trajectory not sudden coincidence",
             "verification": "pre_trade_context.coincidence_risk != 'high'",
+            "field": "market.pre_trade_context",
+            "operator": "none_field_eq",
+            "value_ref": "high",
+            "field_key": "coincidence_risk",
         },
     ]
 
     def __init__(self, config: Optional[Dict] = None):
-        """Initialize substrate from config dict (from config loader)."""
+        """
+        Initialize substrate from strategy config dict.
+
+        The config passed here should be the strategy-safe slice only
+        (no exchange credentials, no LLM keys). The daemon is responsible
+        for stripping secrets before passing config to the substrate.
+        """
         now = self._now_iso()
         cfg = config or {}
 
-        # Store config reference for ISC lookups and enzyme access
+        # Store strategy config reference for ISC lookups and enzyme access.
+        # This must NOT contain exchange credentials or LLM API keys.
         self._config: Dict = cfg
 
         # Strategy section
@@ -141,7 +238,8 @@ class Substrate:
             "correlation_matrix": {},
         }
 
-        # Market section (populated by Sensor enzymes)
+        # Market section (populated by Sensor enzymes each cycle)
+        # NOT persisted across restarts -- sensors repopulate on first cycle.
         symbols_cfg = cfg.get("symbols", {})
         self.market = {
             "symbols_watched": symbols_cfg.get("always_watch", []),
@@ -154,7 +252,8 @@ class Substrate:
             "sentiment": {},
         }
 
-        # Analysis section (populated by Oxidoreductase enzymes)
+        # Analysis section (populated by Oxidoreductase enzymes each cycle)
+        # NOT persisted across restarts -- evaluators recompute on first cycle.
         self.analysis = {
             "candidates": [],
             "entry_zones": {},
@@ -164,6 +263,7 @@ class Substrate:
         }
 
         # Decisions section (populated by Regulator enzymes)
+        # Per-cycle fields are cleared by reset_cycle().
         self.decisions = {
             "action": "wait",
             "trade_approved": None,
@@ -173,7 +273,7 @@ class Substrate:
         }
 
         # Learning section (populated by Synthase enzymes)
-        learning_cfg = cfg.get("learning", {})
+        # Persisted across restarts -- accumulated over hundreds of trades.
         self.learning = {
             "idle_cycles": 0,
             "idle_reasons": [],
@@ -188,10 +288,9 @@ class Substrate:
             "last_retrain_at": "",
         }
 
-        # Validity section (ISC conditions)
-        self.validity = [
-            ISCCheck.from_dict(isc) for isc in self.DEFAULT_ISCS
-        ]
+        # Validity section (ISC conditions -- config-driven, no hardcoded IDs)
+        isc_defs = cfg.get("validity", self.DEFAULT_ISCS)
+        self.validity = [ISCCheck.from_dict(isc) for isc in isc_defs]
         self.pending = []
 
         # Internal metadata
@@ -207,27 +306,26 @@ class Substrate:
 
     @property
     def config(self) -> Dict:
-        """Return the full config dict (from ConfigLoader)."""
+        """Return the strategy config dict (no secrets)."""
         return self._config
 
     def cfg(self, dotted_path: str, default: Any = None) -> Any:
         """
         Get a value from the *config* (not substrate state) by dotted path.
 
-        This is for ISC checks and enzymes that need config values like
-        scoring thresholds, risk limits, etc. that are not stored in
-        substrate state but in the strategy YAML.
+        Used by ISC checks and enzymes that need config values like
+        scoring thresholds, risk limits, etc.
         """
         parts = dotted_path.split(".")
         obj = self._config
         for part in parts:
             if isinstance(obj, dict):
-                obj = obj.get(part)
+                obj = obj.get(part, _MISSING)
             else:
                 return default
-            if obj is None:
+            if obj is _MISSING:
                 return default
-        return obj
+        return obj if obj is not _MISSING else default
 
     # --- Dot-access helpers ---------------------------------------------------
 
@@ -235,37 +333,37 @@ class Substrate:
         """
         Get a value by dotted path from substrate state.
 
-        Searches substrate dicts first. Falls back to config if not found
-        in substrate state. This allows enzymes and ISC checks to transparently
-        access both state and config values.
+        Uses a sentinel (_MISSING) to distinguish "not found" from
+        legitimate None/False/0/"" values. Falls back to config only
+        when the key is truly absent from substrate state.
 
         Examples:
-            substrate.get("strategy.name")  -> "momentum_rising"
-            substrate.get("scoring.entry_threshold")  -> 6.5 (from config)
-            substrate.get("portfolio.equity")  -> 0.0 (from state)
+            substrate.get("strategy.name")           -> "momentum_rising"
+            substrate.get("scoring.entry_threshold") -> 6.5 (from config)
+            substrate.get("portfolio.equity")        -> 0.0 (from state)
+            substrate.get("decisions.trade_approved") -> None (set by enzyme)
         """
-        # First try substrate state
         parts = dotted_path.split(".")
-        obj = self
+        obj: Any = self
         for part in parts:
             if isinstance(obj, dict):
-                obj = obj.get(part)
+                obj = obj.get(part, _MISSING)
             elif hasattr(obj, part):
                 obj = getattr(obj, part)
             else:
-                obj = None
+                obj = _MISSING
                 break
-            if obj is None:
+            if obj is _MISSING:
                 break
 
-        if obj is not None:
+        if obj is not _MISSING:
             return obj
 
-        # Fall back to config
+        # Fall back to config (for scoring thresholds, risk limits, etc.)
         return self.cfg(dotted_path, default)
 
     def set(self, dotted_path: str, value: Any) -> None:
-        """Set a value by dotted path in substrate state, e.g. 'decisions.action', 'wait'."""
+        """Set a value by dotted path in substrate state."""
         parts = dotted_path.split(".")
         obj = self
         for part in parts[:-1]:
@@ -284,7 +382,7 @@ class Substrate:
             raise KeyError(f"Cannot set {last} in {dotted_path}")
         self._updated_at = self._now_iso()
 
-    # --- ISC verification -----------------------------------------------------
+    # --- ISC verification (config-driven, no hardcoded IDs) -------------------
 
     def verify_iscs(self) -> Dict[str, str]:
         """
@@ -308,70 +406,110 @@ class Substrate:
 
         return results
 
-    def _evaluate_isc(self, isc: ISCCheck) -> bool:
-        """Evaluate a single ISC condition against substrate state + config."""
-        vid = isc.id
+    def _resolve_value_ref(self, value_ref: str) -> Any:
+        """
+        Resolve a value_ref string to a concrete value.
 
-        if vid == "ISC-001":
-            # entry_threshold met before any trade opens
-            candidates = self.analysis.get("candidates", [])
-            if not candidates:
-                return False
-            # Look up threshold from config (scoring.entry_threshold)
-            threshold = self.cfg("scoring.entry_threshold", 6.5)
+        value_ref can be:
+          - A dotted config path: "scoring.entry_threshold" -> 6.5
+          - A dotted substrate path: "strategy.max_positions" -> 3
+          - A literal string: "high", "wait"
+          - Empty string: returns None
+        """
+        if not value_ref:
+            return None
+        # Try config first, then substrate state
+        val = self.cfg(value_ref, _MISSING)
+        if val is not _MISSING:
+            return val
+        val = self.get(value_ref, _MISSING)
+        if val is not _MISSING:
+            return val
+        # Treat as literal string
+        return value_ref
+
+    def _evaluate_isc(self, isc: ISCCheck) -> bool:
+        """
+        Evaluate a single ISC condition using its config-driven operator.
+
+        All logic is driven by isc.field, isc.operator, isc.value_ref,
+        and isc.field_key. No ISC IDs are referenced here.
+        """
+        op = isc.operator
+        field_val = self.get(isc.field, _MISSING)
+        resolved = self._resolve_value_ref(isc.value_ref)
+
+        # --- any_score_gte: any item in list has field_key >= threshold -------
+        if op == "any_score_gte":
+            if field_val is _MISSING or not field_val:
+                return False  # empty list = condition not met
+            threshold = resolved if resolved is not None else 0
             return any(
-                c.get("score", 0) >= threshold for c in candidates
+                item.get(isc.field_key, 0) >= threshold
+                for item in field_val
+                if isinstance(item, dict)
             )
 
-        elif vid == "ISC-002":
-            # stop loss always set before position opens
-            approved = self.decisions.get("trade_approved")
-            if approved is None:
-                return True  # no trade pending, condition vacuously true
-            return approved.get("sl_price", 0) > 0
+        # --- sl_set_or_no_trade: SL > 0 if trade pending, vacuous if not -----
+        elif op == "sl_set_or_no_trade":
+            if field_val is _MISSING or field_val is None:
+                return True  # no trade pending, vacuously true
+            if not isinstance(field_val, dict):
+                return False
+            return field_val.get(isc.field_key, 0) > 0
 
-        elif vid == "ISC-003":
-            # position size within risk limit
-            approved = self.decisions.get("trade_approved")
-            if approved is None:
-                return True
-            equity = self.portfolio.get("equity", 0)
-            # risk_per_trade_pct from portfolio state (set from config)
-            risk_pct = self.portfolio.get("risk_per_trade_pct", 1.0)
+        # --- size_within_risk: size_usdt <= equity * risk_pct / 100 ----------
+        elif op == "size_within_risk":
+            if field_val is _MISSING or field_val is None:
+                return True  # no trade pending, vacuously true
+            if not isinstance(field_val, dict):
+                return False
+            equity = self.get("portfolio.equity", 0)
+            risk_pct = self.get("portfolio.risk_per_trade_pct", 1.0)
             max_size = equity * risk_pct / 100
-            return approved.get("size_usdt", 0) <= max_size
+            return field_val.get(isc.field_key, 0) <= max_size
 
-        elif vid == "ISC-004":
-            # max concurrent positions not exceeded
-            n_open = len(self.portfolio.get("open_positions", []))
-            max_pos = self.strategy.get("max_positions", 3)
-            return n_open < max_pos
+        # --- count_lt: len(list) < threshold ----------------------------------
+        elif op == "count_lt":
+            items = field_val if field_val is not _MISSING else []
+            count = len(items) if isinstance(items, (list, dict)) else 0
+            limit = resolved if resolved is not None else 0
+            return count < limit
 
-        elif vid == "ISC-005":
-            # no trade when noise_flag is true
-            noise = self.analysis.get("noise_flag", False)
-            action = self.decisions.get("action", "wait")
+        # --- false_or_action_wait: field is falsy OR action == 'wait' --------
+        elif op == "false_or_action_wait":
+            noise = field_val if field_val is not _MISSING else False
+            action = self.get(isc.value_ref, "wait")
             return (not noise) or (action == "wait")
 
-        elif vid == "ISC-006":
-            # confluence minimum signals aligned
-            candidates = self.analysis.get("candidates", [])
-            # Look up from config (scoring.confluence_min_signals)
-            min_signals = self.cfg("scoring.confluence_min_signals", 3)
+        # --- all_field_gte: all items in list have field_key >= threshold -----
+        elif op == "all_field_gte":
+            if field_val is _MISSING or not field_val:
+                return False  # empty list = condition not met (not vacuously true)
+            threshold = resolved if resolved is not None else 0
             return all(
-                c.get("indicators_aligned", 0) >= min_signals
-                for c in candidates
+                item.get(isc.field_key, 0) >= threshold
+                for item in field_val
+                if isinstance(item, dict)
             )
 
-        elif vid == "ISC-007":
-            # pre_trade trajectory not sudden coincidence
-            ptc = self.market.get("pre_trade_context", {})
-            for symbol, ctx in ptc.items():
-                if ctx.get("coincidence_risk") == "high":
-                    return False
-            return True
+        # --- none_field_eq: no item in dict/list has field_key == value -------
+        elif op == "none_field_eq":
+            if field_val is _MISSING or not field_val:
+                return True  # nothing to check, vacuously true
+            items = field_val.values() if isinstance(field_val, dict) else field_val
+            return not any(
+                item.get(isc.field_key) == resolved
+                for item in items
+                if isinstance(item, dict)
+            )
 
-        return True  # unknown ISC, pass by default
+        # --- Unknown operator: log and pass (fail-safe) -----------------------
+        else:
+            _log.warning(
+                "ISC %s: unknown operator %r, passing by default", isc.id, op
+            )
+            return True
 
     def all_iscs_pass(self) -> bool:
         """Check if all ISC conditions are verified (or vacuously true)."""
@@ -411,8 +549,40 @@ class Substrate:
 
     # --- Serialization --------------------------------------------------------
 
-    def to_dict(self) -> dict:
-        """Serialize substrate to dict for database storage."""
+    def to_persistent_dict(self) -> dict:
+        """
+        Serialize durable substrate state for database storage.
+
+        Contains only what must survive a daemon restart:
+          - strategy: which strategy is running
+          - portfolio: open positions, equity (critical for restart recovery)
+          - learning: accumulated accuracy data, rulebook, suppressed signals
+          - validity: ISC definitions and last-known statuses
+          - cycle metadata
+
+        Does NOT contain:
+          - market: stale on restart; sensors repopulate on first cycle
+          - analysis: stale on restart; evaluators recompute on first cycle
+          - per-cycle decisions: cleared by reset_cycle() anyway
+        """
+        return {
+            "strategy": copy.deepcopy(self.strategy),
+            "portfolio": copy.deepcopy(self.portfolio),
+            "learning": copy.deepcopy(self.learning),
+            "validity": [isc.to_dict() for isc in self.validity],
+            "pending": list(self.pending),
+            "_cycle_count": self._cycle_count,
+            "_created_at": self._created_at,
+            "_updated_at": self._updated_at,
+        }
+
+    def to_cycle_snapshot(self) -> dict:
+        """
+        Full cycle snapshot for debugging and audit trail.
+
+        Includes market and analysis data. Pruned aggressively in DB
+        (last N cycles only, configured by substrate_state_max_rows).
+        """
         return {
             "strategy": copy.deepcopy(self.strategy),
             "portfolio": copy.deepcopy(self.portfolio),
@@ -427,19 +597,30 @@ class Substrate:
             "_updated_at": self._updated_at,
         }
 
+    def to_dict(self) -> dict:
+        """Alias for to_cycle_snapshot() -- full state for compatibility."""
+        return self.to_cycle_snapshot()
+
     def to_json(self) -> str:
-        """Serialize substrate to JSON string."""
-        return json.dumps(self.to_dict(), default=str, indent=2)
+        """Serialize substrate to JSON string (full cycle snapshot)."""
+        return json.dumps(self.to_cycle_snapshot(), default=str, indent=2)
+
+    def to_persistent_json(self) -> str:
+        """Serialize durable substrate state to JSON string."""
+        return json.dumps(self.to_persistent_dict(), default=str, indent=2)
 
     @classmethod
-    def from_dict(cls, d: dict, config: Optional[Dict] = None) -> "Substrate":
-        """Reconstruct substrate from dict (e.g. from database)."""
+    def from_persistent_dict(cls, d: dict, config: Optional[Dict] = None) -> "Substrate":
+        """
+        Reconstruct substrate from persistent dict (e.g. from database on restart).
+
+        Market and analysis sections start empty -- sensors and evaluators
+        will repopulate them on the first cycle. This is correct: you never
+        want to trade on stale market data from before a restart.
+        """
         sub = cls(config=config)
         sub.strategy = d.get("strategy", sub.strategy)
         sub.portfolio = d.get("portfolio", sub.portfolio)
-        sub.market = d.get("market", sub.market)
-        sub.analysis = d.get("analysis", sub.analysis)
-        sub.decisions = d.get("decisions", sub.decisions)
         sub.learning = d.get("learning", sub.learning)
         sub.validity = [
             ISCCheck.from_dict(isc)
@@ -449,6 +630,24 @@ class Substrate:
         sub._cycle_count = d.get("_cycle_count", 0)
         sub._created_at = d.get("_created_at", sub._created_at)
         sub._updated_at = d.get("_updated_at", sub._updated_at)
+        return sub
+
+    @classmethod
+    def from_dict(cls, d: dict, config: Optional[Dict] = None) -> "Substrate":
+        """
+        Reconstruct substrate from dict.
+
+        Handles both persistent dicts (from DB) and full cycle snapshots.
+        If market/analysis are present, they are restored (used in tests).
+        """
+        sub = cls.from_persistent_dict(d, config=config)
+        # Restore transient sections if present (e.g. in test roundtrips)
+        if "market" in d:
+            sub.market = d["market"]
+        if "analysis" in d:
+            sub.analysis = d["analysis"]
+        if "decisions" in d:
+            sub.decisions = d["decisions"]
         return sub
 
     @classmethod
