@@ -33,10 +33,38 @@ exchange:
 
 llm:
   cost_budget_daily_usd: 2.00
+
+  # Routing: each role specifies provider + model independently.
+  # provider must match a key in exchange.yaml llm_keys section.
+  # Supported providers: "anthropic", "google", "openrouter"
+  #
+  # Role guide:
+  #   pre_filter  -- quick noise/quality check before scoring (fires every cycle)
+  #   analysis    -- deep pattern validation for ambiguous setups (fires rarely)
+  #   rulebook    -- format 10 rules from accuracy data (fires every 12h)
+  #   fallback    -- used when primary provider is overloaded or unavailable
+  #
+  # Cost strategy: use OpenRouter free-tier models for high-frequency roles
+  # (pre_filter, rulebook). Reserve Anthropic Sonnet for analysis only.
   routing:
-    pre_filter: "claude-haiku-4-5-20251001"
-    analysis: "claude-sonnet-4-6"
-    fallback: "gemini-2.0-flash"
+    pre_filter:
+      provider: "openrouter"
+      model: "deepseek/deepseek-v4-0324:free"
+      # Fast, free. Sufficient for noise detection and quick signal checks.
+    analysis:
+      provider: "anthropic"
+      model: "claude-sonnet-4-6"
+      # Only fires on ambiguous setups. Worth the cost for accuracy.
+    rulebook:
+      provider: "openrouter"
+      model: "meta-llama/llama-3.3-70b-instruct:free"
+      # Formats 10 rules from structured data. No deep reasoning needed.
+    fallback:
+      provider: "openrouter"
+      model: "deepseek/deepseek-v4-0324:free"
+      # Used when primary provider (anthropic) is overloaded or all keys
+      # are in cooldown. OpenRouter free tier as safety net.
+
   max_tokens:
     analysis: 1024
     rulebook: 512
