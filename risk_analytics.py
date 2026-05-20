@@ -193,6 +193,10 @@ def compute_pnl_attribution(conn, lookback_days: int = 90) -> dict:
                      _dt.timedelta(days=1)).strftime("%Y-%m-%d")
         btc = yf.download("BTC-USD", start=min_date, end=end_plus1,
                           progress=False, auto_adjust=True)
+        # yfinance 1.x returns MultiIndex columns for single-ticker downloads — flatten
+        import pandas as _pd
+        if isinstance(btc.columns, _pd.MultiIndex):
+            btc.columns = btc.columns.get_level_values(0)
         if not btc.empty and "Close" in btc.columns:
             btc_close = btc["Close"].dropna()
     except Exception:
