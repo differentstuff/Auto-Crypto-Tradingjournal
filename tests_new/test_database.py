@@ -53,13 +53,20 @@ class TestSubstratePersistence:
     """Test substrate save/load to database."""
 
     def test_save_and_load_substrate(self, temp_db):
-        """Substrate survives roundtrip through database."""
+        """
+        Substrate durable state survives roundtrip through database.
+
+        save_substrate() stores to_persistent_json() which contains only
+        durable fields: strategy, portfolio, learning, validity.
+        Per-cycle fields (market, analysis, decisions) are NOT persisted --
+        they are stale on restart and repopulated by enzymes on the first cycle.
+        """
         from core.substrate import Substrate
 
         config = {"strategy": {"name": "test_persist"}}
         sub = Substrate(config=config)
         sub.portfolio["equity"] = 5000.0
-        sub.decisions["action"] = "wait"
+        sub.decisions["action"] = "wait"   # set but NOT persisted (per-cycle)
         sub.learning["idle_cycles"] = 3
 
         row_id = save_substrate(sub)
@@ -67,10 +74,14 @@ class TestSubstratePersistence:
 
         loaded = load_latest_substrate("test_persist")
         assert loaded is not None
+        # Durable fields are present
         assert loaded["strategy"]["name"] == "test_persist"
         assert loaded["portfolio"]["equity"] == 5000.0
-        assert loaded["decisions"]["action"] == "wait"
         assert loaded["learning"]["idle_cycles"] == 3
+        # Per-cycle fields are NOT in the persistent dict
+        assert "decisions" not in loaded
+        assert "market" not in loaded
+        assert "analysis" not in loaded
 
     def test_load_latest_substrate(self, temp_db):
         """load_latest_substrate returns the most recent entry."""
