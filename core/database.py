@@ -41,17 +41,40 @@ def get_conn():
 
 @contextmanager
 def db_conn():
-    """Context manager that opens a connection and guarantees close on exit."""
+    """
+    Context manager that opens a connection, auto-commits on clean exit,
+    and rolls back + re-raises on any exception.
+
+    Callers do NOT need to call conn.commit() manually. Any unhandled
+    exception triggers a rollback so partial writes are never silently lost.
+    """
     conn = get_conn()
     try:
         yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 
 def init_db():
-    """Create all tables if they do not exist yet. Safe to call on every startup."""
+    """
+    Create all tables if they do not exist yet. Safe to call on every startup.
+
+    Uses try/finally to guarantee the connection is closed even if a
+    migration fails mid-way.
+    """
     conn = get_conn()
+    try:
+        _init_db_inner(conn)
+    finally:
+        conn.close()
+
+
+def _init_db_inner(conn: sqlite3.Connection) -> None:
+    """Internal: run all DDL and migrations on an open connection."""
     cur = conn.cursor()
 
     # ── schema_version ─────────────────────────────────────────────────────────
@@ -503,26 +526,46 @@ def init_db():
 
     conn.commit()
     _log.info("DB initialized at %s", DB_PATH)
-    conn.close()
+    # Note: connection is closed by init_db()'s finally block, not here.
 
 
 # --- Substrate persistence helpers -------------------------------------------
 
-def save_substrate(substrate) -> int:
-    """Save substrate state to database. Returns row id."""
+def save_substrate(substrate, max_rows: int = 200) -> int:
+    """
+    Save substrate state to database. Returns row id.
+
+    Prunes old rows so the table never exceeds max_rows per strategy.
+    max_rows is read from config (daemon.substrate_state_max_rows) by the
+    daemon and passed here. Default 200 keeps ~2 days of 15-min cycles.
+    """
+    strategy_name = substrate.strategy.get("name", "")
     with db_conn() as conn:
         cur = conn.execute(
             """INSERT INTO substrate_state
                (strategy_name, cycle_count, substrate_json)
                VALUES (?, ?, ?)""",
             (
-                substrate.strategy.get("name", ""),
+                strategy_name,
                 substrate._cycle_count,
-                substrate.to_json(),
+                substrate.to_persistent_json(),
             ),
         )
-        conn.commit()
-        return cur.lastrowid
+        row_id = cur.lastrowid
+
+        # Prune: keep only the most recent max_rows rows per strategy
+        conn.execute(
+            """DELETE FROM substrate_state
+               WHERE strategy_name = ?
+               AND id NOT IN (
+                   SELECT id FROM substrate_state
+                   WHERE strategy_name = ?
+                   ORDER BY id DESC
+                   LIMIT ?
+               )""",
+            (strategy_name, strategy_name, max_rows),
+        )
+        return row_id
 
 
 def load_latest_substrate(strategy_name: str = "") -> Optional[dict]:
@@ -568,5 +611,4 @@ def save_cycle_log(
                 duration_ms,
             ),
         )
-        conn.commit()
         return cur.lastrowid
