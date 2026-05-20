@@ -5,6 +5,8 @@ Accepts a DataFrame (columns: open, high, low, close, volume) and returns
 structured dicts. No API calls, no caching, no side effects.
 
 All functions degrade gracefully when < 30 bars are available.
+Uses only numpy/pandas — no external indicator library dependency.
+This ensures compatibility with Python 3.14+ and avoids version lock-in.
 
 Public API (stable — tested by tests/test_chart_indicators.py):
   compute_rsi, compute_ema_alignment, compute_macd, compute_adx,
@@ -16,21 +18,32 @@ Extended API (full suite used by chart_context.compute_indicators):
 """
 from __future__ import annotations
 import pandas as pd
-import pandas_ta as ta
+import numpy as np
 
 
 # ── Stable public functions (format unchanged — tests depend on these) ─────────
 
 def compute_rsi(df: pd.DataFrame, period: int = 14) -> dict:
-    """RSI(period). Returns {"value": float, "level": str}."""
+    """RSI(period) using Wilder smoothing. Returns {"value": float, "level": str}."""
     if len(df) < 30:
         return {"value": 50.0, "level": "neutral"}
-    rsi_s = ta.rsi(df["close"], length=period)
-    if rsi_s is None or rsi_s.empty or pd.isna(rsi_s.iloc[-1]):
+    try:
+        close = df["close"].astype(float)
+        delta = close.diff()
+        gain = delta.clip(lower=0)
+        loss = (-delta).clip(lower=0)
+        avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, 1e-9)
+        rsi_s = 100 - (100 / (1 + rs))
+        val = rsi_s.iloc[-1]
+        if pd.isna(val):
+            return {"value": 50.0, "level": "neutral"}
+        val = round(float(val), 1)
+        level = "overbought" if val > 70 else "oversold" if val < 30 else "neutral"
+        return {"value": val, "level": level}
+    except Exception:
         return {"value": 50.0, "level": "neutral"}
-    val = round(float(rsi_s.iloc[-1]), 1)
-    level = "overbought" if val > 70 else "oversold" if val < 30 else "neutral"
-    return {"value": val, "level": level}
 
 
 def compute_ema_alignment(df: pd.DataFrame) -> dict:
@@ -39,36 +52,38 @@ def compute_ema_alignment(df: pd.DataFrame) -> dict:
                "current_price": 0.0, "alignment": "neutral", "stack": "mixed"}
     if df.empty or len(df) < 30:
         return default
+    try:
+        close = df["close"].astype(float)
+        emas: dict[str, float] = {}
+        for length in [20, 50, 200]:
+            if len(df) >= length:
+                s = close.ewm(span=length, adjust=False).mean()
+                if not pd.isna(s.iloc[-1]):
+                    emas[f"ema{length}"] = round(float(s.iloc[-1]), 4)
 
-    close = df["close"]
-    emas: dict[str, float] = {}
-    for length in [20, 50, 200]:
-        if len(df) >= length:
-            s = ta.ema(close, length=length)
-            if s is not None and not s.empty and not pd.isna(s.iloc[-1]):
-                emas[f"ema{length}"] = round(float(s.iloc[-1]), 4)
+        if not emas:
+            return default
 
-    if not emas:
+        cur = round(float(close.iloc[-1]), 4)
+        above = [k for k, v in emas.items() if cur > v > 0]
+        below = [k for k, v in emas.items() if cur < v > 0]
+        total = len(emas)
+
+        if len(above) == total:        alignment = "bullish"
+        elif len(below) == total:      alignment = "bearish"
+        elif len(above) > len(below):  alignment = "mixed-bullish"
+        elif len(below) > len(above):  alignment = "mixed-bearish"
+        else:                          alignment = "neutral"
+
+        e20, e50, e200 = emas.get("ema20", 0.0), emas.get("ema50", 0.0), emas.get("ema200", 0.0)
+        if e20 and e50 and e200:
+            stack = "bullish" if e20 > e50 > e200 else "bearish" if e20 < e50 < e200 else "mixed"
+        else:
+            stack = "mixed"
+
+        return {**default, **emas, "current_price": cur, "alignment": alignment, "stack": stack}
+    except Exception:
         return default
-
-    cur = round(float(close.iloc[-1]), 4)
-    above = [k for k, v in emas.items() if cur > v > 0]
-    below = [k for k, v in emas.items() if cur < v > 0]
-    total = len(emas)
-
-    if len(above) == total:        alignment = "bullish"
-    elif len(below) == total:      alignment = "bearish"
-    elif len(above) > len(below):  alignment = "mixed-bullish"
-    elif len(below) > len(above):  alignment = "mixed-bearish"
-    else:                          alignment = "neutral"
-
-    e20, e50, e200 = emas.get("ema20", 0.0), emas.get("ema50", 0.0), emas.get("ema200", 0.0)
-    if e20 and e50 and e200:
-        stack = "bullish" if e20 > e50 > e200 else "bearish" if e20 < e50 < e200 else "mixed"
-    else:
-        stack = "mixed"
-
-    return {**default, **emas, "current_price": cur, "alignment": alignment, "stack": stack}
 
 
 def compute_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> dict:
@@ -78,62 +93,72 @@ def compute_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int =
                "crossover": False, "crossunder": False}
     if len(df) < 30:
         return default
-    m = ta.macd(df["close"], fast=fast, slow=slow, signal=signal)
-    if m is None or m.empty:
+    try:
+        close = df["close"].astype(float)
+        ema_fast = close.ewm(span=fast, adjust=False).mean()
+        ema_slow = close.ewm(span=slow, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+        histogram = macd_line - signal_line
+
+        mv = round(float(macd_line.iloc[-1]), 4)
+        sv = round(float(signal_line.iloc[-1]), 4)
+        hv = round(float(histogram.iloc[-1]), 4)
+        hp = float(histogram.iloc[-2]) if len(histogram) > 1 else hv
+        mp = float(macd_line.iloc[-2]) if len(macd_line) > 1 else mv
+        sp = float(signal_line.iloc[-2]) if len(signal_line) > 1 else sv
+
+        if any(pd.isna(v) for v in (mv, sv, hv)):
+            return default
+
+        return {
+            "macd": mv, "signal": sv, "histogram": hv,
+            "bias":              "bullish" if mv > sv else "bearish",
+            "histogram_growing": hv > hp,
+            "crossover":         (mv > sv) and (mp <= sp),
+            "crossunder":        (mv < sv) and (mp >= sp),
+        }
+    except Exception:
         return default
-
-    mc = [c for c in m.columns if c.startswith("MACD_")]
-    sc = [c for c in m.columns if c.startswith("MACDs_")]
-    hc = [c for c in m.columns if c.startswith("MACDh_")]
-    if not (mc and sc and hc):
-        return default
-
-    mv, sv, hv = m[mc[0]].iloc[-1], m[sc[0]].iloc[-1], m[hc[0]].iloc[-1]
-    if pd.isna(mv) or pd.isna(sv) or pd.isna(hv):
-        return default
-
-    mv, sv, hv = round(float(mv), 4), round(float(sv), 4), round(float(hv), 4)
-    hp = float(m[hc[0]].iloc[-2]) if len(m) > 1 else hv
-    mp = float(m[mc[0]].iloc[-2]) if len(m) > 1 else mv
-    sp = float(m[sc[0]].iloc[-2]) if len(m) > 1 else sv
-
-    return {
-        "macd": mv, "signal": sv, "histogram": hv,
-        "bias":              "bullish" if mv > sv else "bearish",
-        "histogram_growing": hv > hp,
-        "crossover":         (mv > sv) and (mp <= sp),
-        "crossunder":        (mv < sv) and (mp >= sp),
-    }
 
 
 def compute_adx(df: pd.DataFrame, period: int = 14) -> dict:
-    """ADX trend strength and direction."""
+    """ADX trend strength and direction using Wilder smoothing."""
     default = {"value": 0.0, "trend_strength": "weak", "direction": "undetermined"}
     if df.empty or len(df) < 30:
         return default
-    adx_df = ta.adx(df["high"], df["low"], df["close"], length=period)
-    if adx_df is None or adx_df.empty:
-        return default
+    try:
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        close = df["close"].astype(float)
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        up_move = high.diff()
+        down_move = -low.diff()
+        plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+        minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+        atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+        plus_di = 100 * plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr.replace(0, 1e-9)
+        minus_di = 100 * minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr.replace(0, 1e-9)
+        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, 1e-9)
+        adx_s = dx.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
-    ac  = [c for c in adx_df.columns if c.startswith("ADX_")]
-    dmp = [c for c in adx_df.columns if c.startswith("DMP_")]
-    dmn = [c for c in adx_df.columns if c.startswith("DMN_")]
-    if not ac:
-        return default
-
-    av = adx_df[ac[0]].iloc[-1]
-    if pd.isna(av):
-        return default
-    av = round(float(av), 1)
-
-    strength = "strong" if av > 25 else "trending" if av > 20 else "weak"
-    direction = "undetermined"
-    if dmp and dmn:
-        dp, dn = adx_df[dmp[0]].iloc[-1], adx_df[dmn[0]].iloc[-1]
+        av = adx_s.iloc[-1]
+        if pd.isna(av):
+            return default
+        av = round(float(av), 1)
+        strength = "strong" if av > 25 else "trending" if av > 20 else "weak"
+        dp, dn = plus_di.iloc[-1], minus_di.iloc[-1]
+        direction = "undetermined"
         if not pd.isna(dp) and not pd.isna(dn):
             direction = "bullish" if float(dp) > float(dn) else "bearish"
-
-    return {"value": av, "trend_strength": strength, "direction": direction}
+        return {"value": av, "trend_strength": strength, "direction": direction}
+    except Exception:
+        return default
 
 
 def compute_prompt_text(df: pd.DataFrame, sr_levels: list[float]) -> str:
@@ -169,11 +194,9 @@ def compute_prompt_text(df: pd.DataFrame, sr_levels: list[float]) -> str:
     parts.append(f"ADX {adx['value']}{da}({st})")
 
     try:
-        atr_s = ta.atr(df["high"], df["low"], df["close"], length=14)
-        if atr_s is not None and not atr_s.empty and not pd.isna(atr_s.iloc[-1]):
-            cur = float(df["close"].iloc[-1])
-            atr_pct = round(float(atr_s.iloc[-1]) / cur * 100, 2) if cur else 0
-            parts.append(f"ATR {atr_pct}%")
+        atr_result = compute_atr(df)
+        if atr_result:
+            parts.append(f"ATR {atr_result['pct']}%")
     except Exception:
         pass
 
@@ -195,160 +218,195 @@ def compute_wavetrend(df: pd.DataFrame,
                       ob: float = 53, os_: float = -53,
                       mfi_period: int = 60) -> pd.DataFrame:
     """
-    Compute WaveTrend (VMC Cipher A/B).
+    Compute WaveTrend (VMC Cipher A/B) using pure numpy/pandas.
 
     Returns a DataFrame aligned to df with columns:
       wt1, wt2, histogram, mfi, cross_bull, cross_bear, signal
     """
-    hlc3 = (df["high"] + df["low"] + df["close"]) / 3.0
-    esa  = hlc3.ewm(span=n1, adjust=False).mean()
-    d    = (hlc3 - esa).abs().ewm(span=n1, adjust=False).mean()
-    ci   = (hlc3 - esa) / (0.015 * d.replace(0, float("nan"))).fillna(1e-9)
-    wt1  = ci.ewm(span=n2, adjust=False).mean()
-    wt2  = wt1.rolling(4, min_periods=1).mean()
-    hist = wt1 - wt2
+    try:
+        hlc3 = (df["high"].astype(float) + df["low"].astype(float) + df["close"].astype(float)) / 3.0
+        esa  = hlc3.ewm(span=n1, adjust=False).mean()
+        d    = (hlc3 - esa).abs().ewm(span=n1, adjust=False).mean()
+        ci   = (hlc3 - esa) / (0.015 * d.replace(0, float("nan"))).fillna(1e-9)
+        wt1  = ci.ewm(span=n2, adjust=False).mean()
+        wt2  = wt1.rolling(4, min_periods=1).mean()
+        hist = wt1 - wt2
 
-    mfi_src = hlc3 * df["volume"]
-    mfi_rsi = ta.rsi(mfi_src, length=mfi_period)
-    if mfi_rsi is not None and not mfi_rsi.empty:
+        # MFI approximation using RSI of (hlc3 * volume)
+        mfi_src = hlc3 * df["volume"].astype(float)
+        mfi_delta = mfi_src.diff()
+        mfi_gain = mfi_delta.clip(lower=0)
+        mfi_loss = (-mfi_delta).clip(lower=0)
+        mfi_avg_gain = mfi_gain.ewm(alpha=1 / mfi_period, min_periods=mfi_period, adjust=False).mean()
+        mfi_avg_loss = mfi_loss.ewm(alpha=1 / mfi_period, min_periods=mfi_period, adjust=False).mean()
+        mfi_rs = mfi_avg_gain / mfi_avg_loss.replace(0, 1e-9)
+        mfi_rsi = 100 - (100 / (1 + mfi_rs))
         mfi = (mfi_rsi - 50.0) * 2.0
-    else:
-        mfi = pd.Series(0.0, index=df.index)
 
-    cross_bull = (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
-    cross_bear = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+        cross_bull = (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
+        cross_bear = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
 
-    signal = pd.Series(None, index=df.index, dtype=object)
-    gold_mask = cross_bull & (wt2 < -80)
-    buy_mask  = cross_bull & (wt2 < os_) & ~gold_mask
-    sell_mask = cross_bear & (wt2 > ob)
-    signal[gold_mask] = "gold_buy"
-    signal[buy_mask]  = "buy"
-    signal[sell_mask] = "sell"
+        signal = pd.Series(None, index=df.index, dtype=object)
+        gold_mask = cross_bull & (wt2 < -80)
+        buy_mask  = cross_bull & (wt2 < os_) & ~gold_mask
+        sell_mask = cross_bear & (wt2 > ob)
+        signal[gold_mask] = "gold_buy"
+        signal[buy_mask]  = "buy"
+        signal[sell_mask] = "sell"
 
-    return pd.DataFrame({
-        "wt1":       wt1.round(2),
-        "wt2":       wt2.round(2),
-        "histogram": hist.round(2),
-        "mfi":       mfi.round(2),
-        "cross_bull": cross_bull,
-        "cross_bear": cross_bear,
-        "signal":    signal,
-    }, index=df.index)
+        return pd.DataFrame({
+            "wt1":       wt1.round(2),
+            "wt2":       wt2.round(2),
+            "histogram": hist.round(2),
+            "mfi":       mfi.round(2),
+            "cross_bull": cross_bull,
+            "cross_bear": cross_bear,
+            "signal":    signal,
+        }, index=df.index)
+    except Exception:
+        cols = ["wt1", "wt2", "histogram", "mfi", "cross_bull", "cross_bear", "signal"]
+        return pd.DataFrame(columns=cols)
 
 
-def compute_stochrsi(df: pd.DataFrame) -> dict | None:
+def compute_stochrsi(df: pd.DataFrame, period: int = 14, k: int = 3, d: int = 3) -> dict | None:
     """Stochastic RSI(14). Returns {"k","d","signal"} or None."""
     if len(df) < 30:
         return None
-    stochrsi = ta.stochrsi(df["close"], length=14, rsi_length=14, k=3, d=3)
-    if stochrsi is None or stochrsi.empty:
+    try:
+        close = df["close"].astype(float)
+        delta = close.diff()
+        gain = delta.clip(lower=0)
+        loss = (-delta).clip(lower=0)
+        avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, 1e-9)
+        rsi_s = 100 - (100 / (1 + rs))
+        rsi_min = rsi_s.rolling(period).min()
+        rsi_max = rsi_s.rolling(period).max()
+        stoch = (rsi_s - rsi_min) / (rsi_max - rsi_min).replace(0, 1e-9) * 100
+        k_line = stoch.rolling(k).mean()
+        d_line = k_line.rolling(d).mean()
+        k_val, d_val = k_line.iloc[-1], d_line.iloc[-1]
+        if pd.isna(k_val) or pd.isna(d_val):
+            return None
+        k_v, d_v = round(float(k_val), 1), round(float(d_val), 1)
+        return {
+            "k": k_v, "d": d_v,
+            "signal": (
+                "overbought (K>80)" if k_v > 80 else
+                "oversold (K<20)"   if k_v < 20 else
+                "neutral"
+            ),
+        }
+    except Exception:
         return None
-    k_col = [c for c in stochrsi.columns if "STOCHRSIk" in c]
-    d_col = [c for c in stochrsi.columns if "STOCHRSId" in c]
-    if not (k_col and d_col):
-        return None
-    k_v = stochrsi[k_col[0]].iloc[-1]
-    d_v = stochrsi[d_col[0]].iloc[-1]
-    if pd.isna(k_v) or pd.isna(d_v):
-        return None
-    k, d = round(float(k_v), 1), round(float(d_v), 1)
-    return {
-        "k": k, "d": d,
-        "signal": (
-            "overbought (K>80)" if k > 80 else
-            "oversold (K<20)"   if k < 20 else
-            "neutral"
-        ),
-    }
 
 
-def compute_bollinger(df: pd.DataFrame) -> dict | None:
+def compute_bollinger(df: pd.DataFrame, period: int = 20, std_dev: float = 2.0) -> dict | None:
     """Bollinger Bands(20,2). Returns {"upper","mid","lower","position_pct","band_width","signal"} or None."""
     if len(df) < 30:
         return None
-    bbands = ta.bbands(df["close"], length=20, std=2)
-    if bbands is None or bbands.empty:
+    try:
+        close = df["close"].astype(float)
+        mid = close.rolling(period).mean()
+        std = close.rolling(period).std(ddof=0)
+        upper = mid + std_dev * std
+        lower = mid - std_dev * std
+        bwidth = (upper - lower) / mid.replace(0, 1e-9) * 100
+
+        u, m, lo, bw = upper.iloc[-1], mid.iloc[-1], lower.iloc[-1], bwidth.iloc[-1]
+        if any(pd.isna(v) for v in (u, m, lo)):
+            return None
+
+        price = float(close.iloc[-1])
+        band_range = float(u) - float(lo)
+        position_pct = round((price - float(lo)) / band_range * 100, 1) if band_range > 0 else 50.0
+
+        return {
+            "upper":        round(float(u), 4),
+            "mid":          round(float(m), 4),
+            "lower":        round(float(lo), 4),
+            "position_pct": position_pct,
+            "band_width":   round(float(bw), 4) if not pd.isna(bw) else None,
+            "signal": (
+                "near upper band (overbought zone)" if position_pct > 80 else
+                "near lower band (oversold zone)"   if position_pct < 20 else
+                "mid-band area"
+            ),
+        }
+    except Exception:
         return None
-    upper_col  = [c for c in bbands.columns if "BBU" in c]
-    lower_col  = [c for c in bbands.columns if "BBL" in c]
-    mid_col    = [c for c in bbands.columns if "BBM" in c]
-    bwidth_col = [c for c in bbands.columns if "BBB" in c]
-    if not (upper_col and lower_col and mid_col):
-        return None
-    upper = float(bbands[upper_col[0]].iloc[-1])
-    lower = float(bbands[lower_col[0]].iloc[-1])
-    mid   = float(bbands[mid_col[0]].iloc[-1])
-    if any(pd.isna(v) for v in (upper, lower, mid)):
-        return None
-    price = float(df["close"].iloc[-1])
-    band_range   = upper - lower
-    position_pct = round((price - lower) / band_range * 100, 1) if band_range > 0 else 50.0
-    bw = round(float(bbands[bwidth_col[0]].iloc[-1]), 4) if bwidth_col else None
-    return {
-        "upper":        round(upper, 4),
-        "mid":          round(mid, 4),
-        "lower":        round(lower, 4),
-        "position_pct": position_pct,
-        "band_width":   bw,
-        "signal": (
-            "near upper band (overbought zone)" if position_pct > 80 else
-            "near lower band (oversold zone)"   if position_pct < 20 else
-            "mid-band area"
-        ),
-    }
 
 
 def compute_atr(df: pd.DataFrame, period: int = 14) -> dict | None:
-    """ATR(period). Returns {"value","pct","comment"} or None."""
+    """ATR(period) using Wilder smoothing. Returns {"value","pct","comment"} or None."""
     if len(df) < 30:
         return None
-    atr_s = ta.atr(df["high"], df["low"], df["close"], length=period)
-    if atr_s is None or atr_s.empty or pd.isna(atr_s.iloc[-1]):
+    try:
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        close = df["close"].astype(float)
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr_s = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+        atr_val = atr_s.iloc[-1]
+        if pd.isna(atr_val):
+            return None
+        atr_val = round(float(atr_val), 4)
+        cur_price = float(close.iloc[-1])
+        atr_pct = round(atr_val / cur_price * 100, 2) if cur_price > 0 else 0.0
+        return {
+            "value":   atr_val,
+            "pct":     atr_pct,
+            "comment": f"typical candle range {atr_pct}% of price — useful for SL sizing",
+        }
+    except Exception:
         return None
-    atr_val   = round(float(atr_s.iloc[-1]), 4)
-    cur_price = float(df["close"].iloc[-1])
-    atr_pct   = round(atr_val / cur_price * 100, 2) if cur_price else 0
-    return {
-        "value":   atr_val,
-        "pct":     atr_pct,
-        "comment": f"typical candle range {atr_pct}% of price — useful for SL sizing",
-    }
 
 
 def compute_volume(df: pd.DataFrame) -> dict | None:
     """Volume vs 20-bar average. Returns {"current","avg_20","ratio","signal"} or None."""
     if len(df["volume"]) < 20:
         return None
-    vol_now = float(df["volume"].iloc[-1])
-    vol_avg = float(df["volume"].iloc[-20:].mean())
-    ratio   = round(vol_now / vol_avg, 2) if vol_avg else 1.0
-    return {
-        "current": round(vol_now, 2),
-        "avg_20":  round(vol_avg, 2),
-        "ratio":   ratio,
-        "signal": (
-            f"high volume ({ratio}x avg)" if ratio > 1.5 else
-            f"low volume ({ratio}x avg)"  if ratio < 0.7 else
-            f"average volume ({ratio}x avg)"
-        ),
-    }
+    try:
+        vol_now = float(df["volume"].iloc[-1])
+        vol_avg = float(df["volume"].iloc[-20:].mean())
+        ratio   = round(vol_now / vol_avg, 2) if vol_avg else 1.0
+        return {
+            "current": round(vol_now, 2),
+            "avg_20":  round(vol_avg, 2),
+            "ratio":   ratio,
+            "signal": (
+                f"high volume ({ratio}x avg)" if ratio > 1.5 else
+                f"low volume ({ratio}x avg)"  if ratio < 0.7 else
+                f"average volume ({ratio}x avg)"
+            ),
+        }
+    except Exception:
+        return None
 
 
 def compute_recent_candles(df: pd.DataFrame) -> list[str] | None:
     """Last 3 candle body descriptions. Returns list of 3 strings or None."""
     if len(df) < 3:
         return None
-    candles = []
-    for i in range(-3, 0):
-        row = df.iloc[i]
-        o, c_p, h, lo = float(row["open"]), float(row["close"]), float(row["high"]), float(row["low"])
-        body       = abs(c_p - o)
-        full_range = h - lo
-        body_pct   = round(body / full_range * 100, 0) if full_range else 0
-        candle_type = "doji" if body_pct < 20 else ("bullish" if c_p > o else "bearish")
-        candles.append(f"{candle_type} (body {body_pct:.0f}% of range)")
-    return candles
+    try:
+        candles = []
+        for i in range(-3, 0):
+            row = df.iloc[i]
+            o, c_p, h, lo = float(row["open"]), float(row["close"]), float(row["high"]), float(row["low"])
+            body       = abs(c_p - o)
+            full_range = h - lo
+            body_pct   = round(body / full_range * 100, 0) if full_range else 0
+            candle_type = "doji" if body_pct < 20 else ("bullish" if c_p > o else "bearish")
+            candles.append(f"{candle_type} (body {body_pct:.0f}% of range)")
+        return candles
+    except Exception:
+        return None
 
 
 def compute_cvd(df: pd.DataFrame) -> dict | None:
@@ -399,7 +457,7 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
 
     result: dict = {"ok": True, "candles_used": len(df)}
 
-    # RSI — adapt "level" → "signal" with verbose labels
+    # RSI
     rsi = compute_rsi(df)
     result["rsi"] = {
         "value":  rsi["value"],
@@ -415,7 +473,7 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
     if stochrsi:
         result["stoch_rsi"] = stochrsi
 
-    # MACD — rename "bias" → "trend", "histogram_growing" → "histogram_trend"
+    # MACD
     macd = compute_macd(df)
     result["macd"] = {
         "macd":            macd["macd"],
@@ -427,7 +485,7 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
         "crossunder":      macd["crossunder"],
     }
 
-    # EMA — expand short alignment codes to verbose strings chart_context expects
+    # EMA
     ema       = compute_ema_alignment(df)
     cur_price = ema.get("current_price", 0.0)
     ema_vals  = {k: v for k, v in ema.items() if k.startswith("ema") and v}
@@ -465,7 +523,7 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
     if atr:
         result["atr"] = atr
 
-    # ADX — expand short strings to verbose labels
+    # ADX
     adx = compute_adx(df)
     if adx["value"] > 0:
         strength_map  = {
@@ -498,25 +556,26 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
     # WaveTrend
     try:
         wt_df    = compute_wavetrend(df)
-        wt1_last = float(wt_df["wt1"].iloc[-1])
-        wt2_last = float(wt_df["wt2"].iloc[-1])
-        mfi_last = float(wt_df["mfi"].iloc[-1])
-        sig_last = wt_df["signal"].iloc[-1]
-        cb_last  = bool(wt_df["cross_bull"].iloc[-1])
-        cs_last  = bool(wt_df["cross_bear"].iloc[-1])
-        result["wavetrend"] = {
-            "wt1":       round(wt1_last, 2),
-            "wt2":       round(wt2_last, 2),
-            "histogram": round(wt1_last - wt2_last, 2),
-            "mfi":       round(mfi_last, 2),
-            "cross":     "bullish" if cb_last else ("bearish" if cs_last else None),
-            "zone":      (
-                "overbought" if wt1_last >  53 else
-                "oversold"   if wt1_last < -53 else
-                "neutral"
-            ),
-            "signal":    sig_last,
-        }
+        if not wt_df.empty:
+            wt1_last = float(wt_df["wt1"].iloc[-1])
+            wt2_last = float(wt_df["wt2"].iloc[-1])
+            mfi_last = float(wt_df["mfi"].iloc[-1])
+            sig_last = wt_df["signal"].iloc[-1]
+            cb_last  = bool(wt_df["cross_bull"].iloc[-1])
+            cs_last  = bool(wt_df["cross_bear"].iloc[-1])
+            result["wavetrend"] = {
+                "wt1":       round(wt1_last, 2),
+                "wt2":       round(wt2_last, 2),
+                "histogram": round(wt1_last - wt2_last, 2),
+                "mfi":       round(mfi_last, 2),
+                "cross":     "bullish" if cb_last else ("bearish" if cs_last else None),
+                "zone":      (
+                    "overbought" if wt1_last >  53 else
+                    "oversold"   if wt1_last < -53 else
+                    "neutral"
+                ),
+                "signal":    sig_last,
+            }
     except Exception:
         pass
 
@@ -539,11 +598,11 @@ def compute_order_flow_delta(df: pd.DataFrame) -> dict | None:
     if df is None or len(df) < 3:
         return None
     try:
-        body      = df["close"] - df["open"]
+        body      = df["close"].astype(float) - df["open"].astype(float)
         body_abs  = body.abs()
         ratio     = (body_abs / (body_abs + 1e-9)).clip(0.10, 0.90)
-        buy_vol   = df["volume"] * ratio.where(body >= 0, 1 - ratio)
-        sell_vol  = df["volume"] - buy_vol
+        buy_vol   = df["volume"].astype(float) * ratio.where(body >= 0, 1 - ratio)
+        sell_vol  = df["volume"].astype(float) - buy_vol
         delta_bar = buy_vol - sell_vol
 
         delta     = float(delta_bar.iloc[-1])
