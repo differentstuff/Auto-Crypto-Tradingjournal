@@ -132,10 +132,14 @@ def _send_monitor_alert(position: dict, result: dict):
 
 def start():
     def _loop():
+        import journal_paused
         time.sleep(FIRST_DELAY)
         while True:
             try:
-                _run_once()
+                if journal_paused.is_paused():
+                    print("[Monitor] paused — skipping monitor cycle", flush=True)
+                else:
+                    _run_once()
             except Exception as e:
                 print(f"[Monitor] Unexpected error in monitor loop: {e}", flush=True)
             time.sleep(MONITOR_INTERVAL)
