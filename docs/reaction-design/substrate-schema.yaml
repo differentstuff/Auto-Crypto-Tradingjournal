@@ -87,40 +87,82 @@ substrate:
     last_retrain_at: ""           # timestamp of last learning engine retrain
 
   # WHAT MUST BE TRUE: ISC (hard-to-vary conditions)
+  #
+  # Each condition is config-driven: field + operator + value_ref.
+  # The evaluator in substrate.py reads these fields -- no ISC IDs are
+  # hardcoded in evaluation logic. New conditions can be added here
+  # (or in strategy YAML) without touching Python code.
+  #
+  # Supported operators (see core/substrate.py _evaluate_isc):
+  #   any_score_gte      -- any item in list has field_key >= value_ref
+  #   sl_set_or_no_trade -- sl_price > 0 if trade pending, vacuous if not
+  #   size_within_risk   -- size_usdt <= equity * risk_per_trade_pct / 100
+  #   count_lt           -- len(list) < value_ref
+  #   false_or_action_wait -- field is falsy OR action == 'wait'
+  #   all_field_gte      -- all items in list have field_key >= value_ref
+  #   none_field_eq      -- no item in dict/list has field_key == value_ref
   validity:
     - id: "ISC-001"
       criterion: "entry_threshold met before any trade opens"
       verification: "analysis.candidates not empty AND score >= threshold"
+      field: "analysis.candidates"
+      operator: "any_score_gte"
+      value_ref: "scoring.entry_threshold"   # resolved from config
+      field_key: "score"
       status: "pending"           # "pending" | "verified" | "failed"
 
     - id: "ISC-002"
       criterion: "stop loss always set before position opens"
       verification: "decisions.trade_approved.sl_price > 0"
+      field: "decisions.trade_approved"
+      operator: "sl_set_or_no_trade"
+      value_ref: ""
+      field_key: "sl_price"
       status: "pending"
 
     - id: "ISC-003"
       criterion: "position size within risk limit"
       verification: "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100"
+      field: "decisions.trade_approved"
+      operator: "size_within_risk"
+      value_ref: ""
+      field_key: "size_usdt"
       status: "pending"
 
     - id: "ISC-004"
       criterion: "max concurrent positions not exceeded"
-      verification: "portfolio.open_positions.count < strategy.max_positions"
+      verification: "portfolio.open_positions count < strategy.max_positions"
+      field: "portfolio.open_positions"
+      operator: "count_lt"
+      value_ref: "strategy.max_positions"    # resolved from substrate state
+      field_key: ""
       status: "pending"
 
     - id: "ISC-005"
       criterion: "no trade when noise_flag is true"
       verification: "analysis.noise_flag == false OR decisions.action == 'wait'"
+      field: "analysis.noise_flag"
+      operator: "false_or_action_wait"
+      value_ref: "decisions.action"          # resolved from substrate state
+      field_key: ""
       status: "pending"
 
     - id: "ISC-006"
       criterion: "confluence minimum signals aligned"
       verification: "candidate.indicators_aligned >= strategy.confluence_min_signals"
+      field: "analysis.candidates"
+      operator: "all_field_gte"
+      value_ref: "scoring.confluence_min_signals"  # resolved from config
+      field_key: "indicators_aligned"
       status: "pending"
 
     - id: "ISC-007"
       criterion: "pre_trade trajectory not sudden coincidence"
       verification: "pre_trade_context.coincidence_risk != 'high'"
+      field: "market.pre_trade_context"
+      operator: "none_field_eq"
+      value_ref: "high"                      # literal string
+      field_key: "coincidence_risk"
       status: "pending"
 
   pending: []                     # ISC IDs with status "pending"
