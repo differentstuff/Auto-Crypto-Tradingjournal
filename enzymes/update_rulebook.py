@@ -98,7 +98,14 @@ class UpdateRulebook(Enzyme):
             rulebook_text = generate_rulebook(strategy_name, strategy_uid=strategy_uid)
 
             if rulebook_text:
-                substrate.learning["rulebook"] = rulebook_text
+                # --- Optional LLM formatting ---
+                # The rulebook is always generated from accuracy data (deterministic).
+                # The LLM only optionally improves the prose formatting.
+                # If LLM is unavailable, the raw structured text is used as-is.
+                formatted_text = self._optional_llm_format(substrate, rulebook_text)
+                final_text = formatted_text if formatted_text else rulebook_text
+
+                substrate.learning["rulebook"] = final_text
                 substrate.learning["rulebook_generated_at"] = datetime.now(timezone.utc).isoformat()
 
                 # Read the version we just wrote
@@ -114,8 +121,9 @@ class UpdateRulebook(Enzyme):
                 if row:
                     substrate.learning["rulebook_version"] = row["version"]
 
-                _log.info("Rulebook updated for '%s': %d characters",
-                          strategy_name, len(rulebook_text))
+                _log.info("Rulebook updated for '%s': %d characters%s",
+                          strategy_name, len(final_text),
+                          " (LLM formatted)" if formatted_text else "")
             else:
                 _log.info("No rulebook generated for '%s' — insufficient accuracy data",
                           strategy_name)
@@ -125,6 +133,44 @@ class UpdateRulebook(Enzyme):
                        strategy_name, e, exc_info=True)
 
         return substrate
+
+    def _optional_llm_format(self, substrate: Substrate, raw_rulebook: str) -> str | None:
+        """
+        Optionally format the rulebook with LLM prose improvement.
+
+        The rulebook is always generated from accuracy data (deterministic).
+        The LLM only improves the readability. If call_llm returns None
+        (no key, budget exhausted, provider down), the raw text is used.
+
+        Returns formatted text string, or None if LLM is unavailable.
+        Never raises — errors are caught and logged.
+        """
+        # Check if 'rulebook' role is configured
+        llm_routing = substrate.cfg("llm.routing", {})
+        if not llm_routing or "rulebook" not in llm_routing:
+            return None  # No rulebook role configured — skip LLM
+
+        try:
+            from llm.router import call_llm
+        except ImportError:
+            return None  # LLM module not available
+
+        try:
+            prompt = (
+                f"Format the following trading rulebook into clear, concise prose. "
+                f"Keep all data points and percentages. Max 10 rules. "
+                f"Each rule should be one sentence.\n\n"
+                f"RAW RULEBOOK:\n{raw_rulebook}"
+            )
+            result = call_llm("rulebook", prompt)
+            if result:
+                return result.strip()
+            return None
+
+        except Exception as exc:
+            # Never let LLM errors break the enzyme
+            _log.debug("LLM rulebook formatting skipped: %s", exc)
+            return None
 
     def flux_score(self, substrate: Substrate) -> float:
         """Low flux — rulebook generation is important but infrequent."""
