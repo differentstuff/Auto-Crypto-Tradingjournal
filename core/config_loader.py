@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -104,6 +105,18 @@ class ConfigLoader:
         if not merged.get("strategy", {}).get("name"):
             merged.setdefault("strategy", {})["name"] = self.strategy_name
 
+        # Ensure strategy uid is set (auto-generate if missing/empty)
+        # The uid is a stable identity for learning data. It persists across
+        # renames, parameter changes, and reordering. Only clearing it manually
+        # (setting to "" in the YAML) triggers a fresh uid on next load.
+        strategy_uid = merged.get("strategy", {}).get("uid", "")
+        if not strategy_uid:
+            strategy_uid = str(uuid.uuid4())
+            merged.setdefault("strategy", {})["uid"] = strategy_uid
+            # Write the generated uid back to the strategy YAML file only
+            self._write_uid_to_yaml(strategy_path, strategy_uid)
+            _log.info("Generated new strategy uid: %s", strategy_uid)
+
         self._config = merged
         self._last_loaded = datetime.now(timezone.utc)
         _log.info(
@@ -111,6 +124,40 @@ class ConfigLoader:
             self.strategy_name,
             self._last_loaded.isoformat(),
         )
+
+    def _write_uid_to_yaml(self, strategy_path: str, uid: str) -> None:
+        """
+        Write the generated uid back to the strategy YAML file.
+
+        Reads the file, updates only the uid field under strategy:,
+        and writes it back. Preserves comments and formatting by
+        doing a targeted string replacement rather than a full dump.
+
+        If the file cannot be written (permissions, missing dir),
+        logs a warning but does not raise — the uid is still in memory.
+        """
+        try:
+            if not os.path.exists(strategy_path):
+                return
+
+            with open(strategy_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Replace uid value (handles "", '', "old-uuid", 'old-uuid', or bare word)
+            import re
+            new_content = re.sub(
+                r'(uid:\s*)(?:"[^"]*"|\'[^\']*\'|[^\s#]*)',
+                f'\\1"{uid}"',
+                content,
+                count=1,
+            )
+
+            if new_content != content:
+                with open(strategy_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                _log.info("Wrote strategy uid to %s", strategy_path)
+        except Exception as e:
+            _log.warning("Could not write uid to %s: %s", strategy_path, e)
 
     def reload(self) -> bool:
         """

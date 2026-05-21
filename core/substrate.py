@@ -212,6 +212,7 @@ class Substrate:
         strategy_cfg = cfg.get("strategy", {})
         self.strategy = {
             "name": strategy_cfg.get("name", ""),
+            "uid": strategy_cfg.get("uid", ""),
             "description": cfg.get("description", ""),
             "timeframe": strategy_cfg.get("timeframe", "4H"),
             "confirmation_tf": strategy_cfg.get("confirmation_tf", "1H"),
@@ -278,6 +279,7 @@ class Substrate:
             "idle_cycles": 0,
             "idle_reasons": [],
             "rulebook": "",
+            "rulebook_version": "",
             "rulebook_generated_at": "",
             "signal_accuracy": {},
             "combination_accuracy": {},
