@@ -172,6 +172,24 @@ class ScoreConfluence(Enzyme):
             weight = ind_cfg.get("weight", 0)
             weight_map[name] = weight
 
+        # Apply learning-adjusted weights (contrarian negatives, suppress→0, boost)
+        # This closes the learning loop: the learning engine computes adjusted
+        # weights from signal accuracy data, and ScoreConfluence uses them.
+        strategy_name = substrate.strategy.get("name", "")
+        strategy_uid = substrate.strategy.get("uid", "legacy")
+        try:
+            from learning.weight_adjuster import compute_adjusted_weights
+            adjusted = compute_adjusted_weights(
+                weight_map, strategy_name, strategy_uid=strategy_uid,
+            )
+            if adjusted != weight_map:
+                changed = [k for k in adjusted if adjusted.get(k) != weight_map.get(k)]
+                self._log.info("Applied %d adjusted weights from learning engine: %s",
+                               len(changed), changed)
+                weight_map = adjusted
+        except Exception as e:
+            self._log.warning("Could not apply adjusted weights: %s", e)
+
         candidates = []
         for symbol, sym_data in indicators.items():
             total_score = 0.0

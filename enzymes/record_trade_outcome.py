@@ -29,7 +29,8 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _record_trade_entry(trade_approved: dict, strategy_name: str) -> None:
+def _record_trade_entry(trade_approved: dict, strategy_name: str,
+                        strategy_uid: str = "legacy") -> None:
     """
     Record a new trade entry in the trade_learning table.
 
@@ -42,11 +43,12 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str) -> None:
         with db_conn() as conn:
             conn.execute(
                 """INSERT INTO trade_learning
-                   (strategy_name, symbol, direction, entry_time,
+                   (strategy_name, strategy_uid, symbol, direction, entry_time,
                     confluence_score_at_entry, signals_at_entry_json)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     strategy_name,
+                    strategy_uid,
                     trade_approved.get("symbol", ""),
                     trade_approved.get("direction", ""),
                     datetime.now(timezone.utc).isoformat(),
@@ -59,7 +61,8 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str) -> None:
 
 
 def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
-                       pnl: dict, strategy_name: str) -> None:
+                       pnl: dict, strategy_name: str,
+                       strategy_uid: str = "legacy") -> None:
     """
     Update trade_learning table with exit data.
 
@@ -85,6 +88,7 @@ def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
                        WHERE symbol = ?
                          AND exit_time IS NULL
                          AND strategy_name = ?
+                         AND strategy_uid = ?
                        ORDER BY entry_time DESC
                        LIMIT 1
                    )""",
@@ -98,6 +102,7 @@ def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
                     1 if "trailing" in exit_reason.lower() else 0,
                     symbol,
                     strategy_name,
+                    strategy_uid,
                 ),
             )
     except Exception as e:
@@ -162,11 +167,12 @@ class RecordTradeOutcome(Enzyme):
         """Record trade entry or exit to the learning database."""
         action = substrate.decisions.get("action", "wait")
         strategy_name = substrate.strategy.get("name", "")
+        strategy_uid = substrate.strategy.get("uid", "legacy")
 
         if action == "trade_open":
             trade_approved = substrate.decisions.get("trade_approved")
             if trade_approved:
-                _record_trade_entry(trade_approved, strategy_name)
+                _record_trade_entry(trade_approved, strategy_name, strategy_uid)
                 self._log.info(
                     "Recorded trade entry: %s %s",
                     trade_approved.get("direction", "?"),
@@ -197,7 +203,8 @@ class RecordTradeOutcome(Enzyme):
                         "pnl_usdt": exit_approved.get("pnl_usdt", 0.0),
                     }
 
-                _record_trade_exit(symbol, exit_approved, exit_reason, pnl, strategy_name)
+                _record_trade_exit(symbol, exit_approved, exit_reason, pnl,
+                                   strategy_name, strategy_uid)
                 self._log.info(
                     "Recorded trade exit: %s reason=%s pnl=%.2f%%",
                     symbol, exit_reason, pnl["pnl_pct"],
