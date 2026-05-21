@@ -50,18 +50,26 @@ llm:
     pre_filter:
       provider: "openrouter"
       model: "deepseek/deepseek-v4-0324:free"
+      cost_per_million_input: 0.00
+      cost_per_million_output: 0.00
       # Fast, free. Sufficient for noise detection and quick signal checks.
     analysis:
       provider: "anthropic"
       model: "claude-sonnet-4-6"
+      cost_per_million_input: 3.00
+      cost_per_million_output: 15.00
       # Only fires on ambiguous setups. Worth the cost for accuracy.
     rulebook:
       provider: "openrouter"
       model: "meta-llama/llama-3.3-70b-instruct:free"
+      cost_per_million_input: 0.00
+      cost_per_million_output: 0.00
       # Formats 10 rules from structured data. No deep reasoning needed.
     fallback:
       provider: "openrouter"
       model: "deepseek/deepseek-v4-0324:free"
+      cost_per_million_input: 0.00
+      cost_per_million_output: 0.00
       # Used when primary provider (anthropic) is overloaded or all keys
       # are in cooldown. OpenRouter free tier as safety net.
 
