@@ -14,12 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.enzyme import (
     Enzyme,
     EnzymeClass,
-    WaitEnzyme,
     register_enzyme,
     get_enzyme,
     list_enzymes,
     create_enzyme,
 )
+from enzymes.wait import WaitEnzyme
 from core.substrate import Substrate
 
 

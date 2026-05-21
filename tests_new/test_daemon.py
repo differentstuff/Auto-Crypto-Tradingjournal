@@ -14,7 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.daemon import Daemon
 from core.substrate import Substrate
-from core.enzyme import WaitEnzyme, EnzymeClass
+from enzymes.wait import WaitEnzyme
+from core.enzyme import EnzymeClass
+
 
 
 class TestDaemonInit:
