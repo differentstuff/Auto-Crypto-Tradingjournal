@@ -34,7 +34,7 @@ fail()  { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VENV_DIR="./venv"
+VENV_DIR="venv"
 PYTHON="python3.13"
 PIP="$VENV_DIR/bin/pip"
 PYTHON_VENV="$VENV_DIR/bin/python"
@@ -161,11 +161,17 @@ else
     ok "config/exchange.yaml created from template"
 fi
 
-# Strategy YAML — don't overwrite if it exists (it has auto-generated UIDs)
+# Strategy YAMLs — don't overwrite if they exist (they may have auto-generated UIDs)
 if [[ -f config/strategies/momentum_rising.yaml ]]; then
     ok "config/strategies/momentum_rising.yaml already exists (not overwritten)"
 else
     warn "Default strategy YAML not found. You may need to create one."
+fi
+
+if [[ -f config/strategies/paper_test.yaml ]]; then
+    ok "config/strategies/paper_test.yaml already exists (not overwritten)"
+else
+    ok "config/strategies/paper_test.yaml created (minimal 1-symbol strategy for testing)"
 fi
 
 # ── Step 5: Create directories ─────────────────────────────────────────────────
@@ -218,9 +224,9 @@ else
     SMOKE_PASSED=false
 fi
 
-# Test 6: Single cycle (quick integration test)
-info "Running single cycle test..."
-if $PYTHON_VENV main.py --paper --cycle-once --log-level WARNING 2>&1 | tail -3; then
+# Test 6: Single cycle (quick integration test with minimal strategy)
+info "Running single cycle test (paper_test strategy, 1 symbol, 60s timeout)..."
+if timeout 60 $PYTHON_VENV main.py --paper --strategy paper_test --cycle-once --log-level WARNING 2>&1 | tail -3; then
     ok "Single cycle completed successfully"
 else
     warn "Single cycle test had issues (may be expected if exchange/LLM keys not configured)"
@@ -239,7 +245,7 @@ echo ""
 echo "  Next Steps:"
 echo ""
 echo "  1. Edit config/exchange.yaml — add your LLM API keys:"
-echo "     $EDITOR config/exchange.yaml"
+echo "     ${EDITOR:-nano} config/exchange.yaml"
 echo ""
 echo "     Minimum: an OpenRouter key (free-tier models available):"
 echo "       llm_keys:"
@@ -250,16 +256,19 @@ echo ""
 echo "  2. (Optional) Add exchange API keys for live data:"
 echo "     Edit the exchange: bitget: section in config/exchange.yaml"
 echo ""
-echo "  3. Test in paper mode:"
+echo "  3. Test in paper mode (minimal 1-symbol strategy):"
 echo "     source venv/bin/activate"
-echo "     python main.py --paper --cycle-once"
+echo "     python main.py --paper --strategy paper_test --cycle-once"
 echo ""
-echo "  4. Run the daemon continuously:"
-echo "     python main.py --paper"
+echo "  4. Run the daemon continuously (minimal):"
+echo "     python main.py --paper --strategy paper_test"
 echo ""
-echo "  5. For 24/7 operation, see: docs/deployment-guide.md"
+echo "  5. Switch to full strategy when ready (hot-plug, no restart needed):"
+echo "     python main.py --paper --strategy momentum_rising"
 echo ""
-echo "  6. Verify your deployment:"
+echo "  6. For 24/7 operation, see: docs/deployment-guide.md"
+echo ""
+echo "  7. Verify your deployment:"
 echo "     bash scripts/verify_e2e.sh"
 echo ""
 echo "  Log file: logs/auto-trader.log"

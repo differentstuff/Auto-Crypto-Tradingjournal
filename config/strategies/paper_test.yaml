@@ -1,0 +1,63 @@
+description: "Minimal paper test: 1 symbol, 2 indicators, no modules, no dynamic scan."
+
+strategy:
+  name: paper_test
+  uid: ""
+  timeframe: "4H"
+  confirmation_tf: null      # skip 2nd timeframe → 1 API call instead of 2
+  max_positions: 1
+  cycle_interval_minutes: 15
+
+symbols:
+  always_watch:
+    - BTCUSDT
+  never_trade: []
+  dynamic_filter:
+    mode: "off"
+    limit: 0                 # no dynamic scanning, no 100+ symbol ranking
+
+indicators:
+  - name: "rsi"
+    params: { period: 14 }
+    weight: 0.5
+  - name: "atr"
+    params: { period: 14 }
+    weight: 0.0              # infrastructure only
+
+# Minimal scoring/exit/portfolio so nothing crashes
+scoring:
+  entry_threshold: 6.5
+  confluence_min_signals: 3
+  rr_minimum: 2.0
+
+exit_rules:
+  hard_stop:
+    width_atr_multiplier: 1.5
+    always_active: true
+  trailing_stop:
+    enabled: false
+  soft_exit:
+    requires_indicators_reversed: 2
+    requires_confirmation_tf: false
+    urgency: "soft"
+  duration_exit:
+    max_hours: 12
+    max_hours_extreme: 24
+
+portfolio:
+  max_positions: 1
+  risk_per_trade_pct: 1.0
+  leverage: 5
+  max_total_risk_pct: 1.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: false
+
+modules:
+  macro_context: false
+  regime_detection: false
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false
