@@ -23,6 +23,10 @@ from enzymes.sync_positions import SyncPositions
 from enzymes.send_telegram_log import SendTelegramLog
 from enzymes.wait import WaitEnzyme
 
+# Phase D: Learning Synthases
+from enzymes.record_trade_outcome import RecordTradeOutcome
+from enzymes.update_rulebook import UpdateRulebook
+
 __all__ = [
     # Phase B
     "CollectOHLCV",
@@ -40,4 +44,7 @@ __all__ = [
     "SyncPositions",
     "SendTelegramLog",
     "WaitEnzyme",
+    # Phase D
+    "RecordTradeOutcome",
+    "UpdateRulebook",
 ]
