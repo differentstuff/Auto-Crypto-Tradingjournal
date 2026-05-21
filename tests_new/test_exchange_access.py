@@ -48,7 +48,7 @@ class TestExchangePublicData:
     """Test that Exchange can fetch public market data from Binance."""
 
     def test_fetch_ohlcv_btcusdt_4h(self):
-        """Fetch BTCUSDT 4H candles from Binance public API."""
+        """Fetch BTCUSDT 4h candles from Binance public API."""
         from core.exchange import Exchange
         config = _make_config_loader()
         exchange = Exchange(config)
@@ -119,7 +119,7 @@ class TestIndicatorOnRealData:
 
     @pytest.fixture(autouse=True)
     def _fetch_data(self):
-        """Fetch BTCUSDT 4H data once for all tests in this class."""
+        """Fetch BTCUSDT 4h data once for all tests in this class."""
         from core.exchange import Exchange
         config = _make_config_loader()
         exchange = Exchange(config)

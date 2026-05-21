@@ -238,7 +238,7 @@ def _compute_metrics(trades: list) -> dict:
     }
 
 
-def run_backtest(symbol: str, timeframe: str = "4H", days: int = 90,
+def run_backtest(symbol: str, timeframe: str = "4h", days: int = 90,
                  params: BacktestParams = None,
                  end_offset_days: int = 0) -> BacktestResult:
     """
