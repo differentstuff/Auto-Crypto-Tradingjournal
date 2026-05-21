@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests that require real network/API access (deselect with '-m not integration')",
+]
+testpaths = ["tests_new"]
+addopts = "-v --tb=short"
