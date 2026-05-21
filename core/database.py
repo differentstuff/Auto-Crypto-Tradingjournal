@@ -36,6 +36,7 @@ def get_conn():
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA wal_autocheckpoint=100")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=500")
     return conn
 
 
@@ -96,7 +97,12 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         if _applied(ver):
             return
         try:
-            conn.execute(sql)
+            # Use executescript for multi-statement SQL (migrations that
+            # rename+create+insert+drop), execute for single statements.
+            if sql.strip().count(";") > 1:
+                conn.executescript(sql)
+            else:
+                conn.execute(sql)
         except sqlite3.OperationalError as e:
             if "duplicate column" not in str(e).lower():
                 _log.error("Migration %d (%s) failed: %s", ver, name, e, exc_info=True)
@@ -380,7 +386,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
     _apply(38, "analyzed_calls.regime_label", "ALTER TABLE analyzed_calls ADD COLUMN regime_label TEXT DEFAULT NULL")
     _apply(39, "analyzed_calls.ml_win_prob", "ALTER TABLE analyzed_calls ADD COLUMN ml_win_prob REAL DEFAULT NULL")
 
-    # ── NEW: Learning tables (reaction network) ────────────────────────────────
+    # ── Learning tables (CREATE before UID migrations so fresh DBs have new schema) ──
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS trade_learning (
@@ -411,7 +417,8 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS signal_accuracy (
-            indicator_name      TEXT PRIMARY KEY,
+            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
+            indicator_name      TEXT NOT NULL,
             total_fired         INTEGER DEFAULT 0,
             correct             INTEGER DEFAULT 0,
             accuracy_pct        REAL DEFAULT 0,
@@ -419,12 +426,14 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             confidence_95_high  REAL,
             verdict             TEXT DEFAULT 'insufficient_data',
             sample_size         INTEGER DEFAULT 0,
-            updated_at          TEXT DEFAULT (datetime('now'))
+            updated_at          TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, indicator_name)
         )
     """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS combination_accuracy (
+            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
             combination_name    TEXT NOT NULL,
             direction_state     TEXT NOT NULL,
             trades              INTEGER DEFAULT 0,
@@ -434,19 +443,21 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             p_value             REAL,
             significance        TEXT DEFAULT 'insufficient_data',
             updated_at          TEXT DEFAULT (datetime('now')),
-            PRIMARY KEY (combination_name, direction_state)
+            PRIMARY KEY (strategy_uid, combination_name, direction_state)
         )
     """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS trajectory_accuracy (
-            trajectory_pattern  TEXT PRIMARY KEY,
+            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
+            trajectory_pattern  TEXT NOT NULL,
             trades              INTEGER DEFAULT 0,
             won                 INTEGER DEFAULT 0,
             win_rate_pct        REAL DEFAULT 0,
             avg_pnl_pct         REAL DEFAULT 0,
             verdict             TEXT DEFAULT 'insufficient_data',
-            updated_at          TEXT DEFAULT (datetime('now'))
+            updated_at          TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, trajectory_pattern)
         )
     """)
 
@@ -467,22 +478,25 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS idle_condition_accuracy (
-            condition_description     TEXT PRIMARY KEY,
-            idle_cycles               INTEGER DEFAULT 0,
-            hypothetical_avg_loss_pct REAL DEFAULT 0,
-            waiting_was_correct_pct   REAL DEFAULT 0,
-            verdict                   TEXT DEFAULT 'insufficient_data',
-            updated_at                TEXT DEFAULT (datetime('now'))
+            strategy_uid                TEXT NOT NULL DEFAULT 'legacy',
+            condition_description       TEXT NOT NULL,
+            idle_cycles                 INTEGER DEFAULT 0,
+            hypothetical_avg_loss_pct   REAL DEFAULT 0,
+            waiting_was_correct_pct     REAL DEFAULT 0,
+            verdict                     TEXT DEFAULT 'insufficient_data',
+            updated_at                  TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, condition_description)
         )
     """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS weight_history (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
             indicator_name      TEXT NOT NULL,
             old_weight          REAL NOT NULL,
             new_weight          REAL NOT NULL,
-            justification      TEXT,
+            justification       TEXT,
             accuracy_at_time    REAL,
             sample_size_at_time INTEGER,
             changed_at          TEXT DEFAULT (datetime('now'))
@@ -492,6 +506,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS rulebook_versions (
             id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid                TEXT NOT NULL DEFAULT 'legacy',
             version                     TEXT NOT NULL,
             rulebook_text               TEXT NOT NULL,
             generated_at                TEXT DEFAULT (datetime('now')),
@@ -510,7 +525,6 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── NEW: Cycle log ────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cycle_log (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -522,6 +536,107 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             duration_ms     INTEGER,
             created_at      TEXT DEFAULT (datetime('now'))
         )
+    """)
+
+    conn.commit()
+
+    # ── Strategy UID migrations (for existing databases with old schema) ──────
+    # On fresh databases, CREATE TABLE IF NOT EXISTS already created the new schema.
+    # These migrations only matter for existing databases that have the old schema.
+    # Add strategy_uid column to tables that only need a new column (no PK change)
+    _apply(40, "trade_learning.strategy_uid", "ALTER TABLE trade_learning ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
+    _apply(41, "weight_history.strategy_uid", "ALTER TABLE weight_history ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
+    _apply(42, "rulebook_versions.strategy_uid", "ALTER TABLE rulebook_versions ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
+
+    # Tables with PK changes need rebuild: rename, create new, migrate, drop old.
+    # These only run on existing DBs where the old schema is present.
+    # On fresh DBs, the tables already have the new schema so these are skipped
+    # (schema_version already has them marked as applied by the CREATE TABLE step).
+    _apply(43, "signal_accuracy.strategy_uid_pk", """
+        ALTER TABLE signal_accuracy RENAME TO _signal_accuracy_old;
+        CREATE TABLE signal_accuracy (
+            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
+            indicator_name      TEXT NOT NULL,
+            total_fired         INTEGER DEFAULT 0,
+            correct             INTEGER DEFAULT 0,
+            accuracy_pct        REAL DEFAULT 0,
+            confidence_95_low   REAL,
+            confidence_95_high  REAL,
+            verdict             TEXT DEFAULT 'insufficient_data',
+            sample_size         INTEGER DEFAULT 0,
+            updated_at          TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, indicator_name)
+        );
+        INSERT INTO signal_accuracy (strategy_uid, indicator_name, total_fired, correct,
+            accuracy_pct, confidence_95_low, confidence_95_high, verdict, sample_size, updated_at)
+            SELECT 'legacy', indicator_name, total_fired, correct,
+            accuracy_pct, confidence_95_low, confidence_95_high, verdict, sample_size, updated_at
+            FROM _signal_accuracy_old;
+        DROP TABLE _signal_accuracy_old;
+    """)
+
+    _apply(44, "combination_accuracy.strategy_uid_pk", """
+        ALTER TABLE combination_accuracy RENAME TO _combination_accuracy_old;
+        CREATE TABLE combination_accuracy (
+            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
+            combination_name    TEXT NOT NULL,
+            direction_state     TEXT NOT NULL,
+            trades              INTEGER DEFAULT 0,
+            won                 INTEGER DEFAULT 0,
+            win_rate_pct        REAL DEFAULT 0,
+            avg_pnl_pct         REAL DEFAULT 0,
+            p_value             REAL,
+            significance        TEXT DEFAULT 'insufficient_data',
+            updated_at          TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, combination_name, direction_state)
+        );
+        INSERT INTO combination_accuracy (strategy_uid, combination_name, direction_state,
+            trades, won, win_rate_pct, avg_pnl_pct, p_value, significance, updated_at)
+            SELECT 'legacy', combination_name, direction_state,
+            trades, won, win_rate_pct, avg_pnl_pct, p_value, significance, updated_at
+            FROM _combination_accuracy_old;
+        DROP TABLE _combination_accuracy_old;
+    """)
+
+    _apply(45, "trajectory_accuracy.strategy_uid_pk", """
+        ALTER TABLE trajectory_accuracy RENAME TO _trajectory_accuracy_old;
+        CREATE TABLE trajectory_accuracy (
+            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
+            trajectory_pattern  TEXT NOT NULL,
+            trades              INTEGER DEFAULT 0,
+            won                 INTEGER DEFAULT 0,
+            win_rate_pct        REAL DEFAULT 0,
+            avg_pnl_pct         REAL DEFAULT 0,
+            verdict             TEXT DEFAULT 'insufficient_data',
+            updated_at          TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, trajectory_pattern)
+        );
+        INSERT INTO trajectory_accuracy (strategy_uid, trajectory_pattern,
+            trades, won, win_rate_pct, avg_pnl_pct, verdict, updated_at)
+            SELECT 'legacy', trajectory_pattern,
+            trades, won, win_rate_pct, avg_pnl_pct, verdict, updated_at
+            FROM _trajectory_accuracy_old;
+        DROP TABLE _trajectory_accuracy_old;
+    """)
+
+    _apply(46, "idle_condition_accuracy.strategy_uid_pk", """
+        ALTER TABLE idle_condition_accuracy RENAME TO _idle_condition_accuracy_old;
+        CREATE TABLE idle_condition_accuracy (
+            strategy_uid                TEXT NOT NULL DEFAULT 'legacy',
+            condition_description       TEXT NOT NULL,
+            idle_cycles                 INTEGER DEFAULT 0,
+            hypothetical_avg_loss_pct   REAL DEFAULT 0,
+            waiting_was_correct_pct     REAL DEFAULT 0,
+            verdict                     TEXT DEFAULT 'insufficient_data',
+            updated_at                  TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, condition_description)
+        );
+        INSERT INTO idle_condition_accuracy (strategy_uid, condition_description,
+            idle_cycles, hypothetical_avg_loss_pct, waiting_was_correct_pct, verdict, updated_at)
+            SELECT 'legacy', condition_description,
+            idle_cycles, hypothetical_avg_loss_pct, waiting_was_correct_pct, verdict, updated_at
+            FROM _idle_condition_accuracy_old;
+        DROP TABLE _idle_condition_accuracy_old;
     """)
 
     conn.commit()
