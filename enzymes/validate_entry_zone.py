@@ -238,7 +238,57 @@ class ValidateEntryZone(Enzyme):
             len(entry_zones),
         )
 
+        # --- Optional LLM enrichment for complex patterns ---
+        # Only fires when 'analysis' role is configured in llm.routing.
+        # If call_llm returns None (no key, budget exhausted, provider down),
+        # the entry zones are still valid — LLM is purely additive.
+        self._optional_llm_validation(substrate, entry_zones)
+
         return substrate
+
+    def _optional_llm_validation(self, substrate: Substrate, entry_zones: dict) -> None:
+        """
+        Optionally enrich entry zones with LLM validation.
+
+        Only fires when 'analysis' role is configured in llm.routing.
+        If call_llm returns None, the entry zones remain unchanged —
+        LLM is purely additive and never blocks the enzyme.
+
+        The LLM receives a compact summary of the entry zone and returns
+        a brief validation string stored in entry_zone['llm_validation'].
+        """
+        # Check if 'analysis' role is configured
+        llm_routing = substrate.cfg("llm.routing", {})
+        if not llm_routing or "analysis" not in llm_routing:
+            return  # No analysis role configured — skip LLM entirely
+
+        try:
+            from llm.router import call_llm
+        except ImportError:
+            return  # LLM module not available
+
+        for symbol, zone in entry_zones.items():
+            try:
+                prompt = (
+                    f"Validate this crypto entry zone:\n"
+                    f"Symbol: {symbol}\n"
+                    f"Direction: {zone.get('direction', '?')}\n"
+                    f"Entry: {zone.get('entry_price', 0):.2f}\n"
+                    f"SL: {zone.get('sl_price', 0):.2f} ({zone.get('sl_type', '?')})\n"
+                    f"TP1: {zone.get('tp1', 0):.2f} | TP2: {zone.get('tp2', 0):.2f}\n"
+                    f"R:R: {zone.get('rr_ratio', 0):.1f}\n"
+                    f"Score: {zone.get('score', 0):+.1f}\n"
+                    f"Respond with one sentence: confirm, flag concern, or suggest adjustment."
+                )
+
+                result = call_llm("analysis", prompt)
+                if result:
+                    zone["llm_validation"] = result.strip()
+                    self._log.debug("LLM validation added for %s", symbol)
+
+            except Exception as exc:
+                # Never let LLM errors break the enzyme
+                self._log.debug("LLM validation skipped for %s: %s", symbol, exc)
 
     def flux_score(self, substrate: Substrate) -> float:
         if self.can_activate(substrate):
