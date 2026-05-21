@@ -25,42 +25,6 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _record_trade_entry(trade_approved: dict, strategy_name: str) -> None:
-    """
-    Record a new trade entry in the trade_learning table.
-
-    Called in both paper and live modes so the learning engine
-    always has data to work with.
-    """
-    try:
-        from core.database import db_conn
-
-        with db_conn() as conn:
-            conn.execute(
-                """INSERT INTO trade_learning
-                   (strategy_name, symbol, direction, entry_price, sl_price,
-                    tp1, tp2, size_usdt, kelly_fraction, entry_time,
-                    confluence_score, signal_states)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    strategy_name,
-                    trade_approved.get("symbol", ""),
-                    trade_approved.get("direction", ""),
-                    trade_approved.get("entry_price", 0),
-                    trade_approved.get("sl_price", 0),
-                    trade_approved.get("tp1", 0),
-                    trade_approved.get("tp2", 0),
-                    trade_approved.get("size_usdt", 0),
-                    trade_approved.get("kelly_fraction", 0),
-                    datetime.now(timezone.utc).isoformat(),
-                    trade_approved.get("score", 0),
-                    "",  # signal_states — populated by learning engine later
-                ),
-            )
-    except Exception as e:
-        _log.warning("Failed to record trade entry in DB: %s", e)
-
-
 @register_enzyme
 class ExecuteTrade(Enzyme):
     """
@@ -177,10 +141,6 @@ class ExecuteTrade(Enzyme):
 
         # Update decisions
         substrate.decisions["action"] = "trade_open"
-
-        # Record to database
-        strategy_name = substrate.strategy.get("name", "")
-        _record_trade_entry(trade_approved, strategy_name)
 
         self._log.info(
             "Trade executed: %s %s size=%.2f action=%s",
