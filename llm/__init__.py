@@ -22,4 +22,9 @@ Internal modules (not for direct import by enzymes):
 from llm.router import call_llm, init_router
 from llm.prompt_builder import build_prompt
 
+# Explicit submodule imports so unittest.mock.patch("llm.anthropic_client.send")
+# can resolve the attribute. These do NOT trigger SDK imports — the SDKs are
+# lazily imported inside each client's send() function.
+from llm import anthropic_client, gemini_client, openrouter_client
+
 __all__ = ["call_llm", "init_router", "build_prompt"]
