@@ -520,11 +520,18 @@ class Substrate:
 
     def reset_cycle(self) -> None:
         """Reset per-cycle fields for a new daemon cycle."""
+        # Market section: clear for re-sensing
+        self.market["indicators"] = {}
+        self.market["last_scan_at"] = ""
+        self.market["macro"] = {}
+        self.market["pre_trade_context"] = {}
+        # Analysis section: clear for re-evaluation
         self.analysis["candidates"] = []
         self.analysis["entry_zones"] = {}
         self.analysis["noise_flag"] = False
         self.analysis["noise_reason"] = ""
         self.analysis["signal_states"] = {}
+        # Decisions section: clear for new decisions
         self.decisions["action"] = "wait"
         self.decisions["trade_approved"] = None
         self.decisions["exit_request"] = None
