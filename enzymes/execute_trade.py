@@ -2,7 +2,7 @@
 enzymes/execute_trade.py -- Transporter enzyme: execute approved trades.
 
 Places orders (paper or live) and records them to the database.
-In paper mode: adds position to portfolio.open_positions, records to trade_learning.
+In paper mode: adds position to portfolio.open_positions, sets action = 'trade_open'.
 In live mode: calls exchange API, then records to database.
 
 Writes: portfolio.open_positions (adds position), decisions.action = 'trade_open'
@@ -32,12 +32,10 @@ class ExecuteTrade(Enzyme):
 
     In paper mode:
       - Adds position to portfolio.open_positions
-      - Records entry to trade_learning table
       - Sets decisions.action = 'trade_open'
 
     In live mode:
       - Calls exchange API via core.exchange.Exchange
-      - Records entry to trade_learning table
       - Sets decisions.action = 'trade_open'
 
     The Exchange instance must be injected via the constructor or
