@@ -128,22 +128,8 @@ portfolio:
   fallback_equity_usdt: 1000.0
   correlation_check: true
 
-llm:
-  cost_budget_daily_usd: 2.00
-  routing:
-    pre_filter: "claude-haiku-4-5-20251001"
-    analysis: "claude-sonnet-4-6"
-    fallback: "gemini-2.0-flash"
-  max_tokens:
-    analysis: 1024
-    rulebook: 512
-  max_context_chars: 4000
-  prompt_priority_order:
-    - "strategy_description"
-    - "rulebook"
-    - "signal_states"
-    - "pre_trade_context"
-    - "similar_trades"
+# LLM config is defined in config/default.yaml and shared by all strategies.
+# Do not override llm: here — the router reads from the merged config.
 
 modules:
   macro_context: false
