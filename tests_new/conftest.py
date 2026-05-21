@@ -17,13 +17,16 @@ sys.path.insert(0, PROJECT_ROOT)
 @pytest.fixture
 def temp_db(tmp_path):
     """Use a temporary database for tests that need it."""
+    import importlib
     db_path = str(tmp_path / "test.db")
     original = os.environ.get("DB_PATH")
     os.environ["DB_PATH"] = db_path
 
-    # Import here so DB_PATH override takes effect before init_db is called
-    from core.database import init_db
-    init_db()
+    # Reload the database module so DB_PATH picks up the new env var
+    import core.database as db_mod
+    importlib.reload(db_mod)
+
+    db_mod.init_db()
 
     yield db_path
 

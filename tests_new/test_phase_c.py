@@ -764,7 +764,7 @@ class TestExecuteTrade:
         sub.decisions["action"] = "wait"
         assert enzyme.can_activate(sub) is True
 
-    def test_paper_mode_adds_position_to_portfolio(self, temp_db):
+    def test_paper_mode_adds_position_to_portfolio(self):
         """Paper mode: position is added to portfolio.open_positions."""
         enzyme = self._get_enzyme({"daemon": {"paper_mode": True}})
         sub = _make_substrate({"daemon": {"paper_mode": True}})
@@ -827,9 +827,10 @@ class TestExecuteTrade:
         assert pos["trailing_sl"] is None
 
     def test_paper_mode_records_to_trade_learning(self, temp_db):
-        """Paper mode: trade is recorded in trade_learning table."""
+        """Paper mode: trade is recorded in trade_learning table by RecordTradeOutcome."""
         import sqlite3
-        enzyme = self._get_enzyme({"daemon": {"paper_mode": True}})
+        from enzymes.record_trade_outcome import RecordTradeOutcome
+        recorder = RecordTradeOutcome(config=_make_config({"daemon": {"paper_mode": True}}))
         sub = _make_substrate({"daemon": {"paper_mode": True}})
         sub.portfolio["open_positions"] = []
         sub.portfolio["equity"] = 10000.0
@@ -838,10 +839,11 @@ class TestExecuteTrade:
             "entry_price": 50000.0, "sl_price": 49000.0,
             "tp1": 52000.0, "tp2": 53500.0, "size_usdt": 500.0,
             "kelly_fraction": 0.1, "approved_at": "2026-05-20T10:00:00+00:00",
-            "atr_value": 800.0,
+            "atr_value": 800.0, "score": 7.5,
         }
+        sub.decisions["action"] = "trade_open"
 
-        enzyme.transform(sub)
+        recorder.transform(sub)
 
         conn = sqlite3.connect(temp_db)
         rows = conn.execute("SELECT * FROM trade_learning WHERE symbol='BTCUSDT'").fetchall()
@@ -929,24 +931,32 @@ class TestExecuteExit:
         assert result.decisions["action"] == "trade_closed"
 
     def test_paper_mode_records_outcome_to_trade_learning(self, temp_db):
-        """Paper mode: outcome is recorded in trade_learning table with exit data."""
+        """Paper mode: outcome is recorded in trade_learning table by RecordTradeOutcome."""
         import sqlite3
-        enzyme = self._get_enzyme({"daemon": {"paper_mode": True}})
+        from enzymes.record_trade_outcome import RecordTradeOutcome
+
+        # First record an entry so the UPDATE can find it
+        recorder = RecordTradeOutcome(config=_make_config({"daemon": {"paper_mode": True}}))
         sub = _make_substrate({"daemon": {"paper_mode": True}})
-        pos = _make_open_position(mark_price=49500.0)  # loss scenario
-        sub.portfolio["open_positions"] = [pos]
+        sub.decisions["trade_approved"] = {
+            "symbol": "BTCUSDT", "direction": "Long", "score": 7.5,
+        }
+        sub.decisions["action"] = "trade_open"
+        recorder.transform(sub)
+
+        # Now record the exit
         sub.decisions["exit_approved"] = {
             "symbol": "BTCUSDT", "reason": "sl_breach", "urgency": "immediate"
         }
-
-        enzyme.transform(sub)
+        sub.decisions["action"] = "trade_closed"
+        recorder.transform(sub)
 
         conn = sqlite3.connect(temp_db)
         rows = conn.execute(
             "SELECT exit_reason FROM trade_learning WHERE symbol='BTCUSDT' AND exit_time IS NOT NULL"
         ).fetchall()
         conn.close()
-        # May be 0 if no prior entry recorded — but if rows exist, exit_reason must be set
+        assert len(rows) >= 1
         for row in rows:
             assert row[0] is not None
 
@@ -1159,10 +1169,10 @@ class TestExchangeOrderMethods:
         from core.exchange import ExchangeError
         ex = self._get_exchange(paper_mode=False)
 
-        # Create a mock exchange that raises on create_order
+        # Create a mock exchange that raises on create_market_order
         mock_trade_ex = MagicMock()
-        mock_trade_ex.create_order.side_effect = Exception("connection refused")
-        mock_trade_ex.fetch_ticker.return_value = {"last": 50000.0}
+        mock_trade_ex.create_market_order.side_effect = Exception("connection refused")
+        mock_trade_ex.set_leverage.return_value = None
         # Set the internal attribute directly (trade_exchange is a property)
         ex._trade_exchange = mock_trade_ex
 
