@@ -175,6 +175,7 @@ class Exchange:
         """
         ccxt_symbol = _to_ccxt_symbol(symbol)
         exchange = self._get_data_exchange()
+        timeframe = timeframe.lower()  # Guarantee lowercase letters for API calls
 
         try:
             raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
@@ -193,6 +194,7 @@ class Exchange:
         except Exception as e:
             _log.error("fetch_ohlcv failed for %s %s: %s", symbol, timeframe, e)
             # Try fallback exchange
+            timeframe = timeframe.lower()  # Guarantee lowercase letters for API calls
             return self._fetch_ohlcv_fallback(symbol, timeframe, limit)
 
     def _fetch_ohlcv_fallback(

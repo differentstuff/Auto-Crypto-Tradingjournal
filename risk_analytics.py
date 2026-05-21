@@ -17,7 +17,7 @@ import pandas as pd
 import yfinance as yf
 
 
-def _fetch_ohlcv_df(symbol: str, tf: str = "4H", limit: int = 500) -> pd.DataFrame:
+def _fetch_ohlcv_df(symbol: str, tf: str = "4h", limit: int = 500) -> pd.DataFrame:
     """
     Fetch OHLCV from Binance futures public API (free, no auth).
     Returns DataFrame with columns: close, volume. Index: datetime.
@@ -27,6 +27,7 @@ def _fetch_ohlcv_df(symbol: str, tf: str = "4H", limit: int = 500) -> pd.DataFra
         import ccxt as _ccxt
         ex = _ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "future"}})
         ccxt_sym = symbol.replace("USDT", "/USDT:USDT")
+        tf = tf.lower()  # # Guarantee lowercase letters for API calls
         raw = ex.fetch_ohlcv(ccxt_sym, tf, limit=limit)
         if not raw:
             return pd.DataFrame()
@@ -38,9 +39,9 @@ def _fetch_ohlcv_df(symbol: str, tf: str = "4H", limit: int = 500) -> pd.DataFra
 
 
 def _daily_returns(symbol: str, lookback_days: int = 90) -> pd.Series:
-    """Return daily return series for a symbol, resampled from 4H OHLCV."""
+    """Return daily return series for a symbol, resampled from 4h OHLCV."""
     limit = lookback_days * 6 + 10
-    df = _fetch_ohlcv_df(symbol, tf="4H", limit=limit)
+    df = _fetch_ohlcv_df(symbol, tf="4h", limit=limit)
     if df.empty:
         return pd.Series(dtype=float)
     daily = df["close"].resample("D").last().dropna()
@@ -51,7 +52,7 @@ def compute_portfolio_var(positions: list, equity: float,
                           lookback_days: int = 90) -> dict:
     """
     Historical simulation VaR on the current open portfolio.
-    Fetches 90 days of Binance 4H OHLCV (free, public endpoint).
+    Fetches 90 days of Binance 4h OHLCV (free, public endpoint).
     Returns var_95_usd, var_99_usd, var_95_pct, var_99_pct, total_notional,
     horizon_days, sample_days, available.
     """
