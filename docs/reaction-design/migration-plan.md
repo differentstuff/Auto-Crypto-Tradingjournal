@@ -88,8 +88,9 @@ We create a new branch `feature/auto-trader` from the current `main`. The curren
 | Build approve_trade.py | RiskManager gate: Kelly sizing, ISC verification, override authority | `agent_risk_mgmt.py`, `risk_analytics.py` |
 | Build approve_exit.py | RiskManager exit gate: hard SL/trailing, soft signal reversal | `agent_risk_mgmt.py`, `agent_trade_monitor.py` |
 | Build request_exit.py | Any enzyme can request exit, RiskManager decides | `agent_trade_monitor.py`, `entry_watcher.py` |
-| Build execute_trade.py | CCXT order placement, SL order, database recording | `bitget_client.py` (order functions), `database.py` (insert) |
-| Build execute_exit.py | Close position, cancel orders, record outcome | `ccxt_client.py` |
+| Build execute_trade.py | CCXT order placement, SL order | `bitget_client.py` (order functions) |
+| Build execute_exit.py | Close position, cancel orders | `ccxt_client.py` |
+| Build record_trade_outcome.py | Synthase: record entry/exit to trade_learning DB | `database.py` (insert/update) |
 | Build position sync | Periodic sync of open positions from exchange | `bitget_sync.py`, `blofin_sync.py`, `sync_base.py` |
 | Build wait.py | Default enzyme: no action, record idle cycle | NEW |
 | Port telegram notify | One-way log push (disabled by default) | `telegram_notify.py` |
