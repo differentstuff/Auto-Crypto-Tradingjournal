@@ -167,6 +167,26 @@ Strategies are YAML files containing:
 
 See: strategy-template.yaml for the full template.
 
+### Strategy UID
+
+Each strategy has a **uid** — a stable identity that persists across renames, parameter changes, and reordering. The uid is stored in the strategy YAML:
+
+```yaml
+strategy:
+  name: momentum_rising
+  uid: ""   # Auto-generated on first load. Clear to reset learning data.
+```
+
+**How it works:**
+1. On first load, if `uid` is empty or missing, `ConfigLoader` generates a UUID4 and writes it back to the YAML file.
+2. The uid flows through the system: `ConfigLoader → Substrate.strategy.uid → enzymes → learning modules`.
+3. All learning tables (`signal_accuracy`, `combination_accuracy`, `trajectory_accuracy`, `idle_condition_accuracy`, `weight_history`, `rulebook_versions`, `trade_learning`) use `strategy_uid` as a primary key component or column.
+4. This means two strategies can share the same database without learning data collisions.
+
+**Resetting learning data:** Set `uid: ""` in the strategy YAML. On next daemon load, a fresh uid is generated and all learning starts from scratch. The old data remains in the DB (keyed to the old uid) but is no longer read.
+
+**Default value:** `"legacy"` — used when uid is not available (backward compatibility, tests, manual DB inserts before migration).
+
 ---
 
 ## Migration from Current Codebase
@@ -230,6 +250,7 @@ auto-trader/
     execute_trade.py
     execute_exit.py
     update_rulebook.py            # Hindsight (Synthase)
+    record_trade_outcome.py       # Record trades to learning DB (Synthase)
     send_telegram_log.py
     wait.py                       # Default enzyme
   indicators/                     # All indicators, loaded but activated per strategy
@@ -244,11 +265,11 @@ auto-trader/
     liquidation.py                # cluster_walls (off by default)
     registry.py                   # name -> function lookup
   learning/
-    tracker.py                    # Per-trade data collection
     analyzer.py                   # Per-signal accuracy
     combination.py                # Pairwise signal combinations
     trajectory.py                 # Pre-trade indicator trajectory analysis
     rulebook.py                   # Auto-generated rules
+    weight_adjuster.py            # Adjust indicator weights from accuracy verdicts
   llm/
     key_manager.py                # API key rotation (multi-key per provider, auto-switch on overload)
     router.py                     # Cost-aware model selection (uses KeyManager)
