@@ -163,12 +163,12 @@ class DetectNoise(Enzyme):
         return []
 
     def can_activate(self, substrate: Substrate) -> bool:
-        indicators = substrate.market.get("indicators", {})
-        # Activate if indicators exist and noise hasn't been evaluated yet
+        candidates = substrate.analysis.get("candidates", [])
+        # Activate if candidates exist and noise hasn't been evaluated yet
         # noise_flag defaults to False, so we check if noise_reason is empty
         # (which means we haven't run yet this cycle)
         noise_reason = substrate.analysis.get("noise_reason", "")
-        return bool(indicators) and not noise_reason
+        return bool(candidates) and not noise_reason
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Evaluate noise conditions and set analysis.noise_flag."""
