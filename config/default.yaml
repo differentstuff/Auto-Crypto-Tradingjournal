@@ -12,7 +12,7 @@ system:
 daemon:
   cycle_interval_minutes: 15
   max_cycle_steps: 20
-  paper_mode: false
+  paper_mode: true  # safe default; exchange.yaml overrides to false when credentials present
   # If true, orders are written to log files instead of exchange
   substrate_state_max_rows: 200
   # How many substrate snapshots to keep per strategy in the database.
