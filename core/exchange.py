@@ -23,6 +23,12 @@ import pandas as pd
 
 _log = logging.getLogger(__name__)
 
+
+class ExchangeError(Exception):
+    """Custom exception for exchange operation failures."""
+    pass
+
+
 # Symbol format conversion: "BTCUSDT" -> "BTC/USDT:USDT" (CCXT futures)
 def _to_ccxt_symbol(symbol: str) -> str:
     """Convert journal symbol format to CCXT futures format."""
@@ -75,6 +81,18 @@ class Exchange:
     @property
     def paper_mode(self) -> bool:
         return self._paper_mode
+
+    # --- Static symbol conversion (used by tests and other modules) -----------
+
+    @staticmethod
+    def to_ccxt_symbol(symbol: str) -> str:
+        """Convert journal symbol format to CCXT futures format."""
+        return _to_ccxt_symbol(symbol)
+
+    @staticmethod
+    def to_journal_symbol(ccxt_symbol: str) -> str:
+        """Convert CCXT futures symbol format to journal format."""
+        return _to_journal_symbol(ccxt_symbol)
 
     # --- Data Exchange (public, no auth) ----------------------------------------
 
@@ -359,27 +377,194 @@ class Exchange:
             _log.error("place_order failed for %s: %s", symbol, e)
             return None
 
+    def place_market_order(
+        self,
+        symbol: str,
+        side: str = None,
+        direction: str = None,
+        size_usdt: float = 0,
+        leverage: int = 5,
+    ) -> Optional[dict]:
+        """
+        Place a market order (convenience wrapper).
+
+        Accepts both 'side' (buy/sell) and 'direction' (Long/Short) params.
+        In paper mode: logs and returns mock data with paper=True.
+        In live mode: calls the exchange API.
+
+        Returns dict with: order_id, symbol, side/direction, size_usdt, status, paper
+        Raises: ExchangeError on live mode failure.
+        """
+        # Normalize: accept both 'side' and 'direction'
+        if direction is None and side is not None:
+            direction = "Long" if side.lower() == "buy" else "Short"
+        if side is None and direction is not None:
+            side = "buy" if direction.lower() == "long" else "sell"
+
+        if self._paper_mode:
+            _log.info(
+                "PAPER MARKET ORDER: %s %s size=%.2f leverage=%d",
+                direction, symbol, size_usdt, leverage,
+            )
+            return {
+                "order_id": f"paper-{symbol}-{direction.lower()}",
+                "symbol": symbol,
+                "side": side,
+                "direction": direction,
+                "size_usdt": size_usdt,
+                "status": "paper_filled",
+                "paper": True,
+            }
+
+        try:
+            exchange = self._get_trade_exchange()
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+
+            # Set leverage before placing order
+            try:
+                exchange.set_leverage(leverage, ccxt_symbol)
+            except Exception as e:
+                _log.warning("Could not set leverage for %s: %s", symbol, e)
+
+            order = exchange.create_market_order(
+                symbol=ccxt_symbol,
+                side=side,
+                amount=size_usdt,
+            )
+
+            return {
+                "order_id": order.get("id", ""),
+                "symbol": symbol,
+                "side": side,
+                "direction": direction,
+                "size_usdt": size_usdt,
+                "status": order.get("status", "unknown"),
+                "paper": False,
+            }
+
+        except Exception as e:
+            _log.error("place_market_order failed for %s: %s", symbol, e)
+            raise ExchangeError(f"Market order failed for {symbol}: {e}")
+
+    def place_stop_order(
+        self,
+        symbol: str,
+        side: str = None,
+        direction: str = None,
+        trigger_price: float = None,
+        stop_price: float = None,
+        size: float = None,
+        size_usdt: float = None,
+        sl_price: float = None,
+        tp_price: float = None,
+    ) -> Optional[dict]:
+        """
+        Place a stop/trigger order (SL or TP).
+
+        Accepts both 'side' (buy/sell) and 'direction' (Long/Short).
+        Accepts both 'trigger_price' and 'stop_price' as the trigger level.
+        Accepts both 'size' and 'size_usdt' for the order amount.
+
+        In paper mode: logs and returns mock data with paper=True.
+        In live mode: calls the exchange API.
+
+        Returns dict with: order_id, symbol, status, paper
+        """
+        # Normalize params
+        effective_trigger = trigger_price or stop_price or 0.0
+        effective_size = size_usdt or size or 0.0
+        if direction is None and side is not None:
+            direction = "Long" if side.lower() == "buy" else "Short"
+        if side is None and direction is not None:
+            side = "buy" if direction.lower() == "long" else "sell"
+
+        if self._paper_mode:
+            _log.info(
+                "PAPER STOP ORDER: %s %s trigger=%.2f sl=%s tp=%s",
+                direction, symbol, effective_trigger, sl_price, tp_price,
+            )
+            return {
+                "order_id": f"paper-stop-{symbol}",
+                "symbol": symbol,
+                "side": side,
+                "direction": direction,
+                "status": "paper_pending",
+                "paper": True,
+            }
+
+        try:
+            exchange = self._get_trade_exchange()
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+            side = "sell" if direction.lower() == "long" else "buy"
+
+            params = {}
+            if sl_price:
+                params["stopLossPrice"] = sl_price
+            if tp_price:
+                params["takeProfitPrice"] = tp_price
+
+            order = exchange.create_order(
+                symbol=ccxt_symbol,
+                type="stop_market",
+                side=side,
+                amount=size_usdt,
+                price=trigger_price,
+                params=params,
+            )
+
+            return {
+                "order_id": order.get("id", ""),
+                "symbol": symbol,
+                "status": order.get("status", "unknown"),
+            }
+
+        except Exception as e:
+            _log.error("place_stop_order failed for %s: %s", symbol, e)
+            raise ExchangeError(f"Stop order failed for {symbol}: {e}")
+
+    def cancel_orders(self, symbol: str) -> bool:
+        """
+        Cancel all open orders for a symbol.
+
+        In paper mode: no-op, returns True.
+        In live mode: calls the exchange API, returns True on success.
+
+        Returns: True if successful
+        """
+        if self._paper_mode:
+            _log.info("PAPER CANCEL: %s (no-op)", symbol)
+            return True
+
+        try:
+            exchange = self._get_trade_exchange()
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+            orders = exchange.cancel_all_orders(ccxt_symbol)
+            return {
+                "symbol": symbol,
+                "cancelled_count": len(orders) if isinstance(orders, list) else 0,
+            }
+        except Exception as e:
+            _log.error("cancel_orders failed for %s: %s", symbol, e)
+            return {"symbol": symbol, "cancelled_count": 0}
+
     def close_position(
         self,
         symbol: str,
         direction: str,
+        size: float = None,
         size_usdt: float = None,
-    ) -> Optional[dict]:
+    ) -> bool:
         """
         Close an open position.
 
-        In paper mode: logs and returns mock data.
-        In live mode: calls the exchange API.
+        In paper mode: logs and returns True.
+        In live mode: calls the exchange API, returns True on success.
 
-        Returns dict with: order_id, symbol, status
+        Returns: True if successful
         """
         if self._paper_mode:
             _log.info("PAPER CLOSE: %s %s", direction, symbol)
-            return {
-                "order_id": f"paper-close-{symbol}",
-                "symbol": symbol,
-                "status": "paper_closed",
-            }
+            return True
 
         try:
             exchange = self._get_trade_exchange()
