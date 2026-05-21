@@ -120,8 +120,14 @@ class SendTelegramLog(Enzyme):
         return []
 
     def can_activate(self, substrate: Substrate) -> bool:
-        """Only activate when telegram_logs module is enabled."""
-        return substrate.cfg("modules.telegram_logs", False) is True
+        """Only activate when telegram_logs module is enabled AND action is notable."""
+        if substrate.cfg("modules.telegram_logs", False) is not True:
+            return False
+        # Don't activate for idle/wait cycles (no news to report)
+        action = substrate.decisions.get("action", "wait")
+        if action == "wait":
+            return False
+        return True
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Send Telegram notification for notable cycle events."""
