@@ -22,14 +22,15 @@ daemon:
   # decrease to save disk space on low-storage devices (e.g. Raspberry Pi).
 
 exchange:
-  primary: "bitget"
-  data_source: "binance"
-  fallback: "bybit"
+  primary: "bitget"      # Trading exchange (needs API keys for live mode only)
+  data_source: "bitget"  # OHLCV data source (public, no API keys needed)
+  fallback: "bybit"      # Fallback if data_source fails (public, no API keys needed)
   sync_interval_minutes: 5
 
   # Paper trading mode: all enzymes run, no real orders
   # Set to "paper" to log orders instead of placing them
-  mode: "live"
+  # Set to "live" to start trading
+  mode: "paper"
 
 llm:
   cost_budget_daily_usd: 2.00
@@ -49,15 +50,15 @@ llm:
   routing:
     pre_filter:
       provider: "openrouter"
-      model: "deepseek/deepseek-v4-0324:free"
-      cost_per_million_input: 0.00
-      cost_per_million_output: 0.00
-      # Fast, free. Sufficient for noise detection and quick signal checks.
+      model: "deepseek/deepseek-v4-flash"
+      cost_per_million_input: 0.14
+      cost_per_million_output: 0.28
+      # Sufficient for noise detection and quick signal checks.
     analysis:
-      provider: "anthropic"
-      model: "claude-sonnet-4-6"
-      cost_per_million_input: 3.00
-      cost_per_million_output: 15.00
+      provider: "openrouter"
+      model: "z-ai/glm-5.1"
+      cost_per_million_input: 1.05
+      cost_per_million_output: 3.50
       # Only fires on ambiguous setups. Worth the cost for accuracy.
     rulebook:
       provider: "openrouter"
@@ -67,11 +68,11 @@ llm:
       # Formats 10 rules from structured data. No deep reasoning needed.
     fallback:
       provider: "openrouter"
-      model: "deepseek/deepseek-v4-0324:free"
-      cost_per_million_input: 0.00
-      cost_per_million_output: 0.00
-      # Used when primary provider (anthropic) is overloaded or all keys
-      # are in cooldown. OpenRouter free tier as safety net.
+      model: "minimax/minimax-m2.7"
+      cost_per_million_input: 0.30
+      cost_per_million_output: 1.20
+      # Used when primary provider is overloaded or all keys
+      # are in cooldown. You can use OpenRouter free tier as safety net.
 
   max_tokens:
     analysis: 1024
