@@ -1,7 +1,10 @@
 """
 core/config_loader.py -- YAML config reader with hot-reload and defaults merging.
 
-Merges: default.yaml < strategy.yaml < exchange.yaml
+Merges: default.yaml < strategy.yaml
+
+Secrets (API keys) are read from .env via environment variables,
+not from YAML files. See .env.example for all available env vars.
 
 The daemon reads config on every cycle. No restart needed to adjust
 strategy, risk limits, or indicator selection.
@@ -64,7 +67,8 @@ class ConfigLoader:
     Merge order (later overrides earlier):
       1. config/default.yaml -- system defaults, never hand-edit
       2. config/strategies/<name>.yaml -- strategy-specific overrides
-      3. config/exchange.yaml -- API keys, endpoints (gitignored)
+
+    Secrets (API keys) come from .env via environment variables.
 
     Provides dot-access via get() method. The daemon calls reload()
     on every cycle to pick up changes without restart.
@@ -93,13 +97,8 @@ class ConfigLoader:
         )
         strategy_cfg = _load_yaml(strategy_path)
 
-        # 3. Exchange config (secrets layer)
-        exchange_path = os.path.join(self.config_dir, "exchange.yaml")
-        exchange_cfg = _load_yaml(exchange_path)
-
-        # Merge: default < strategy < exchange
+        # Merge: default < strategy (secrets come from .env, not YAML)
         merged = _deep_merge(default_cfg, strategy_cfg)
-        merged = _deep_merge(merged, exchange_cfg)
 
         # Ensure strategy name is set
         if not merged.get("strategy", {}).get("name"):
@@ -196,23 +195,50 @@ class ConfigLoader:
                 return default
         return obj
 
+    # Provider name -> env var mapping for LLM API keys
+    _LLM_ENV_MAP = {
+        "anthropic":  "ANTHROPIC_API_KEY",
+        "google":     "GEMINI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "grok":       "GROK_API_KEY",
+    }
+
     def get_exchange_keys(self, provider: str) -> list:
         """
-        Get LLM API keys for a provider from exchange.yaml.
+        Get LLM API keys for a provider from environment variables.
+
+        Env var mapping:
+          ANTHROPIC_API_KEY -> anthropic
+          GEMINI_API_KEY -> google
+          OPENROUTER_API_KEY -> openrouter
+          GROK_API_KEY -> grok
 
         Returns list of dicts: [{"key": "...", "label": "..."}]
         """
-        llm_keys = self._config.get("llm_keys", {})
-        return llm_keys.get(provider, [])
+        env_var = self._LLM_ENV_MAP.get(provider, f"{provider.upper()}_API_KEY")
+        key_val = os.environ.get(env_var, "")
+        if key_val:
+            return [{"key": key_val, "label": f"{provider}-env-1"}]
+        return []
 
     def get_exchange_creds(self, exchange_name: str) -> dict:
         """
-        Get exchange API credentials from exchange.yaml.
+        Get exchange API credentials from environment variables.
 
-        Returns dict: {"api_key": "...", "secret_key": "...", ...}
+        Env var mapping:
+          BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE
+          BINANCE_API_KEY, BINANCE_SECRET_KEY
+          BYBIT_API_KEY, BYBIT_SECRET_KEY
+
+        Returns dict: {"api_key": "...", "secret_key": "...", "passphrase": "...", "sandbox": false}
         """
-        exchange_cfg = self._config.get("exchange", {})
-        return exchange_cfg.get(exchange_name, {})
+        prefix = exchange_name.upper()
+        return {
+            "api_key": os.environ.get(f"{prefix}_API_KEY", ""),
+            "secret_key": os.environ.get(f"{prefix}_SECRET_KEY", ""),
+            "passphrase": os.environ.get(f"{prefix}_PASSPHRASE", ""),
+            "sandbox": False,
+        }
 
     @property
     def strategy_description(self) -> str:
