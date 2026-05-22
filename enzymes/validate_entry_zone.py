@@ -142,7 +142,7 @@ class ValidateEntryZone(Enzyme):
         return ["analysis.candidates not empty"]
 
     def prohibits(self) -> list[str]:
-        return ["analysis.entry_zones not empty"]
+        return ["analysis.entry_zones_evaluated is True"]
 
     def can_activate(self, substrate: Substrate) -> bool:
         candidates = substrate.analysis.get("candidates", [])
