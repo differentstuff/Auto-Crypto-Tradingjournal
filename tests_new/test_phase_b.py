@@ -317,10 +317,10 @@ class TestEnzymeActivation:
         substrate.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 5}]
         assert enz.can_activate(substrate)
 
-    def test_validate_entry_zone_prohibits_existing_zones(self, substrate):
+    def test_validate_entry_zone_prohibits_already_evaluated(self, substrate):
         enz = create_enzyme("ValidateEntryZone")
         substrate.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 5}]
-        substrate.analysis["entry_zones"] = {"BTCUSDT": {}}
+        substrate.analysis["entry_zones_evaluated"] = True
         assert not enz.can_activate(substrate)
 
     def test_collect_macro_context_respects_module_flag(self, substrate):
