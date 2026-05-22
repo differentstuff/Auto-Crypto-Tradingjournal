@@ -78,8 +78,9 @@ class TestConfigLoader:
         # Default timeframe is 4H (from default.yaml)
         assert loader.get("strategy.timeframe") == "4H"
 
-    def test_exchange_keys(self, config_dir):
-        """ConfigLoader can retrieve LLM API keys."""
+    def test_exchange_keys(self, config_dir, monkeypatch):
+        """ConfigLoader can retrieve LLM API keys from environment variables."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test_key")
         loader = ConfigLoader(
             strategy_name="test_strategy",
             config_dir=str(config_dir),
