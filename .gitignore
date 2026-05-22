@@ -18,8 +18,7 @@ build/
 .mypy_cache/
 
 # Data files
-data/reports/*.txt
-data/reports/*.json
+data/
 
 # IDE
 .vscode/

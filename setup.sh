@@ -168,8 +168,8 @@ fi
 
 # ── Step 5: Create directories ─────────────────────────────────────────────────
 mkdir -p logs
-mkdir -p data/reports
-ok "Directories created: logs/, data/reports/"
+mkdir -p data
+ok "Directories created: logs/, data/"
 
 # ── Step 6: Smoke test ─────────────────────────────────────────────────────────
 info "Running smoke test..."
