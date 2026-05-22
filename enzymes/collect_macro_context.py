@@ -74,8 +74,8 @@ class CollectMacroContext(Enzyme):
         modules = substrate.cfg("modules", {})
         if not modules.get("macro_context", False):
             return False
-        macro = substrate.market.get("macro", {})
-        return not macro
+        macro_evaluated = substrate.analysis.get("macro_evaluated", False)
+        return not macro_evaluated
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Fetch macro context data."""
@@ -192,6 +192,7 @@ class CollectMacroContext(Enzyme):
             _log.warning("Economic calendar fetch failed: %s", e)
 
         substrate.market["macro"] = macro
+        substrate.analysis["macro_evaluated"] = True
 
         self._log.info(
             "Macro context: F&G=%s, regime=%s",
