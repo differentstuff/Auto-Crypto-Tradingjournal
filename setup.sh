@@ -153,14 +153,6 @@ else
     ok ".env created from .env.example"
 fi
 
-# config/exchange.yaml
-if [[ -f config/exchange.yaml ]]; then
-    ok "config/exchange.yaml already exists (not overwritten)"
-else
-    cp config/exchange.yaml.template config/exchange.yaml
-    ok "config/exchange.yaml created from template"
-fi
-
 # Strategy YAMLs — don't overwrite if they exist (they may have auto-generated UIDs)
 if [[ -f config/strategies/momentum_rising.yaml ]]; then
     ok "config/strategies/momentum_rising.yaml already exists (not overwritten)"
@@ -244,17 +236,15 @@ echo "════════════════════════�
 echo ""
 echo "  Next Steps:"
 echo ""
-echo "  1. Edit config/exchange.yaml — add your LLM API keys:"
-echo "     ${EDITOR:-nano} config/exchange.yaml"
+echo "  1. Edit .env — add your LLM API keys:"
+echo "     ${EDITOR:-nano} .env"
 echo ""
 echo "     Minimum: an OpenRouter key (free-tier models available):"
-echo "       llm_keys:"
-echo "         openrouter:"
-echo "           - key: \"sk-or-v1-YOUR-KEY\""
-echo "             label: \"openrouter-key-1\""
+echo "       OPENROUTER_API_KEY=sk-or-v1-YOUR-KEY"
 echo ""
-echo "  2. (Optional) Add exchange API keys for live data:"
-echo "     Edit the exchange: bitget: section in config/exchange.yaml"
+echo "  2. (Optional) Add exchange API keys for live trading:"
+echo "     BITGET_API_KEY=... BITGET_SECRET_KEY=... in .env"
+echo "     Paper mode needs NO exchange keys."
 echo ""
 echo "  3. Test in paper mode (minimal 1-symbol strategy):"
 echo "     source venv/bin/activate"
