@@ -3,7 +3,7 @@ description: "Minimal paper test: 1 symbol, 2 indicators, no modules, no dynamic
 strategy:
   name: paper_test
   uid: ""
-  timeframe: "4H"
+  timeframe: "4h"
   confirmation_tf: null      # skip 2nd timeframe → 1 API call instead of 2
   max_positions: 1
   cycle_interval_minutes: 15
