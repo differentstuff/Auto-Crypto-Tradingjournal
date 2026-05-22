@@ -113,8 +113,8 @@ class CollectPreTradeContext(Enzyme):
 
     def can_activate(self, substrate: Substrate) -> bool:
         candidates = substrate.analysis.get("candidates", [])
-        pre_trade = substrate.market.get("pre_trade_context", {})
-        return bool(candidates) and not pre_trade
+        pre_trade_evaluated = substrate.analysis.get("pre_trade_evaluated", False)
+        return bool(candidates) and not pre_trade_evaluated
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Compute pre-trade trajectory for each candidate."""
@@ -157,6 +157,7 @@ class CollectPreTradeContext(Enzyme):
             pre_trade_context[symbol] = trajectory
 
         substrate.market["pre_trade_context"] = pre_trade_context
+        substrate.analysis["pre_trade_evaluated"] = True
 
         self._log.info(
             "Pre-trade context: %d symbols analyzed",
