@@ -155,11 +155,15 @@ class Daemon:
         enzymes_fired = []
         isc_results = {}
         max_steps = self.config.get("daemon.max_cycle_steps", 20)
+        last_enzyme_name = None
+        consecutive_count = 0
+        fired_this_cycle = set()  # Prevent any enzyme from firing twice per cycle
 
         for step in range(max_steps):
-            # Find activatable enzymes
+            # Find activatable enzymes (excluding already-fired this cycle)
             activatable = [
-                e for e in self.enzymes if e.can_activate(self.substrate)
+                e for e in self.enzymes
+                if e.can_activate(self.substrate) and e.name not in fired_this_cycle
             ]
 
             if not activatable:
@@ -187,6 +191,25 @@ class Daemon:
 
                 best = max(activatable, key=lambda e: scores.get(e, 0))
 
+            # Consecutive-fire guard: if the same enzyme fires 3+ times
+            # in a row, it's likely stuck in a loop. Break with warning.
+            if best.name == last_enzyme_name:
+                consecutive_count += 1
+            else:
+                consecutive_count = 1
+                last_enzyme_name = best.name
+
+            if consecutive_count >= 3:
+                _log.warning(
+                    "Enzyme %s fired %d times consecutively -- "
+                    "likely loop, breaking cycle early",
+                    best.name, consecutive_count,
+                )
+                self.substrate.mark_idle(
+                    f"enzyme loop detected: {best.name} x{consecutive_count}"
+                )
+                break
+
             # Fire the selected enzyme
             _log.info(
                 "Step %d: firing %s (class=%s, priority=%d)",
@@ -197,6 +220,7 @@ class Daemon:
             )
             self.substrate = best.transform(self.substrate)
             enzymes_fired.append(best.name)
+            fired_this_cycle.add(best.name)
 
             # Verify ISC conditions after each step
             isc_results = self.substrate.verify_iscs()
