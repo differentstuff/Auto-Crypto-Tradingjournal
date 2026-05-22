@@ -5,6 +5,10 @@ any LLM call. Enforces a hard character budget so no single call can
 balloon indefinitely. Sections are added in priority order — when the
 budget is exhausted, lower-priority sections are dropped entirely.
 
+Also provides:
+  - load_prompt_file(): Load externalized prompt files for LLM roles
+  - format_enforcement_instruction(): Soft JSON enforcement for prompts
+
 Priority order (configurable via llm.prompt_priority_order):
   1. strategy_description  -- what this strategy does
   2. rulebook              -- personalised warnings/strengths from learning
@@ -23,9 +27,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Optional
 
 _log = logging.getLogger(__name__)
+
+# Resolve project root for relative prompt paths
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Default priority order (overridden by llm.prompt_priority_order in config)
 DEFAULT_PRIORITY_ORDER = [
@@ -204,3 +212,66 @@ def build_prompt(
         remaining -= len(section_text)
 
     return "\n\n".join(sections)
+
+
+# ---------------------------------------------------------------------------
+# External prompt loading
+# ---------------------------------------------------------------------------
+
+def load_prompt_file(role: str, prompts_config: dict) -> str:
+    """
+    Load an external prompt file for a given role.
+
+    Reads from llm.prompts.<role> in config to get the file path.
+    Returns empty string if file not found or not configured.
+
+    Args:
+        role:          LLM role name (e.g. "pre_filter", "analysis", "rulebook").
+        prompts_config: The llm.prompts dict from config (role → file path).
+
+    Returns:
+        Prompt file contents as string, or "" if not available.
+    """
+    prompt_path = prompts_config.get(role)
+    if not prompt_path:
+        return ""
+
+    # Resolve relative paths against project root
+    if not os.path.isabs(prompt_path):
+        prompt_path = os.path.join(_PROJECT_ROOT, prompt_path)
+
+    if not os.path.exists(prompt_path):
+        _log.debug("Prompt file not found for role '%s': %s", role, prompt_path)
+        return ""
+
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as exc:
+        _log.warning("Failed to load prompt for role '%s': %s", role, exc)
+        return ""
+
+
+def format_enforcement_instruction(response_format: Optional[str]) -> str:
+    """
+    Generate format enforcement instructions for the prompt.
+
+    This is the SOFT enforcement layer — works with all models.
+    The HARD enforcement layer (API-level) is handled by the client modules
+    (e.g. response_format: {"type": "json_object"} for OpenRouter/OpenAI,
+    responseMimeType: "application/json" for Gemini).
+
+    Args:
+        response_format: "json" for JSON enforcement, None/other for no instruction.
+
+    Returns:
+        Format enforcement string to append to system prompt, or "".
+    """
+    if response_format == "json":
+        return (
+            "\n\nRESPONSE FORMAT — STRICTLY REQUIRED:\n"
+            "You MUST respond with valid JSON only. No markdown fences. "
+            "No prose. No explanation outside the JSON structure. "
+            "Output a single valid JSON object or array."
+        )
+    return ""

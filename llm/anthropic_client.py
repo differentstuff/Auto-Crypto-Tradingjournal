@@ -5,7 +5,7 @@ No global state, no singleton, no cascade logic. The router owns
 the KeyManager and decides which provider to call.
 
 Contract:
-  send(key, prompt, system, max_tokens, model) -> str
+  send(key, prompt, system, max_tokens, model, **params) -> str
   Raises LLMClientError with .status_code on any HTTP error.
   The router catches these, calls km.report_error(), and tries fallback.
 
@@ -18,6 +18,16 @@ import logging
 from typing import Optional
 
 _log = logging.getLogger(__name__)
+
+# Effort → budget_tokens mapping for Anthropic extended thinking
+_EFFORT_TO_BUDGET = {
+    "none": 0,       # Disable thinking entirely
+    "minimal": 1024,
+    "low": 2048,
+    "medium": 4096,
+    "high": 8192,
+    "xhigh": 16384,
+}
 
 
 class LLMClientError(Exception):
@@ -34,16 +44,33 @@ def send(
     system: Optional[str] = None,
     max_tokens: int = 1024,
     model: str = "claude-sonnet-4-6",
+    reasoning: Optional[dict] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+    response_format: Optional[str] = None,
+    seed: Optional[int] = None,
+    transforms: Optional[list] = None,
+    provider_order: Optional[list] = None,
+    base_url: Optional[str] = None,
 ) -> str:
     """
     Make a single Anthropic chat-completion call.
 
     Args:
-        key:        API key (from KeyManager, not from env).
-        prompt:     User prompt text.
-        system:     Optional system prompt.
-        max_tokens: Maximum output tokens.
-        model:      Model identifier (e.g. "claude-sonnet-4-6").
+        key:            API key (from KeyManager, not from env).
+        prompt:         User prompt text.
+        system:         Optional system prompt.
+        max_tokens:     Maximum output tokens.
+        model:          Model identifier (e.g. "claude-sonnet-4-6").
+        reasoning:      Reasoning control dict, e.g. {"effort": "none"} or {"effort": "high"}.
+                        Maps to Anthropic's "thinking" parameter.
+        temperature:    Sampling temperature (0.0 = deterministic).
+        top_p:          Nucleus sampling parameter.
+        response_format: "json" for prompt enforcement (Anthropic has no native JSON mode).
+        seed:           Not supported by Anthropic API — ignored.
+        transforms:     Not applicable to Anthropic — ignored.
+        provider_order: Not applicable to Anthropic — ignored.
+        base_url:       Override base URL (from env, injected by config_loader).
 
     Returns:
         Response text string.
@@ -53,7 +80,10 @@ def send(
     """
     import anthropic
 
-    client = anthropic.Anthropic(api_key=key)
+    client_kwargs = {"api_key": key}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+    client = anthropic.Anthropic(**client_kwargs)
 
     kwargs: dict = {
         "model": model,
@@ -62,6 +92,26 @@ def send(
     }
     if system:
         kwargs["system"] = system
+
+    # Apply temperature and top_p
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    if top_p is not None:
+        kwargs["top_p"] = top_p
+
+    # Apply reasoning → thinking parameter
+    if reasoning:
+        effort = reasoning.get("effort", "medium")
+        budget = _EFFORT_TO_BUDGET.get(effort, 4096)
+        if budget > 0:
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            # Anthropic requires max_tokens > budget_tokens
+            if max_tokens <= budget:
+                kwargs["max_tokens"] = budget + max_tokens
+
+    # Note: Anthropic doesn't natively support response_format.
+    # JSON enforcement is handled by prompt instructions + response_parser validation.
+    # seed is not supported by Anthropic API.
 
     try:
         message = client.messages.create(**kwargs)

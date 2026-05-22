@@ -156,12 +156,10 @@ class UpdateRulebook(Enzyme):
             return None  # LLM module not available
 
         try:
-            prompt = (
-                f"Format the following trading rulebook into clear, concise prose. "
-                f"Keep all data points and percentages. Max 10 rules. "
-                f"Each rule should be one sentence.\n\n"
-                f"RAW RULEBOOK:\n{raw_rulebook}"
-            )
+            # The system prompt comes from config/prompts/rulebook.md
+            # (loaded automatically by the router from llm.prompts.rulebook).
+            # The user prompt is just the raw rulebook data.
+            prompt = f"RAW RULEBOOK:\n{raw_rulebook}"
             result = call_llm("rulebook", prompt)
             if result:
                 return result.strip()

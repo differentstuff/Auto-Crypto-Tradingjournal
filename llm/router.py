@@ -25,6 +25,7 @@ Fallback:
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -32,11 +33,13 @@ from llm.key_manager import KeyManager
 
 _log = logging.getLogger(__name__)
 
-# Provider → client module send function (lazy import to avoid circular deps)
-_PROVIDER_CLIENTS = {
+# Client module mapping: client type → module path
+# Used when llm.providers.<name>.client is not set in config.
+# The router resolves the client module from config first, then falls back here.
+_CLIENT_MODULE_MAP = {
+    "openrouter": "llm.openrouter_client",
     "anthropic": "llm.anthropic_client",
     "google": "llm.gemini_client",
-    "openrouter": "llm.openrouter_client",
 }
 
 
@@ -62,7 +65,13 @@ class LLMRouter:
         self._config = config.get("llm", {})
         self._routing = self._config.get("routing", {})
         self._budget_usd = self._config.get("cost_budget_daily_usd", 2.00)
-        self._max_tokens = self._config.get("max_tokens", {})
+        self._defaults = self._config.get("defaults", {})
+        self._providers = self._config.get("providers", {})
+        self._validation = self._config.get("validation", {})
+        self._prompts = self._config.get("prompts", {})
+
+        # Strategy UID for seed derivation (read from top-level config)
+        self._strategy_uid = config.get("strategy", {}).get("uid", "")
 
         # KeyManager for key rotation
         self._km = KeyManager(keys_config)
@@ -113,17 +122,24 @@ class LLMRouter:
             _log.warning("Unknown LLM role: '%s'. No routing configured.", role)
             return None
 
-        provider = role_cfg.get("provider", "")
-        model = role_cfg.get("model", "")
-        max_tokens = self._max_tokens.get(role, 1024)
+        # --- Resolve all parameters: role config overrides global defaults ---
+        params = self._resolve_params(role, role_cfg)
 
-        if not provider or not model:
-            _log.warning("Incomplete routing for role '%s': provider=%s model=%s", role, provider, model)
-            return None
+        # --- Load external system prompt if configured ---
+        external_system = self._load_prompt(role)
+        if external_system and not system:
+            system = external_system
+
+        # --- Inject format enforcement into system prompt ---
+        if params.get("response_format") == "json" and system:
+            from llm.prompt_builder import format_enforcement_instruction
+            system += format_enforcement_instruction("json")
 
         # --- Try primary provider ---
-        result = self._call_provider(role, prompt, system, provider, model, max_tokens)
+        result = self._call_provider(role, prompt, system, params)
         if result is not None:
+            # Validate response if JSON was expected
+            result = self._validate_response(result, role, prompt, system, params)
             return result
 
         # --- Try fallback ---
@@ -132,38 +148,229 @@ class LLMRouter:
             _log.info("No fallback configured for role '%s'. Returning None.", role)
             return None
 
-        fb_provider = fallback_cfg.get("provider", "")
-        fb_model = fallback_cfg.get("model", "")
+        fb_params = self._resolve_params("fallback", fallback_cfg)
+
+        fb_provider = fb_params.get("provider", "")
+        fb_model = fb_params.get("model", "")
 
         if not fb_provider or not fb_model:
             _log.info("Incomplete fallback config for role '%s'. Returning None.", role)
             return None
 
         # Don't try fallback if it's the same provider+model as primary
-        if fb_provider == provider and fb_model == model:
+        if fb_provider == params.get("provider") and fb_model == params.get("model"):
             _log.info("Fallback same as primary for role '%s'. Returning None.", role)
             return None
 
-        fb_max_tokens = self._max_tokens.get(role, 1024)
         _log.info("Trying fallback for role '%s': provider=%s model=%s", role, fb_provider, fb_model)
 
-        result = self._call_provider(role, prompt, system, fb_provider, fb_model, fb_max_tokens)
+        # Load fallback external prompt if configured
+        fb_system = system
+        fb_external = self._load_prompt("fallback")
+        if fb_external and not fb_system:
+            fb_system = fb_external
+
+        result = self._call_provider(role, prompt, fb_system, fb_params)
+        if result is not None:
+            result = self._validate_response(result, role, prompt, fb_system, fb_params)
         return result  # str or None — never raises
+
+    # -----------------------------------------------------------------------
+    # Parameter resolution
+    # -----------------------------------------------------------------------
+
+    def _resolve_params(self, role: str, role_cfg: dict) -> dict:
+        """Merge role config with global defaults, normalizing all LLM params."""
+        params = {
+            "provider": role_cfg.get("provider", ""),
+            "model": role_cfg.get("model", ""),
+            "max_tokens": role_cfg.get("max_tokens", self._defaults.get("max_tokens", 1024)),
+            "temperature": role_cfg.get("temperature", self._defaults.get("temperature", 0.3)),
+            "top_p": role_cfg.get("top_p", self._defaults.get("top_p", 1.0)),
+            "reasoning": self._normalize_reasoning(
+                role_cfg.get("reasoning", self._defaults.get("reasoning"))
+            ),
+            "response_format": self._resolve_response_format(
+                role_cfg.get("response_format", self._defaults.get("response_format"))
+            ),
+            "seed": self._resolve_seed(
+                role_cfg.get("seed", self._defaults.get("seed"))
+            ),
+            "transforms": self._resolve_list(
+                role_cfg.get("transforms", self._defaults.get("transforms", []))
+            ),
+            "provider_order": self._resolve_list(
+                role_cfg.get("provider_order", self._defaults.get("provider_order"))
+            ),
+            "timeout": role_cfg.get("timeout", self._defaults.get("timeout", 30)),
+            "cost_per_million_input": role_cfg.get("cost_per_million_input", 0.0),
+            "cost_per_million_output": role_cfg.get("cost_per_million_output", 0.0),
+        }
+        return params
+
+    @staticmethod
+    def _normalize_reasoning(reasoning) -> Optional[dict]:
+        """Convert reasoning config to provider-compatible dict format.
+
+        Accepts:
+          false/None  → None (use model default)
+          "none"      → {"effort": "none"}
+          "low"       → {"effort": "low"}
+          "medium"    → {"effort": "medium"}
+          "high"      → {"effort": "high"}
+          {"effort": "none", "exclude": true}  → pass through as-is
+        """
+        if reasoning is None or reasoning is False:
+            return None
+        if isinstance(reasoning, str):
+            return {"effort": reasoning}
+        if isinstance(reasoning, dict):
+            return reasoning
+        return None
+
+    @staticmethod
+    def _resolve_response_format(response_format) -> Optional[str]:
+        """Convert response_format config value.
+
+        Accepts:
+          false/None  → None (free text)
+          "json"      → "json"
+        """
+        if response_format is None or response_format is False:
+            return None
+        if isinstance(response_format, str):
+            return response_format
+        return None
+
+    def _resolve_seed(self, seed) -> Optional[int]:
+        """Convert seed config value to integer or None.
+
+        Accepts:
+          false/None  → None (non-deterministic)
+          true        → derive from strategy UID (hash % 2**32)
+          integer     → use as-is
+        """
+        if seed is None or seed is False:
+            return None
+        if seed is True:
+            # Derive deterministic seed from strategy UID
+            return hash(self._strategy_uid) % 2**32
+        if isinstance(seed, int):
+            return seed
+        return None
+
+    @staticmethod
+    def _resolve_list(value) -> Optional[list]:
+        """Convert list config value. false/None → None, list → list."""
+        if value is None or value is False:
+            return None
+        if isinstance(value, list) and len(value) > 0:
+            return value
+        return None
+
+    # -----------------------------------------------------------------------
+    # Prompt loading
+    # -----------------------------------------------------------------------
+
+    def _load_prompt(self, role: str) -> Optional[str]:
+        """Load external prompt file for a role, if configured.
+
+        Delegates to prompt_builder.load_prompt_file() for the actual file I/O.
+        """
+        prompt_path = self._prompts.get(role)
+        if not prompt_path:
+            return None
+
+        from llm.prompt_builder import load_prompt_file
+        return load_prompt_file(role, self._prompts) or None
+
+    # -----------------------------------------------------------------------
+    # Response validation
+    # -----------------------------------------------------------------------
+
+    def _validate_response(
+        self,
+        result: str,
+        role: str,
+        prompt: str,
+        system: Optional[str],
+        params: dict,
+    ) -> str:
+        """Validate response and optionally retry on failure.
+
+        For JSON roles: try extraction first (salvage markdown-wrapped JSON),
+        then retry with stronger prompt if validation is enabled.
+        Returns the (possibly extracted) result string, or the original on failure.
+        """
+        if params.get("response_format") != "json":
+            return result
+
+        from llm.response_parser import validate_json, extract_json, build_retry_prompt
+
+        # First pass: is it valid JSON already?
+        is_valid, _ = validate_json(result, role)
+        if is_valid:
+            return result
+
+        # Try extraction (strip markdown fences, extract embedded JSON)
+        extracted = extract_json(result)
+        if extracted:
+            _log.info("Extracted JSON from malformed response for role '%s'", role)
+            return extracted
+
+        # Validation failed — retry if enabled
+        validation_cfg = self._validation
+        if not validation_cfg.get("enabled", True):
+            _log.warning("JSON validation failed for role '%s', retry disabled. Returning raw.", role)
+            return result
+
+        max_retries = validation_cfg.get("max_retries", 1)
+        retry_stronger = validation_cfg.get("retry_with_stronger_prompt", True)
+
+        for attempt in range(max_retries):
+            _log.info("JSON validation retry %d/%d for role '%s'", attempt + 1, max_retries, role)
+
+            retry_prompt = prompt
+            retry_system = system
+
+            if retry_stronger:
+                retry_prompt, retry_system = build_retry_prompt(prompt, system, "json")
+
+            retry_result = self._call_provider(role, retry_prompt, retry_system, params)
+            if retry_result is not None:
+                # Validate the retry response
+                is_valid, _ = validate_json(retry_result, role)
+                if is_valid:
+                    return retry_result
+
+                # Try extraction on retry response too
+                extracted = extract_json(retry_result)
+                if extracted:
+                    _log.info("Extracted JSON from retry response for role '%s'", role)
+                    return extracted
+
+        _log.warning("JSON validation failed after %d retries for role '%s'. Returning raw.", max_retries, role)
+        return result
+
+    # -----------------------------------------------------------------------
+    # Provider dispatch
+    # -----------------------------------------------------------------------
 
     def _call_provider(
         self,
         role: str,
         prompt: str,
         system: Optional[str],
-        provider: str,
-        model: str,
-        max_tokens: int,
+        params: dict,
     ) -> Optional[str]:
         """
         Call a single provider. Returns str on success, None on failure.
         Never raises. Handles key lookup, client call, error reporting,
         cost tracking, and token logging.
         """
+        provider = params.get("provider", "")
+        model = params.get("model", "")
+
         # --- Get API key ---
         key = self._km.get_key(provider)
         if key is None:
@@ -173,10 +380,13 @@ class LLMRouter:
             )
             return None
 
-        # --- Resolve client module ---
-        module_name = _PROVIDER_CLIENTS.get(provider)
+        # --- Resolve client module from config ---
+        provider_cfg = self._providers.get(provider, {})
+        client_type = provider_cfg.get("client", provider)
+        module_name = _CLIENT_MODULE_MAP.get(client_type)
+
         if module_name is None:
-            _log.warning("Unknown provider: '%s'. No client module registered.", provider)
+            _log.warning("Unknown provider client: '%s'. No module registered.", client_type)
             return None
 
         try:
@@ -186,15 +396,55 @@ class LLMRouter:
             _log.error("Cannot import client module '%s': %s", module_name, exc)
             return None
 
+        # --- Build kwargs for client ---
+        send_kwargs = {
+            "key": key,
+            "prompt": prompt,
+            "system": system,
+            "max_tokens": params["max_tokens"],
+            "model": model,
+            "reasoning": params.get("reasoning"),
+            "temperature": params.get("temperature"),
+            "top_p": params.get("top_p"),
+            "response_format": params.get("response_format"),
+            "seed": params.get("seed"),
+            "transforms": params.get("transforms"),
+            "provider_order": params.get("provider_order"),
+        }
+
+        # Add base_url if configured for this provider
+        base_url = provider_cfg.get("base_url")
+        if base_url:
+            send_kwargs["base_url"] = base_url
+
+        # Add timeout if configured for this provider
+        timeout = provider_cfg.get("timeout") or params.get("timeout")
+        if timeout:
+            send_kwargs["timeout"] = timeout
+
         # --- Call the provider ---
         try:
-            result_text = client_mod.send(
-                key=key,
-                prompt=prompt,
-                system=system,
-                max_tokens=max_tokens,
-                model=model,
-            )
+            result_text = client_mod.send(**send_kwargs)
+        except TypeError as exc:
+            # Client may not accept all kwargs — try with core params only
+            _log.debug("Client %s doesn't accept all params, trying core params: %s", client_type, exc)
+            try:
+                core_kwargs = {
+                    "key": key,
+                    "prompt": prompt,
+                    "system": system,
+                    "max_tokens": params["max_tokens"],
+                    "model": model,
+                }
+                result_text = client_mod.send(**core_kwargs)
+            except Exception as inner_exc:
+                status_code = getattr(inner_exc, "status_code", 0)
+                self._km.report_error(provider, key, status_code=status_code)
+                _log.warning(
+                    "LLM call failed: role='%s' provider='%s' model='%s': %s",
+                    role, provider, model, inner_exc,
+                )
+                return None
         except Exception as exc:
             status_code = getattr(exc, "status_code", 0)
             self._km.report_error(provider, key, status_code=status_code)
@@ -208,9 +458,8 @@ class LLMRouter:
         self._km.report_success(provider, key)
 
         # --- Track cost ---
-        role_cfg = self._routing.get(role, {})
-        cost_input = role_cfg.get("cost_per_million_input", 0.0)
-        cost_output = role_cfg.get("cost_per_million_output", 0.0)
+        cost_input = params.get("cost_per_million_input", 0.0)
+        cost_output = params.get("cost_per_million_output", 0.0)
 
         est_input_tokens = len(prompt) / 4
         est_output_tokens = len(result_text) / 4 if result_text else 0
