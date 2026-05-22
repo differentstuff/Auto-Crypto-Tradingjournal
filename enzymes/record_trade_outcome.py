@@ -213,7 +213,16 @@ class RecordTradeOutcome(Enzyme):
         return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
-        """Low flux — recording is important but not time-critical."""
-        if self.can_activate(substrate):
-            return 0.5
-        return 0.0
+        """
+        Dynamic flux: high when a trade just happened (must record),
+        low otherwise.
+        """
+        if not self.can_activate(substrate):
+            return 0.0
+        action = substrate.decisions.get("action", "wait")
+        # Trade just opened or closed — record immediately
+        if action == "trade_open":
+            return 4.0
+        if action == "trade_closed":
+            return 4.0
+        return 0.5
