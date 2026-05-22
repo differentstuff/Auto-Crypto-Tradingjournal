@@ -122,6 +122,70 @@ class Daemon:
 
         _log.info("Substrate: %s", self.substrate)
 
+    # --- Attractor definitions ------------------------------------------------
+
+    ATTRACTORS = {
+        "watching": {
+            "description": "Default state: no signal, portfolio loaded, indicators fresh",
+            "terminal_actions": {"wait"},
+        },
+        "trade_opened": {
+            "description": "New position created, entry complete",
+            "terminal_actions": {"trade_open"},
+        },
+        "trade_managed": {
+            "description": "Position monitored, exit request evaluated",
+            "terminal_actions": {"manage"},
+        },
+        "trade_closed": {
+            "description": "Position closed, outcome recorded",
+            "terminal_actions": {"trade_closed"},
+        },
+        "learning_updated": {
+            "description": "Cycle complete, learning data recorded",
+            "terminal_actions": set(),  # Reached at end of cycle, not via action
+        },
+    }
+
+    def _at_attractor(self, substrate: Substrate) -> bool:
+        """
+        Check if the substrate has reached an attractor state.
+
+        An attractor is reached when the action matches a terminal state.
+        The 'watching' attractor is special — it's reached when the Wait
+        enzyme fires (action == 'wait').
+        """
+        action = substrate.decisions.get("action", "wait")
+        for attr_name, attr_def in self.ATTRACTORS.items():
+            if action in attr_def["terminal_actions"]:
+                return True
+        return False
+
+    def _find_wait_enzyme(self) -> Optional:
+        """Find the Wait enzyme from the registered enzymes list."""
+        for e in self.enzymes:
+            if e.name == "Wait":
+                return e
+        return None
+
+    def _fire_wait(self, reason: str) -> None:
+        """
+        Explicitly fire the Wait enzyme with an idle reason.
+
+        This is the daemon's fallback: when no other enzyme can activate
+        or all flux scores are <= 0, we fire Wait instead of duplicating
+        idle-cycle logic in the daemon.
+        """
+        wait = self._find_wait_enzyme()
+        if wait is not None:
+            wait.set_idle_reason(reason)
+            _log.info("Firing Wait enzyme (reason: %s)", reason)
+            self.substrate = wait.transform(self.substrate)
+        else:
+            # Fallback: no Wait enzyme registered (shouldn't happen in production)
+            _log.warning("Wait enzyme not found — using substrate.mark_idle() fallback")
+            self.substrate.mark_idle(reason)
+
     def run_cycle(self) -> Dict:
         """
         Run one cycle of the reaction network.
@@ -131,8 +195,9 @@ class Daemon:
         3. Find activatable enzymes
         4. Fire the best one (regulators first)
         5. Verify ISC conditions after each step
-        6. Persist state
-        7. Log cycle
+        6. Check attractor state after each step
+        7. Persist state
+        8. Log cycle
 
         Returns dict with cycle results.
         """
@@ -160,6 +225,10 @@ class Daemon:
         fired_this_cycle = set()  # Prevent any enzyme from firing twice per cycle
 
         for step in range(max_steps):
+            # Check if we've reached an attractor
+            if self._at_attractor(self.substrate):
+                break
+
             # Find activatable enzymes (excluding already-fired this cycle)
             activatable = [
                 e for e in self.enzymes
@@ -167,8 +236,9 @@ class Daemon:
             ]
 
             if not activatable:
-                # No enzyme can fire -- idle cycle
-                self.substrate.mark_idle("no enzyme can activate")
+                # No enzyme can fire -- fire Wait explicitly
+                self._fire_wait("no enzyme can activate")
+                enzymes_fired.append("Wait")
                 break
 
             # Regulators always have priority
@@ -185,8 +255,9 @@ class Daemon:
                 max_score = max(scores.values()) if scores else 0
 
                 if max_score <= 0:
-                    # No enzyme improves our position -- wait
-                    self.substrate.mark_idle("no enzyme improves position")
+                    # No enzyme improves our position -- fire Wait explicitly
+                    self._fire_wait("no enzyme improves position")
+                    enzymes_fired.append("Wait")
                     break
 
                 best = max(activatable, key=lambda e: scores.get(e, 0))
@@ -205,9 +276,10 @@ class Daemon:
                     "likely loop, breaking cycle early",
                     best.name, consecutive_count,
                 )
-                self.substrate.mark_idle(
+                self._fire_wait(
                     f"enzyme loop detected: {best.name} x{consecutive_count}"
                 )
+                enzymes_fired.append("Wait")
                 break
 
             # Fire the selected enzyme
@@ -225,15 +297,10 @@ class Daemon:
             # Verify ISC conditions after each step
             isc_results = self.substrate.verify_iscs()
 
-            # Check if we've reached a terminal state
-            action = self.substrate.decisions.get("action", "wait")
-            if action in ("enter", "exit", "manage", "halt_all"):
-                break
-
         # If no enzymes were registered yet (Phase A), just log
         if not self.enzymes:
             _log.info("No enzymes registered yet (skeleton mode)")
-            self.substrate.mark_idle("skeleton mode - no enzymes registered")
+            self._fire_wait("skeleton mode - no enzymes registered")
             isc_results = self.substrate.verify_iscs()
 
         # Persist substrate (using max_rows from config)
