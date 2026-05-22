@@ -2,7 +2,7 @@
 core/exchange.py -- Unified CCXT exchange wrapper.
 
 Provides a single interface for all exchange operations:
-  - OHLCV data fetching (public, no auth required for Binance)
+  - OHLCV data fetching (public, no auth required)
   - Account balance and position queries (authenticated)
   - Order placement and closing (authenticated, guarded in paper mode)
 
@@ -70,7 +70,7 @@ class Exchange:
         self._paper_mode: bool = config_loader.paper_mode
 
         # Lazy-initialized exchange instances
-        self._data_exchange = None  # For market data (Binance public)
+        self._data_exchange = None  # For market data (public, from data_source)
         self._trade_exchange = None  # For trading (Bitget/Bybit authenticated)
 
         _log.info(
@@ -97,7 +97,7 @@ class Exchange:
     # --- Data Exchange (public, no auth) ----------------------------------------
 
     def _get_data_exchange(self):
-        """Get or create the data source exchange (Binance public by default)."""
+        """Get or create the data source exchange (public, configurable via data_source)."""
         if self._data_exchange is None:
             import ccxt
             exchange_id = self._data_source
@@ -107,10 +107,8 @@ class Exchange:
                 exchange_class = ccxt.binance
                 exchange_id = "binance"
 
-            kwargs = {"enableRateLimit": True}
-            if exchange_id == "binance":
-                kwargs["options"] = {"defaultType": "future"}
-
+            kwargs = {"enableRateLimit": True, "options": {"defaultType": "future"}}
+                
             self._data_exchange = exchange_class(kwargs)
             _log.info("Data exchange created: %s (public)", exchange_id)
 
@@ -161,8 +159,8 @@ class Exchange:
         """
         Fetch OHLCV candle data and return as pandas DataFrame.
 
-        Uses the data_source exchange (Binance public by default).
-        No authentication required.
+        Uses the data_source exchange (public, from config).
+        No authentication required — OHLCV is a public endpoint on all exchanges.
 
         Args:
             symbol: Journal format symbol (e.g. "BTCUSDT")
@@ -214,10 +212,7 @@ class Exchange:
             if exchange_class is None:
                 return None
 
-            kwargs = {"enableRateLimit": True}
-            if fallback_id == "bybit":
-                kwargs["options"] = {"defaultType": "linear"}
-
+            kwargs = {"enableRateLimit": True, "options": {"defaultType": "future"}}
             exchange = exchange_class(kwargs)
             raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
             if not raw:
