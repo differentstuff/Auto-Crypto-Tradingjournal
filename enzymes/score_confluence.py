@@ -152,7 +152,8 @@ class ScoreConfluence(Enzyme):
     def can_activate(self, substrate: Substrate) -> bool:
         indicators = substrate.market.get("indicators", {})
         candidates = substrate.analysis.get("candidates", [])
-        return bool(indicators) and not candidates
+        confluence_scored = substrate.analysis.get("confluence_scored", False)
+        return bool(indicators) and not candidates and not confluence_scored
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Compute confluence scores for all symbols with indicator data."""
@@ -241,6 +242,7 @@ class ScoreConfluence(Enzyme):
         substrate.analysis["signal_states"] = {
             c["symbol"]: c["label"] for c in candidates
         }
+        substrate.analysis["confluence_scored"] = True
 
         self._log.info(
             "Scored confluence: %d candidates, top=%s",
