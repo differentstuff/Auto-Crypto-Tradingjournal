@@ -135,6 +135,15 @@ class SyncPositions(Enzyme):
         return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
-        if self.can_activate(substrate):
-            return 0.5  # Low priority — important but not urgent
-        return 0.0
+        """
+        Dynamic flux: high when positions exist but haven't been synced,
+        low when no positions or already synced this cycle.
+        """
+        if not self.can_activate(substrate):
+            return 0.0
+        # High urgency if we have open positions — need current mark prices
+        positions = substrate.portfolio.get("open_positions", [])
+        if positions:
+            return 3.0
+        # No positions — just equity check, lower priority
+        return 0.5
