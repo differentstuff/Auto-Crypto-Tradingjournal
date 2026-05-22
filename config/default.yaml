@@ -32,58 +32,9 @@ exchange:
   # Set to "live" to start trading
   mode: "paper"
 
-llm:
-  cost_budget_daily_usd: 2.00
-
-  # Routing: each role specifies provider + model independently.
-  # provider must match a key in exchange.yaml llm_keys section.
-  # Supported providers: "anthropic", "google", "openrouter"
-  #
-  # Role guide:
-  #   pre_filter  -- quick noise/quality check before scoring (fires every cycle)
-  #   analysis    -- deep pattern validation for ambiguous setups (fires rarely)
-  #   rulebook    -- format 10 rules from accuracy data (fires every 12h)
-  #   fallback    -- used when primary provider is overloaded or unavailable
-  #
-  # Cost strategy: use OpenRouter free-tier models for high-frequency roles
-  # (pre_filter, rulebook). Reserve Anthropic Sonnet for analysis only.
-  routing:
-    pre_filter:
-      provider: "openrouter"
-      model: "deepseek/deepseek-v4-flash"
-      cost_per_million_input: 0.14
-      cost_per_million_output: 0.28
-      # Sufficient for noise detection and quick signal checks.
-    analysis:
-      provider: "openrouter"
-      model: "z-ai/glm-5.1"
-      cost_per_million_input: 1.05
-      cost_per_million_output: 3.50
-      # Only fires on ambiguous setups. Worth the cost for accuracy.
-    rulebook:
-      provider: "openrouter"
-      model: "meta-llama/llama-3.3-70b-instruct:free"
-      cost_per_million_input: 0.00
-      cost_per_million_output: 0.00
-      # Formats 10 rules from structured data. No deep reasoning needed.
-    fallback:
-      provider: "openrouter"
-      model: "minimax/minimax-m2.7"
-      cost_per_million_input: 0.30
-      cost_per_million_output: 1.20
-      # Used when primary provider is overloaded or all keys
-      # are in cooldown. You can use OpenRouter free tier as safety net.
-
-  max_tokens:
-    analysis: 1024
-    rulebook: 512
-  max_context_chars: 4000
-  prompt_priority_order:
-    - "strategy_description"
-    - "rulebook"
-    - "signal_states"
-    - "pre_trade_context"
-    - "similar_trades"
+# LLM configuration has moved to config/llm.yaml
+# Merge order: default.yaml < llm.yaml < strategy.yaml
+# See config/llm.yaml for all LLM routing, parameters, and prompts.
 
 # Cache TTLs (seconds)
 cache:

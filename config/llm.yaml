@@ -1,0 +1,139 @@
+# config/llm.yaml -- LLM routing, parameters, and prompts
+# ──────────────────────────────────────────────────────
+# Merge order: default.yaml < llm.yaml < strategy.yaml
+# This file separates LLM concerns from system/strategy config.
+# Change models, costs, and parameters here — no code changes needed.
+
+llm:
+  # ── Daily cost budget ──────────────────────────────────────────────────
+  # Hard cap: LLM calls stop when daily spend reaches this amount.
+  # Resets at UTC midnight. Increase if you want more analysis capacity.
+  cost_budget_daily_usd: 2.00
+
+  # ── Global defaults ─────────────────────────────────────────────────────
+  # Any role can override these. Roles that don't specify a parameter
+  # inherit from here. This avoids repeating the same values.
+  defaults:
+    temperature: 0.3          # Balanced default; override per role
+    top_p: 1.0                # Full probability range (temperature controls diversity)
+    reasoning: false          # false = model default; "none"/"low"/"medium"/"high" = effort level
+    response_format: false    # false = free text; "json" = enforce JSON output
+    seed: false               # false = non-deterministic; true = derive from strategy UID
+    max_tokens: 1024          # Default output token limit
+    transforms: []            # OpenRouter transforms: ["strip_reasoning"]
+    provider_order: false     # false = model default; list = preferred providers
+    timeout: 30               # Seconds per request
+
+  # ── Provider endpoints ──────────────────────────────────────────────────
+  # The "client" field tells the router which SDK module to use.
+  # Base URLs come from .env (OPENROUTER_BASE_URL, ANTHROPIC_BASE_URL,
+  # GEMINI_BASE_URL) — they are system config, not LLM config.
+  providers:
+    openrouter:
+      client: "openrouter"      # Uses OpenAI SDK → llm/openrouter_client.py
+    anthropic:
+      client: "anthropic"       # Uses Anthropic SDK → llm/anthropic_client.py
+    google:
+      client: "google"          # Uses urllib → llm/gemini_client.py
+      timeout: 20               # Gemini can be slower
+
+  # ── Role routing ────────────────────────────────────────────────────────
+  # Each role specifies: provider, model, and per-call parameters.
+  # Parameters not listed here inherit from llm.defaults above.
+  #
+  # Design principle: "retry costs more than one-time-correct responses"
+  # → Deterministic settings for classification (temp=0, seed=true, json)
+  # → Creative settings for analysis (temp=0.4, reasoning=high)
+  # → JSON enforcement for structured output roles (pre_filter, rulebook)
+  routing:
+    pre_filter:
+      provider: "openrouter"
+      model: "deepseek/deepseek-v4-flash"
+      reasoning: "none"             # No thinking tokens — pure classification
+      temperature: 0.0              # Deterministic: same input = same output
+      top_p: 1.0                   # Full probability (temperature already controls)
+      response_format: "json"       # MUST return valid JSON
+      seed: true                    # Derive from strategy UID → reproducible per strategy
+      max_tokens: 512              # Short responses — just classification
+      transforms: ["strip_reasoning"]  # Strip any residual reasoning
+      provider_order: false         # Use OpenRouter default routing
+      cost_per_million_input: 0.14
+      cost_per_million_output: 0.28
+
+    analysis:
+      provider: "openrouter"
+      model: "z-ai/glm-5.1"
+      reasoning: "high"             # Deep reasoning for pattern validation
+      temperature: 0.4              # Slight creativity for pattern recognition
+      top_p: 0.95                  # Slight narrowing for focused analysis
+      response_format: false        # Free-form text — analysis needs flexibility
+      seed: false                   # Non-deterministic — variety in analysis
+      max_tokens: 1024
+      transforms: []
+      provider_order: false
+      cost_per_million_input: 1.05
+      cost_per_million_output: 3.50
+
+    rulebook:
+      provider: "openrouter"
+      model: "meta-llama/llama-3.3-70b-instruct:free"
+      reasoning: "none"             # Formatting task — no reasoning needed
+      temperature: 0.0              # Deterministic JSON formatting
+      top_p: 1.0
+      response_format: "json"       # MUST return valid JSON array
+      seed: true                    # Derive from strategy UID → reproducible per strategy
+      max_tokens: 512
+      transforms: ["strip_reasoning"]
+      provider_order: false
+      cost_per_million_input: 0.00
+      cost_per_million_output: 0.00
+
+    fallback:
+      provider: "openrouter"
+      model: "minimax/minimax-m2.7"
+      reasoning: "low"              # Minimal reasoning as safety net
+      temperature: 0.3
+      top_p: 1.0
+      response_format: false
+      seed: false
+      max_tokens: 1024
+      transforms: []
+      provider_order: false
+      cost_per_million_input: 0.30
+      cost_per_million_output: 1.20
+
+  # ── Prompt file paths ───────────────────────────────────────────────────
+  # Externalized prompts per role. Each file contains the system prompt
+  # and format instructions. The prompt_builder merges these with
+  # substrate context at runtime.
+  # If a file is missing or empty, the role uses no system prompt
+  # (the enzyme provides the full prompt via call_llm).
+  prompts:
+    pre_filter: "config/prompts/pre_filter.md"
+    analysis: "config/prompts/analysis.md"
+    rulebook: "config/prompts/rulebook.md"
+
+  # ── Response validation ─────────────────────────────────────────────────
+  # Automatic retry on malformed responses.
+  # "retry costs more than one-time-correct" — but a free retry is cheaper
+  # than a broken pipeline that needs manual intervention.
+  validation:
+    enabled: true
+    max_retries: 1                 # Retry once on malformed response
+    retry_with_stronger_prompt: true  # Add stronger format instructions on retry
+
+  # ── Context budget ──────────────────────────────────────────────────────
+  # Maximum characters for the assembled context block sent to LLM.
+  # Sections are added in priority order; when budget is exhausted,
+  # lower-priority sections are dropped entirely.
+  max_context_chars: 4000
+
+  # ── Prompt priority order ───────────────────────────────────────────────
+  # When assembling context, sections are added in this order.
+  # Lower-priority sections are dropped first when budget is tight.
+  prompt_priority_order:
+    - "strategy_description"
+    - "rulebook"
+    - "signal_states"
+    - "pre_trade_context"
+    - "similar_trades"

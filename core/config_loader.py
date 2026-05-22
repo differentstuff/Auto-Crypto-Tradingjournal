@@ -91,14 +91,22 @@ class ConfigLoader:
         default_path = os.path.join(self.config_dir, "default.yaml")
         default_cfg = _load_yaml(default_path)
 
-        # 2. Strategy config (override layer)
+        # 2. LLM config (second layer)
+        llm_path = os.path.join(self.config_dir, "llm.yaml")
+        llm_cfg = _load_yaml(llm_path)
+
+        # 3. Strategy config (override layer)
         strategy_path = os.path.join(
             self.config_dir, "strategies", f"{self.strategy_name}.yaml"
         )
         strategy_cfg = _load_yaml(strategy_path)
 
-        # Merge: default < strategy (secrets come from .env, not YAML)
-        merged = _deep_merge(default_cfg, strategy_cfg)
+        # Merge: default < llm < strategy (secrets come from .env, not YAML)
+        merged = _deep_merge(default_cfg, llm_cfg)
+        merged = _deep_merge(merged, strategy_cfg)
+
+        # Inject provider base_urls from environment variables
+        self._inject_provider_base_urls(merged)
 
         # Ensure strategy name is set
         if not merged.get("strategy", {}).get("name"):
@@ -202,6 +210,27 @@ class ConfigLoader:
         "openrouter": "OPENROUTER_API_KEY",
         "grok":       "GROK_API_KEY",
     }
+
+    # Provider name -> env var mapping for LLM base URLs
+    _LLM_BASE_URL_ENV_MAP = {
+        "openrouter": "OPENROUTER_BASE_URL",
+        "anthropic":  "ANTHROPIC_BASE_URL",
+        "google":     "GEMINI_BASE_URL",
+    }
+
+    def _inject_provider_base_urls(self, merged: dict) -> None:
+        """
+        Inject provider base_urls from environment variables into merged config.
+
+        Base URLs are system config (they never change between models for the
+        same provider), so they live in .env, not in YAML. This method reads
+        them from env and injects into llm.providers.<name>.base_url.
+        """
+        providers = merged.get("llm", {}).get("providers", {})
+        for provider_name, env_var in self._LLM_BASE_URL_ENV_MAP.items():
+            base_url = os.environ.get(env_var, "")
+            if base_url and provider_name in providers:
+                providers[provider_name]["base_url"] = base_url
 
     def get_exchange_keys(self, provider: str) -> list:
         """
