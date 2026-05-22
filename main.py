@@ -185,8 +185,10 @@ def main() -> None:
         daemon.register_enzyme(enz)
 
     # Phase B: Sensors and Evaluators
+    # CollectOHLCV needs the Exchange instance for OHLCV fetching
+    _register("CollectOHLCV", exchange=exchange)
+
     for name in [
-        "CollectOHLCV",
         "ScoreConfluence",
         "DetectNoise",
         "ValidateEntryZone",
