@@ -261,6 +261,15 @@ class Substrate:
             "noise_flag": False,
             "noise_reason": "",
             "signal_states": {},
+            # Evaluation markers: distinguish "not yet evaluated" from
+            # "evaluated and found nothing".  Without these, an empty list
+            # ([]) is indistinguishable from "never been set", causing
+            # enzymes to re-fire indefinitely in the daemon loop.
+            "confluence_scored": False,
+            "noise_evaluated": False,
+            "entry_zones_evaluated": False,
+            "pre_trade_evaluated": False,
+            "macro_evaluated": False,
         }
 
         # Decisions section (populated by Regulator enzymes)
@@ -533,6 +542,12 @@ class Substrate:
         self.analysis["noise_flag"] = False
         self.analysis["noise_reason"] = ""
         self.analysis["signal_states"] = {}
+        # Reset evaluation markers so enzymes can fire again
+        self.analysis["confluence_scored"] = False
+        self.analysis["noise_evaluated"] = False
+        self.analysis["entry_zones_evaluated"] = False
+        self.analysis["pre_trade_evaluated"] = False
+        self.analysis["macro_evaluated"] = False
         # Decisions section: clear for new decisions
         self.decisions["action"] = "wait"
         self.decisions["trade_approved"] = None
