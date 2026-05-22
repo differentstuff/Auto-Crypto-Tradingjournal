@@ -164,11 +164,9 @@ class DetectNoise(Enzyme):
 
     def can_activate(self, substrate: Substrate) -> bool:
         candidates = substrate.analysis.get("candidates", [])
+        noise_evaluated = substrate.analysis.get("noise_evaluated", False)
         # Activate if candidates exist and noise hasn't been evaluated yet
-        # noise_flag defaults to False, so we check if noise_reason is empty
-        # (which means we haven't run yet this cycle)
-        noise_reason = substrate.analysis.get("noise_reason", "")
-        return bool(candidates) and not noise_reason
+        return bool(candidates) and not noise_evaluated
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Evaluate noise conditions and set analysis.noise_flag."""
@@ -218,6 +216,7 @@ class DetectNoise(Enzyme):
 
         substrate.analysis["noise_flag"] = is_noisy
         substrate.analysis["noise_reason"] = "; ".join(noise_reasons) if noise_reasons else ""
+        substrate.analysis["noise_evaluated"] = True
 
         if is_noisy:
             self._log.info("Noise detected: %s", substrate.analysis["noise_reason"])
