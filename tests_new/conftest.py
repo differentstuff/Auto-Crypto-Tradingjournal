@@ -70,16 +70,4 @@ def config_dir(tmp_path):
     with open(strat_dir / "test_strategy.yaml", "w") as f:
         yaml.dump(strategy, f)
 
-    # exchange.yaml (minimal)
-    # Contains both exchange credentials AND llm_keys.
-    # The daemon strips these before passing config to the substrate.
-    exchange = {
-        "exchange": {"bitget": {"api_key": "test_exchange_key"}},
-        "llm_keys": {
-            "anthropic": [{"key": "test_key", "label": "anthropic-test"}],
-        },
-    }
-    with open(tmp_path / "exchange.yaml", "w") as f:
-        yaml.dump(exchange, f)
-
     return tmp_path
