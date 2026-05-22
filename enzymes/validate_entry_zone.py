@@ -146,8 +146,8 @@ class ValidateEntryZone(Enzyme):
 
     def can_activate(self, substrate: Substrate) -> bool:
         candidates = substrate.analysis.get("candidates", [])
-        entry_zones = substrate.analysis.get("entry_zones", {})
-        return bool(candidates) and not entry_zones
+        entry_zones_evaluated = substrate.analysis.get("entry_zones_evaluated", False)
+        return bool(candidates) and not entry_zones_evaluated
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Compute entry zones with SL/TP for each candidate."""
@@ -232,6 +232,7 @@ class ValidateEntryZone(Enzyme):
             }
 
         substrate.analysis["entry_zones"] = entry_zones
+        substrate.analysis["entry_zones_evaluated"] = True
 
         self._log.info(
             "Validated entry zones: %d symbols with valid zones",
