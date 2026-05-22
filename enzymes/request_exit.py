@@ -234,7 +234,56 @@ class RequestExit(Enzyme):
         return reversed_count
 
     def flux_score(self, substrate: Substrate) -> float:
-        """Medium flux — position monitoring is important but not urgent."""
-        if self.can_activate(substrate):
-            return 1.5
-        return 0.0
+        """
+        Dynamic flux based on exit urgency.
+
+        SL breach or trailing stop = critical (5.0)
+        TP hit = important (3.0)
+        Signal reversal = low priority (1.0)
+        No exit needed = 0.0
+        """
+        if not self.can_activate(substrate):
+            return 0.0
+
+        # Pre-scan positions for urgency signals
+        positions = substrate.portfolio.get("open_positions", [])
+        for pos in positions:
+            mark_price = pos.get("mark_price", 0)
+            sl_price = pos.get("sl_price", 0)
+            direction = pos.get("direction", "Long").lower()
+            trailing_active = pos.get("trailing_active", False)
+            trailing_sl = pos.get("trailing_sl")
+
+            # SL breach — critical
+            if sl_price and mark_price:
+                if direction == "long" and mark_price <= sl_price:
+                    return 5.0
+                if direction == "short" and mark_price >= sl_price:
+                    return 5.0
+
+            # Trailing stop hit — critical
+            if trailing_active and trailing_sl and mark_price:
+                if direction == "long" and mark_price <= trailing_sl:
+                    return 5.0
+                if direction == "short" and mark_price >= trailing_sl:
+                    return 5.0
+
+            # Near SL (within 0.5%) — high urgency
+            if sl_price and mark_price:
+                if direction == "long":
+                    dist_pct = (mark_price - sl_price) / mark_price * 100
+                else:
+                    dist_pct = (sl_price - mark_price) / mark_price * 100
+                if dist_pct < 0.5:
+                    return 4.0
+
+            # TP hit — important
+            tp1 = pos.get("tp1", 0)
+            if tp1 and mark_price:
+                if direction == "long" and mark_price >= tp1:
+                    return 3.0
+                if direction == "short" and mark_price <= tp1:
+                    return 3.0
+
+        # Default: position monitoring is important but not urgent
+        return 1.5
