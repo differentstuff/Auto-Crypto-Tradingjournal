@@ -163,10 +163,11 @@ class DetectNoise(Enzyme):
         return []
 
     def can_activate(self, substrate: Substrate) -> bool:
-        candidates = substrate.analysis.get("candidates", [])
+        indicators = substrate.market.get("indicators", {})
         noise_evaluated = substrate.analysis.get("noise_evaluated", False)
-        # Activate if candidates exist and noise hasn't been evaluated yet
-        return bool(candidates) and not noise_evaluated
+        # Activate when indicators exist and noise hasn't been evaluated yet.
+        # This fires BEFORE ScoreConfluence so we can skip scoring when noisy.
+        return bool(indicators) and not noise_evaluated
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Evaluate noise conditions and set analysis.noise_flag."""
