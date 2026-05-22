@@ -39,9 +39,18 @@ class CollectOHLCV(Enzyme):
     enzyme_class = EnzymeClass.SENSOR
     priority = 5
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: Optional[dict] = None, exchange=None):
+        """
+        Initialize CollectOHLCV.
+
+        Args:
+            config: Strategy config dict (same as all enzymes).
+            exchange: core.exchange.Exchange instance for OHLCV fetching.
+                      Injected from main.py — avoids creating duplicate
+                      ConfigLoader/Exchange instances.
+        """
         super().__init__(config=config)
-        self._exchange = None
+        self._exchange = exchange
 
     def requires(self) -> list[str]:
         return ["strategy.name is set"]
@@ -90,8 +99,13 @@ class CollectOHLCV(Enzyme):
             if weight > 0 or name in ("atr", "sr_levels"):
                 compute_configs.append(ind_cfg)
 
-        # Get exchange instance (lazy init)
+        # Exchange instance should be injected from main.py.
+        # If missing (e.g. tests), create one as fallback with a warning.
         if self._exchange is None:
+            self._log.warning(
+                "No Exchange instance injected — creating fallback. "
+                "This should be fixed by passing exchange= to the constructor."
+            )
             from core.config_loader import ConfigLoader
             config_loader = ConfigLoader(
                 strategy_name=substrate.strategy.get("name", "momentum_rising")
