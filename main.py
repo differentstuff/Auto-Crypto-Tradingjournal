@@ -20,10 +20,12 @@ import argparse
 import logging
 import os
 import sys
+from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
 
-# Add project root to Python path
+# Load .env into os.environ (secrets, API keys, config overrides)
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 sys.path.insert(0, PROJECT_ROOT)
 
 # v2 imports only — no legacy root files
@@ -138,12 +140,11 @@ def main() -> None:
 
     # ── Initialize LLM router ──────────────────────────────────────────────────
     # The router provides call_llm() to all enzymes via llm.call_llm().
-    # It reads provider/model routing from default.yaml and API keys from
-    # exchange.yaml (llm_keys section). Without keys, call_llm() returns None
-    # and enzymes fall back to rule-based logic — the system still runs.
+    # API keys come from .env (environment variables). Without keys, call_llm()
+    # returns None and enzymes fall back to rule-based logic — the system still runs.
     try:
         merged_config = daemon.config.config
-        keys_config = merged_config.get("llm_keys", {})
+        keys_config = _build_llm_keys_from_env()
         router = init_router(config=merged_config, keys_config=keys_config)
         log.info("LLM router initialized: %d roles configured", len(router._routing))
     except Exception as e:
@@ -226,6 +227,46 @@ def main() -> None:
         # Continuous daemon mode
         log.info("Starting daemon loop (Ctrl+C or SIGTERM to stop)...")
         daemon.run()
+
+
+def _build_llm_keys_from_env() -> dict:
+    """
+    Build LLM keys config from environment variables.
+    
+    Maps env vars to the KeyManager format:
+      ANTHROPIC_API_KEY -> llm_keys.anthropic
+      GEMINI_API_KEY    -> llm_keys.google
+      OPENROUTER_API_KEY -> llm_keys.openrouter
+      GROK_API_KEY      -> llm_keys.grok
+    
+    Multiple keys per provider are supported via numbered env vars:
+      OPENROUTER_API_KEY_2, OPENROUTER_API_KEY_3, etc.
+    """
+    # Provider name -> env var prefix mapping
+    # Note: GEMINI_API_KEY maps to "google" provider (Gemini is Google's AI)
+    provider_env_map = {
+        "anthropic":  "ANTHROPIC_API_KEY",
+        "google":     "GEMINI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "grok":       "GROK_API_KEY",
+    }
+    
+    keys_config = {}
+    for provider, env_prefix in provider_env_map.items():
+        keys = []
+        # Primary key
+        primary_key = os.environ.get(env_prefix, "")
+        if primary_key:
+            keys.append({"key": primary_key, "label": f"{provider}-env-1"})
+        # Additional keys: PROVIDER_API_KEY_2, PROVIDER_API_KEY_3, etc.
+        for i in range(2, 6):  # support up to 5 keys per provider
+            extra_key = os.environ.get(f"{env_prefix}_{i}", "")
+            if extra_key:
+                keys.append({"key": extra_key, "label": f"{provider}-env-{i}"})
+        if keys:
+            keys_config[provider] = keys
+    
+    return keys_config
 
 
 if __name__ == "__main__":
