@@ -1,7 +1,6 @@
 # Auto-Crypto-Tradingjournal
 
-# API keys and secrets -- NEVER commit
-config/exchange.yaml
+# API keys and secrets -- NEVER commit (secrets live in .env)
 *.db
 *.db-wal
 *.db-shm
