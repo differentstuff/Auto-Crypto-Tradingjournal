@@ -4,8 +4,8 @@
 
 description: |
   Enter long when momentum indicators start rising before price moves.
-  This happens at structural support levels on 4H candles.
-  Confirm with 1H price action before entry.
+  This happens at structural support levels on 4h candles.
+  Confirm with 1h price action before entry.
   Always set stop loss below the support level.
   Trail stops once price moves 0.5% in our direction.
   Never enter when the market is noisy or conflicting.
@@ -14,8 +14,8 @@ description: |
 strategy:
   name: momentum_rising
   uid: "e600dffb-8c47-4ac9-a32a-4a54becdcc45"   # Auto-generated on first load. Remove or clear to reset learning data.
-  timeframe: "4H"
-  confirmation_tf: "1H"
+  timeframe: "4h"
+  confirmation_tf: "1h"
   max_positions: 3
   cycle_interval_minutes: 15
   max_position_duration_hours: 12
