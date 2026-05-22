@@ -39,6 +39,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+import types
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch, call
@@ -672,17 +673,47 @@ class TestPromptBuilder:
 # 4. Anthropic client
 # ---------------------------------------------------------------------------
 
+class _MockAnthropicSDKError(Exception):
+    """Lightweight stand-in for anthropic SDK exception classes."""
+    def __init__(self, message="", response=None, body=None):
+        super().__init__(message)
+        self.status_code = getattr(response, "status_code", 0) if response else 0
+
+
+@pytest.fixture
+def mock_anthropic_sdk():
+    """
+    Inject a mock 'anthropic' module into sys.modules so that
+    patch("anthropic.Anthropic") and the SDK exception classes work
+    without the real anthropic package installed.
+    """
+    mock_mod = types.ModuleType("anthropic")
+    mock_mod.Anthropic = MagicMock
+    mock_mod.RateLimitError = type("RateLimitError", (_MockAnthropicSDKError,), {})
+    mock_mod.AuthenticationError = type("AuthenticationError", (_MockAnthropicSDKError,), {})
+    mock_mod.InternalServerError = type("InternalServerError", (_MockAnthropicSDKError,), {})
+    mock_mod.APIError = type("APIError", (_MockAnthropicSDKError,), {})
+
+    prev = sys.modules.get("anthropic")
+    sys.modules["anthropic"] = mock_mod
+    yield mock_mod
+    if prev is None:
+        sys.modules.pop("anthropic", None)
+    else:
+        sys.modules["anthropic"] = prev
+
+
 class TestAnthropicClient:
     """
     Tests for llm/anthropic_client.send().
 
     Contract:
       send(key, prompt, system, max_tokens, model) -> str
-      Raises an exception with .status_code attribute on HTTP errors.
+      Raises LLMClientError with .status_code on HTTP errors.
       The router uses .status_code to classify and call km.report_error().
     """
 
-    def test_send_returns_text_on_200(self):
+    def test_send_returns_text_on_200(self, mock_anthropic_sdk):
         """Mock 200 response → send() returns the text content."""
         from llm import anthropic_client
 
@@ -705,14 +736,13 @@ class TestAnthropicClient:
 
         assert result == "Analysis complete."
 
-    def test_raises_with_status_on_429(self):
-        """Mock 429 → send() raises exception with status_code=429."""
+    def test_raises_with_status_on_429(self, mock_anthropic_sdk):
+        """Mock 429 → send() raises LLMClientError with status_code=429."""
         from llm import anthropic_client
-        import anthropic as anthropic_sdk
 
         with patch("anthropic.Anthropic") as MockAnthropic:
             instance = MockAnthropic.return_value
-            err = anthropic_sdk.RateLimitError(
+            err = mock_anthropic_sdk.RateLimitError(
                 message="rate limited",
                 response=MagicMock(status_code=429),
                 body={},
@@ -729,14 +759,13 @@ class TestAnthropicClient:
 
         assert exc_info.value.status_code == 429
 
-    def test_raises_with_status_on_401(self):
-        """Mock 401 → send() raises exception with status_code=401."""
+    def test_raises_with_status_on_401(self, mock_anthropic_sdk):
+        """Mock 401 → send() raises LLMClientError with status_code=401."""
         from llm import anthropic_client
-        import anthropic as anthropic_sdk
 
         with patch("anthropic.Anthropic") as MockAnthropic:
             instance = MockAnthropic.return_value
-            err = anthropic_sdk.AuthenticationError(
+            err = mock_anthropic_sdk.AuthenticationError(
                 message="invalid key",
                 response=MagicMock(status_code=401),
                 body={},
@@ -753,14 +782,13 @@ class TestAnthropicClient:
 
         assert exc_info.value.status_code == 401
 
-    def test_raises_with_status_on_500(self):
-        """Mock 500 → send() raises exception with status_code=500."""
+    def test_raises_with_status_on_500(self, mock_anthropic_sdk):
+        """Mock 500 → send() raises LLMClientError with status_code=500."""
         from llm import anthropic_client
-        import anthropic as anthropic_sdk
 
         with patch("anthropic.Anthropic") as MockAnthropic:
             instance = MockAnthropic.return_value
-            err = anthropic_sdk.InternalServerError(
+            err = mock_anthropic_sdk.InternalServerError(
                 message="server error",
                 response=MagicMock(status_code=500),
                 body={},
@@ -777,7 +805,7 @@ class TestAnthropicClient:
 
         assert exc_info.value.status_code == 500
 
-    def test_send_without_system_prompt(self):
+    def test_send_without_system_prompt(self, mock_anthropic_sdk):
         """send() works when system=None (no system prompt)."""
         from llm import anthropic_client
 
@@ -950,6 +978,35 @@ class TestGeminiClient:
 # 6. OpenRouter client
 # ---------------------------------------------------------------------------
 
+class _MockOpenAISDKError(Exception):
+    """Lightweight stand-in for openai SDK exception classes."""
+    def __init__(self, message="", response=None, body=None):
+        super().__init__(message)
+        self.status_code = getattr(response, "status_code", 0) if response else 0
+
+
+@pytest.fixture
+def mock_openai_sdk():
+    """
+    Inject a mock 'openai' module into sys.modules so that
+    patch("openai.OpenAI") and the SDK exception classes work
+    without the real openai package installed.
+    """
+    mock_mod = types.ModuleType("openai")
+    mock_mod.OpenAI = MagicMock
+    mock_mod.RateLimitError = type("RateLimitError", (_MockOpenAISDKError,), {})
+    mock_mod.AuthenticationError = type("AuthenticationError", (_MockOpenAISDKError,), {})
+    mock_mod.APIError = type("APIError", (_MockOpenAISDKError,), {})
+
+    prev = sys.modules.get("openai")
+    sys.modules["openai"] = mock_mod
+    yield mock_mod
+    if prev is None:
+        sys.modules.pop("openai", None)
+    else:
+        sys.modules["openai"] = prev
+
+
 class TestOpenRouterClient:
     """
     Tests for llm/openrouter_client.send().
@@ -965,7 +1022,7 @@ class TestOpenRouterClient:
         mock.choices[0].message.content = text
         return mock
 
-    def test_send_returns_text_on_200(self):
+    def test_send_returns_text_on_200(self, mock_openai_sdk):
         """Mock successful response → send() returns the text."""
         from llm import openrouter_client
 
@@ -984,7 +1041,7 @@ class TestOpenRouterClient:
 
         assert result == "OpenRouter says: bearish divergence."
 
-    def test_sends_required_headers(self):
+    def test_sends_required_headers(self, mock_openai_sdk):
         """
         Every request must include HTTP-Referer and X-Title headers.
         OpenRouter uses these to identify the app for free-tier eligibility.
@@ -1015,14 +1072,13 @@ class TestOpenRouterClient:
             assert "HTTP-Referer" in headers, "HTTP-Referer header missing"
             assert "X-Title" in headers, "X-Title header missing"
 
-    def test_raises_with_status_on_429(self):
-        """Mock 429 → send() raises with status_code=429."""
+    def test_raises_with_status_on_429(self, mock_openai_sdk):
+        """Mock 429 → send() raises LLMClientError with status_code=429."""
         from llm import openrouter_client
-        import openai
 
         with patch("openai.OpenAI") as MockOpenAI:
             instance = MockOpenAI.return_value
-            err = openai.RateLimitError(
+            err = mock_openai_sdk.RateLimitError(
                 message="rate limited",
                 response=MagicMock(status_code=429),
                 body={},
@@ -1039,14 +1095,13 @@ class TestOpenRouterClient:
 
         assert exc_info.value.status_code == 429
 
-    def test_raises_with_status_on_401(self):
-        """Mock 401 → send() raises with status_code=401."""
+    def test_raises_with_status_on_401(self, mock_openai_sdk):
+        """Mock 401 → send() raises LLMClientError with status_code=401."""
         from llm import openrouter_client
-        import openai
 
         with patch("openai.OpenAI") as MockOpenAI:
             instance = MockOpenAI.return_value
-            err = openai.AuthenticationError(
+            err = mock_openai_sdk.AuthenticationError(
                 message="invalid key",
                 response=MagicMock(status_code=401),
                 body={},
