@@ -153,7 +153,11 @@ class ScoreConfluence(Enzyme):
         indicators = substrate.market.get("indicators", {})
         candidates = substrate.analysis.get("candidates", [])
         confluence_scored = substrate.analysis.get("confluence_scored", False)
-        return bool(indicators) and not candidates and not confluence_scored
+        noise_flag = substrate.analysis.get("noise_flag", False)
+        # Skip scoring when market is noisy — saves computation and avoids
+        # entering trades during kill zones, conflicting signals, etc.
+        # DetectNoise must run first (it sets noise_evaluated).
+        return bool(indicators) and not candidates and not confluence_scored and not noise_flag
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Compute confluence scores for all symbols with indicator data."""
@@ -352,7 +356,17 @@ class ScoreConfluence(Enzyme):
         return "Neutral"
 
     def flux_score(self, substrate: Substrate) -> float:
-        """High flux when indicators are available but not yet scored."""
-        if self.can_activate(substrate):
-            return 1.5
-        return 0.0
+        """
+        Dynamic flux: high when hunting for entries (no positions),
+        lower when positions are full.
+        """
+        if not self.can_activate(substrate):
+            return 0.0
+        # High priority when we have no open positions (hunting for entries)
+        positions = substrate.portfolio.get("open_positions", [])
+        max_positions = substrate.cfg("strategy.max_positions", 3)
+        if len(positions) >= max_positions:
+            return 0.5  # Positions full — scoring is informational only
+        if not positions:
+            return 2.5  # No positions — actively hunting for entries
+        return 1.5  # Some positions — moderate priority
