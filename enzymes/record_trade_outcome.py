@@ -37,7 +37,8 @@ def _now_iso() -> str:
 def _record_trade_entry(trade_approved: dict, strategy_name: str,
                         strategy_uid: str = "legacy",
                         signal_states: dict = None,
-                        trajectory_data: dict = None) -> None:
+                        trajectory_data: dict = None,
+                        indicator_data: dict = None) -> None:
     """
     Record a new trade entry in the trade_learning table.
 
@@ -50,28 +51,41 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
         strategy_uid: Stable strategy UID for learning data isolation.
         signal_states: Dict of {symbol: label} from substrate.analysis.signal_states.
         trajectory_data: Dict of trajectory info from substrate.market.pre_trade_context.
+        indicator_data: Dict of {symbol: {tf: {indicator: result}}} from substrate.market.indicators.
+        indicator_configs: List of indicator config dicts from strategy (for threshold extraction).
     """
     try:
         from core.database import db_conn
         import json as _json
 
-        # Build signals_at_entry_json from signal_states
-        # Format: {indicator_name: {"signal": "bullish"/"bearish"/"neutral", ...}}
+        # Build signals_at_entry_json from per-indicator signal data
+        # This provides the learning engine with precise, objective data about
+        # what each indicator was showing at trade entry time — not just a
+        # subjective label, but actual values and directional signals.
+        #
+        # Format: {rsi: {signal: "bullish", value: 65.3}, macd: {signal: "bullish", bias: "bullish_growing"}, ...}
+        # This is what the learning engine needs to determine which indicators
+        # were actually correct predictors of the trade outcome.
         signals_json = ""
-        if signal_states and trade_approved:
+        if trade_approved:
             symbol = trade_approved.get("symbol", "")
-            label = signal_states.get(symbol, "")
-            if label:
-                # Convert confluence label to directional signal
-                direction = "bullish" if "Bullish" in label or "bullish" in label else (
-                    "bearish" if "Bearish" in label or "bearish" in label else "neutral"
-                )
-                # Build a minimal signal dict from the confluence label
-                # The full indicator breakdown will be populated by UpdateLearning
-                # from the indicator_history at entry time
-                signals_json = _json.dumps({"confluence": {"signal": direction, "label": label}})
+            timeframe = trade_approved.get("timeframe", "")
+            # Extract per-indicator signals from current market data
+            # indicator_data is substrate.market.indicators — the full indicator dict
+            indicator_signals = _extract_indicator_signals(
+                indicator_data if indicator_data else {},
+                symbol, timeframe,
+            )
+            # Also include the confluence label for backward compatibility
+            if signal_states and symbol:
+                label = signal_states.get(symbol, "")
+                if label:
+                    indicator_signals["_confluence_label"] = label
+            if indicator_signals:
+                signals_json = _json.dumps(indicator_signals)
 
-        # Extract trajectory data
+        # Extract trajectory data from pre_trade_context
+        # This provides the learning engine with trajectory pattern and coincidence risk
         trajectory_pattern = ""
         coincidence_risk = ""
         if trajectory_data and trade_approved:
