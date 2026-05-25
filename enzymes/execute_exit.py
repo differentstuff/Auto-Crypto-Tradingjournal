@@ -115,6 +115,7 @@ class ExecuteExit(Enzyme):
         return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
+        """Dynamic flux: high when exit is approved — close position promptly."""
         if self.can_activate(substrate):
             return 5.0
         return 0.0
