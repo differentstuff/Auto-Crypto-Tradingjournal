@@ -86,7 +86,7 @@ substrate:
     total_idle_cycles_recorded: 0 # total cycles where no trade was made
     last_retrain_at: ""           # timestamp of last learning engine retrain
 
-  # WHAT MUST BE TRUE: ISC (hard-to-vary conditions)
+  # WHAT MUST BE TRUE: ISC (Ideal State Criteria)
   #
   # Each condition is config-driven: field + operator + value_ref.
   # The evaluator in substrate.py reads these fields -- no ISC IDs are

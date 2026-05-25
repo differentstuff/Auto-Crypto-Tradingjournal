@@ -14,7 +14,7 @@ Replace the current linear 7-agent pipeline with a **Reaction Network** of enzym
 
 - **Enzymes, not agents**: Each skill has strict activation conditions, deterministic output, and self-improving instructions
 - **Substrate, not contracts**: Single shared state container that all enzymes read/write
-- **Attractors, not endpoints**: Goal states with hard-to-vary conditions (ISC)
+- **Attractors, not endpoints**: Goal states defined by Ideal State Criteria (ISC), which should be hard-to-vary
 - **Gradient, not pipeline**: System fires whichever enzyme moves us closest to the attractor
 - **Wait is default**: No strong signal = no action. The market owes us nothing.
 - **RiskManager is master**: Only regulator can approve/kill trades. All other enzymes request, never execute.
@@ -102,7 +102,7 @@ def run_cycle(substrate, enzymes, attractors, isc_table):
 
         substrate = best.transform(substrate)
 
-        # Verify ISC entries (hard-to-vary conditions)
+        # Verify ISC entries (Ideal State Criteria (ISC), which should be hard-to-vary)
         for isc in isc_table:
             if isc.can_verify(substrate):
                 isc.verify(substrate)
