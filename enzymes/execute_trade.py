@@ -148,7 +148,7 @@ class ExecuteTrade(Enzyme):
         return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
-        """High flux when trade is approved — execute promptly."""
+        """Dynamic flux: high when trade is approved — execute promptly."""
         if self.can_activate(substrate):
             return 5.0
         return 0.0
