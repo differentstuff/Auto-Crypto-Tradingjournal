@@ -109,7 +109,7 @@ class Exchange:
 
             kwargs = {"enableRateLimit": True, "options": {"defaultType": "future"}}
                 
-            self._data_exchange = exchange_class(kwargs)
+            self._data_exchange = exchange_class(**kwargs)
             _log.info("Data exchange created: %s (public)", exchange_id)
 
         return self._data_exchange
@@ -143,7 +143,7 @@ class Exchange:
             if sandbox:
                 kwargs["options"] = {"sandboxMode": True}
 
-            self._trade_exchange = exchange_class(kwargs)
+            self._trade_exchange = exchange_class(**kwargs)
             _log.info("Trade exchange created: %s (auth=%s)", exchange_id, bool(creds.get("api_key")))
 
         return self._trade_exchange
@@ -213,7 +213,7 @@ class Exchange:
                 return None
 
             kwargs = {"enableRateLimit": True, "options": {"defaultType": "future"}}
-            exchange = exchange_class(kwargs)
+            exchange = exchange_class(**kwargs)
             raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
             if not raw:
                 return None
@@ -594,6 +594,36 @@ class Exchange:
             return None
 
     # --- Utility ---------------------------------------------------------------
+
+    def fetch_ticker(self, symbol: str) -> Optional[dict]:
+        """
+        Fetch current ticker price for a symbol.
+
+        Uses the data_source exchange (public, no auth required).
+        Returns dict with: symbol, last, bid, ask, timestamp.
+        Returns None on error.
+
+        Args:
+            symbol: Journal format symbol (e.g. "BTCUSDT")
+        """
+        ccxt_symbol = _to_ccxt_symbol(symbol)
+        exchange = self._get_data_exchange()
+
+        try:
+            ticker = exchange.fetch_ticker(ccxt_symbol)
+            if ticker and ticker.get("last"):
+                return {
+                    "symbol": symbol,
+                    "last": float(ticker["last"]),
+                    "bid": float(ticker.get("bid", ticker["last"])),
+                    "ask": float(ticker.get("ask", ticker["last"])),
+                    "timestamp": ticker.get("timestamp", 0),
+                }
+            _log.warning("No ticker data returned for %s", symbol)
+            return None
+        except Exception as e:
+            _log.error("fetch_ticker failed for %s: %s", symbol, e)
+            return None
 
     def test_connection(self) -> dict:
         """
