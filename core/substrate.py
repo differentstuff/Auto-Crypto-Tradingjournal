@@ -544,10 +544,11 @@ class Substrate:
         self.market["last_scan_at"] = ""
         self.market["macro"] = {}
         self.market["pre_trade_context"] = {}
-        # NOTE: indicator_history and last_prices are NOT cleared here.
-        # They accumulate across cycles and survive reset_cycle().
+        # NOTE: indicator_history is NOT cleared here.
+        # It accumulates across cycles and survives reset_cycle().
         # indicator_history is trimmed by CollectOHLCV to the configured max length.
-        # After restart, they start empty and rebuild over the first N cycles.
+        # After restart, _bootstrap_indicator_history() computes history from
+        # OHLCV data so trades are not blocked by ISC-007.
         # Analysis section: clear for re-evaluation
         self.analysis["candidates"] = []
         self.analysis["entry_zones"] = {}
