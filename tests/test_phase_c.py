@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -162,12 +163,17 @@ def _make_open_position(
     mark_price: float = 50500.0,
     size_usdt: float = 500.0,
     atr_value: float = 800.0,
-    opened_at: str = "2026-05-20T10:00:00+00:00",
+    opened_at: str | None = None,
 ) -> dict:
     """
     A position dict as stored on substrate.portfolio.open_positions.
     Trailing stop state fields are always present (even if not yet active).
+
+    By default, opened_at is 1 hour ago so max_hold_hours never triggers
+    in tests that aren't specifically testing max hold duration.
     """
+    if opened_at is None:
+        opened_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     return {
         "symbol": symbol,
         "direction": direction,
@@ -489,7 +495,6 @@ class TestApproveExit:
         enzyme = self._get_enzyme()
         sub = _make_substrate()
         # Position opened 80 hours ago (> 72h max_hold_hours)
-        from datetime import datetime, timezone, timedelta
         old_time = (datetime.now(timezone.utc) - timedelta(hours=80)).isoformat()
         pos = _make_open_position(opened_at=old_time)
         sub.portfolio["open_positions"] = [pos]
@@ -555,11 +560,11 @@ class TestApproveExit:
         pos["peak_price"] = 51000.0
 
         if hasattr(enzyme, "_update_trailing_stop"):
-            enzyme._update_trailing_stop(pos, sub.config)
-            assert pos["trailing_active"] is True
+            result = enzyme._update_trailing_stop(pos, sub.config)
+            assert result["trailing_active"] is True
             # When breakeven_at_activation=True, trailing_sl should be >= entry_price
-            assert pos["trailing_sl"] is not None
-            assert pos["trailing_sl"] >= pos["entry_price"]
+            assert result["trailing_sl"] is not None
+            assert result["trailing_sl"] >= result["entry_price"]
 
     def test_trailing_stop_state_on_position_dict(self):
         """Trailing stop state (trailing_active, trailing_sl, peak_price) lives on position dict."""
@@ -579,9 +584,9 @@ class TestApproveExit:
         pos["peak_price"] = 51000.0   # previous peak
 
         if hasattr(enzyme, "_update_trailing_stop"):
-            enzyme._update_trailing_stop(pos, sub.config)
+            result = enzyme._update_trailing_stop(pos, sub.config)
             # peak_price should have moved up to 51500
-            assert pos["peak_price"] >= 51500.0
+            assert result["peak_price"] >= 51500.0
 
     def test_trailing_stop_triggers_exit_on_retrace(self):
         """Trailing stop triggers an exit request when price retraces below trailing_sl."""
