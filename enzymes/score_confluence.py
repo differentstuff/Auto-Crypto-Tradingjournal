@@ -177,23 +177,31 @@ class ScoreConfluence(Enzyme):
             weight = ind_cfg.get("weight", 0)
             weight_map[name] = weight
 
-        # Apply learning-adjusted weights (contrarian negatives, suppress→0, boost)
-        # This closes the learning loop: the learning engine computes adjusted
-        # weights from signal accuracy data, and ScoreConfluence uses them.
+        # Apply learning-adjusted weights.
+        # First check substrate.learning["adjusted_weights"] — written by UpdateLearning.
+        # If present and non-empty, use it directly (no re-computation needed).
+        # Only fall back to compute_adjusted_weights() if not yet available.
         strategy_name = substrate.strategy.get("name", "")
         strategy_uid = substrate.strategy.get("uid", "legacy")
-        try:
-            from learning.weight_adjuster import compute_adjusted_weights
-            adjusted = compute_adjusted_weights(
-                weight_map, strategy_name, strategy_uid=strategy_uid,
-            )
-            if adjusted != weight_map:
-                changed = [k for k in adjusted if adjusted.get(k) != weight_map.get(k)]
-                self._log.info("Applied %d adjusted weights from learning engine: %s",
-                               len(changed), changed)
-                weight_map = adjusted
-        except Exception as e:
-            self._log.warning("Could not apply adjusted weights: %s", e)
+        adjusted = substrate.learning.get("adjusted_weights", {})
+        if adjusted and isinstance(adjusted, dict) and any(v != 0 for v in adjusted.values()):
+            # Use pre-computed adjusted weights from UpdateLearning
+            weight_map = adjusted
+            self._log.debug("Using pre-computed adjusted weights from substrate.learning")
+        else:
+            # Fallback: compute on the fly (first few cycles before UpdateLearning has run)
+            try:
+                from learning.weight_adjuster import compute_adjusted_weights
+                adjusted = compute_adjusted_weights(
+                    weight_map, strategy_name, strategy_uid=strategy_uid,
+                )
+                if adjusted != weight_map:
+                    changed = [k for k in adjusted if adjusted.get(k) != weight_map.get(k)]
+                    self._log.info("Computed %d adjusted weights from learning engine: %s",
+                                   len(changed), changed)
+                    weight_map = adjusted
+            except Exception as e:
+                self._log.warning("Could not compute adjusted weights: %s", e)
 
         candidates = []
         for symbol, sym_data in indicators.items():
