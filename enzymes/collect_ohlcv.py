@@ -6,7 +6,10 @@ indicators (from config), and writes results to substrate.market.indicators.
 
 Also maintains:
   - indicator_history: rolling window of indicator snapshots for trajectory analysis
-  - last_prices: last close price per symbol for lightweight price updates
+
+On cold start (empty indicator_history), bootstraps history from the last N
+bars of OHLCV data so that CollectPreTradeContext has real trajectory data
+immediately, avoiding the 12-cycle warmup delay.
 
 Enzyme class: Sensor
 Activates when: market.indicators is empty or stale
@@ -40,7 +43,6 @@ class CollectOHLCV(Enzyme):
 
     Also maintains:
         substrate.market.indicator_history: rolling window of snapshots
-        substrate.market.last_prices: {symbol: float} for price updates
     """
 
     name = "CollectOHLCV"
@@ -122,11 +124,9 @@ class CollectOHLCV(Enzyme):
 
         # Fetch and compute for each symbol
         all_indicators = {}
-        last_prices = substrate.market.get("last_prices", {})
 
         for symbol in symbols:
             sym_indicators = {}
-            symbol_last_close = None
 
             for tf in timeframes:
                 df = self._exchange.fetch_ohlcv(symbol, timeframe=tf, limit=200)
@@ -136,13 +136,6 @@ class CollectOHLCV(Enzyme):
                         symbol, tf, len(df) if df is not None else 0,
                     )
                     continue
-
-                # Store last close price from primary timeframe
-                if tf == timeframe and len(df) > 0:
-                    try:
-                        symbol_last_close = float(df.iloc[-1]["close"])
-                    except (IndexError, KeyError, TypeError):
-                        pass
 
                 tf_indicators = {"ok": True, "candles_used": len(df)}
                 for ind_cfg in compute_configs:
@@ -162,14 +155,10 @@ class CollectOHLCV(Enzyme):
 
             if sym_indicators:
                 all_indicators[symbol] = sym_indicators
-                # Store last close price for this symbol
-                if symbol_last_close is not None:
-                    last_prices[symbol] = symbol_last_close
 
         # Write to substrate
         substrate.market["indicators"] = all_indicators
         substrate.market["last_scan_at"] = substrate._now_iso()
-        substrate.market["last_prices"] = last_prices
 
         # --- Indicator history (rolling window) ---
         # Append current indicator snapshot to the history for each symbol.
@@ -183,6 +172,17 @@ class CollectOHLCV(Enzyme):
         # intentional: no trades until sufficient trajectory data exists.
         lookback = substrate.cfg("learning.trajectory_lookback_bars", 12)
         history = substrate.market.get("indicator_history", {})
+
+        # Cold start bootstrap: if indicator_history is empty, compute
+        # historical snapshots from the OHLCV data we just fetched.
+        # This eliminates the 12-cycle warmup delay after restart.
+        cold_start = not history
+        if cold_start:
+            self._bootstrap_indicator_history(
+                substrate, symbols, timeframes, compute_configs, lookback
+            )
+            # Re-read history after bootstrap
+            history = substrate.market.get("indicator_history", {})
 
         for symbol, sym_data in all_indicators.items():
             # Build a snapshot with directional signals for trajectory classification
@@ -213,11 +213,111 @@ class CollectOHLCV(Enzyme):
         n_symbols = len(all_indicators)
         n_indicators = len(compute_configs)
         self._log.info(
-            "Collected OHLCV: %d symbols, %d indicators, timeframes=%s",
+            "Collected OHLCV: %d symbols, %d indicators, timeframes=%s%s",
             n_symbols, n_indicators, timeframes,
+            " (cold start bootstrap)" if cold_start else "",
         )
 
         return substrate
+
+    def _bootstrap_indicator_history(
+        self,
+        substrate: Substrate,
+        symbols: list,
+        timeframes: list,
+        compute_configs: list,
+        lookback: int,
+    ) -> None:
+        """
+        Bootstrap indicator history from historical OHLCV data on cold start.
+
+        When indicator_history is empty (first startup after restart), this method
+        computes indicators for the last N bars using the same OHLCV data we already
+        fetched. This eliminates the warmup delay where trades would be blocked by
+        ISC-007 due to insufficient trajectory data.
+
+        This is safe because:
+        - We use the same real OHLCV data (no imaginary values)
+        - We compute the same indicators with the same config
+        - The only difference is we compute them for historical bars, not just the latest
+
+        The bootstrap runs once, on the first cycle after restart when
+        indicator_history is empty. Subsequent cycles only append the current snapshot.
+        """
+        from indicators.registry import compute_indicator
+        import pandas as pd
+
+        history = substrate.market.get("indicator_history", {})
+        timeframe = substrate.strategy.get("timeframe", "4H")
+        # Use more bars for bootstrap to get enough historical data
+        bootstrap_bars = substrate.cfg("learning.trajectory_bootstrap_bars", 48)
+
+        self._log.info(
+            "Cold start: bootstrapping indicator history with %d bars per symbol",
+            bootstrap_bars,
+        )
+
+        for symbol in symbols:
+            # Fetch extended historical data for bootstrap
+            df = self._exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=200)
+            if df is None or df.empty or len(df) < bootstrap_bars:
+                self._log.warning(
+                    "Insufficient data for bootstrap of %s (%d bars needed, %d available)",
+                    symbol, bootstrap_bars, len(df) if df is not None else 0,
+                )
+                continue
+
+            # Compute indicators at evenly-spaced historical points
+            # We divide the available data into `lookback` evenly-spaced slices
+            # and compute indicators for each slice's endpoint bar.
+            # This gives us a representative trajectory without computing
+            # indicators for all 200 bars (which would be slow).
+            step = max(1, (len(df) - bootstrap_bars) // lookback)
+            start_idx = len(df) - bootstrap_bars
+
+            symbol_history = []
+            for i in range(lookback):
+                idx = start_idx + i * step
+                if idx >= len(df):
+                    idx = len(df) - 1
+
+                # Slice the DataFrame up to this point
+                slice_df = df.iloc[:idx + 1]
+
+                # Skip if not enough bars for indicator computation
+                if len(slice_df) < 30:
+                    continue
+
+                # Compute indicators for this historical slice
+                tf_indicators = {"ok": True, "candles_used": len(slice_df)}
+                for ind_cfg in compute_configs:
+                    ind_name = ind_cfg.get("name", "")
+                    ind_params = ind_cfg.get("params", {})
+                    try:
+                        result = compute_indicator(ind_name, slice_df, **ind_params)
+                        if result is not None:
+                            tf_indicators[ind_name] = result
+                    except Exception:
+                        pass  # Skip failed indicators in bootstrap
+
+                if not tf_indicators.get("ok"):
+                    continue
+
+                snapshot = {
+                    "timestamp": slice_df.index[-1].isoformat() if hasattr(slice_df.index[-1], 'isoformat') else str(slice_df.index[-1]),
+                    "indicators": tf_indicators,
+                    "signal": self._compute_signal_direction(tf_indicators),
+                }
+                symbol_history.append(snapshot)
+
+            if symbol_history:
+                history[symbol] = symbol_history
+                self._log.info(
+                    "Bootstrapped %d history entries for %s",
+                    len(symbol_history), symbol,
+                )
+
+        substrate.market["indicator_history"] = history
 
     @staticmethod
     def _compute_signal_direction(tf_inds: dict) -> str:
