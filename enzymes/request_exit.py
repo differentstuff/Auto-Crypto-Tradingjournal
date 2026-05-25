@@ -57,8 +57,15 @@ class RequestExit(Enzyme):
     def can_activate(self, substrate: Substrate) -> bool:
         open_positions = substrate.portfolio.get("open_positions", [])
         exit_request = substrate.decisions.get("exit_request")
-        # Activate when positions exist and no exit request pending
-        return bool(open_positions) and exit_request is None
+        if not open_positions or exit_request is not None:
+            return False
+        # Require mark_price > 0 for all positions — we cannot evaluate
+        # exit conditions on stale prices. UpdateMarkPrices should have
+        # run before this enzyme to provide current prices.
+        for pos in open_positions:
+            if not pos.get("mark_price", 0):
+                return False
+        return True
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Scan open positions and request exit if conditions are met."""
