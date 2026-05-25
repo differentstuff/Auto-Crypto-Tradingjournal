@@ -172,6 +172,11 @@ class UpdateRulebook(Enzyme):
 
     def flux_score(self, substrate: Substrate) -> float:
         """Low flux — rulebook generation is important but infrequent."""
-        if self.can_activate(substrate):
-            return 1.0
-        return 0.0
+        if not self.can_activate(substrate):
+            return 0.0
+        # Higher urgency when many trades have been recorded since last update
+        total_trades = substrate.learning.get("total_trades_recorded", 0)
+        min_trades = self._min_trades
+        if total_trades >= min_trades * 2:
+            return 1.5  # Significant new data — regenerate rulebook
+        return 1.0
