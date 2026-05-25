@@ -29,31 +29,75 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
+def _now_iso() -> str:
+    """Return current UTC time in ISO format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _record_trade_entry(trade_approved: dict, strategy_name: str,
-                        strategy_uid: str = "legacy") -> None:
+                        strategy_uid: str = "legacy",
+                        signal_states: dict = None,
+                        trajectory_data: dict = None) -> None:
     """
     Record a new trade entry in the trade_learning table.
 
     Called in both paper and live modes so the learning engine
     always has data to work with.
+
+    Args:
+        trade_approved: Dict with trade details (symbol, direction, score, etc.)
+        strategy_name: Strategy name for DB grouping.
+        strategy_uid: Stable strategy UID for learning data isolation.
+        signal_states: Dict of {symbol: label} from substrate.analysis.signal_states.
+        trajectory_data: Dict of trajectory info from substrate.market.pre_trade_context.
     """
     try:
         from core.database import db_conn
+        import json as _json
+
+        # Build signals_at_entry_json from signal_states
+        # Format: {indicator_name: {"signal": "bullish"/"bearish"/"neutral", ...}}
+        signals_json = ""
+        if signal_states and trade_approved:
+            symbol = trade_approved.get("symbol", "")
+            label = signal_states.get(symbol, "")
+            if label:
+                # Convert confluence label to directional signal
+                direction = "bullish" if "Bullish" in label or "bullish" in label else (
+                    "bearish" if "Bearish" in label or "bearish" in label else "neutral"
+                )
+                # Build a minimal signal dict from the confluence label
+                # The full indicator breakdown will be populated by UpdateLearning
+                # from the indicator_history at entry time
+                signals_json = _json.dumps({"confluence": {"signal": direction, "label": label}})
+
+        # Extract trajectory data
+        trajectory_pattern = ""
+        coincidence_risk = ""
+        if trajectory_data and trade_approved:
+            symbol = trade_approved.get("symbol", "")
+            traj = trajectory_data.get(symbol, {})
+            if isinstance(traj, dict):
+                trajectory_pattern = traj.get("trajectory_type", "")
+                coincidence_risk = traj.get("coincidence_risk", "")
 
         with db_conn() as conn:
             conn.execute(
                 """INSERT INTO trade_learning
                    (strategy_name, strategy_uid, symbol, direction, entry_time,
-                    confluence_score_at_entry, signals_at_entry_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    confluence_score_at_entry, signals_at_entry_json,
+                    pre_trade_trajectory_pattern, pre_trade_coincidence_risk)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     strategy_name,
                     strategy_uid,
                     trade_approved.get("symbol", ""),
                     trade_approved.get("direction", ""),
-                    datetime.now(timezone.utc).isoformat(),
+                    _now_iso(),
                     trade_approved.get("score", 0),
-                    "",  # signals_at_entry_json — populated by learning engine later
+                    signals_json,
+                    trajectory_pattern,
+                    coincidence_risk,
                 ),
             )
     except Exception as e:
@@ -172,7 +216,14 @@ class RecordTradeOutcome(Enzyme):
         if action == "trade_open":
             trade_approved = substrate.decisions.get("trade_approved")
             if trade_approved:
-                _record_trade_entry(trade_approved, strategy_name, strategy_uid)
+                # Pass signal states and trajectory data for learning
+                signal_states = substrate.analysis.get("signal_states", {})
+                trajectory_data = substrate.market.get("pre_trade_context", {})
+                _record_trade_entry(
+                    trade_approved, strategy_name, strategy_uid,
+                    signal_states=signal_states,
+                    trajectory_data=trajectory_data,
+                )
                 self._log.info(
                     "Recorded trade entry: %s %s",
                     trade_approved.get("direction", "?"),
