@@ -305,10 +305,11 @@ class TestEnzymeActivation:
         substrate.analysis["candidates"] = [{"symbol": "BTCUSDT"}]
         assert not enz.can_activate(substrate)
 
-    def test_detect_noise_requires_candidates(self, substrate):
+    def test_detect_noise_requires_indicators(self, substrate):
         enz = create_enzyme("DetectNoise")
+        # DetectNoise requires indicators (not candidates) and noise_evaluated=False
         assert not enz.can_activate(substrate)
-        substrate.analysis["candidates"] = [{"symbol": "BTCUSDT"}]
+        substrate.market["indicators"] = {"BTCUSDT": {"4H": {"ok": True}}}
         assert enz.can_activate(substrate)
 
     def test_validate_entry_zone_requires_candidates(self, substrate):
