@@ -203,6 +203,11 @@ class CollectMacroContext(Enzyme):
         return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
-        if self.can_activate(substrate):
-            return 1.8  # High priority when module enabled and data missing
-        return 0.0
+        """Dynamic flux: high when module enabled and data missing."""
+        if not self.can_activate(substrate):
+            return 0.0
+        # Higher priority when we have open positions (macro context matters more)
+        positions = substrate.portfolio.get("open_positions", [])
+        if positions:
+            return 2.0  # Active positions — macro context is important for risk
+        return 1.8
