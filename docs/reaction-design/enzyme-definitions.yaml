@@ -81,6 +81,8 @@
 - name: "CollectLiquidations"
   class: "Sensor"
   priority: 0
+  # Phase C — NOT YET IMPLEMENTED. Port from liquidation_client.py when ready.
+  # Controlled by: substrate.strategy.modules.liquidation
   activation:
     requires:
       - "substrate.strategy.modules.liquidation == true"
@@ -100,6 +102,8 @@
 - name: "CollectOnchain"
   class: "Sensor"
   priority: 0
+  # Phase C — NOT YET IMPLEMENTED. Port from onchain_client.py when ready.
+  # Controlled by: substrate.strategy.modules.onchain
   activation:
     requires:
       - "substrate.strategy.modules.onchain == true"
@@ -119,6 +123,8 @@
 - name: "CollectSentiment"
   class: "Sensor"
   priority: 0
+  # Phase C — NOT YET IMPLEMENTED. Port from coinalyze_client.py when ready.
+  # Controlled by: substrate.strategy.modules.sentiment
   activation:
     requires:
       - "substrate.strategy.modules.sentiment == true"
