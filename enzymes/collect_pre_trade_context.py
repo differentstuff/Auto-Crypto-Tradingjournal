@@ -1,14 +1,17 @@
 """
 enzymes/collect_pre_trade_context.py -- Sensor enzyme: trajectory analysis.
 
-Computes pre-trade trajectory analysis over the last N bars for each
-candidate. Classifies how indicators aligned: gradual alignment vs
-sudden coincidence.
+Computes pre-trade trajectory analysis for each candidate using REAL
+indicator history from substrate.market.indicator_history (rolling window
+populated by CollectOHLCV).
+
+If indicator history is insufficient (first N cycles after startup), falls
+back to empty trajectory data, which sets coincidence_risk='high' and
+blocks trades via ISC-007. This is intentional: no trades until sufficient
+trajectory data exists.
 
 Enzyme class: Sensor
 Activates when: analysis.candidates not empty AND market.pre_trade_context is empty
-
-NEW (uses chart_indicators.py historical computation concept)
 """
 
 from __future__ import annotations
@@ -26,11 +29,16 @@ def _classify_trajectory(indicator_history: list[dict]) -> dict:
     """
     Classify how indicators aligned over the lookback period.
 
+    Uses REAL indicator history (not a heuristic estimate). Each history
+    entry has a "signal" field ("bullish"/"bearish"/"neutral") computed
+    by CollectOHLCV._compute_signal_direction().
+
     Trajectory types:
     - "gradual_alignment": indicators progressively aligned over 8+ bars
     - "sudden_coincidence": indicators aligned only in last 2-3 bars (risky)
     - "stable_consensus": indicators have been aligned for 10+ bars (strong)
     - "diverging": indicators were aligned but are now diverging (weakening)
+    - "no_alignment": no consistent direction detected
 
     Returns {trajectory_type, coincidence_risk, bars_aligned, strength}
     """
@@ -43,18 +51,43 @@ def _classify_trajectory(indicator_history: list[dict]) -> dict:
         }
 
     n = len(indicator_history)
-    # Count how many recent bars have aligned signals
+
+    # Count how many bars have aligned signals in the final direction
+    # Determine the final direction from the most recent bars
+    recent_signals = [
+        entry.get("signal", "neutral")
+        for entry in indicator_history[-3:]
+        if entry.get("signal", "neutral") != "neutral"
+    ]
+
+    if not recent_signals:
+        return {
+            "trajectory_type": "no_alignment",
+            "coincidence_risk": "high",
+            "bars_aligned": 0,
+            "strength": 0.0,
+        }
+
+    # Determine final direction from majority of recent signals
+    bullish_count = sum(1 for s in recent_signals if s == "bullish")
+    bearish_count = sum(1 for s in recent_signals if s == "bearish")
+    final_direction = "bullish" if bullish_count >= bearish_count else "bearish"
+
+    # Count bars aligned with the final direction
     aligned_count = 0
-    for bar in indicator_history:
-        if bar.get("aligned", False):
+    for entry in indicator_history:
+        signal = entry.get("signal", "neutral")
+        if signal == final_direction:
             aligned_count += 1
 
     # Check if alignment is recent (last 3 bars) vs sustained
     recent_aligned = sum(
-        1 for bar in indicator_history[-3:] if bar.get("aligned", False)
+        1 for entry in indicator_history[-3:]
+        if entry.get("signal") == final_direction
     )
     earlier_aligned = sum(
-        1 for bar in indicator_history[:-3] if bar.get("aligned", False)
+        1 for entry in indicator_history[:-3]
+        if entry.get("signal") == final_direction
     ) if n > 3 else 0
 
     # Classify
@@ -85,6 +118,7 @@ def _classify_trajectory(indicator_history: list[dict]) -> dict:
         "bars_aligned": aligned_count,
         "total_bars": n,
         "strength": strength,
+        "final_direction": final_direction,
     }
 
 
@@ -94,8 +128,13 @@ class CollectPreTradeContext(Enzyme):
     Sensor enzyme: compute pre-trade trajectory for candidates.
 
     For each candidate, analyzes how indicators aligned over the last
-    N bars (configurable via learning.trajectory_lookback_bars).
-    A gradual alignment is a stronger signal than a sudden coincidence.
+    N cycles (configurable via learning.trajectory_lookback_bars).
+    Uses REAL indicator history from substrate.market.indicator_history,
+    which is populated by CollectOHLCV on each cycle.
+
+    If history is insufficient (first N cycles after startup), sets
+    coincidence_risk='high', which blocks trades via ISC-007.
+    This is intentional: we don't trade on insufficient data.
 
     Writes to substrate.market.pre_trade_context as:
         {symbol: {trajectory_type, coincidence_risk, bars_aligned, ...}}
@@ -117,109 +156,59 @@ class CollectPreTradeContext(Enzyme):
         return bool(candidates) and not pre_trade_evaluated
 
     def transform(self, substrate: Substrate) -> Substrate:
-        """Compute pre-trade trajectory for each candidate."""
+        """Compute pre-trade trajectory for each candidate using real history."""
         candidates = substrate.analysis.get("candidates", [])
         if not candidates:
             return substrate
 
-        lookback = substrate.cfg("learning.trajectory_lookback_bars", 12)
-        indicators = substrate.market.get("indicators", {})
-
+        min_history = substrate.cfg("learning.trajectory_min_bars", 4)
+        indicator_history = substrate.market.get("indicator_history", {})
         pre_trade_context = {}
 
         for candidate in candidates:
             symbol = candidate.get("symbol", "")
-            sym_data = indicators.get(symbol, {})
-            if not sym_data:
+
+            # Get real indicator history for this symbol
+            symbol_history = indicator_history.get(symbol, [])
+
+            if len(symbol_history) < min_history:
+                # Insufficient history — block trade via ISC-007
+                # This happens in the first N cycles after startup
+                _log.info(
+                    "Insufficient trajectory history for %s: %d/%d bars",
+                    symbol, len(symbol_history), min_history,
+                )
+                pre_trade_context[symbol] = {
+                    "trajectory_type": "insufficient_data",
+                    "coincidence_risk": "high",
+                    "bars_aligned": 0,
+                    "total_bars": len(symbol_history),
+                    "strength": 0.0,
+                }
                 continue
 
-            # Get primary timeframe
-            primary_tf = list(sym_data.keys())[0] if sym_data else None
-            if not primary_tf:
-                continue
-
-            tf_inds = sym_data[primary_tf]
-            if not isinstance(tf_inds, dict) or not tf_inds.get("ok"):
-                continue
-
-            # Determine current signal direction
-            score = candidate.get("score", 0)
-            is_bullish = score > 0
-
-            # Build indicator history over lookback bars
-            # We use the current indicator state as a snapshot and
-            # estimate trajectory from the indicator values themselves
-            indicator_history = self._estimate_trajectory(
-                tf_inds, is_bullish, lookback
-            )
-
-            trajectory = _classify_trajectory(indicator_history)
+            # Use real history for trajectory classification
+            trajectory = _classify_trajectory(symbol_history)
             pre_trade_context[symbol] = trajectory
 
         substrate.market["pre_trade_context"] = pre_trade_context
         substrate.analysis["pre_trade_evaluated"] = True
 
         self._log.info(
-            "Pre-trade context: %d symbols analyzed",
+            "Pre-trade context: %d symbols analyzed (using real history)",
             len(pre_trade_context),
         )
 
         return substrate
 
-    def _estimate_trajectory(
-        self, tf_inds: dict, is_bullish: bool, lookback: int
-    ) -> list[dict]:
-        """
-        Estimate trajectory from current indicator state.
-
-        Since we only have the current snapshot (not historical bar-by-bar
-        indicator data), we estimate alignment trajectory from indicator
-        strength and crossover signals.
-
-        In a full implementation, this would recompute indicators over
-        rolling windows. For Phase B, we use a simplified heuristic.
-        """
-        history = []
-
-        # RSI: if not at extreme, alignment is recent
-        rsi = tf_inds.get("rsi", {})
-        rsi_val = rsi.get("value", 50) if isinstance(rsi, dict) else 50
-
-        # MACD: crossover suggests recent alignment
-        macd = tf_inds.get("macd", {})
-        has_crossover = macd.get("crossover", False) if isinstance(macd, dict) else False
-        has_crossunder = macd.get("crossunder", False) if isinstance(macd, dict) else False
-
-        # EMA: alignment strength
-        ema = tf_inds.get("ema_stack", {})
-        ema_alignment = ema.get("alignment", "neutral") if isinstance(ema, dict) else "neutral"
-        ema_stack = ema.get("stack", "mixed") if isinstance(ema, dict) else "mixed"
-
-        # Build estimated history
-        for i in range(lookback):
-            bars_ago = lookback - i
-            aligned = False
-
-            # Heuristic: if MACD has crossover, alignment started recently
-            if has_crossover and is_bullish:
-                aligned = i >= lookback - 3  # Last 3 bars
-            elif has_crossunder and not is_bullish:
-                aligned = i >= lookback - 3
-            elif "fully" in ema_alignment and ema_stack != "mixed":
-                # Full EMA alignment suggests sustained trend
-                aligned = True
-            elif abs(rsi_val - 50) > 20:
-                # Strong RSI suggests alignment
-                aligned = i >= lookback - 5
-            else:
-                # Weak signals — sporadic alignment
-                aligned = i % 3 == 0  # Roughly 1/3 of bars
-
-            history.append({"bar": i, "bars_ago": bars_ago, "aligned": aligned})
-
-        return history
-
     def flux_score(self, substrate: Substrate) -> float:
-        if self.can_activate(substrate):
-            return 0.8
-        return 0.0
+        """Higher flux when candidates are strong — trajectory matters more."""
+        if not self.can_activate(substrate):
+            return 0.0
+        candidates = substrate.analysis.get("candidates", [])
+        if candidates:
+            top_score = abs(candidates[0].get("score", 0))
+            entry_threshold = substrate.cfg("scoring.entry_threshold", 6.5)
+            if top_score >= entry_threshold:
+                return 1.5  # Strong candidate — trajectory analysis is important
+        return 0.8  # Candidates exist but weak
