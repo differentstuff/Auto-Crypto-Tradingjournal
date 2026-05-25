@@ -292,13 +292,9 @@ class ValidateEntryZone(Enzyme):
                 self._log.debug("LLM validation skipped for %s: %s", symbol, exc)
 
     def flux_score(self, substrate: Substrate) -> float:
-        """
-        Dynamic flux: higher when candidates are strong (above entry threshold),
-        lower when candidates are weak.
-        """
+        """Dynamic flux: higher when entry zones have strong candidates."""
         if not self.can_activate(substrate):
             return 0.0
-        # Check candidate strength
         candidates = substrate.analysis.get("candidates", [])
         entry_threshold = substrate.cfg("scoring.entry_threshold", 6.5)
         if candidates:
