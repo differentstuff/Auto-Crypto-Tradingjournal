@@ -108,10 +108,9 @@ class Exchange:
                 exchange_class = ccxt.binance
                 exchange_id = "binance"
 
-            kwargs = {"options": {"defaultType": "future"}}
-
-            self._data_exchange = exchange_class(**kwargs)
+            self._data_exchange = exchange_class()
             self._data_exchange.enableRateLimit = True
+            self._data_exchange.options['defaultType'] = 'future'
             _log.info("Data exchange created: %s (public)", exchange_id)
 
         return self._data_exchange
@@ -141,11 +140,12 @@ class Exchange:
                 kwargs["password"] = creds["passphrase"]
 
             sandbox = creds.get("sandbox", False)
-            if sandbox:
-                kwargs["options"] = {"sandboxMode": True}
 
             self._trade_exchange = exchange_class(**kwargs)
             self._trade_exchange.enableRateLimit = True
+            self._trade_exchange.options['defaultType'] = 'future'
+            if sandbox:
+                self._trade_exchange.options['sandboxMode'] = True
             _log.info("Trade exchange created: %s (auth=%s)", exchange_id, bool(creds.get("api_key")))
 
         return self._trade_exchange
@@ -214,9 +214,9 @@ class Exchange:
             if exchange_class is None:
                 return None
 
-            kwargs = {"options": {"defaultType": "future"}}
-            exchange = exchange_class(**kwargs)
+            exchange = exchange_class()
             exchange.enableRateLimit = True
+            exchange.options['defaultType'] = 'future'
             raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
             if not raw:
                 return None
