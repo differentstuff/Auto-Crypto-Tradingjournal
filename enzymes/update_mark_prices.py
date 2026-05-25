@@ -6,8 +6,14 @@ position sync. SyncPositions handles full reconciliation every N cycles;
 this enzyme provides current prices for SL/TP/trailing-stop evaluation
 in between full syncs.
 
-In paper mode, uses the last close price from CollectOHLCV's indicator
-data (substrate.market.last_prices) as a lightweight fallback.
+NEVER uses stale or imaginary data. In BOTH paper and live mode, fetches
+REAL market prices from the exchange. Paper mode differs ONLY in trade
+execution — market data is always real. If the primary exchange fails,
+tries the fallback exchange. If both fail, prices are NOT updated
+(stale data is unacceptable).
+
+Uses fetch_tickers() for bulk fetching when possible (one API call for
+all symbols), falling back to individual fetch_ticker() calls if needed.
 
 Enzyme class: Sensor
 Activates when: portfolio.open_positions not empty
@@ -36,7 +42,10 @@ class UpdateMarkPrices(Enzyme):
     of a full position sync. SyncPositions still runs every N cycles for
     reconciliation (equity, position changes, etc.).
 
-    In paper mode, uses the last close price from CollectOHLCV as fallback.
+    In BOTH paper and live mode, fetches REAL market prices from the exchange.
+    Paper mode differs ONLY in trade execution — market data is always real.
+    If the primary exchange fails, tries the fallback exchange.
+    If both fail, prices are NOT updated (stale data is unacceptable).
     """
 
     name = "UpdateMarkPrices"
@@ -66,55 +75,51 @@ class UpdateMarkPrices(Enzyme):
         return len(positions) > 0
 
     def transform(self, substrate: Substrate) -> Substrate:
-        """Update mark prices for all open positions."""
+        """Update mark prices for all open positions using REAL market data."""
         positions = substrate.portfolio.get("open_positions", [])
         if not positions:
             return substrate
 
-        paper_mode = substrate.cfg("daemon.paper_mode", True)
-        last_prices = substrate.market.get("last_prices", {})
+        if self.exchange is None:
+            _log.error("No Exchange instance — cannot update mark prices. "
+                        "Prices will remain stale. This is a configuration error.")
+            return substrate
+
+        # Collect unique symbols for bulk fetch
+        symbols = list(set(pos.get("symbol", "") for pos in positions if pos.get("symbol")))
+
+        # Bulk fetch all ticker prices in one API call (or fallback to individual)
+        tickers = self.exchange.fetch_tickers(symbols) if symbols else {}
+
         updated = 0
+        failed = 0
 
         for pos in positions:
             symbol = pos.get("symbol", "")
 
-            if paper_mode or self.exchange is None:
-                # Paper mode: use last close price from CollectOHLCV
-                if symbol in last_prices:
-                    new_price = last_prices[symbol]
-                    old_price = pos.get("mark_price", 0)
-                    if new_price != old_price:
-                        pos["mark_price"] = new_price
-                        updated += 1
-                else:
-                    _log.debug(
-                        "No last_price for %s in paper mode — keeping stale price",
-                        symbol,
-                    )
+            if symbol in tickers and tickers[symbol].get("last"):
+                # Real price from bulk fetch
+                new_price = tickers[symbol]["last"]
+                pos["mark_price"] = new_price
+                updated += 1
             else:
-                # Live mode: fetch current ticker price
+                # Individual fallback for symbols that bulk fetch missed
                 ticker = self.exchange.fetch_ticker(symbol)
                 if ticker and ticker.get("last"):
-                    new_price = ticker["last"]
-                    old_price = pos.get("mark_price", 0)
-                    if new_price != old_price:
-                        pos["mark_price"] = new_price
-                        updated += 1
+                    pos["mark_price"] = ticker["last"]
+                    updated += 1
                 else:
-                    # Fallback to last_prices if ticker fetch failed
-                    if symbol in last_prices:
-                        pos["mark_price"] = last_prices[symbol]
-                        updated += 1
-                    else:
-                        _log.warning(
-                            "No price update for %s — ticker failed and no fallback",
-                            symbol,
-                        )
+                    failed += 1
+                    _log.warning(
+                        "No real price for %s — primary and fallback exchanges failed. "
+                        "Price remains stale. RequestExit will not activate until fresh data arrives.",
+                        symbol,
+                    )
 
         if updated > 0:
             self._log.info("Updated mark prices for %d/%d positions", updated, len(positions))
-        else:
-            self._log.debug("No mark price changes this cycle")
+        if failed > 0:
+            self._log.warning("Failed to update %d/%d positions (no real price available)", failed, len(positions))
 
         return substrate
 
