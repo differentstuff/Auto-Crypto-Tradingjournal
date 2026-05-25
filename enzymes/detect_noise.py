@@ -227,7 +227,16 @@ class DetectNoise(Enzyme):
         return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
-        """High flux when indicators are available but noise not yet checked."""
-        if self.can_activate(substrate):
-            return 1.2
-        return 0.0
+        """Dynamic flux: high when noise conditions are present."""
+        if not self.can_activate(substrate):
+            return 0.0
+        # Outside kill zone with no other noise = less urgent
+        # Inside kill zone or multiple noise signals = more urgent
+        indicators = substrate.market.get("indicators", {})
+        if not indicators:
+            return 0.5
+        # Multiple symbols with potential noise = higher urgency to check
+        n_symbols = len(indicators)
+        if n_symbols >= 3:
+            return 1.5
+        return 1.2
