@@ -241,11 +241,18 @@ class Substrate:
 
         # Market section (populated by Sensor enzymes each cycle)
         # NOT persisted across restarts -- sensors repopulate on first cycle.
+        # indicator_history survives reset_cycle() (not cleared) but is NOT persisted
+        # to DB. After restart, the first N cycles will have incomplete history.
+        # CollectPreTradeContext falls back to empty history in this case,
+        # which sets coincidence_risk='high' and blocks trades via ISC-007.
+        # This is intentional: no trades until sufficient trajectory data exists.
         symbols_cfg = cfg.get("symbols", {})
         self.market = {
             "symbols_watched": symbols_cfg.get("always_watch", []),
             "last_scan_at": "",
             "indicators": {},
+            "indicator_history": {},  # {symbol: [{timestamp, indicators: {...}}, ...]
+            "last_prices": {},         # {symbol: float} — last close price per symbol
             "pre_trade_context": {},
             "macro": {},
             "liquidations": {},
@@ -294,6 +301,7 @@ class Substrate:
             "combination_accuracy": {},
             "suppressed_signals": [],
             "highlight_signals": [],
+            "adjusted_weights": {},    # Learning-adjusted indicator weights (written by UpdateLearning)
             "total_trades_recorded": 0,
             "total_idle_cycles_recorded": 0,
             "last_retrain_at": "",
@@ -536,6 +544,10 @@ class Substrate:
         self.market["last_scan_at"] = ""
         self.market["macro"] = {}
         self.market["pre_trade_context"] = {}
+        # NOTE: indicator_history and last_prices are NOT cleared here.
+        # They accumulate across cycles and survive reset_cycle().
+        # indicator_history is trimmed by CollectOHLCV to the configured max length.
+        # After restart, they start empty and rebuild over the first N cycles.
         # Analysis section: clear for re-evaluation
         self.analysis["candidates"] = []
         self.analysis["entry_zones"] = {}
