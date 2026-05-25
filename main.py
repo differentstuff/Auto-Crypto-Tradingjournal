@@ -209,7 +209,11 @@ def main() -> None:
 
     # Phase D: Learning Synthases
     _register("RecordTradeOutcome")
+    _register("UpdateLearning")
     _register("UpdateRulebook")
+
+    # Price updates for open positions (lightweight, every cycle)
+    _register("UpdateMarkPrices", exchange=exchange)
 
     # Wait enzyme (always available, lowest priority)
     _register("Wait")
