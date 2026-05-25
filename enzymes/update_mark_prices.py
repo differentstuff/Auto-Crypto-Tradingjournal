@@ -75,7 +75,11 @@ class UpdateMarkPrices(Enzyme):
         return len(positions) > 0
 
     def transform(self, substrate: Substrate) -> Substrate:
-        """Update mark prices for all open positions using REAL market data."""
+        """Update mark prices for all open positions using REAL market data.
+
+        Creates new position dicts with updated prices and reassigns the
+        entire open_positions list (shallow-copy safe: no nested mutation).
+        """
         positions = substrate.portfolio.get("open_positions", [])
         if not positions:
             return substrate
@@ -93,28 +97,35 @@ class UpdateMarkPrices(Enzyme):
 
         updated = 0
         failed = 0
+        updated_positions = []
 
         for pos in positions:
             symbol = pos.get("symbol", "")
 
             if symbol in tickers and tickers[symbol].get("last"):
-                # Real price from bulk fetch
-                new_price = tickers[symbol]["last"]
-                pos["mark_price"] = new_price
+                # Real price from bulk fetch — create new position dict
+                new_pos = {**pos, "mark_price": tickers[symbol]["last"]}
+                updated_positions.append(new_pos)
                 updated += 1
             else:
                 # Individual fallback for symbols that bulk fetch missed
                 ticker = self.exchange.fetch_ticker(symbol)
                 if ticker and ticker.get("last"):
-                    pos["mark_price"] = ticker["last"]
+                    new_pos = {**pos, "mark_price": ticker["last"]}
+                    updated_positions.append(new_pos)
                     updated += 1
                 else:
+                    # No price available — keep position unchanged
+                    updated_positions.append(pos)
                     failed += 1
                     _log.warning(
                         "No real price for %s — primary and fallback exchanges failed. "
                         "Price remains stale. RequestExit will not activate until fresh data arrives.",
                         symbol,
                     )
+
+        # Reassign entire list (shallow-copy safe)
+        substrate.portfolio["open_positions"] = updated_positions
 
         if updated > 0:
             self._log.info("Updated mark prices for %d/%d positions", updated, len(positions))

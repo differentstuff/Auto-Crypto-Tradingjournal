@@ -100,9 +100,10 @@ class ExecuteExit(Enzyme):
                 pnl_pct, pnl_usdt,
             )
 
-        # Remove position from portfolio
-        positions.pop(target_idx)
-        substrate.portfolio["open_positions"] = positions
+        # Remove position from portfolio (shallow-copy safe: new list, no mutation of shared reference)
+        substrate.portfolio["open_positions"] = [
+            p for i, p in enumerate(positions) if i != target_idx
+        ]
 
         # Update decisions
         substrate.decisions["action"] = "trade_closed"

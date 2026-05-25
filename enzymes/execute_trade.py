@@ -133,9 +133,9 @@ class ExecuteTrade(Enzyme):
             "peak_price": entry_price,
         }
 
-        positions = substrate.portfolio.get("open_positions", [])
-        positions.append(new_position)
-        substrate.portfolio["open_positions"] = positions
+        # Add position to portfolio (shallow-copy safe: new list, no mutation of shared reference)
+        current_positions = substrate.portfolio.get("open_positions", [])
+        substrate.portfolio["open_positions"] = current_positions + [new_position]
 
         # Update decisions
         substrate.decisions["action"] = "trade_open"

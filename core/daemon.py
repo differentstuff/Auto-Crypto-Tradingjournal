@@ -21,7 +21,6 @@ Based on: docs/reaction-design/README.md execution loop
 
 from __future__ import annotations
 
-import copy
 import logging
 import signal
 import sys
@@ -216,12 +215,20 @@ class Daemon:
         This is the daemon's fallback: when no other enzyme can activate
         or all flux scores are <= 0, we fire Wait instead of duplicating
         idle-cycle logic in the daemon.
+
+        Uses shallow copy for the same safety guarantee as the main loop:
+        if Wait raises, self.substrate remains unchanged.
         """
         wait = self._find_wait_enzyme()
         if wait is not None:
             wait.set_idle_reason(reason)
             _log.info("Firing Wait enzyme (reason: %s)", reason)
-            self.substrate = wait.transform(self.substrate)
+            substrate_copy = self.substrate.shallow_copy()
+            try:
+                self.substrate = wait.transform(substrate_copy)
+            except Exception as e:
+                _log.error("Wait enzyme failed: %s — using mark_idle() fallback", e)
+                self.substrate.mark_idle(reason)
         else:
             # Fallback: no Wait enzyme registered (shouldn't happen in production)
             _log.warning("Wait enzyme not found — using substrate.mark_idle() fallback")
@@ -325,10 +332,19 @@ class Daemon:
 
             # Fire the selected enzyme
             #
-            # DEEP-COPY SAFETY: We pass a copy of the substrate to transform().
+            # SHALLOW-COPY SAFETY: We pass a shallow copy of the substrate to
+            # transform(). The shallow copy has its own top-level dicts
+            # (strategy, portfolio, market, etc.) but shares nested values
+            # (lists, dicts inside those dicts). Enzymes must NOT mutate
+            # nested values in-place; they must create new values and reassign
+            # entire fields (e.g. substrate.portfolio["open_positions"] = new_list).
+            #
             # If transform() raises an exception, self.substrate remains unchanged
-            # (the copy is discarded). This prevents partial substrate mutations
-            # from leaving the system in an inconsistent state.
+            # because only the shallow copy's top-level dicts were modified —
+            # the original substrate's dicts are separate objects.
+            #
+            # This is cheaper than deep copy (~1-2MB saved per cycle) and makes
+            # the "no partial mutation" invariant explicit by design.
             #
             # LIMITATION: External side effects (exchange orders in ExecuteTrade/
             # ExecuteExit, DB writes in RecordTradeOutcome) are NOT rolled back.
@@ -345,7 +361,7 @@ class Daemon:
                 best.enzyme_class.value,
                 best.priority,
             )
-            substrate_copy = copy.deepcopy(self.substrate)
+            substrate_copy = self.substrate.shallow_copy()
             try:
                 self.substrate = best.transform(substrate_copy)
                 enzymes_fired.append(best.name)

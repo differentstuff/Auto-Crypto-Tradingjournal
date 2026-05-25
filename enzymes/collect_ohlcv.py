@@ -171,7 +171,10 @@ class CollectOHLCV(Enzyme):
         # coincidence_risk='high' and block trades via ISC-007. This is
         # intentional: no trades until sufficient trajectory data exists.
         lookback = substrate.cfg("learning.trajectory_lookback_bars", 12)
-        history = substrate.market.get("indicator_history", {})
+        # Shallow-copy safe: create new history dict so we don't mutate the
+        # shared reference from the original substrate.
+        old_history = substrate.market.get("indicator_history", {})
+        history = {sym: list(snapshots) for sym, snapshots in old_history.items()}
 
         # Cold start bootstrap: if indicator_history is empty, compute
         # historical snapshots from the OHLCV data we just fetched.
@@ -247,7 +250,9 @@ class CollectOHLCV(Enzyme):
         from indicators.registry import compute_indicator
         import pandas as pd
 
-        history = substrate.market.get("indicator_history", {})
+        # Shallow-copy safe: create new history dict
+        old_history = substrate.market.get("indicator_history", {})
+        history = {sym: list(snapshots) for sym, snapshots in old_history.items()}
         timeframe = substrate.strategy.get("timeframe", "4H")
         # Use more bars for bootstrap to get enough historical data
         bootstrap_bars = substrate.cfg("learning.trajectory_bootstrap_bars", 48)

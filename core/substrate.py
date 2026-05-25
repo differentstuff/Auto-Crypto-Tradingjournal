@@ -586,6 +586,39 @@ class Substrate:
 
     # --- Serialization --------------------------------------------------------
 
+    def shallow_copy(self) -> "Substrate":
+        """
+        Create a shallow copy for enzyme execution safety.
+
+        Top-level dicts are shallow-copied so field reassignment is safe.
+        Nested values (lists, dicts inside those dicts) are shared references.
+        Enzymes must NOT mutate nested values in-place; they must create
+        new values and reassign entire fields.
+
+        This replaces copy.deepcopy() in the daemon loop. It's ~1-2MB
+        cheaper per cycle and makes the "no partial mutation" invariant
+        explicit by design: if an enzyme can't mutate in-place, it can't
+        leave the substrate in a partially-modified state.
+
+        If an enzyme raises an exception, self.substrate remains unchanged
+        because only the shallow copy was modified — the same guarantee
+        as deep copy, but without the cost.
+        """
+        new = Substrate.__new__(Substrate)
+        new._config = self._config  # config is never mutated by enzymes
+        new.strategy = self.strategy.copy()
+        new.portfolio = self.portfolio.copy()
+        new.market = self.market.copy()
+        new.analysis = self.analysis.copy()
+        new.decisions = self.decisions.copy()
+        new.learning = self.learning.copy()
+        new.validity = list(self.validity)  # new list, same ISCCheck objects
+        new.pending = list(self.pending)
+        new._cycle_count = self._cycle_count
+        new._created_at = self._created_at
+        new._updated_at = self._updated_at
+        return new
+
     def to_persistent_dict(self) -> dict:
         """
         Serialize durable substrate state for database storage.

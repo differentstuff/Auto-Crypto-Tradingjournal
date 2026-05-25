@@ -100,7 +100,7 @@ class SyncPositions(Enzyme):
                 substrate.portfolio["equity"] = balance.get("equity", 0)
                 substrate.portfolio["available_margin"] = balance.get("available", 0)
 
-            # Reconcile positions
+            # Reconcile positions (shallow-copy safe: new position dicts, no nested mutation)
             current_positions = substrate.portfolio.get("open_positions", [])
             exchange_symbols = {p.get("symbol") for p in exchange_positions}
 
@@ -109,12 +109,12 @@ class SyncPositions(Enzyme):
             for pos in current_positions:
                 symbol = pos.get("symbol", "")
                 if symbol in exchange_symbols:
-                    # Update mark_price from exchange data
+                    # Update mark_price from exchange data — create new position dict
                     for ex_pos in exchange_positions:
                         if ex_pos.get("symbol") == symbol:
-                            pos["mark_price"] = ex_pos.get("mark_price", pos.get("mark_price"))
+                            new_pos = {**pos, "mark_price": ex_pos.get("mark_price", pos.get("mark_price"))}
+                            reconciled.append(new_pos)
                             break
-                    reconciled.append(pos)
                 else:
                     self._log.info(
                         "Position %s removed: no longer on exchange (closed externally)",

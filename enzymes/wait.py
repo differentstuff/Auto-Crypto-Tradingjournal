@@ -52,7 +52,8 @@ class WaitEnzyme(Enzyme):
         reason = self._idle_reason or "no actionable signal"
         substrate.decisions["action"] = "wait"
         substrate.learning["idle_cycles"] += 1
-        substrate.learning["idle_reasons"].append(reason)
+        # Shallow-copy safe: create new list instead of mutating shared reference
+        substrate.learning["idle_reasons"] = substrate.learning.get("idle_reasons", []) + [reason]
         substrate.learning["total_idle_cycles_recorded"] += 1
         substrate._updated_at = substrate._now_iso()
         self._log.info("Wait: %s, staying idle", reason)

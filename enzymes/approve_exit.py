@@ -33,18 +33,17 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _update_trailing_stop(position: dict, config: dict) -> None:
+def _update_trailing_stop(position: dict, config: dict) -> dict:
     """
-    Update trailing stop state on a position dict.
+    Compute updated trailing stop state for a position.
 
-    Mutates position in place:
-      - Updates peak_price if current mark exceeds it
-      - Activates trailing if profit > activation_pct and not yet active
-      - Moves trailing_sl according to trail distance when active
+    Returns a NEW position dict with updated trailing stop fields.
+    Does NOT mutate the original position dict (shallow-copy safe).
+
+    Updates:
+      - peak_price if current mark exceeds it
+      - trailing_active and trailing_sl when profit exceeds activation threshold
       - Moves SL to breakeven on activation if configured
-
-    This is called by ApproveExit before evaluating exit requests,
-    so trailing state is always up-to-date for the decision.
     """
     entry_price = position.get("entry_price", 0)
     mark_price = position.get("mark_price", 0)
@@ -52,11 +51,11 @@ def _update_trailing_stop(position: dict, config: dict) -> None:
     atr_value = position.get("atr_value", 0)
 
     if not entry_price or not mark_price:
-        return
+        return position
 
     trailing_cfg = config.get("exit_rules", {}).get("trailing_stop", {})
     if not trailing_cfg.get("enabled", True):
-        return
+        return position
 
     activation_pct = trailing_cfg.get("activation_pct", 1.5)
     trail_atr_mult = trailing_cfg.get("trail_atr_multiplier", 1.0)
@@ -68,32 +67,37 @@ def _update_trailing_stop(position: dict, config: dict) -> None:
     else:
         profit_pct = ((entry_price - mark_price) / entry_price) * 100
 
+    # Start with current state (no mutation of original)
+    trailing_active = position.get("trailing_active", False)
+    trailing_sl = position.get("trailing_sl")
+    peak_price = position.get("peak_price", mark_price)
+
     # Update peak price
-    current_peak = position.get("peak_price", mark_price)
     if direction == "long":
-        if mark_price > current_peak:
-            position["peak_price"] = mark_price
+        if mark_price > peak_price:
+            peak_price = mark_price
     else:
-        if mark_price < current_peak or current_peak == entry_price:
-            if mark_price < current_peak:
-                position["peak_price"] = mark_price
+        if mark_price < peak_price or peak_price == entry_price:
+            if mark_price < peak_price:
+                peak_price = mark_price
 
     # Activate trailing if not yet active and profit exceeds threshold
-    if not position.get("trailing_active", False):
+    if not trailing_active:
         if profit_pct >= activation_pct:
-            position["trailing_active"] = True
+            trailing_active = True
             if breakeven_on_activate:
-                position["trailing_sl"] = entry_price
+                trailing_sl = entry_price
             elif atr_value:
                 if direction == "long":
-                    position["trailing_sl"] = mark_price - atr_value * trail_atr_mult
+                    trailing_sl = mark_price - atr_value * trail_atr_mult
                 else:
-                    position["trailing_sl"] = mark_price + atr_value * trail_atr_mult
+                    trailing_sl = mark_price + atr_value * trail_atr_mult
             _log.info(
                 "Trailing stop activated for %s at profit=%.2f%%",
                 position.get("symbol", "?"), profit_pct,
             )
-        return
+            return {**position, "trailing_active": trailing_active, "trailing_sl": trailing_sl, "peak_price": peak_price}
+        return {**position, "peak_price": peak_price}
 
     # Trailing is active — update trailing_sl
     if direction == "long":
@@ -102,18 +106,18 @@ def _update_trailing_stop(position: dict, config: dict) -> None:
             new_sl = mark_price - atr_value * trail_atr_mult
         else:
             new_sl = entry_price  # fallback to breakeven
-        current_sl = position.get("trailing_sl")
-        if current_sl is None or new_sl > current_sl:
-            position["trailing_sl"] = new_sl
+        if trailing_sl is None or new_sl > trailing_sl:
+            trailing_sl = new_sl
     else:
         # For short: trailing_sl moves down, never up
         if atr_value:
             new_sl = mark_price + atr_value * trail_atr_mult
         else:
             new_sl = entry_price
-        current_sl = position.get("trailing_sl")
-        if current_sl is None or new_sl < current_sl:
-            position["trailing_sl"] = new_sl
+        if trailing_sl is None or new_sl < trailing_sl:
+            trailing_sl = new_sl
+
+    return {**position, "trailing_active": trailing_active, "trailing_sl": trailing_sl, "peak_price": peak_price}
 
 
 @register_enzyme
@@ -160,9 +164,12 @@ class ApproveExit(Enzyme):
 
         # Find the position
         positions = substrate.portfolio.get("open_positions", [])
+        target_idx = None
         target_pos = None
-        for pos in positions:
+
+        for i, pos in enumerate(positions):
             if pos.get("symbol") == symbol:
+                target_idx = i
                 target_pos = pos
                 break
 
@@ -171,18 +178,18 @@ class ApproveExit(Enzyme):
             substrate.decisions["exit_approved"] = None
             return substrate
 
-        # Update trailing stop state before evaluating
-        _update_trailing_stop(target_pos, substrate._config)
+        # Update trailing stop state before evaluating (returns new dict, no mutation)
+        updated_pos = _update_trailing_stop(target_pos, substrate._config)
 
         # Evaluate exit rules
         should_exit = False
         exit_reason = reason
 
-        # 1. Hard SL breach — always approve
-        entry_price = target_pos.get("entry_price", 0)
-        sl_price = target_pos.get("sl_price", 0)
-        mark_price = target_pos.get("mark_price", 0)
-        direction = target_pos.get("direction", "Long").lower()
+        # Use updated position for evaluation (trailing stop may have changed)
+        entry_price = updated_pos.get("entry_price", 0)
+        sl_price = updated_pos.get("sl_price", 0)
+        mark_price = updated_pos.get("mark_price", 0)
+        direction = updated_pos.get("direction", "Long").lower()
 
         if sl_price and mark_price:
             if direction == "long" and mark_price <= sl_price:
@@ -193,8 +200,8 @@ class ApproveExit(Enzyme):
                 exit_reason = "hard_sl_breach"
 
         # 2. Trailing stop hit — always approve
-        trailing_sl = target_pos.get("trailing_sl")
-        trailing_active = target_pos.get("trailing_active", False)
+        trailing_sl = updated_pos.get("trailing_sl")
+        trailing_active = updated_pos.get("trailing_active", False)
 
         if trailing_active and trailing_sl and mark_price:
             if direction == "long" and mark_price <= trailing_sl:
@@ -206,7 +213,7 @@ class ApproveExit(Enzyme):
 
         # 3. Max hold duration — always approve
         max_hold_hours = substrate.cfg("exit_rules.max_hold_hours", 72)
-        opened_at = target_pos.get("opened_at", "")
+        opened_at = updated_pos.get("opened_at", "")
         if opened_at:
             try:
                 opened_dt = datetime.fromisoformat(opened_at)
@@ -231,6 +238,12 @@ class ApproveExit(Enzyme):
                 if profit_pct < 0.5:
                     should_exit = True
                     exit_reason = "signal_reversal_soft"
+
+        # Reassign open_positions with updated position (shallow-copy safe)
+        if target_idx is not None:
+            updated_positions = list(positions)
+            updated_positions[target_idx] = updated_pos
+            substrate.portfolio["open_positions"] = updated_positions
 
         if should_exit:
             substrate.decisions["exit_approved"] = {
