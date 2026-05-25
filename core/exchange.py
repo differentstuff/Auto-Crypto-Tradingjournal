@@ -72,6 +72,7 @@ class Exchange:
         # Lazy-initialized exchange instances
         self._data_exchange = None  # For market data (public, from data_source)
         self._trade_exchange = None  # For trading (Bitget/Bybit authenticated)
+        self._fallback_exchange = None  # For fallback ticker data (public, from fallback)
 
         _log.info(
             "Exchange initialized: primary=%s, data_source=%s, paper=%s",
@@ -594,6 +595,62 @@ class Exchange:
             return None
 
     # --- Utility ---------------------------------------------------------------
+
+    def fetch_tickers(self, symbols: list) -> dict:
+        """
+        Fetch current ticker prices for multiple symbols in one call.
+
+        Uses CCXT's fetch_tickers() for bulk fetching, which is more efficient
+        than calling fetch_ticker() for each symbol individually.
+        Falls back to individual fetch_ticker() calls if bulk fetch fails.
+
+        NEVER returns stale or imaginary data — only real market prices.
+        If both primary and fallback exchanges fail for a symbol, that symbol
+        will not appear in the result dict.
+
+        Args:
+            symbols: List of journal format symbols (e.g. ["BTCUSDT", "ETHUSDT"])
+
+        Returns:
+            Dict of {symbol: {"last": float, "bid": float, "ask": float, "timestamp": int}}
+            Only includes symbols for which real data was obtained.
+        """
+        if not symbols:
+            return {}
+
+        results = {}
+        ccxt_symbols = [_to_ccxt_symbol(s) for s in symbols]
+        symbol_map = {ccxt: jour for ccxt, jour in zip(ccxt_symbols, symbols)}
+
+        # Try bulk fetch on primary exchange
+        try:
+            exchange = self._get_data_exchange()
+            tickers = exchange.fetch_tickers(ccxt_symbols)
+            for ccxt_sym, ticker in tickers.items():
+                jour_sym = symbol_map.get(ccxt_sym)
+                if jour_sym and ticker.get("last"):
+                    results[jour_sym] = {
+                        "symbol": jour_sym,
+                        "last": float(ticker["last"]),
+                        "bid": float(ticker.get("bid", ticker["last"])),
+                        "ask": float(ticker.get("ask", ticker["last"])),
+                        "timestamp": ticker.get("timestamp", 0),
+                    }
+        except Exception as e:
+            _log.warning("Bulk ticker fetch failed: %s — trying individual fetches", e)
+            # Fallback: try individual fetch_ticker() for each symbol
+            # This also tries the fallback exchange per symbol
+            for symbol in symbols:
+                ticker = self.fetch_ticker(symbol)
+                if ticker:
+                    results[symbol] = ticker
+
+        # Log any symbols we couldn't get data for
+        missing = [s for s in symbols if s not in results]
+        if missing:
+            _log.warning("No real price data for %d symbols: %s", len(missing), missing)
+
+        return results
 
     def fetch_ticker(self, symbol: str) -> Optional[dict]:
         """
