@@ -25,6 +25,8 @@ from enzymes.wait import WaitEnzyme
 
 # Phase D: Learning Synthases
 from enzymes.record_trade_outcome import RecordTradeOutcome
+from enzymes.update_learning import UpdateLearning
+from enzymes.update_mark_prices import UpdateMarkPrices
 from enzymes.update_rulebook import UpdateRulebook
 
 __all__ = [
@@ -46,5 +48,7 @@ __all__ = [
     "WaitEnzyme",
     # Phase D
     "RecordTradeOutcome",
+    "UpdateLearning",
+    "UpdateMarkPrices",
     "UpdateRulebook",
 ]
