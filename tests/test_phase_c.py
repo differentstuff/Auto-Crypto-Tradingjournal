@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.substrate import Substrate
 from core.enzyme import EnzymeClass
 from enzymes.approve_exit import _update_trailing_stop
+from enzymes.record_trade_outcome import _extract_indicator_signals
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +114,18 @@ def _make_config(overrides: dict | None = None) -> dict:
             "max_cycle_steps": 20,
             "substrate_state_max_rows": 200,
         },
+        # Indicators the strategy actually uses — same list that ScoreConfluence
+        # reads via substrate.cfg("indicators", []).  RecordTradeOutcome uses
+        # this to filter which per-indicator signals are recorded so the learning
+        # engine only tracks indicators that influenced the trade decision.
+        "indicators": [
+            {"name": "rsi", "params": {"period": 14}, "weight": 0.25},
+            {"name": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}, "weight": 0.20},
+            {"name": "ema_stack", "params": {}, "weight": 0.20},
+            {"name": "adx", "params": {"period": 14}, "weight": 0.10},
+            {"name": "wavetrend", "params": {}, "weight": 0.15},
+            {"name": "volume", "params": {}, "weight": 0.10},
+        ],
     }
     if overrides:
         # Deep-merge one level
@@ -190,6 +203,88 @@ def _make_open_position(
         "trailing_active": False,
         "trailing_sl": None,
         "peak_price": mark_price,
+    }
+
+
+def _make_indicator_data(
+    symbol: str = "BTCUSDT",
+    timeframe: str = "4H",
+) -> dict:
+    """
+    Build realistic indicator data matching what CollectOHLCV writes to
+    substrate.market.indicators.
+
+    Structure: {symbol: {timeframe: {indicator_name: result_dict, ...}, ...}}
+    Each timeframe dict has an "ok" key set to True.
+
+    The indicator result dicts match the output format of the compute
+    functions in indicators/*.py (rsi, macd, ema_stack, adx, wavetrend,
+    volume, etc.).
+
+    Default data is bullish — suitable for testing the learning loop
+    with a long trade entry.
+    """
+    return {
+        symbol: {
+            timeframe: {
+                "ok": True,
+                "rsi": {"value": 65.3, "level": "neutral"},
+                "macd": {
+                    "macd": 100.5,
+                    "signal": 95.2,
+                    "histogram": 5.3,
+                    "bias": "bullish",
+                    "histogram_growing": True,
+                    "crossover": False,
+                    "crossunder": False,
+                },
+                "ema_stack": {
+                    "ema20": 50200.0,
+                    "ema50": 49800.0,
+                    "ema200": 48000.0,
+                    "current_price": 50500.0,
+                    "alignment": "bullish",
+                    "stack": "bullish",
+                },
+                "adx": {
+                    "value": 28.5,
+                    "trend_strength": "trending",
+                    "direction": "bullish",
+                },
+                "wavetrend": {
+                    "wt1": 15.0,
+                    "wt2": 10.0,
+                    "histogram": 5.0,
+                    "mfi": 20.0,
+                    "cross": "bullish",
+                    "zone": "neutral",
+                    "signal": "buy",
+                },
+                "volume": {
+                    "current": 1200.0,
+                    "avg_20": 800.0,
+                    "ratio": 1.5,
+                    "signal": "high volume (1.5x avg)",
+                },
+                # Non-configured indicators — present in raw data but NOT
+                # extracted by _extract_indicator_signals when indicator_configs
+                # filters to only the 6 indicators above.
+                "atr": {"value": 800.0, "pct": 1.6, "comment": "typical"},
+                "bollinger": {
+                    "upper": 52000.0,
+                    "mid": 50500.0,
+                    "lower": 49000.0,
+                    "position_pct": 50.0,
+                    "band_width": 5.94,
+                    "signal": "mid-band area",
+                },
+                "stoch_rsi": {
+                    "k": 55.0,
+                    "d": 50.0,
+                    "signal": "neutral",
+                },
+            },
+        },
     }
 
 
@@ -823,12 +918,16 @@ class TestExecuteTrade:
 
     def test_paper_mode_records_to_trade_learning(self, temp_db):
         """Paper mode: trade is recorded in trade_learning table by RecordTradeOutcome."""
+        import json
         import sqlite3
         from enzymes.record_trade_outcome import RecordTradeOutcome
         recorder = RecordTradeOutcome(config=_make_config({"daemon": {"paper_mode": True}}))
         sub = _make_substrate({"daemon": {"paper_mode": True}})
         sub.portfolio["open_positions"] = []
         sub.portfolio["equity"] = 10000.0
+        # Populate market.indicators so _extract_indicator_signals has data
+        sub.market["indicators"] = _make_indicator_data("BTCUSDT")
+        sub.analysis["signal_states"] = {"BTCUSDT": "Bullish"}
         sub.decisions["trade_approved"] = {
             "symbol": "BTCUSDT", "direction": "Long",
             "entry_price": 50000.0, "sl_price": 49000.0,
@@ -844,6 +943,16 @@ class TestExecuteTrade:
         rows = conn.execute("SELECT * FROM trade_learning WHERE symbol='BTCUSDT'").fetchall()
         conn.close()
         assert len(rows) >= 1
+        # Verify signals_at_entry_json was populated with per-indicator signals
+        row = rows[0]
+        signals_json = row[6] if len(row) > 6 else None  # signals_at_entry_json column
+        if signals_json:
+            signals = json.loads(signals_json)
+            assert isinstance(signals, dict)
+            # At least one directional indicator should be present
+            directional = [k for k, v in signals.items()
+                          if isinstance(v, dict) and v.get("signal") in ("bullish", "bearish")]
+            assert len(directional) >= 1, f"Expected directional signals, got: {signals}"
 
     def test_paper_mode_does_not_call_exchange_api(self, temp_db):
         """Paper mode: no real exchange API call is made."""
@@ -933,6 +1042,9 @@ class TestExecuteExit:
         # First record an entry so the UPDATE can find it
         recorder = RecordTradeOutcome(config=_make_config({"daemon": {"paper_mode": True}}))
         sub = _make_substrate({"daemon": {"paper_mode": True}})
+        # Populate market.indicators so entry recording has signal data
+        sub.market["indicators"] = _make_indicator_data("BTCUSDT")
+        sub.analysis["signal_states"] = {"BTCUSDT": "Bullish"}
         sub.decisions["trade_approved"] = {
             "symbol": "BTCUSDT", "direction": "Long", "score": 7.5,
         }
