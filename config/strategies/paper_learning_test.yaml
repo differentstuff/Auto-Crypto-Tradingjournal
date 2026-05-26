@@ -26,7 +26,7 @@ strategy:
   timeframe: "4h"
   confirmation_tf: null                             # Skip 2nd timeframe, fewer API calls
   max_positions: 3
-  cycle_interval_minutes: 5
+  cycle_interval_minutes: 10
   max_position_duration_hours: 24
 
 symbols:
@@ -120,9 +120,10 @@ learning:
   min_trades_per_signal: 10
   significance_level: 0.05
   rulebook_max_rules: 10
-  retrain_every_hours: 6
+  retrain_every_n_trades: 5
   track_idle_cycles: true
-  trajectory_lookback_bars: 12
+  trajectory_lookback_hours: 24
+  trajectory_min_hours: 4
 
 portfolio:
   max_positions: 3
