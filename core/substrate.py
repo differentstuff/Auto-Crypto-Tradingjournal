@@ -252,6 +252,7 @@ class Substrate:
             "last_scan_at": "",
             "indicators": {},
             "indicator_history": {},  # {symbol: [{timestamp, indicators: {...}}, ...]
+            "last_candle_close_ts": {},  # {symbol_tf: ISO_timestamp} — survives reset_cycle
             "last_prices": {},         # {symbol: float} — last close price per symbol
             "pre_trade_context": {},
             "macro": {},
@@ -539,14 +540,19 @@ class Substrate:
 
     def reset_cycle(self) -> None:
         """Reset per-cycle fields for a new daemon cycle."""
-        # Market section: clear for re-sensing
-        self.market["indicators"] = {}
+        # Market section: clear transient fields for re-sensing.
+        # NOTE: indicators and last_candle_close_ts are NOT cleared here.
+        # CollectOHLCV manages indicators: it refreshes them only when a new
+        # candle has closed. Between candle closes, indicators persist because
+        # they represent the last completed candle's data — still valid.
+        # This eliminates redundant API calls (P7: smart OHLCV activation).
         self.market["last_scan_at"] = ""
         self.market["macro"] = {}
         self.market["pre_trade_context"] = {}
-        # NOTE: indicator_history is NOT cleared here.
-        # It accumulates across cycles and survives reset_cycle().
-        # indicator_history is trimmed by CollectOHLCV to the configured max length.
+        # NOTE: indicator_history and last_candle_close_ts are NOT cleared.
+        # They accumulate across cycles and survive reset_cycle().
+        # indicator_history is trimmed by CollectOHLCV to the configured time span.
+        # last_candle_close_ts tracks when each symbol/tf last had a candle close.
         # After restart, _bootstrap_indicator_history() computes history from
         # OHLCV data so trades are not blocked by ISC-007.
         # Analysis section: clear for re-evaluation
@@ -581,7 +587,7 @@ class Substrate:
         """Record an idle cycle with reason."""
         self.decisions["action"] = "wait"
         self.learning["idle_cycles"] += 1
-        self.learning["idle_reasons"].append(reason)
+        self.learning["idle_reasons"] = [*self.learning["idle_reasons"], reason]
         self.learning["total_idle_cycles_recorded"] += 1
 
     # --- Serialization --------------------------------------------------------
