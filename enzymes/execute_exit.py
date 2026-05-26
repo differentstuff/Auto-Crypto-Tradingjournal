@@ -5,6 +5,9 @@ Closes positions by removing them from the portfolio.
 In paper mode, updates portfolio without calling exchange APIs.
 In live mode, calls exchange via core/exchange.py.
 
+After closing, applies PnL to portfolio.equity so paper trading
+tracks a realistic compounding equity curve.
+
 DB recording of trade outcomes is handled by RecordTradeOutcome (Synthase),
 which runs after this enzyme in the pipeline.
 
@@ -86,6 +89,17 @@ class ExecuteExit(Enzyme):
             else:
                 pnl_pct = ((entry_price - mark_price) / entry_price) * 100
         pnl_usdt = size_usdt * pnl_pct / 100
+
+        # Apply PnL to portfolio equity (both paper and live)
+        # In paper mode this is the only equity update path.
+        # In live mode SyncPositions overwrites with real exchange equity next cycle.
+        current_equity = substrate.portfolio.get("equity", 0)
+        if current_equity > 0:
+            substrate.portfolio["equity"] = round(current_equity + pnl_usdt, 2)
+            self._log.info(
+                "Equity updated: %.2f → %.2f (PnL: %+.2f USDT)",
+                current_equity, substrate.portfolio["equity"], pnl_usdt,
+            )
 
         if paper_mode:
             self._log.info(

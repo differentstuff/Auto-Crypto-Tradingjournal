@@ -6,7 +6,8 @@ Periodically reconciles portfolio state with the exchange:
   - Removes positions closed externally (manual close, liquidation)
   - Updates mark_price for open positions
 
-In paper mode, uses fallback_equity_usdt from config and skips exchange calls.
+In paper mode, preserves rolling equity (updated by ExecuteExit PnL) and falls back
+to fallback_equity_usdt only on first cycle or reset. Skips exchange calls.
 
 Enzyme class: Sensor
 Activates when: cycle_count % position_sync_every_n_cycles == 0
@@ -82,13 +83,21 @@ class SyncPositions(Enzyme):
         paper_mode = substrate.cfg("daemon.paper_mode", True)
 
         if paper_mode:
-            # Paper mode: use fallback equity, no exchange calls
+            # Paper mode: preserve rolling equity (updated by ExecuteExit PnL),
+            # fall back to configured value only on first cycle or reset.
+            # This gives paper trading a realistic compounding equity curve.
             fallback = substrate.cfg("portfolio.fallback_equity_usdt", 1000.0)
-            substrate.portfolio["equity"] = fallback
-            substrate.portfolio["available_margin"] = fallback
-            self._log.info(
-                "Paper sync: equity set to fallback %.2f USDT", fallback,
-            )
+            current_equity = substrate.portfolio.get("equity", 0)
+            if current_equity <= 0:
+                substrate.portfolio["equity"] = fallback
+                self._log.info(
+                    "Paper sync: equity initialized to fallback %.2f USDT", fallback,
+                )
+            else:
+                self._log.info(
+                    "Paper sync: preserving rolling equity %.2f USDT", current_equity,
+                )
+            substrate.portfolio["available_margin"] = substrate.portfolio["equity"]
             return substrate
 
         # Live mode: fetch from exchange
