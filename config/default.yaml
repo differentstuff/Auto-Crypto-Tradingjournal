@@ -10,7 +10,7 @@ system:
   reports_dir: "data/reports"
 
 daemon:
-  cycle_interval_minutes: 15
+  cycle_interval_minutes: 5
   max_cycle_steps: 20
   paper_mode: true  # safe default; exchange.yaml overrides to false when credentials present
   # If true, orders are written to log files instead of exchange
@@ -149,7 +149,6 @@ symbols:
     - ETHUSDT
     - SOLUSDT
   never_trade:
-    - SHIBUSDT
     - BOMEUSDT
   dynamic_filter:
     mode: "dynamic"
