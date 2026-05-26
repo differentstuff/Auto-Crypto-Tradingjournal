@@ -1,0 +1,143 @@
+# paper_learning_test.yaml -- Strategy for testing the learning system in paper mode.
+#
+# Purpose: Generate enough trades in 24-48h for the learning engine to produce
+# signal accuracy data, weight adjustments, and rulebook entries.
+#
+# Differences from momentum_rising:
+#   - 5 symbols (more opportunities)
+#   - Lower entry threshold (5.5 vs 6.5, more trades)
+#   - Fixed UID (learning data persists across restarts)
+#   - Lower min_trades_before_adjusting (15, start learning sooner)
+#   - 10-minute cycle interval (more frequent checks)
+#   - Trailing stop enabled (exits generate learning data)
+#
+# Run: python main.py --paper --strategy paper_learning_test
+
+description: |
+  Paper trading strategy for learning system validation.
+  Uses the same indicators as momentum_rising but with relaxed thresholds
+  to generate more trades. The learning engine tracks per-signal accuracy
+  and adjusts weights after 15+ closed trades per signal.
+  Designed for 24-48h continuous paper testing.
+
+strategy:
+  name: paper_learning_test
+  uid: "a1b2c3d4-5678-9abc-def0-1234567890ab"   # Fixed UID — learning data keyed to this
+  timeframe: "4h"
+  confirmation_tf: null                             # Skip 2nd timeframe, fewer API calls
+  max_positions: 3
+  cycle_interval_minutes: 5
+  max_position_duration_hours: 24
+
+symbols:
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - DOGEUSDT
+    - AVAXUSDT
+  never_trade: []
+  dynamic_filter:
+    mode: "off"
+    limit: 0
+
+indicators:
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.25
+    description: "RSI oversold/overbought. Look for bullish divergence at support."
+
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.25
+    description: "MACD histogram rising = momentum building. Cross above signal = bullish."
+
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.30
+    description: "EMA stack alignment confirms trend direction."
+
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.20
+    description: "ADX confirms trend strength. Avoid entries when ADX < 15."
+
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR for SL sizing. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "S/R levels for entry zone validation. Not a directional signal."
+
+scoring:
+  entry_threshold: 5.5
+  confluence_min_signals: 3
+  rr_minimum: 1.5
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 1.5
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.5
+    distance_pct: 1.0
+    move_to_breakeven_at_pct: 1.5
+  soft_exit:
+    requires_indicators_reversed: 2
+    requires_confirmation_tf: false
+    urgency: "soft"
+  duration_exit:
+    max_hours: 24
+    max_hours_extreme: 48
+
+entry_conditions:
+  - "at least 3 enabled indicators aligned in same direction"
+  - "confluence score above entry_threshold"
+  - "support or resistance level within 1% of entry zone"
+  - "stop loss set below support for long, above resistance for short"
+  - "risk per trade within configured limit"
+
+learning:
+  min_trades_before_adjusting: 15
+  min_trades_per_signal: 10
+  significance_level: 0.05
+  rulebook_max_rules: 10
+  retrain_every_hours: 6
+  track_idle_cycles: true
+  trajectory_lookback_bars: 12
+
+portfolio:
+  max_positions: 3
+  risk_per_trade_pct: 1.0
+  leverage: 5
+  max_total_risk_pct: 3.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: false
+
+modules:
+  macro_context: false
+  regime_detection: false
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false
