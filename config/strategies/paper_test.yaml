@@ -2,11 +2,11 @@ description: "Minimal paper test: 1 symbol, 2 indicators, no modules, no dynamic
 
 strategy:
   name: paper_test
-  uid: "5e06fab9-bf32-488f-acef-f191041fb54d"
+  uid: ""
   timeframe: "4h"
   confirmation_tf: null      # skip 2nd timeframe → 1 API call instead of 2
   max_positions: 1
-  cycle_interval_minutes: 5
+  cycle_interval_minutes: 15
 
 symbols:
   always_watch:
@@ -30,6 +30,16 @@ scoring:
   confluence_min_signals: 3
   rr_minimum: 2.0
 
+learning:
+  min_trades_before_adjusting: 15
+  min_trades_per_signal: 10
+  significance_level: 0.05
+  rulebook_max_rules: 10
+  retrain_every_n_trades: 5
+  track_idle_cycles: true
+  trajectory_lookback_hours: 24
+  trajectory_min_hours: 4
+
 exit_rules:
   hard_stop:
     width_atr_multiplier: 1.5
@@ -47,7 +57,7 @@ exit_rules:
 portfolio:
   max_positions: 1
   risk_per_trade_pct: 1.0
-  leverage: 1
+  leverage: 5
   max_total_risk_pct: 1.0
   fallback_equity_usdt: 1000.0
   correlation_check: false
