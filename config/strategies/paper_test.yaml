@@ -2,7 +2,7 @@ description: "Minimal paper test: 1 symbol, 2 indicators, no modules, no dynamic
 
 strategy:
   name: paper_test
-  uid: ""
+  uid: "5e06fab9-bf32-488f-acef-f191041fb54d"
   timeframe: "4h"
   confirmation_tf: null      # skip 2nd timeframe → 1 API call instead of 2
   max_positions: 1
