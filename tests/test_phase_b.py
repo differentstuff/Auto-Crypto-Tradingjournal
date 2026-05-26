@@ -13,6 +13,7 @@ Tests that:
 import pytest
 import pandas as pd
 import numpy as np
+from datetime import datetime, timezone
 
 from core.substrate import Substrate
 from core.enzyme import list_enzymes, create_enzyme, EnzymeClass
@@ -281,14 +282,25 @@ class TestEnzymeActivation:
     def test_collect_ohlcv_activates_when_empty(self, substrate):
         enz = create_enzyme("CollectOHLCV")
         assert enz is not None
-        # Fresh substrate has empty indicators → should activate
+        # Fresh substrate has empty indicators → should activate (cold start)
         assert enz.can_activate(substrate)
 
     def test_collect_ohlcv_does_not_activate_when_full(self, substrate):
         enz = create_enzyme("CollectOHLCV")
-        # Simulate filled indicators
+        # Simulate filled indicators WITH current candle close timestamps
+        # P7: CollectOHLCV only activates when a new candle has closed
         substrate.market["indicators"] = {"BTCUSDT": {"4H": {"ok": True}}}
         substrate.market["last_scan_at"] = "2024-01-01T00:00:00"
+        # Set last_candle_close_ts to current candle floor (no new candle)
+        # Must cover ALL symbols in symbols_watched AND both timeframes
+        from enzymes.collect_ohlcv import candle_floor
+        now = datetime.now(timezone.utc)
+        substrate.market["last_candle_close_ts"] = {
+            "BTCUSDT_4H": candle_floor(now, "4H").isoformat(),
+            "BTCUSDT_1H": candle_floor(now, "1H").isoformat(),
+            "ETHUSDT_4H": candle_floor(now, "4H").isoformat(),
+            "ETHUSDT_1H": candle_floor(now, "1H").isoformat(),
+        }
         assert not enz.can_activate(substrate)
 
     def test_score_confluence_requires_indicators(self, substrate):
@@ -434,7 +446,10 @@ class TestSubstrateReset:
 
         substrate.reset_cycle()
 
-        assert substrate.market["indicators"] == {}
+        # P7: indicators persist across reset_cycle (managed by CollectOHLCV)
+        assert substrate.market["indicators"] != {}
+        assert "BTCUSDT" in substrate.market["indicators"]
+        # Transient fields are still cleared
         assert substrate.market["last_scan_at"] == ""
         assert substrate.market["macro"] == {}
         assert substrate.market["pre_trade_context"] == {}
