@@ -72,10 +72,11 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
             timeframe = trade_approved.get("timeframe", "")
             # Extract per-indicator signals from current market data
             # indicator_data is substrate.market.indicators — the full indicator dict
-            indicator_signals = _extract_indicator_signals(
-                indicator_data if indicator_data else {},
-                symbol, timeframe,
-            )
+            indicator_signals = {}
+            if indicator_data:
+                indicator_signals = _extract_indicator_signals(
+                    indicator_data, symbol, timeframe,
+                )
             # Also include the confluence label for backward compatibility
             if signal_states and symbol:
                 label = signal_states.get(symbol, "")
