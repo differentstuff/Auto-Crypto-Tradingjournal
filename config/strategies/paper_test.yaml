@@ -6,7 +6,7 @@ strategy:
   timeframe: "4h"
   confirmation_tf: null      # skip 2nd timeframe → 1 API call instead of 2
   max_positions: 1
-  cycle_interval_minutes: 15
+  cycle_interval_minutes: 5
 
 symbols:
   always_watch:
