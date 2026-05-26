@@ -266,6 +266,8 @@ class TestSubstrateCycleReset:
         assert sub.decisions["action"] == "wait"
         assert sub.decisions["trade_approved"] is None
         assert sub._cycle_count == 1
+        # P7: indicators persist across reset_cycle (managed by CollectOHLCV)
+        # They are NOT cleared here — CollectOHLCV refreshes them only on new candles.
 
     def test_mark_idle(self):
         """mark_idle() records idle cycle with reason."""
