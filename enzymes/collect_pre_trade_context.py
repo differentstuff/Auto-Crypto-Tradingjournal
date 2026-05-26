@@ -5,10 +5,14 @@ Computes pre-trade trajectory analysis for each candidate using REAL
 indicator history from substrate.market.indicator_history (rolling window
 populated by CollectOHLCV).
 
-If indicator history is insufficient (first N cycles after startup), falls
-back to empty trajectory data, which sets coincidence_risk='high' and
-blocks trades via ISC-007. This is intentional: no trades until sufficient
-trajectory data exists.
+P8 (Time-Based Trajectory Sufficiency):
+  History sufficiency is measured by time span (trajectory_min_hours), not
+  by bar count. This ensures consistent behavior regardless of cycle frequency.
+
+If indicator history is insufficient (time span < trajectory_min_hours), falls
+back to empty trajectory data, which sets coincidence_risk='high' and blocks
+trades via ISC-007. This is intentional: no trades until sufficient trajectory
+data exists.
 
 Enzyme class: Sensor
 Activates when: analysis.candidates not empty AND market.pre_trade_context is empty
@@ -17,6 +21,7 @@ Activates when: analysis.candidates not empty AND market.pre_trade_context is em
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from core.enzyme import Enzyme, EnzymeClass, register_enzyme
@@ -122,19 +127,48 @@ def _classify_trajectory(indicator_history: list[dict]) -> dict:
     }
 
 
+def _compute_history_span_hours(history: list[dict]) -> float:
+    """
+    Compute the time span in hours covered by the indicator history.
+
+    P8: Uses timestamps from history entries to determine real elapsed time,
+    not bar count. Returns 0.0 if timestamps are missing or unparseable.
+    """
+    if not history or len(history) < 2:
+        return 0.0
+
+    first_ts = history[0].get("timestamp", "")
+    last_ts = history[-1].get("timestamp", "")
+
+    if not first_ts or not last_ts:
+        return 0.0
+
+    try:
+        first_dt = datetime.fromisoformat(first_ts)
+        last_dt = datetime.fromisoformat(last_ts)
+        if first_dt.tzinfo is None:
+            first_dt = first_dt.replace(tzinfo=timezone.utc)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        span_seconds = (last_dt - first_dt).total_seconds()
+        return max(0.0, span_seconds / 3600.0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
 @register_enzyme
 class CollectPreTradeContext(Enzyme):
     """
     Sensor enzyme: compute pre-trade trajectory for candidates.
 
-    For each candidate, analyzes how indicators aligned over the last
-    N cycles (configurable via learning.trajectory_lookback_bars).
+    For each candidate, analyzes how indicators aligned over the lookback
+    period (configurable via learning.trajectory_lookback_hours).
     Uses REAL indicator history from substrate.market.indicator_history,
-    which is populated by CollectOHLCV on each cycle.
+    which is populated by CollectOHLCV on each candle close.
 
-    If history is insufficient (first N cycles after startup), sets
-    coincidence_risk='high', which blocks trades via ISC-007.
-    This is intentional: we don't trade on insufficient data.
+    P8: History sufficiency is measured by time span (trajectory_min_hours),
+    not bar count. If the history spans less than trajectory_min_hours,
+    coincidence_risk is set to 'high' and trades are blocked via ISC-007.
 
     Writes to substrate.market.pre_trade_context as:
         {symbol: {trajectory_type, coincidence_risk, bars_aligned, ...}}
@@ -161,7 +195,8 @@ class CollectPreTradeContext(Enzyme):
         if not candidates:
             return substrate
 
-        min_history = substrate.cfg("learning.trajectory_min_bars", 4)
+        # P8: Use time-based sufficiency check (trajectory_min_hours)
+        min_hours = substrate.cfg("learning.trajectory_min_hours", 8)
         indicator_history = substrate.market.get("indicator_history", {})
         pre_trade_context = {}
 
@@ -171,32 +206,37 @@ class CollectPreTradeContext(Enzyme):
             # Get real indicator history for this symbol
             symbol_history = indicator_history.get(symbol, [])
 
-            if len(symbol_history) < min_history:
-                # Insufficient history — block trade via ISC-007
-                # This happens in the first N cycles after startup
+            # P8: Check time span, not bar count
+            span_hours = _compute_history_span_hours(symbol_history)
+
+            if span_hours < min_hours:
+                # Insufficient time span — block trade via ISC-007
                 _log.info(
-                    "Insufficient trajectory history for %s: %d/%d bars",
-                    symbol, len(symbol_history), min_history,
+                    "Insufficient trajectory history for %s: %.1fh / %.1fh required",
+                    symbol, span_hours, min_hours,
                 )
                 pre_trade_context[symbol] = {
                     "trajectory_type": "insufficient_data",
                     "coincidence_risk": "high",
                     "bars_aligned": 0,
                     "total_bars": len(symbol_history),
+                    "span_hours": round(span_hours, 1),
                     "strength": 0.0,
                 }
                 continue
 
             # Use real history for trajectory classification
             trajectory = _classify_trajectory(symbol_history)
+            # P8: Add span_hours to trajectory data for observability
+            trajectory["span_hours"] = round(span_hours, 1)
             pre_trade_context[symbol] = trajectory
 
         substrate.market["pre_trade_context"] = pre_trade_context
         substrate.analysis["pre_trade_evaluated"] = True
 
         self._log.info(
-            "Pre-trade context: %d symbols analyzed (using real history)",
-            len(pre_trade_context),
+            "Pre-trade context: %d symbols analyzed (using real history, min %.1fh)",
+            len(pre_trade_context), min_hours,
         )
 
         return substrate
