@@ -34,11 +34,342 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ---------------------------------------------------------------------------
+# Per-indicator signal extraction
+# ---------------------------------------------------------------------------
+# Each function takes the raw indicator result dict (as stored in
+# substrate.market.indicators[symbol][timeframe][indicator_name]) and
+# returns a normalised dict with at least a "signal" key containing
+# "bullish", "bearish", or "neutral".  Additional fields are preserved
+# so the learning engine can do richer analysis later.
+#
+# These extractors mirror the directional logic in ScoreConfluence so
+# that the learning engine's accuracy tracking is consistent with the
+# scoring that actually triggered the trade.
+
+def _extract_rsi_signal(rsi: dict) -> dict:
+    """RSI directional signal: overbought → bearish, oversold → bullish."""
+    value = rsi.get("value", 50)
+    level = rsi.get("level", "neutral")
+    if value > 55:
+        signal = "bullish"
+    elif value < 45:
+        signal = "bearish"
+    else:
+        signal = "neutral"
+    return {"signal": signal, "value": value, "level": level}
+
+
+def _extract_macd_signal(macd: dict) -> dict:
+    """MACD directional signal from bias + histogram growth."""
+    bias = macd.get("bias", "")
+    histogram_growing = macd.get("histogram_growing", False)
+    crossover = macd.get("crossover", False)
+    crossunder = macd.get("crossunder", False)
+    if "bullish" in bias:
+        signal = "bullish"
+    elif "bearish" in bias:
+        signal = "bearish"
+    else:
+        signal = "neutral"
+    return {
+        "signal": signal,
+        "bias": bias,
+        "histogram_growing": histogram_growing,
+        "crossover": crossover,
+        "crossunder": crossunder,
+    }
+
+
+def _extract_ema_signal(ema: dict) -> dict:
+    """EMA stack directional signal from alignment + stack."""
+    alignment = ema.get("alignment", "")
+    stack = ema.get("stack", "")
+    if "bullish" in alignment and "bullish" in stack:
+        signal = "bullish"
+    elif "bearish" in alignment and "bearish" in stack:
+        signal = "bearish"
+    elif "bullish" in alignment or "bullish" in stack:
+        signal = "bullish"
+    elif "bearish" in alignment or "bearish" in stack:
+        signal = "bearish"
+    else:
+        signal = "neutral"
+    return {"signal": signal, "alignment": alignment, "stack": stack}
+
+
+def _extract_adx_signal(adx: dict) -> dict:
+    """ADX directional signal from direction field."""
+    direction = adx.get("direction", "")
+    value = adx.get("value", 0)
+    trend_strength = adx.get("trend_strength", "weak")
+    if "bullish" in direction:
+        signal = "bullish"
+    elif "bearish" in direction:
+        signal = "bearish"
+    else:
+        signal = "neutral"
+    return {"signal": signal, "value": value, "trend_strength": trend_strength}
+
+
+def _extract_wavetrend_signal(wt: dict) -> dict:
+    """WaveTrend directional signal from crossover/zone."""
+    if not wt or not isinstance(wt, dict):
+        return {"signal": "neutral"}
+    signal_raw = wt.get("signal")
+    zone = wt.get("zone", "")
+    cross = wt.get("cross", "")
+    if signal_raw == "gold_buy":
+        return {"signal": "bullish", "zone": zone, "cross": cross}
+    if signal_raw == "buy":
+        return {"signal": "bullish", "zone": zone, "cross": cross}
+    if signal_raw == "sell":
+        return {"signal": "bearish", "zone": zone, "cross": cross}
+    # Fallback: use zone
+    if "overbought" in zone:
+        return {"signal": "bearish", "zone": zone, "cross": cross}
+    if "oversold" in zone:
+        return {"signal": "bullish", "zone": zone, "cross": cross}
+    # Fallback: use wt1 position
+    wt1 = wt.get("wt1", 0)
+    if wt1 > 20:
+        return {"signal": "bullish", "zone": zone, "cross": cross, "wt1": wt1}
+    if wt1 < -20:
+        return {"signal": "bearish", "zone": zone, "cross": cross, "wt1": wt1}
+    return {"signal": "neutral", "zone": zone, "cross": cross}
+
+
+def _extract_stochrsi_signal(srsi: dict) -> dict:
+    """Stochastic RSI directional signal from K/D crossover and zone."""
+    if not srsi or not isinstance(srsi, dict):
+        return {"signal": "neutral"}
+    k = srsi.get("k", 50)
+    d = srsi.get("d", 50)
+    signal_text = srsi.get("signal", "")
+    if "overbought" in signal_text.lower():
+        return {"signal": "bearish", "k": k, "d": d}
+    if "oversold" in signal_text.lower():
+        return {"signal": "bullish", "k": k, "d": d}
+    # K crossing above D → bullish momentum
+    if k > d:
+        return {"signal": "bullish", "k": k, "d": d}
+    if k < d:
+        return {"signal": "bearish", "k": k, "d": d}
+    return {"signal": "neutral", "k": k, "d": d}
+
+
+def _extract_cvd_signal(cvd: dict) -> dict:
+    """CVD directional signal from trend direction."""
+    if not cvd or not isinstance(cvd, dict):
+        return {"signal": "neutral"}
+    trend = cvd.get("trend", "flat")
+    value = cvd.get("value", 0)
+    if trend == "rising":
+        return {"signal": "bullish", "trend": trend, "value": value}
+    if trend == "falling":
+        return {"signal": "bearish", "trend": trend, "value": value}
+    return {"signal": "neutral", "trend": trend, "value": value}
+
+
+def _extract_order_flow_signal(of: dict) -> dict:
+    """Order flow directional signal from delta direction."""
+    if not of or not isinstance(of, dict):
+        return {"signal": "neutral"}
+    sig = of.get("signal", "neutral")
+    delta = of.get("delta", 0)
+    divergence = of.get("divergence", False)
+    if "buying" in sig:
+        return {"signal": "bullish", "delta": delta, "divergence": divergence}
+    if "selling" in sig:
+        return {"signal": "bearish", "delta": delta, "divergence": divergence}
+    return {"signal": "neutral", "delta": delta, "divergence": divergence}
+
+
+def _extract_volume_signal(vol: dict) -> dict:
+    """Volume signal — not directional, but confirms/rejects direction.
+
+    Stored as "neutral" because volume alone doesn't have a bullish/bearish
+    stance; it amplifies whatever direction the other indicators show.
+    The learning engine skips neutral signals, but the ratio and raw signal
+    text are preserved for future analysis.
+    """
+    if not vol or not isinstance(vol, dict):
+        return {"signal": "neutral"}
+    ratio = vol.get("ratio", 1.0)
+    raw_signal = vol.get("signal", "")
+    current = vol.get("current", 0)
+    avg = vol.get("avg_20", 0)
+    return {
+        "signal": "neutral",
+        "ratio": ratio,
+        "current": current,
+        "avg_20": avg,
+        "raw_signal": raw_signal,
+    }
+
+
+def _extract_bollinger_signal(boll: dict) -> dict:
+    """Bollinger Bands directional signal from position within bands."""
+    if not boll or not isinstance(boll, dict):
+        return {"signal": "neutral"}
+    position_pct = boll.get("position_pct", 50)
+    band_width = boll.get("band_width")
+    raw_signal = boll.get("signal", "")
+    # Upper band area → bearish (overbought), lower band area → bullish (oversold)
+    if position_pct > 80:
+        return {"signal": "bearish", "position_pct": position_pct, "band_width": band_width}
+    if position_pct < 20:
+        return {"signal": "bullish", "position_pct": position_pct, "band_width": band_width}
+    return {"signal": "neutral", "position_pct": position_pct, "band_width": band_width}
+
+
+def _extract_atr_signal(atr: dict) -> dict:
+    """ATR — volatility context, not directional. Stored for SL sizing reference."""
+    if not atr or not isinstance(atr, dict):
+        return {"signal": "neutral"}
+    return {
+        "signal": "neutral",
+        "value": atr.get("value", 0),
+        "pct": atr.get("pct", 0),
+    }
+
+
+# Registry: indicator name → extraction function
+# Only indicators with a meaningful directional signal are tracked
+# by the learning engine for accuracy.  Non-directional indicators
+# (ATR, volume) are included for context but have signal="neutral".
+_INDICATOR_EXTRACTORS = {
+    "rsi": _extract_rsi_signal,
+    "macd": _extract_macd_signal,
+    "ema_stack": _extract_ema_signal,
+    "adx": _extract_adx_signal,
+    "wavetrend": _extract_wavetrend_signal,
+    "stoch_rsi": _extract_stochrsi_signal,
+    "cvd": _extract_cvd_signal,
+    "order_flow": _extract_order_flow_signal,
+    "volume": _extract_volume_signal,
+    "bollinger": _extract_bollinger_signal,
+    "atr": _extract_atr_signal,
+}
+
+
+def _extract_indicator_signals(
+    indicator_data: dict,
+    symbol: str,
+    timeframe: str = "",
+    indicator_configs: list | None = None,
+) -> dict:
+    """
+    Extract per-indicator directional signals from substrate.market.indicators.
+
+    Takes the raw indicator data structure produced by CollectOHLCV:
+        {symbol: {timeframe: {indicator_name: result_dict, ...}, ...}, ...}
+
+    Returns a flat dict of normalised signals:
+        {indicator_name: {signal: "bullish"|"bearish"|"neutral", ...}, ...}
+
+    The "signal" field is what the learning engine (analyzer.py, combination.py)
+    uses to track per-indicator accuracy and compute adjusted weights.
+
+    Each indicator's signal direction is determined by the same logic that
+    ScoreConfluence uses for scoring, ensuring consistency between what
+    triggered the trade and what the learning engine evaluates.
+
+    Config-driven filtering:
+        If indicator_configs is provided (from strategy YAML), only indicators
+        with weight > 0 are extracted. This ensures the learning engine tracks
+        only indicators that actually influenced the trade decision — not noise
+        from indicators the strategy doesn't use.
+
+        If indicator_configs is None, all known extractors are used (backward
+        compat for callers that don't pass config).
+
+    Args:
+        indicator_data: substrate.market.indicators — nested dict by symbol/timeframe.
+        symbol: Trade symbol (e.g. "BTCUSDT").
+        timeframe: Primary timeframe (e.g. "4H"). If empty, uses first available.
+        indicator_configs: List of indicator config dicts from strategy YAML.
+            Each dict has "name" and "weight" keys. If None, all known
+            indicators are extracted. If empty list, no indicators are extracted.
+
+    Returns:
+        Dict of {indicator_name: {signal: str, ...relevant_fields}}.
+        Empty dict if no data found for the symbol/timeframe.
+    """
+    if not indicator_data or not symbol:
+        return {}
+
+    # Determine which indicators the strategy actually uses.
+    # Only extract signals for indicators with weight > 0 — these are the
+    # ones that influenced the trade decision via ScoreConfluence.
+    # This keeps the learning loop tight: accuracy is only tracked for
+    # indicators that contributed to the confluence score.
+    if indicator_configs is not None:
+        active_indicators = {
+            cfg.get("name", "")
+            for cfg in indicator_configs
+            if cfg.get("weight", 0) > 0
+        }
+        if not active_indicators:
+            # No indicators configured → nothing to extract
+            return {}
+    else:
+        # Backward compat: extract all known indicators
+        active_indicators = set(_INDICATOR_EXTRACTORS.keys())
+
+    # Navigate to the symbol's indicator data
+    sym_data = indicator_data.get(symbol)
+    if not sym_data or not isinstance(sym_data, dict):
+        return {}
+
+    # Pick the timeframe
+    if timeframe and timeframe in sym_data:
+        tf_data = sym_data[timeframe]
+    else:
+        # Fall back to first available timeframe with valid data
+        for tf_key in sym_data:
+            tf_data = sym_data[tf_key]
+            if isinstance(tf_data, dict) and tf_data.get("ok"):
+                timeframe = tf_key
+                break
+        else:
+            return {}
+
+    if not isinstance(tf_data, dict) or not tf_data.get("ok"):
+        return {}
+
+    # Extract signals only for active (strategy-configured) indicators
+    signals = {}
+    for ind_name in active_indicators:
+        if ind_name not in _INDICATOR_EXTRACTORS:
+            continue
+        extractor = _INDICATOR_EXTRACTORS[ind_name]
+        raw = tf_data.get(ind_name)
+        if raw is None:
+            continue
+        if not isinstance(raw, dict):
+            # Some indicators return lists (sr_levels, trendlines) — skip
+            continue
+        try:
+            extracted = extractor(raw)
+            if extracted and isinstance(extracted, dict):
+                signals[ind_name] = extracted
+        except Exception:
+            _log.debug("Failed to extract signal for %s", ind_name, exc_info=True)
+
+    return signals
+
+
+# ---------------------------------------------------------------------------
+# DB recording functions
+# ---------------------------------------------------------------------------
+
 def _record_trade_entry(trade_approved: dict, strategy_name: str,
                         strategy_uid: str = "legacy",
                         signal_states: dict = None,
                         trajectory_data: dict = None,
-                        indicator_data: dict = None) -> None:
+                        indicator_data: dict = None,
+                        indicator_configs: list | None = None) -> None:
     """
     Record a new trade entry in the trade_learning table.
 
@@ -52,7 +383,9 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
         signal_states: Dict of {symbol: label} from substrate.analysis.signal_states.
         trajectory_data: Dict of trajectory info from substrate.market.pre_trade_context.
         indicator_data: Dict of {symbol: {tf: {indicator: result}}} from substrate.market.indicators.
-        indicator_configs: List of indicator config dicts from strategy (for threshold extraction).
+        indicator_configs: List of indicator config dicts from strategy YAML.
+            Each dict has "name" and "weight" keys. Only indicators with
+            weight > 0 are extracted, keeping the learning loop tight.
     """
     try:
         from core.database import db_conn
@@ -70,13 +403,13 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
         if trade_approved:
             symbol = trade_approved.get("symbol", "")
             timeframe = trade_approved.get("timeframe", "")
-            # Extract per-indicator signals from current market data
-            # indicator_data is substrate.market.indicators — the full indicator dict
-            indicator_signals = {}
-            if indicator_data:
-                indicator_signals = _extract_indicator_signals(
-                    indicator_data, symbol, timeframe,
-                )
+            # Extract per-indicator signals from current market data.
+            # Only extract indicators the strategy actually uses (weight > 0)
+            # so the learning engine tracks accuracy of relevant indicators only.
+            indicator_signals = _extract_indicator_signals(
+                indicator_data, symbol, timeframe,
+                indicator_configs=indicator_configs,
+            )
             # Also include the confluence label for backward compatibility
             if signal_states and symbol:
                 label = signal_states.get(symbol, "")
@@ -231,13 +564,20 @@ class RecordTradeOutcome(Enzyme):
         if action == "trade_open":
             trade_approved = substrate.decisions.get("trade_approved")
             if trade_approved:
-                # Pass signal states and trajectory data for learning
+                # Pass indicator data so _extract_indicator_signals can build
+                # per-indicator signals for the learning engine.
+                # This is the critical link: without it, signals_at_entry_json
+                # is empty and the learning feedback loop is dormant.
                 signal_states = substrate.analysis.get("signal_states", {})
                 trajectory_data = substrate.market.get("pre_trade_context", {})
+                indicator_data = substrate.market.get("indicators", {})
+                indicator_configs = substrate.cfg("indicators", [])
                 _record_trade_entry(
                     trade_approved, strategy_name, strategy_uid,
                     signal_states=signal_states,
                     trajectory_data=trajectory_data,
+                    indicator_data=indicator_data,
+                    indicator_configs=indicator_configs,
                 )
                 self._log.info(
                     "Recorded trade entry: %s %s",
