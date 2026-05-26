@@ -47,7 +47,7 @@ exit_rules:
 portfolio:
   max_positions: 1
   risk_per_trade_pct: 1.0
-  leverage: 5
+  leverage: 1
   max_total_risk_pct: 1.0
   fallback_equity_usdt: 1000.0
   correlation_check: false
