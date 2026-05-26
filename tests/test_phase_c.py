@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.substrate import Substrate
 from core.enzyme import EnzymeClass
+from enzymes.approve_exit import _update_trailing_stop
 
 
 # ---------------------------------------------------------------------------
@@ -532,26 +533,18 @@ class TestApproveExit:
 
     def test_trailing_stop_not_active_below_threshold(self):
         """Trailing stop does not activate when profit is below activation_pct."""
-        enzyme = self._get_enzyme()
         sub = _make_substrate()
         # activation_pct = 1.5%, position only up 0.5%
         pos = _make_open_position(entry_price=50000.0, mark_price=50250.0)  # +0.5%
         pos["trailing_active"] = False
         pos["trailing_sl"] = None
         pos["peak_price"] = 50250.0
-        sub.portfolio["open_positions"] = [pos]
-        sub.decisions["exit_request"] = None
 
-        # No exit_request → enzyme won't activate; test the trailing logic directly
-        # by calling the trailing update method if it exists, or via a cycle
-        # We check that trailing_active remains False
-        if hasattr(enzyme, "_update_trailing_stop"):
-            enzyme._update_trailing_stop(pos, sub.config)
-        assert pos["trailing_active"] is False
+        result = _update_trailing_stop(pos, sub.config)
+        assert result["trailing_active"] is False
 
     def test_trailing_stop_activates_above_threshold(self):
         """Trailing stop activates when profit exceeds activation_pct (config-driven)."""
-        enzyme = self._get_enzyme()
         sub = _make_substrate()
         # activation_pct = 1.5%, position up 2.0%
         pos = _make_open_position(entry_price=50000.0, mark_price=51000.0)  # +2.0%
@@ -559,12 +552,11 @@ class TestApproveExit:
         pos["trailing_sl"] = None
         pos["peak_price"] = 51000.0
 
-        if hasattr(enzyme, "_update_trailing_stop"):
-            result = enzyme._update_trailing_stop(pos, sub.config)
-            assert result["trailing_active"] is True
-            # When breakeven_at_activation=True, trailing_sl should be >= entry_price
-            assert result["trailing_sl"] is not None
-            assert result["trailing_sl"] >= result["entry_price"]
+        result = _update_trailing_stop(pos, sub.config)
+        assert result["trailing_active"] is True
+        # When breakeven_at_activation=True, trailing_sl should be >= entry_price
+        assert result["trailing_sl"] is not None
+        assert result["trailing_sl"] >= result["entry_price"]
 
     def test_trailing_stop_state_on_position_dict(self):
         """Trailing stop state (trailing_active, trailing_sl, peak_price) lives on position dict."""
@@ -576,17 +568,15 @@ class TestApproveExit:
 
     def test_trailing_stop_peak_price_updates_with_position(self):
         """peak_price on position dict updates as mark_price rises (long)."""
-        enzyme = self._get_enzyme()
         sub = _make_substrate()
         pos = _make_open_position(entry_price=50000.0, mark_price=51500.0)  # +3%
         pos["trailing_active"] = True
         pos["trailing_sl"] = 50000.0  # at breakeven
         pos["peak_price"] = 51000.0   # previous peak
 
-        if hasattr(enzyme, "_update_trailing_stop"):
-            result = enzyme._update_trailing_stop(pos, sub.config)
-            # peak_price should have moved up to 51500
-            assert result["peak_price"] >= 51500.0
+        result = _update_trailing_stop(pos, sub.config)
+        # peak_price should have moved up to 51500
+        assert result["peak_price"] >= 51500.0
 
     def test_trailing_stop_triggers_exit_on_retrace(self):
         """Trailing stop triggers an exit request when price retraces below trailing_sl."""
