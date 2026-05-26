@@ -1,6 +1,6 @@
 # Auto-Trader
 
-> **Disclaimer:** This repo uses ai-assited tools. Not reviewed by professional security experts. Use at your own risk.
+> **Disclaimer:** Vibe-coded with [Claude Code](https://claude.ai/code). Not reviewed by professional security experts. Use at your own risk.
 
 Self-hosted, 24/7 automated crypto futures trading system. Runs a reaction network of enzymes that sense market conditions, evaluate setups, regulate risk, and learn from every outcome. Designed for a Raspberry Pi 5 or any Linux box.
 
@@ -53,6 +53,7 @@ Fully operational. All core modules are built and tested:
 - On-chain metrics (MVRV, exchange flow) — module toggle exists, code not ported
 - HMM regime detection — module toggle exists, code not ported
 - Sentiment / Nansen / Grok / liquidation clusters — module toggle exists, code not ported
+- Browser UI — not needed for daemon operation, not ported
 
 ---
 
@@ -80,6 +81,51 @@ Each cycle: find activatable enzymes → regulators fire first → highest flux-
 ## Strategy Configuration
 
 Strategies are YAML files. The daemon picks up changes on every cycle — no restart needed.
+
+```yaml
+description: |
+  Enter long when momentum indicators start rising before price moves
+  at structural support on 4h candles.
+
+strategy:
+  name: momentum_rising
+  timeframe: "4h"
+  max_positions: 3
+  cycle_interval_minutes: 15
+
+symbols:
+  always_watch: [BTCUSDT, ETHUSDT, SOLUSDT]
+  dynamic_filter:
+    limit: 15
+    criteria: "momentum"
+
+indicators:
+  - name: "rsi"
+    weight: 0.25
+  - name: "macd"
+    weight: 0.25
+  - name: "ema_stack"
+    weight: 0.30
+  - name: "adx"
+    weight: 0.20
+
+scoring:
+  entry_threshold: 6.5
+  confluence_min_signals: 3
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 1.5
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.5
+
+learning:
+  min_trades_before_adjusting: 30
+  rulebook_max_rules: 10
+  track_idle_cycles: true
+```
 
 See `config/strategies/momentum_rising.yaml` for the full template with all options.
 
