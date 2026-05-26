@@ -10,7 +10,7 @@ system:
   reports_dir: "data/reports"
 
 daemon:
-  cycle_interval_minutes: 5
+  cycle_interval_minutes: 15
   max_cycle_steps: 20
   paper_mode: true  # safe default; exchange.yaml overrides to false when credentials present
   # If true, orders are written to log files instead of exchange
@@ -91,9 +91,10 @@ learning:
   min_trades_per_signal: 15
   significance_level: 0.05
   rulebook_max_rules: 10
-  retrain_every_hours: 12
+  retrain_every_n_trades: 10
   track_idle_cycles: true
-  trajectory_lookback_bars: 12
+  trajectory_lookback_hours: 48
+  trajectory_min_hours: 8
 
 # Default indicator config (overridden by strategy)
 indicators:
@@ -149,6 +150,7 @@ symbols:
     - ETHUSDT
     - SOLUSDT
   never_trade:
+    - SHIBUSDT
     - BOMEUSDT
   dynamic_filter:
     mode: "dynamic"
