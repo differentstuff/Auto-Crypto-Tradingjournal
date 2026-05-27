@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.substrate import Substrate
+from conftest import make_full_config
 
 
 # ── Standard config for tests (mirrors default.yaml learning.*) ────────────
@@ -46,25 +47,12 @@ _STANDARD_LEARNING = {
 
 
 def _make_config(**overrides) -> dict:
-    """Build a minimal but complete strategy config for testing."""
-    cfg = {
-        "strategy": {"name": "test_strategy", "uid": "legacy"},
-        "learning": dict(_STANDARD_LEARNING),
-        "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
-        "indicators": [
-            {"name": "rsi", "weight": 0.25},
-            {"name": "macd", "weight": 0.25},
-            {"name": "ema_stack", "weight": 0.30},
-            {"name": "adx", "weight": 0.20},
-        ],
-        "symbols": {"always_watch": ["BTCUSDT"], "never_trade": []},
-        "portfolio": {"risk_per_trade_pct": 1.0, "leverage": 5},
-        "modules": {},
-        "daemon": {"paper_mode": True},
-    }
-    if overrides:
-        _deep_update(cfg, overrides)
-    return cfg
+    """Build a complete strategy config for testing using make_full_config."""
+    return make_full_config(
+        strategy={"name": "test_strategy", "uid": "legacy"},
+        learning=dict(_STANDARD_LEARNING),
+        **overrides,
+    )
 
 
 def _deep_update(base: dict, overrides: dict) -> None:
