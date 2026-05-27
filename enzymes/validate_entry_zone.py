@@ -167,6 +167,13 @@ class ValidateEntryZone(Enzyme):
             score = candidate.get("score", 0)
             pct = candidate.get("pct", 0)
 
+            # P1: Skip candidates neutralized by confirmation TF misalignment
+            if candidate.get("confirmation_tf_misaligned", False):
+                self._log.info(
+                    "Skipping entry zone for %s: confirmation TF misaligned", symbol
+                )
+                continue
+
             # Determine direction from score
             if score > 0 or pct > 0:
                 direction = "Long"
