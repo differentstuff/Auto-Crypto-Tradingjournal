@@ -90,12 +90,21 @@ def _make_config(overrides: dict | None = None) -> dict:
             },
             "trailing_stop": {
                 "enabled": True,
-                "activation_pct": 1.5,          # % profit before trailing activates
+                "activation_profit_pct": 1.5,          # % profit before trailing activates
                 "trail_atr_multiplier": 1.0,    # trail distance = ATR * this
                 "breakeven_at_activation": True,# move SL to entry when trailing starts
             },
             "max_hold_hours": 72,               # exit if held longer than this
             "tp_exit_pct": 100.0,               # close 100% at TP (vs partial)
+        },
+        "noise": {
+            "conflict_signal_threshold": 2,
+            "volume_low_ratio": 0.7,
+            "volume_very_low_ratio": 0.5,
+            "adx_no_trend": 15,
+            "adx_overextended": 40,
+            "noise_severity_min_reasons": 2,
+            "kill_zone_blocks": False,
         },
         "modules": {
             "macro_context": False,
