@@ -1,3 +1,7 @@
+# paper_test.yaml -- Minimal paper trading strategy for quick validation.
+# Uses only RSI + ATR, no confirmation TF, no dynamic scan, no modules.
+# Run: python main.py --paper --strategy paper_test
+
 description: "Minimal paper test: 1 symbol, 2 indicators, no modules, no dynamic scan."
 
 strategy:
@@ -15,20 +19,45 @@ symbols:
   dynamic_filter:
     mode: "off"
     limit: 0                 # no dynamic scanning, no 100+ symbol ranking
+    criteria: "momentum"
+    min_volume_24h_usd: 0
+    min_open_interest_usd: 0
 
 indicators:
   - name: "rsi"
     params: { period: 14 }
     weight: 0.5
+    description: "RSI oversold/overbought."
   - name: "atr"
     params: { period: 14 }
     weight: 0.0              # infrastructure only
+    description: "ATR for SL sizing."
 
-# Minimal scoring/exit/portfolio so nothing crashes
 scoring:
   entry_threshold: 6.5
   confluence_min_signals: 3
   rr_minimum: 2.0
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 1.5
+    always_active: true
+  trailing_stop:
+    enabled: false
+    activation_profit_pct: 0.5
+    trail_atr_multiplier: 1.0
+    breakeven_at_activation: true
+    distance_pct: 1.0
+    move_to_breakeven_at_pct: 1.5
+  soft_exit:
+    requires_indicators_reversed: 2
+    requires_confirmation_tf: false
+    urgency: "soft"
 
 learning:
   min_trades_before_adjusting: 15
@@ -45,17 +74,6 @@ learning:
   suppress_range: [45.0, 55.0]
   contrarian_threshold: 30.0
 
-exit_rules:
-  hard_stop:
-    width_atr_multiplier: 1.5
-    always_active: true
-  trailing_stop:
-    enabled: false
-  soft_exit:
-    requires_indicators_reversed: 2
-    requires_confirmation_tf: false
-    urgency: "soft"
-
 portfolio:
   max_positions: 1
   risk_per_trade_pct: 1.0
@@ -63,6 +81,18 @@ portfolio:
   max_total_risk_pct: 1.0
   fallback_equity_usdt: 1000.0
   correlation_check: false
+  max_same_direction: 1
+
+noise:
+  conflict_signal_threshold: 2
+  volume_low_ratio: 0.7
+  volume_very_low_ratio: 0.5
+  adx_no_trend: 15
+  adx_overextended: 40
+  noise_severity_min_reasons: 2
+
+telegram:
+  idle_notify_every: 10
 
 modules:
   macro_context: false
