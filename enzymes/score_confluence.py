@@ -411,7 +411,7 @@ class ScoreConfluence(Enzyme):
         if not self.can_activate(substrate):
             return 0.0
         positions = substrate.portfolio.get("open_positions", [])
-        max_positions = substrate.cfg("strategy.max_positions", 3)
+        max_positions = substrate.cfg("strategy.max_positions")
         if len(positions) >= max_positions:
             return 0.5
         if not positions:
