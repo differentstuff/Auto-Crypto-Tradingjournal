@@ -23,13 +23,12 @@ from core.substrate import Substrate
 
 _log = logging.getLogger(__name__)
 
-# Cache for macro data (5-minute TTL)
+# Module-level cache dict (TTLs now come from config via substrate.cfg)
 _macro_cache: dict = {}
-_MACRO_TTL = 300
 
 
-def _cached_fetch(key: str, url: str, ttl: int = _MACRO_TTL) -> dict:
-    """Fetch URL with TTL cache. Returns {} on error."""
+def _cached_fetch(key: str, url: str, ttl: int) -> dict:
+    """Fetch URL with TTL cache. ttl must be passed from config."""
     now = time.time()
     if key in _macro_cache:
         ts, data = _macro_cache[key]
@@ -79,6 +78,11 @@ class CollectMacroContext(Enzyme):
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Fetch macro context data."""
+        # Read cache TTLs from config (hot-reloaded every cycle)
+        macro_ttl = substrate.cfg("cache.macro_ttl")
+        dominance_ttl = substrate.cfg("cache.dominance_ttl")
+        onchain_ttl = substrate.cfg("cache.onchain_ttl")
+
         macro = {}
 
         # 1. Fear & Greed Index
@@ -86,6 +90,7 @@ class CollectMacroContext(Enzyme):
             fg_data = _cached_fetch(
                 "fear_greed",
                 "https://api.alternative.me/fng/?limit=1",
+                ttl=macro_ttl,
             )
             if fg_data and "data" in fg_data:
                 item = fg_data["data"][0]
@@ -104,7 +109,7 @@ class CollectMacroContext(Enzyme):
             global_data = _cached_fetch(
                 "btc_dominance",
                 "https://api.coingecko.com/api/v3/global",
-                ttl=900,
+                ttl=dominance_ttl,
             )
             if global_data and "data" in global_data:
                 data = global_data["data"]
@@ -162,7 +167,7 @@ class CollectMacroContext(Enzyme):
             eco_data = _cached_fetch(
                 "eco_calendar",
                 "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                ttl=3600,
+                ttl=onchain_ttl,
             )
             if isinstance(eco_data, list):
                 from datetime import datetime, timezone, timedelta
