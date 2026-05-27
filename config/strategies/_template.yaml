@@ -121,6 +121,7 @@ noise:
   adx_no_trend: 15               # ADX below this = no trend (noise)
   adx_overextended: 40           # ADX above this = overextended (noise)
   noise_severity_min_reasons: 2   # minimum noise reasons to flag as noisy
+  kill_zone_blocks: false          # if true, being outside kill zone alone flags noise
 
 telegram:
   idle_notify_every: 10          # notify every N idle cycles when telegram_logs is enabled
