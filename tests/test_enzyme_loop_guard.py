@@ -11,6 +11,7 @@ Verifies that:
 
 import pytest
 from core.substrate import Substrate
+from conftest import make_full_config
 from enzymes.score_confluence import ScoreConfluence
 from enzymes.detect_noise import DetectNoise
 from enzymes.validate_entry_zone import ValidateEntryZone
@@ -25,7 +26,7 @@ from enzymes.collect_macro_context import CollectMacroContext
 @pytest.fixture
 def substrate():
     """Fresh substrate with no indicators or analysis."""
-    return Substrate()
+    return Substrate(config=make_full_config())
 
 
 @pytest.fixture
@@ -55,10 +56,10 @@ def substrate_with_candidates(substrate_with_indicators):
 @pytest.fixture
 def substrate_with_config():
     """Substrate with scoring config matching production defaults (conftest)."""
-    return Substrate(config={
-        "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
-        "strategy": {"name": "test", "max_positions": 3},
-    })
+    return Substrate(config=make_full_config(
+        scoring={"entry_threshold": 6.5, "confluence_min_signals": 3},
+        strategy={"name": "test", "max_positions": 3},
+    ))
 
 
 @pytest.fixture
@@ -122,9 +123,10 @@ class TestSubstrateEvaluationFlags:
 class TestScoreConfluenceGuard:
     """Tests for ScoreConfluence can_activate with confluence_scored flag."""
 
-    def test_no_indicators_cannot_activate(self, score_confluence, substrate):
+    def test_no_indicators_cannot_activate(self, score_confluence):
         """No indicators → cannot activate."""
-        assert score_confluence.can_activate(substrate) is False
+        s = Substrate(config=make_full_config())
+        assert score_confluence.can_activate(s) is False
 
     def test_with_indicators_can_activate(self, score_confluence, substrate_with_indicators):
         """Indicators present, not yet scored → can activate."""
@@ -159,9 +161,10 @@ class TestScoreConfluenceGuard:
 class TestDetectNoiseGuard:
     """Tests for DetectNoise can_activate with noise_evaluated flag."""
 
-    def test_no_candidates_cannot_activate(self, detect_noise, substrate):
+    def test_no_candidates_cannot_activate(self, detect_noise):
         """No candidates → cannot activate."""
-        assert detect_noise.can_activate(substrate) is False
+        s = Substrate(config=make_full_config())
+        assert detect_noise.can_activate(s) is False
 
     def test_with_candidates_can_activate(self, detect_noise, substrate_with_candidates):
         """Candidates present, not yet evaluated → can activate."""
@@ -190,9 +193,10 @@ class TestDetectNoiseGuard:
 class TestValidateEntryZoneGuard:
     """Tests for ValidateEntryZone can_activate with entry_zones_evaluated flag."""
 
-    def test_no_candidates_cannot_activate(self, validate_entry_zone, substrate):
+    def test_no_candidates_cannot_activate(self, validate_entry_zone):
         """No candidates → cannot activate."""
-        assert validate_entry_zone.can_activate(substrate) is False
+        s = Substrate(config=make_full_config())
+        assert validate_entry_zone.can_activate(s) is False
 
     def test_with_candidates_can_activate(self, validate_entry_zone, substrate_with_candidates):
         """Candidates present, not yet evaluated → can activate."""
@@ -301,24 +305,28 @@ class TestDaemonConsecutiveFireGuard:
 class TestISCWithEmptyCandidates:
     """Tests for ISC-001 and ISC-006 with empty candidates (expected failures)."""
 
-    def test_isc_001_fails_with_empty_candidates(self, substrate):
+    def test_isc_001_fails_with_empty_candidates(self):
         """ISC-001 (any_score_gte) fails when candidates is empty."""
-        results = substrate.verify_iscs()
+        s = Substrate(config=make_full_config())
+        results = s.verify_iscs()
         assert results["ISC-001"] == "failed"
 
-    def test_isc_006_fails_with_empty_candidates(self, substrate):
+    def test_isc_006_fails_with_empty_candidates(self):
         """ISC-006 (all_field_gte) fails when candidates is empty."""
-        results = substrate.verify_iscs()
+        s = Substrate(config=make_full_config())
+        results = s.verify_iscs()
         assert results["ISC-006"] == "failed"
 
-    def test_isc_002_passes_with_no_trade(self, substrate):
+    def test_isc_002_passes_with_no_trade(self):
         """ISC-002 (sl_set_or_no_trade) passes vacuously when no trade pending."""
-        results = substrate.verify_iscs()
+        s = Substrate(config=make_full_config())
+        results = s.verify_iscs()
         assert results["ISC-002"] == "verified"
 
-    def test_isc_005_passes_with_wait_action(self, substrate):
+    def test_isc_005_passes_with_wait_action(self):
         """ISC-005 (false_or_action_wait) passes when action is 'wait'."""
-        results = substrate.verify_iscs()
+        s = Substrate(config=make_full_config())
+        results = s.verify_iscs()
         assert results["ISC-005"] == "verified"
 
     def test_isc_001_passes_with_qualifying_candidate(self, substrate_with_config):
@@ -348,20 +356,20 @@ class TestCollectPreTradeContextGuard:
     def test_no_candidates_cannot_activate(self):
         """No candidates → cannot activate."""
         enzyme = CollectPreTradeContext()
-        s = Substrate()
+        s = Substrate(config=make_full_config())
         assert enzyme.can_activate(s) is False
 
     def test_with_candidates_can_activate(self):
         """Candidates present, not yet evaluated → can activate."""
         enzyme = CollectPreTradeContext()
-        s = Substrate()
+        s = Substrate(config=make_full_config())
         s.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 0.5}]
         assert enzyme.can_activate(s) is True
 
     def test_after_evaluation_cannot_activate(self):
         """After pre-trade evaluation → cannot activate."""
         enzyme = CollectPreTradeContext()
-        s = Substrate()
+        s = Substrate(config=make_full_config())
         s.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 0.5}]
         s.analysis["pre_trade_evaluated"] = True
         assert enzyme.can_activate(s) is False
@@ -369,7 +377,7 @@ class TestCollectPreTradeContextGuard:
     def test_transform_sets_flag(self):
         """transform() sets pre_trade_evaluated = True."""
         enzyme = CollectPreTradeContext()
-        s = Substrate()
+        s = Substrate(config=make_full_config())
         s.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 0.5}]
         s.market["indicators"] = {
             "BTCUSDT": {"4H": {"ok": True, "rsi": {"value": 60}}}
@@ -380,7 +388,7 @@ class TestCollectPreTradeContextGuard:
     def test_no_re_fire_after_evaluation(self):
         """CollectPreTradeContext cannot re-activate after evaluating."""
         enzyme = CollectPreTradeContext()
-        s = Substrate()
+        s = Substrate(config=make_full_config())
         s.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 0.5}]
         s.market["indicators"] = {
             "BTCUSDT": {"4H": {"ok": True, "rsi": {"value": 60}}}
@@ -399,26 +407,26 @@ class TestCollectMacroContextGuard:
     def test_module_disabled_cannot_activate(self):
         """macro_context module disabled → cannot activate."""
         enzyme = CollectMacroContext()
-        s = Substrate()
+        s = Substrate(config=make_full_config())
         assert enzyme.can_activate(s) is False
 
     def test_module_enabled_can_activate(self):
         """macro_context module enabled, not yet evaluated → can activate."""
         enzyme = CollectMacroContext()
-        s = Substrate(config={"modules": {"macro_context": True}})
+        s = Substrate(config=make_full_config(modules={"macro_context": True}))
         assert enzyme.can_activate(s) is True
 
     def test_after_evaluation_cannot_activate(self):
         """After macro evaluation → cannot activate."""
         enzyme = CollectMacroContext()
-        s = Substrate(config={"modules": {"macro_context": True}})
+        s = Substrate(config=make_full_config(modules={"macro_context": True}))
         s.analysis["macro_evaluated"] = True
         assert enzyme.can_activate(s) is False
 
     def test_no_re_fire_after_evaluation(self):
         """CollectMacroContext cannot re-activate after evaluating."""
         enzyme = CollectMacroContext()
-        s = Substrate(config={"modules": {"macro_context": True}})
+        s = Substrate(config=make_full_config(modules={"macro_context": True}))
         # Simulate transform setting the flag (without making API calls)
         s.analysis["macro_evaluated"] = True
         assert enzyme.can_activate(s) is False
