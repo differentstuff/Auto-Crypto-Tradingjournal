@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.substrate import Substrate
 from core.enzyme import EnzymeClass
+from conftest import make_full_config
 from enzymes.collect_ohlcv import (
     CollectOHLCV,
     timeframe_to_minutes,
@@ -611,7 +612,7 @@ class TestCollectOHLCVPreservesIndicators:
 
     def test_last_candle_close_ts_in_substrate_init(self):
         """Substrate initializes with empty last_candle_close_ts."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         assert "last_candle_close_ts" in sub.market
         assert sub.market["last_candle_close_ts"] == {}
 
