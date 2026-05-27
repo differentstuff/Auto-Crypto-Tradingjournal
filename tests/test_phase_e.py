@@ -125,62 +125,34 @@ def km_config():
 def substrate_with_candidates():
     """
     Minimal substrate with candidates and entry zones for enzyme tests.
-    Uses a real Substrate object if available, else a plain dict-like mock.
+    Always uses a real Substrate object — no MagicMock fallbacks.
     """
-    try:
-        from core.substrate import Substrate
-        s = Substrate(config=make_full_config())
-        s.strategy["name"] = "test_strategy"
-        s.strategy["uid"] = "test-uid"
-        s.analysis["candidates"] = [
-            {"symbol": "BTCUSDT", "score": 7.5, "pct": 2.0, "label": "Strong Long"},
-        ]
-        s.analysis["entry_zones"] = {
-            "BTCUSDT": {
-                "direction": "Long",
-                "entry_price": 50000.0,
-                "sl_price": 49000.0,
-                "tp1": 52000.0,
-                "tp2": 52500.0,
-                "rr_ratio": 2.0,
-                "atr_value": 500.0,
-                "atr_pct": 1.0,
-                "sl_type": "atr",
-                "score": 7.5,
-                "label": "Strong Long",
-                "timeframe": "4H",
-            }
+    from core.substrate import Substrate
+    s = Substrate(config=make_full_config(
+        strategy={"name": "test_strategy", "uid": "test-uid"},
+    ))
+    s.analysis["candidates"] = [
+        {"symbol": "BTCUSDT", "score": 7.5, "pct": 2.0, "label": "Strong Long"},
+    ]
+    s.analysis["entry_zones"] = {
+        "BTCUSDT": {
+            "direction": "Long",
+            "entry_price": 50000.0,
+            "sl_price": 49000.0,
+            "tp1": 52000.0,
+            "tp2": 52500.0,
+            "rr_ratio": 2.0,
+            "atr_value": 500.0,
+            "atr_pct": 1.0,
+            "sl_type": "atr",
+            "score": 7.5,
+            "label": "Strong Long",
+            "timeframe": "4H",
         }
-        s.learning["total_trades_recorded"] = 35
-        s.learning["rulebook"] = "Rule 1: RSI+MACD aligned = 78% win rate."
-        return s
-    except Exception:
-        # Fallback: use a simple namespace mock
-        s = MagicMock()
-        s.strategy = {"name": "test_strategy", "uid": "test-uid"}
-        s.analysis = {
-            "candidates": [
-                {"symbol": "BTCUSDT", "score": 7.5, "pct": 2.0, "label": "Strong Long"},
-            ],
-            "entry_zones": {
-                "BTCUSDT": {
-                    "direction": "Long",
-                    "entry_price": 50000.0,
-                    "sl_price": 49000.0,
-                    "tp1": 52000.0,
-                    "tp2": 52500.0,
-                    "rr_ratio": 2.0,
-                    "score": 7.5,
-                    "label": "Strong Long",
-                    "timeframe": "4H",
-                }
-            },
-        }
-        s.learning = {
-            "total_trades_recorded": 35,
-            "rulebook": "Rule 1: RSI+MACD aligned = 78% win rate.",
-        }
-        return s
+    }
+    s.learning["total_trades_recorded"] = 35
+    s.learning["rulebook"] = "Rule 1: RSI+MACD aligned = 78% win rate."
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -1232,6 +1204,7 @@ class TestUpdateRulebookLLM:
 
     # Shared learning config so Substrate.cfg() can resolve required keys.
     _LEARNING_CFG = {
+        "strategy": {"name": "test_strategy", "uid": "test-uid"},
         "learning": {
             "min_trades_before_adjusting": 30,
             "retrain_every_n_trades": 5,
@@ -1256,18 +1229,8 @@ class TestUpdateRulebookLLM:
                    VALUES ('test-uid', 'rsi', 35, 28, 80.0, 70.0, 90.0, 'valid')"""
             )
 
-        try:
-            from core.substrate import Substrate
-            s = Substrate(config=self._LEARNING_CFG)
-        except Exception:
-            s = MagicMock()
-            s.strategy = {"name": "test_strategy", "uid": "test-uid"}
-            s.learning = {"total_trades_recorded": 35, "rulebook": ""}
-            s.cfg = lambda key, default=None: self._LEARNING_CFG.get(
-                key.split(".")[0], {}).get(".".join(key.split(".")[1:]), default) if "." in key else default
-
-        s.strategy["name"] = "test_strategy"
-        s.strategy["uid"] = "test-uid"
+        from core.substrate import Substrate
+        s = Substrate(config=self._LEARNING_CFG)
         s.learning["total_trades_recorded"] = 35
 
         enzyme = UpdateRulebook(config=self._LEARNING_CFG)
@@ -1295,16 +1258,8 @@ class TestUpdateRulebookLLM:
         raw_text = "[RULE] rsi: 80% accuracy (35 trades) — valid signal"
         formatted_text = "Rule 1: RSI is a reliable signal with 80% accuracy over 35 trades. Prioritize RSI-aligned setups."
 
-        try:
-            from core.substrate import Substrate
-            s = Substrate(config=self._LEARNING_CFG)
-        except Exception:
-            s = MagicMock()
-            s.strategy = {"name": "test_strategy", "uid": "test-uid"}
-            s.learning = {"total_trades_recorded": 35}
-
-        s.strategy["name"] = "test_strategy"
-        s.strategy["uid"] = "test-uid"
+        from core.substrate import Substrate
+        s = Substrate(config=self._LEARNING_CFG)
         s.learning["total_trades_recorded"] = 35
 
         enzyme = UpdateRulebook(config=self._LEARNING_CFG)
@@ -1332,16 +1287,8 @@ class TestUpdateRulebookLLM:
         """
         from enzymes.update_rulebook import UpdateRulebook
 
-        try:
-            from core.substrate import Substrate
-            s = Substrate(config=self._LEARNING_CFG)
-        except Exception:
-            s = MagicMock()
-            s.strategy = {"name": "test_strategy", "uid": "test-uid"}
-            s.learning = {"total_trades_recorded": 35}
-
-        s.strategy["name"] = "test_strategy"
-        s.strategy["uid"] = "test-uid"
+        from core.substrate import Substrate
+        s = Substrate(config=self._LEARNING_CFG)
         s.learning["total_trades_recorded"] = 35
 
         enzyme = UpdateRulebook(config=self._LEARNING_CFG)
@@ -1361,16 +1308,8 @@ class TestUpdateRulebookLLM:
         """
         from enzymes.update_rulebook import UpdateRulebook
 
-        try:
-            from core.substrate import Substrate
-            s = Substrate(config=self._LEARNING_CFG)
-        except Exception:
-            s = MagicMock()
-            s.strategy = {"name": "test_strategy", "uid": "test-uid"}
-            s.learning = {"total_trades_recorded": 5}  # below threshold
-
-        s.strategy["name"] = "test_strategy"
-        s.strategy["uid"] = "test-uid"
+        from core.substrate import Substrate
+        s = Substrate(config=self._LEARNING_CFG)
         s.learning["total_trades_recorded"] = 5  # below min_trades
 
         enzyme = UpdateRulebook(config=self._LEARNING_CFG)
