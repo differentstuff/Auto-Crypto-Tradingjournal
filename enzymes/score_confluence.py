@@ -4,12 +4,16 @@ enzymes/score_confluence.py -- Oxidoreductase enzyme: confluence scoring.
 Reads indicator data from substrate.market.indicators, computes weighted
 confluence scores, and produces candidates for substrate.analysis.candidates.
 
+P1: Cross-timeframe alignment. If confirmation_tf is configured and both
+timeframes have indicator data, the candidate is neutralized (score=0)
+when the primary and confirmation timeframes disagree in direction.
+confirmation_tf acts as a trend filter — only trade when the higher
+timeframe confirms the primary timeframe's direction.
+
 Weights are config-driven (from config.indicators[*].weight), not hardcoded.
 
 Enzyme class: Oxidoreductase
 Activates when: market.indicators not empty AND analysis.candidates is empty
-
-Rewrite of: chart_confluence.py (config-driven weights)
 """
 
 from __future__ import annotations
@@ -132,11 +136,13 @@ class ScoreConfluence(Enzyme):
     """
     Oxidoreductase enzyme: compute confluence scores for all symbols.
 
-    Reads indicator data from substrate.market.indicators, applies
-    config-driven weights, and produces a ranked list of candidates
-    in substrate.analysis.candidates.
+    P1: Cross-timeframe alignment. If confirmation_tf is configured and
+    both timeframes have indicator data, the candidate is neutralized
+    (score=0, pct=0) when the primary and confirmation timeframes
+    disagree in direction. The confirmation_tf acts as a trend filter.
 
-    Each candidate: {symbol, score, max_score, label, indicators_aligned, details}
+    Each candidate: {symbol, score, max_score, label, indicators_aligned,
+                     details, confirmation_tf_misaligned}
     """
 
     name = "ScoreConfluence"
@@ -154,9 +160,6 @@ class ScoreConfluence(Enzyme):
         candidates = substrate.analysis.get("candidates", [])
         confluence_scored = substrate.analysis.get("confluence_scored", False)
         noise_flag = substrate.analysis.get("noise_flag", False)
-        # Skip scoring when market is noisy — saves computation and avoids
-        # entering trades during kill zones, conflicting signals, etc.
-        # DetectNoise must run first (it sets noise_evaluated).
         return bool(indicators) and not candidates and not confluence_scored and not noise_flag
 
     def transform(self, substrate: Substrate) -> Substrate:
@@ -166,7 +169,6 @@ class ScoreConfluence(Enzyme):
             self._log.info("No indicator data to score")
             return substrate
 
-        # Get config values
         confluence_min = substrate.cfg("scoring.confluence_min_signals", 3)
 
         # Build weight map from config
@@ -177,19 +179,14 @@ class ScoreConfluence(Enzyme):
             weight = ind_cfg.get("weight", 0)
             weight_map[name] = weight
 
-        # Apply learning-adjusted weights.
-        # First check substrate.learning["adjusted_weights"] — written by UpdateLearning.
-        # If present and non-empty, use it directly (no re-computation needed).
-        # Only fall back to compute_adjusted_weights() if not yet available.
+        # Apply learning-adjusted weights
         strategy_name = substrate.strategy.get("name", "")
         strategy_uid = substrate.strategy.get("uid", "legacy")
         adjusted = substrate.learning.get("adjusted_weights", {})
         if adjusted and isinstance(adjusted, dict) and any(v != 0 for v in adjusted.values()):
-            # Use pre-computed adjusted weights from UpdateLearning
             weight_map = adjusted
             self._log.debug("Using pre-computed adjusted weights from substrate.learning")
         else:
-            # Fallback: compute on the fly (first few cycles before UpdateLearning has run)
             try:
                 from learning.weight_adjuster import compute_adjusted_weights
                 min_trades = substrate.cfg("learning.min_trades_before_adjusting")
@@ -205,12 +202,17 @@ class ScoreConfluence(Enzyme):
             except Exception as e:
                 self._log.warning("Could not compute adjusted weights: %s", e)
 
+        # P1: Read confirmation TF from strategy config
+        confirmation_tf = substrate.strategy.get("confirmation_tf")
+        primary_tf = substrate.strategy.get("timeframe", "")
+
         candidates = []
         for symbol, sym_data in indicators.items():
             total_score = 0.0
             total_max = 0.0
             all_details = []
             indicators_aligned = 0
+            tf_scores = {}  # P1: per-TF scores for alignment check
 
             for tf, tf_inds in sym_data.items():
                 if not isinstance(tf_inds, dict) or not tf_inds.get("ok"):
@@ -219,6 +221,7 @@ class ScoreConfluence(Enzyme):
                 tf_score, tf_max, tf_details = self._score_timeframe(
                     tf_inds, weight_map
                 )
+                tf_scores[tf] = tf_score
                 total_score += tf_score
                 total_max += tf_max
                 all_details.extend(tf_details)
@@ -228,10 +231,33 @@ class ScoreConfluence(Enzyme):
                     if w > 0 and name in tf_inds:
                         ind = tf_inds[name]
                         if isinstance(ind, dict):
-                            # Check if indicator has a directional signal
                             signal = ind.get("signal", ind.get("bias", ind.get("level", "")))
                             if signal and signal not in ("neutral", "mixed", ""):
                                 indicators_aligned += 1
+
+            # P1: Cross-timeframe alignment check
+            # If confirmation_tf is configured and both TFs have data,
+            # neutralize the candidate when directions disagree.
+            # confirmation_tf acts as a trend filter: only trade when the
+            # higher timeframe confirms the primary timeframe's direction.
+            confirmation_misaligned = False
+            if confirmation_tf and primary_tf and confirmation_tf != primary_tf:
+                primary_score = tf_scores.get(primary_tf, 0)
+                confirm_score = tf_scores.get(confirmation_tf, 0)
+                primary_dir = self._direction_from_score(primary_score)
+                confirm_dir = self._direction_from_score(confirm_score)
+
+                if (primary_dir != "neutral" and confirm_dir != "neutral"
+                        and primary_dir != confirm_dir):
+                    total_score = 0.0
+                    total_max = 0.0
+                    confirmation_misaligned = True
+                    self._log.info(
+                        "Confirmation TF misaligned for %s: "
+                        "%s=%s (%.2f), %s=%s (%.2f) — neutralized",
+                        symbol, primary_tf, primary_dir, primary_score,
+                        confirmation_tf, confirm_dir, confirm_score,
+                    )
 
             # Compute percentage and label
             pct = total_score / total_max if total_max else 0.0
@@ -247,6 +273,7 @@ class ScoreConfluence(Enzyme):
                     "label": label,
                     "indicators_aligned": indicators_aligned,
                     "details": all_details,
+                    "confirmation_tf_misaligned": confirmation_misaligned,
                 })
 
         # Sort by absolute score descending (strongest signals first)
@@ -353,6 +380,19 @@ class ScoreConfluence(Enzyme):
         return score, max_possible, details
 
     @staticmethod
+    def _direction_from_score(score: float) -> str:
+        """Determine direction from a confluence score.
+
+        Positive score = bullish, negative = bearish, zero = neutral.
+        Used for cross-timeframe alignment checks (P1).
+        """
+        if score > 0:
+            return "bullish"
+        elif score < 0:
+            return "bearish"
+        return "neutral"
+
+    @staticmethod
     def _pct_to_label(pct: float) -> str:
         """Convert percentage to confluence label."""
         if pct >= 0.60:
@@ -366,17 +406,14 @@ class ScoreConfluence(Enzyme):
         return "Neutral"
 
     def flux_score(self, substrate: Substrate) -> float:
-        """
-        Dynamic flux: high when hunting for entries (no positions),
-        lower when positions are full.
-        """
+        """Dynamic flux: high when hunting for entries (no positions),
+        lower when positions are full."""
         if not self.can_activate(substrate):
             return 0.0
-        # High priority when we have no open positions (hunting for entries)
         positions = substrate.portfolio.get("open_positions", [])
         max_positions = substrate.cfg("strategy.max_positions", 3)
         if len(positions) >= max_positions:
-            return 0.5  # Positions full — scoring is informational only
+            return 0.5
         if not positions:
-            return 2.5  # No positions — actively hunting for entries
-        return 1.5  # Some positions — moderate priority
+            return 2.5
+        return 1.5
