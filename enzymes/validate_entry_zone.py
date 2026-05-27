@@ -157,8 +157,8 @@ class ValidateEntryZone(Enzyme):
             return substrate
 
         # Config values
-        rr_minimum = substrate.cfg("scoring.rr_minimum", 2.0)
-        atr_sl_multiplier = substrate.cfg("exit_rules.hard_stop.width_atr_multiplier", 1.5)
+        rr_minimum = substrate.cfg("scoring.rr_minimum")
+        atr_sl_multiplier = substrate.cfg("exit_rules.hard_stop.width_atr_multiplier")
 
         entry_zones = {}
 
