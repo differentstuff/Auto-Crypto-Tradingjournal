@@ -94,7 +94,8 @@ class Daemon:
 
         # Initialize scheduler
         interval = self.config.get("strategy.cycle_interval_minutes")
-        self.scheduler = Scheduler(interval_minutes=interval)
+        jitter = self.config.get("daemon.jitter_seconds")
+        self.scheduler = Scheduler(interval_minutes=interval, jitter_seconds=jitter)
 
         # Check if strategy UID changed since last run (warning only)
         self._check_strategy_uid()
