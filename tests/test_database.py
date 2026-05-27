@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.database import init_db, get_conn, db_conn, save_substrate, load_latest_substrate, save_cycle_log
+from conftest import make_full_config
 
 
 class TestDatabaseInit:
@@ -63,16 +64,7 @@ class TestSubstratePersistence:
         """
         from core.substrate import Substrate
 
-        config = {
-            "strategy": {
-                "name": "test_persist",
-                "uid": "test-persist-uid",
-                "timeframe": "4H",
-                "confirmation_tf": "1H",
-                "cycle_interval_minutes": 15,
-                "max_positions": 3,
-            }
-        }
+        config = make_full_config(strategy={"name": "test_persist", "uid": "test-persist-uid"})
         sub = Substrate(config=config)
         sub.portfolio["equity"] = 5000.0
         sub.decisions["action"] = "wait"   # set but NOT persisted (per-cycle)
@@ -96,16 +88,7 @@ class TestSubstratePersistence:
         """load_latest_substrate returns the most recent entry."""
         from core.substrate import Substrate
 
-        config = {
-            "strategy": {
-                "name": "test_latest",
-                "uid": "test-latest-uid",
-                "timeframe": "4H",
-                "confirmation_tf": "1H",
-                "cycle_interval_minutes": 15,
-                "max_positions": 3,
-            }
-        }
+        config = make_full_config(strategy={"name": "test_latest", "uid": "test-latest-uid"})
         sub1 = Substrate(config=config)
         sub1.portfolio["equity"] = 1000.0
         save_substrate(sub1)
