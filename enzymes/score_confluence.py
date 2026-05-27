@@ -27,11 +27,11 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _rsi_weight(rsi_val: float) -> float:
-    """RSI contribution: ±1 at extremes, 0 at 50. Dead-band ±5 around 50."""
-    if rsi_val > 55:
+def _rsi_weight(rsi_val: float, rsi_high: float, rsi_low: float) -> float:
+    """RSI contribution: ±1 at extremes, 0 at midpoint. Dead-band around midpoint."""
+    if rsi_val > rsi_high:
         return min((rsi_val - 50) / 30.0, 1.0)
-    if rsi_val < 45:
+    if rsi_val < rsi_low:
         return max((rsi_val - 50) / 30.0, -1.0)
     return 0.0
 
@@ -170,6 +170,13 @@ class ScoreConfluence(Enzyme):
             return substrate
 
         confluence_min = substrate.cfg("scoring.confluence_min_signals")
+        min_candidate_pct = substrate.cfg("scoring.min_candidate_pct")
+        rsi_high = substrate.cfg("scoring.rsi_signal_high")
+        rsi_low = substrate.cfg("scoring.rsi_signal_low")
+        momentum_cap = substrate.cfg("scoring.momentum_cap")
+        momentum_dampening = substrate.cfg("scoring.momentum_dampening")
+        modifier_weights = substrate.cfg("scoring.modifier_weights")
+        label_thresholds = substrate.cfg("scoring.label_thresholds")
 
         # Build weight map from config
         indicator_configs = substrate.cfg("indicators", [])
@@ -219,7 +226,8 @@ class ScoreConfluence(Enzyme):
                     continue
 
                 tf_score, tf_max, tf_details = self._score_timeframe(
-                    tf_inds, weight_map
+                    tf_inds, weight_map, rsi_high, rsi_low,
+                    momentum_cap, momentum_dampening, modifier_weights,
                 )
                 tf_scores[tf] = tf_score
                 total_score += tf_score
@@ -261,10 +269,10 @@ class ScoreConfluence(Enzyme):
 
             # Compute percentage and label
             pct = total_score / total_max if total_max else 0.0
-            label = self._pct_to_label(pct)
+            label = self._pct_to_label(pct, label_thresholds)
 
             # Only include as candidate if above minimum threshold
-            if indicators_aligned >= confluence_min or abs(pct) >= 0.20:
+            if indicators_aligned >= confluence_min or abs(pct) >= min_candidate_pct:
                 candidates.append({
                     "symbol": symbol,
                     "score": round(total_score, 2),
@@ -294,13 +302,19 @@ class ScoreConfluence(Enzyme):
         return substrate
 
     def _score_timeframe(
-        self, tf_inds: dict, weight_map: dict
+        self, tf_inds: dict, weight_map: dict,
+        rsi_high: float, rsi_low: float,
+        momentum_cap: float, momentum_dampening: float,
+        modifier_weights: dict,
     ) -> tuple[float, float, list[str]]:
         """
         Score indicators for a single timeframe.
 
         Returns (score, max_possible, details_list).
         """
+        vol_weight = modifier_weights.get("volume", 0.15)
+        cvd_weight = modifier_weights.get("cvd", 0.1)
+        of_weight = modifier_weights.get("order_flow", 0.1)
         score = 0.0
         max_possible = 0.0
         details = []
@@ -308,7 +322,7 @@ class ScoreConfluence(Enzyme):
         # RSI
         if "rsi" in tf_inds and weight_map.get("rsi", 0) > 0:
             rsi_val = tf_inds["rsi"].get("value", 50)
-            w = _rsi_weight(rsi_val)
+            w = _rsi_weight(rsi_val, rsi_high, rsi_low)
             cfg_weight = weight_map["rsi"]
             score += w * cfg_weight
             max_possible += 1.0 * cfg_weight
@@ -351,31 +365,31 @@ class ScoreConfluence(Enzyme):
         # Volume (confirms direction)
         if "volume" in tf_inds:
             vol_w = _volume_weight(tf_inds, score)
-            score += vol_w * 0.15  # Volume is always a modifier
-            max_possible += 0.5 * 0.15
+            score += vol_w * vol_weight
+            max_possible += 0.5 * vol_weight
 
         # CVD (optional)
         if "cvd" in tf_inds:
             cvd_w = _cvd_weight(tf_inds["cvd"])
-            score += cvd_w * 0.1
-            max_possible += 0.4 * 0.1
+            score += cvd_w * cvd_weight
+            max_possible += 0.4 * cvd_weight
 
         # Order flow (optional)
         if "order_flow" in tf_inds:
             of_w = _order_flow_weight(tf_inds["order_flow"])
-            score += of_w * 0.1
-            max_possible += 0.15 * 0.1
+            score += of_w * of_weight
+            max_possible += 0.15 * of_weight
 
         # Cap correlated momentum group (RSI + MACD)
         momentum_raw = 0.0
         if "rsi" in tf_inds and weight_map.get("rsi", 0) > 0:
-            momentum_raw += _rsi_weight(tf_inds["rsi"].get("value", 50))
+            momentum_raw += _rsi_weight(tf_inds["rsi"].get("value", 50), rsi_high, rsi_low)
         if "macd" in tf_inds and weight_map.get("macd", 0) > 0:
             momentum_raw += _macd_weight(tf_inds["macd"])
-        if abs(momentum_raw) > 1.5:
-            excess = abs(momentum_raw) - 1.5
+        if abs(momentum_raw) > momentum_cap:
+            excess = abs(momentum_raw) - momentum_cap
             # Dampen the excess
-            score -= (excess * 0.5) * (1 if momentum_raw > 0 else -1)
+            score -= (excess * momentum_dampening) * (1 if momentum_raw > 0 else -1)
 
         return score, max_possible, details
 
@@ -393,15 +407,17 @@ class ScoreConfluence(Enzyme):
         return "neutral"
 
     @staticmethod
-    def _pct_to_label(pct: float) -> str:
+    def _pct_to_label(pct: float, label_thresholds: dict) -> str:
         """Convert percentage to confluence label."""
-        if pct >= 0.60:
+        strong = label_thresholds.get("strong", 0.60)
+        weak = label_thresholds.get("weak", 0.33)
+        if pct >= strong:
             return "Strong Bullish"
-        if pct >= 0.33:
+        if pct >= weak:
             return "Bullish"
-        if pct <= -0.60:
+        if pct <= -strong:
             return "Strong Bearish"
-        if pct <= -0.33:
+        if pct <= -weak:
             return "Bearish"
         return "Neutral"
 
