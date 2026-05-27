@@ -52,6 +52,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from conftest import make_full_config
+
 
 # ---------------------------------------------------------------------------
 # Shared test thresholds — all tests use these to call learning functions.
