@@ -93,7 +93,7 @@ class Daemon:
         self._init_substrate()
 
         # Initialize scheduler
-        interval = self.config.get("strategy.cycle_interval_minutes", 15)
+        interval = self.config.get("strategy.cycle_interval_minutes")
         self.scheduler = Scheduler(interval_minutes=interval)
 
         # Check if strategy UID changed since last run (warning only)
@@ -255,7 +255,7 @@ class Daemon:
         # 1. Hot-reload config
         config_changed = self.config.reload()
         if config_changed:
-            interval = self.config.get("strategy.cycle_interval_minutes", 15)
+            interval = self.config.get("strategy.cycle_interval_minutes")
             self.scheduler.update_interval(interval)
             # Refresh secrets-free config slice in substrate
             self.substrate._config = _strategy_config_slice(self.config.config)
@@ -267,7 +267,7 @@ class Daemon:
         # 3. Run the reaction network
         enzymes_fired = []
         isc_results = {}
-        max_steps = self.config.get("daemon.max_cycle_steps", 20)
+        max_steps = self.config.get("daemon.max_cycle_steps")
         last_enzyme_name = None
         consecutive_count = 0
         fired_this_cycle = set()  # Prevent any enzyme from firing twice per cycle
@@ -390,7 +390,7 @@ class Daemon:
             isc_results = self.substrate.verify_iscs()
 
         # Persist substrate (using max_rows from config)
-        max_rows = self.config.get("daemon.substrate_state_max_rows", 200)
+        max_rows = self.config.get("daemon.substrate_state_max_rows")
         save_substrate(self.substrate, max_rows=max_rows)
 
         # Log cycle
