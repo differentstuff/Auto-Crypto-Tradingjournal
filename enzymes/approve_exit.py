@@ -218,7 +218,8 @@ class ApproveExit(Enzyme):
                     profit_pct = ((mark_price - entry_price) / entry_price) * 100 if entry_price else 0
                 else:
                     profit_pct = ((entry_price - mark_price) / entry_price) * 100 if entry_price else 0
-                if profit_pct < 0.5:
+                soft_threshold = substrate.cfg("exit_rules.soft_reversal_profit_threshold")
+                if profit_pct < soft_threshold:
                     should_exit = True
                     exit_reason = "signal_reversal_soft"
 
