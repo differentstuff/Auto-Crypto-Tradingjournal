@@ -50,12 +50,12 @@ def _update_trailing_stop(position: dict, config: dict) -> dict:
         return position
 
     trailing_cfg = config.get("exit_rules", {}).get("trailing_stop", {})
-    if not trailing_cfg.get("enabled", True):
+    if not trailing_cfg["enabled"]:
         return position
 
-    activation_pct = trailing_cfg.get("activation_pct", 1.5)
-    trail_atr_mult = trailing_cfg.get("trail_atr_multiplier", 1.0)
-    breakeven_on_activate = trailing_cfg.get("breakeven_at_activation", True)
+    activation_pct = trailing_cfg["activation_profit_pct"]
+    trail_atr_mult = trailing_cfg["trail_atr_multiplier"]
+    breakeven_on_activate = trailing_cfg["breakeven_at_activation"]
 
     # Compute current profit percentage
     if direction == "long":
