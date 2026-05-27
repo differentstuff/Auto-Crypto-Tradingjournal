@@ -30,13 +30,17 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _classify_trajectory(indicator_history: list[dict]) -> dict:
+def _classify_trajectory(indicator_history: list[dict], thresholds: dict) -> dict:
     """
     Classify how indicators aligned over the lookback period.
 
     Uses REAL indicator history (not a heuristic estimate). Each history
     entry has a "signal" field ("bullish"/"bearish"/"neutral") computed
     by CollectOHLCV._compute_signal_direction().
+
+    thresholds: dict from config (learning.trajectory_thresholds) with keys:
+      stable_consensus, gradual_alignment, earlier_min, recent_min,
+      earlier_low, min_alignment
 
     Trajectory types:
     - "gradual_alignment": indicators progressively aligned over 8+ bars
@@ -47,6 +51,12 @@ def _classify_trajectory(indicator_history: list[dict]) -> dict:
 
     Returns {trajectory_type, coincidence_risk, bars_aligned, strength}
     """
+    t_stable = thresholds.get("stable_consensus", 10)
+    t_gradual = thresholds.get("gradual_alignment", 8)
+    t_earlier_min = thresholds.get("earlier_min", 3)
+    t_recent_min = thresholds.get("recent_min", 2)
+    t_earlier_low = thresholds.get("earlier_low", 2)
+    t_min_align = thresholds.get("min_alignment", 4)
     if not indicator_history:
         return {
             "trajectory_type": "unknown",
@@ -96,19 +106,19 @@ def _classify_trajectory(indicator_history: list[dict]) -> dict:
     ) if n > 3 else 0
 
     # Classify
-    if aligned_count >= 10:
+    if aligned_count >= t_stable:
         trajectory_type = "stable_consensus"
         coincidence_risk = "low"
-    elif aligned_count >= 8 and earlier_aligned >= 3:
+    elif aligned_count >= t_gradual and earlier_aligned >= t_earlier_min:
         trajectory_type = "gradual_alignment"
         coincidence_risk = "low"
-    elif recent_aligned >= 2 and earlier_aligned < 2:
+    elif recent_aligned >= t_recent_min and earlier_aligned < t_earlier_low:
         trajectory_type = "sudden_coincidence"
         coincidence_risk = "high"
     elif earlier_aligned > recent_aligned:
         trajectory_type = "diverging"
         coincidence_risk = "medium"
-    elif aligned_count >= 4:
+    elif aligned_count >= t_min_align:
         trajectory_type = "gradual_alignment"
         coincidence_risk = "low"
     else:
@@ -197,6 +207,7 @@ class CollectPreTradeContext(Enzyme):
 
         # P8: Use time-based sufficiency check (trajectory_min_hours)
         min_hours = substrate.cfg("learning.trajectory_min_hours")
+        trajectory_thresholds = substrate.cfg("learning.trajectory_thresholds")
         indicator_history = substrate.market.get("indicator_history", {})
         pre_trade_context = {}
 
@@ -226,7 +237,7 @@ class CollectPreTradeContext(Enzyme):
                 continue
 
             # Use real history for trajectory classification
-            trajectory = _classify_trajectory(symbol_history)
+            trajectory = _classify_trajectory(symbol_history, trajectory_thresholds)
             # P8: Add span_hours to trajectory data for observability
             trajectory["span_hours"] = round(span_hours, 1)
             pre_trade_context[symbol] = trajectory
