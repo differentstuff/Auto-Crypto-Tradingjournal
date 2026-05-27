@@ -289,7 +289,7 @@ class CollectOHLCV(Enzyme):
         # Only append to history when a new candle has closed for the symbol.
         # This ensures history entries represent real closed candles, not
         # cycle snapshots of the same forming candle.
-        lookback_hours = substrate.cfg("learning.trajectory_lookback_hours", 48)
+        lookback_hours = substrate.cfg("learning.trajectory_lookback_hours")
         # Shallow-copy safe: create new history dict
         old_history = substrate.market.get("indicator_history", {})
         history = {sym: list(snapshots) for sym, snapshots in old_history.items()}
