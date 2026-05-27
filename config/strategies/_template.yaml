@@ -10,7 +10,10 @@ strategy:
   timeframe: "4h"                 # primary candle timeframe for indicator computation
   confirmation_tf: "1h"          # higher timeframe for trend alignment check (set to null to skip)
   max_positions: 3                # maximum concurrent open positions
-  cycle_interval_minutes: 15     # seconds between daemon cycles
+  cycle_interval_minutes: 15     # minutes between daemon cycles
+
+daemon:
+  jitter_seconds: 30             # random 0–N seconds added to cycle sleep; prevents API thundering herd
 
 symbols:
   always_watch:                   # symbol pairs to always monitor
@@ -64,6 +67,18 @@ scoring:
   entry_threshold: 6.5           # minimum confluence score to consider entry
   confluence_min_signals: 3      # minimum number of aligned indicators for entry
   rr_minimum: 2.0                # minimum risk:reward ratio for entry
+  min_candidate_pct: 0.20        # minimum confluence % for a symbol to appear in candidates; lower = more candidates (more noise)
+  rsi_signal_high: 55            # RSI above this = bullish directional signal; dead-band is (100 - high) to high
+  rsi_signal_low: 45             # RSI below this = bearish directional signal; mirror of rsi_signal_high
+  momentum_cap: 1.5              # maximum combined RSI+MACD contribution before dampening; lower = more conservative
+  momentum_dampening: 0.5        # how much excess momentum (above cap) is reduced; 1.0 = fully remove, 0 = no dampening
+  modifier_weights:
+    volume: 0.15                  # how much volume confirmation moves the score; raise if volume data is reliable
+    cvd: 0.1                      # how much CVD (cumulative volume delta) moves the score; only if data source provides CVD
+    order_flow: 0.1              # how much order flow pressure moves the score; only if data source provides it
+  label_thresholds:
+    strong: 0.60                 # confluence % for "Strong Bullish/Bearish" label (display-only)
+    weak: 0.33                   # confluence % for "Bullish/Bearish" label; below this = "Neutral" (display-only)
   score_calibration:
     suppress_below_pct: 55       # accuracy below this → suppress signal weight
     highlight_above_pct: 75     # accuracy above this → highlight signal
@@ -87,6 +102,7 @@ exit_rules:
     requires_indicators_reversed: 2  # number of indicators that must reverse for soft exit
     requires_confirmation_tf: true    # confirmation TF must also reverse for soft exit
     urgency: "soft"                  # soft exit urgency level
+  soft_reversal_profit_threshold: 0.5  # profit % below which a signal reversal exits immediately; above it, reversal is ignored
 
 learning:
   min_trades_before_adjusting: 30  # minimum trades before learning adjusts weights
@@ -97,6 +113,13 @@ learning:
   track_idle_cycles: true          # track idle cycle reasons for learning
   trajectory_lookback_hours: 48    # hours of indicator history for trajectory analysis
   trajectory_min_hours: 8          # minimum hours of history before trajectory is valid
+  trajectory_thresholds:
+    stable_consensus: 10           # bars aligned for "stable_consensus" — lowest coincidence risk
+    gradual_alignment: 8          # bars aligned for "gradual_alignment" (also needs earlier_min)
+    earlier_min: 3                # minimum earlier-aligned bars for "gradual_alignment" vs "sudden_coincidence"
+    recent_min: 2                 # recent-aligned bars that trigger "sudden_coincidence" if earlier alignment is low
+    earlier_low: 2                # if earlier-aligned bars are below this, recent alignment counts as "sudden"
+    min_alignment: 4              # minimum bars aligned for any trajectory classification (else "no_alignment")
   contrarian_win_rate: 30.0        # win rate below which a signal is contrarian (anti-signal)
   highlight_threshold: 75.0       # accuracy above this → signal is highlighted
   monitor_low_threshold: 55.0     # accuracy below this → signal is monitored
@@ -104,6 +127,16 @@ learning:
     - 45.0
     - 55.0                        # accuracy in this range → signal is suppressed
   contrarian_threshold: 30.0      # accuracy at or below this → signal is contrarian
+
+# Risk parameters (position sizing)
+risk:
+  kelly_min: 0.05                 # minimum Kelly fraction — floor for position sizing on weak signals
+  kelly_max: 0.25                 # maximum Kelly fraction — cap for position sizing on strong signals (0.25 = quarter-Kelly)
+  kelly_win_rate_base: 0.35       # base win rate assumed when score = 0; higher = more aggressive sizing
+  kelly_win_rate_range: 0.40      # win rate increase per 10-point score increase
+  kelly_avg_win_r: 2.0            # average R:R assumed for Kelly formula; higher = larger positions
+  max_size_pct_of_equity: 25.0    # maximum position size as % of equity (hard cap regardless of Kelly)
+  min_size_pct_of_equity: 5.0     # minimum position size as % of equity (below this = too small to be meaningful)
 
 portfolio:
   max_positions: 3                # maximum concurrent open positions (strategy-level override)
