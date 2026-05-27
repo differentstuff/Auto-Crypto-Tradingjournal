@@ -264,7 +264,7 @@ class TestUpdateLearningConfigThreading:
         """update_signal_accuracy receives min_trades_per_signal from config."""
         from enzymes.update_learning import UpdateLearning
 
-        config = _make_config({"learning": {"min_trades_per_signal": 10}})
+        config = _make_config(learning={"min_trades_per_signal": 10})
         sub = Substrate(config=config)
         sub.decisions["action"] = "trade_closed"
         sub.strategy["uid"] = "legacy"
@@ -283,7 +283,7 @@ class TestUpdateLearningConfigThreading:
         """update_combination_accuracy receives significance_level from config."""
         from enzymes.update_learning import UpdateLearning
 
-        config = _make_config({"learning": {"significance_level": 0.01}})
+        config = _make_config(learning={"significance_level": 0.01})
         sub = Substrate(config=config)
         sub.decisions["action"] = "trade_closed"
         sub.strategy["uid"] = "legacy"
@@ -321,7 +321,7 @@ class TestUpdateLearningConfigThreading:
         """compute_adjusted_weights receives min_trades from config."""
         from enzymes.update_learning import UpdateLearning
 
-        config = _make_config({"learning": {"min_trades_before_adjusting": 25}})
+        config = _make_config(learning={"min_trades_before_adjusting": 25})
         sub = Substrate(config=config)
         sub.decisions["action"] = "trade_closed"
         sub.strategy["uid"] = "legacy"
