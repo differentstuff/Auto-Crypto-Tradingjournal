@@ -96,8 +96,8 @@ class TestConfigLoader:
             config_dir=str(config_dir),
         )
         enabled = loader.enabled_indicators
-        # rsi (0.25) has weight > 0
-        assert len(enabled) == 1
+        # default.yaml has 6 indicators with weight > 0
+        assert len(enabled) == 6
 
     def test_paper_mode(self, config_dir):
         """Paper mode detection works."""
