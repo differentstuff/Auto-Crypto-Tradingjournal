@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.substrate import Substrate
 from enzymes.score_confluence import ScoreConfluence
+from conftest import make_full_config
 from enzymes.validate_entry_zone import ValidateEntryZone
 from enzymes.approve_exit import ApproveExit
 
@@ -82,39 +83,39 @@ def _make_neutral_indicators() -> dict:
 
 
 def _base_config() -> dict:
-    """Minimal config with indicators and scoring."""
-    return {
-        "strategy": {
+    """Complete config with all required keys for Substrate."""
+    return make_full_config(
+        strategy={
             "name": "test_strategy",
             "uid": "test-uid",
             "timeframe": "4H",
             "confirmation_tf": "1H",
             "max_positions": 3,
         },
-        "scoring": {
+        scoring={
             "entry_threshold": 6.5,
             "confluence_min_signals": 3,
             "rr_minimum": 2.0,
         },
-        "indicators": [
+        indicators=[
             {"name": "rsi", "weight": 0.25},
             {"name": "macd", "weight": 0.25},
             {"name": "ema_stack", "weight": 0.30},
             {"name": "adx", "weight": 0.20},
             {"name": "atr", "weight": 0.0},
         ],
-        "learning": {
+        learning={
             "min_trades_before_adjusting": 30,
         },
-        "exit_rules": {
+        exit_rules={
             "hard_stop": {"width_atr_multiplier": 1.5, "always_active": True},
-            "trailing_stop": {"enabled": True, "activation_pct": 0.5, "distance_pct": 1.0, "breakeven_at_activation": True},
+            "trailing_stop": {"enabled": True, "activation_profit_pct": 0.5, "trail_atr_multiplier": 1.0, "breakeven_at_activation": True},
         },
-        "portfolio": {
+        portfolio={
             "leverage": 5,
             "risk_per_trade_pct": 1.0,
         },
-    }
+    )
 
 
 def _base_config_no_confirmation() -> dict:
