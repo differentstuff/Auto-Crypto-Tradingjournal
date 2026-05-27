@@ -121,7 +121,7 @@ class SendTelegramLog(Enzyme):
 
     def can_activate(self, substrate: Substrate) -> bool:
         """Only activate when telegram_logs module is enabled AND action is notable."""
-        if substrate.cfg("modules.telegram_logs", False) is not True:
+        if not substrate.cfg("modules.telegram_logs"):
             return False
         # Don't activate for idle/wait cycles (no news to report)
         action = substrate.decisions.get("action", "wait")
@@ -171,7 +171,7 @@ class SendTelegramLog(Enzyme):
         # Idle streak notification (every 10 idle cycles)
         idle_cycles = substrate.learning.get("idle_cycles", 0)
         idle_reasons = substrate.learning.get("idle_reasons", [])
-        idle_notify_every = substrate.cfg("telegram.idle_notify_every", 10)
+        idle_notify_every = substrate.cfg("telegram.idle_notify_every")
         if idle_cycles > 0 and idle_cycles % idle_notify_every == 0:
             message = _format_idle_message(idle_cycles, idle_reasons)
 
