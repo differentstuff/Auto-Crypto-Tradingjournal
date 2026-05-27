@@ -25,3 +25,7 @@ data/
 .idea/
 *.swp
 *.swo
+
+# Temp
+temp/
+temp/*.*
