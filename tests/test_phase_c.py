@@ -52,6 +52,7 @@ def _make_config(overrides: dict | None = None) -> dict:
     cfg = {
         "strategy": {
             "name": "test_strategy",
+            "uid": "test-uid",
             "timeframe": "4H",
             "confirmation_tf": "1H",
             "max_positions": 3,
