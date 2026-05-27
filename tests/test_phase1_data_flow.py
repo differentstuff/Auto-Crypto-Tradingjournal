@@ -161,6 +161,8 @@ class TestCollectOHLCVActivation:
                 "uid": "test-uid",
                 "timeframe": "4H",
                 "confirmation_tf": "1H",
+                "cycle_interval_minutes": 15,
+                "max_positions": 3,
             },
             "symbols": {"always_watch": ["BTCUSDT"]},
             "indicators": [
@@ -406,7 +408,14 @@ class TestPreTradeContextTimeBasedSufficiency:
     def _make_substrate_with_history(self, span_hours=16, num_entries=8):
         """Create a substrate with indicator history spanning the given hours."""
         config = {
-            "strategy": {"name": "test_strategy", "uid": "test-uid", "timeframe": "4H"},
+            "strategy": {
+                "name": "test_strategy",
+                "uid": "test-uid",
+                "timeframe": "4H",
+                "confirmation_tf": "1H",
+                "cycle_interval_minutes": 15,
+                "max_positions": 3,
+            },
             "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
             "learning": {
                 "trajectory_min_hours": 8,
@@ -458,7 +467,14 @@ class TestPreTradeContextTimeBasedSufficiency:
     def test_empty_history_blocks_trade(self):
         """Empty indicator_history → coincidence_risk='high'."""
         config = {
-            "strategy": {"name": "test_strategy", "uid": "test-uid", "timeframe": "4H"},
+            "strategy": {
+                "name": "test_strategy",
+                "uid": "test-uid",
+                "timeframe": "4H",
+                "confirmation_tf": "1H",
+                "cycle_interval_minutes": 15,
+                "max_positions": 3,
+            },
             "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
             "learning": {"trajectory_min_hours": 8},
         }
@@ -495,7 +511,14 @@ class TestPreTradeContextTimeBasedSufficiency:
     def test_config_driven_min_hours(self):
         """trajectory_min_hours is read from config, not hardcoded."""
         config = {
-            "strategy": {"name": "test_strategy", "uid": "test-uid", "timeframe": "4H"},
+            "strategy": {
+                "name": "test_strategy",
+                "uid": "test-uid",
+                "timeframe": "4H",
+                "confirmation_tf": "1H",
+                "cycle_interval_minutes": 15,
+                "max_positions": 3,
+            },
             "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
             "learning": {"trajectory_min_hours": 24},  # 24h minimum
         }
@@ -584,8 +607,11 @@ class TestCollectOHLCVPreservesIndicators:
         config = {
             "strategy": {
                 "name": "test_strategy",
+                "uid": "test-uid",
                 "timeframe": "4H",
                 "confirmation_tf": "1H",
+                "cycle_interval_minutes": 15,
+                "max_positions": 3,
             },
             "symbols": {"always_watch": ["BTCUSDT"]},
             "indicators": [
