@@ -1204,7 +1204,14 @@ class TestUpdateRulebookLLM:
 
     # Shared learning config so Substrate.cfg() can resolve required keys.
     _LEARNING_CFG = {
-        "strategy": {"name": "test_strategy", "uid": "test-uid"},
+        "strategy": {
+            "name": "test_strategy",
+            "uid": "test-uid",
+            "timeframe": "4H",
+            "confirmation_tf": "1H",
+            "cycle_interval_minutes": 15,
+            "max_positions": 3,
+        },
         "learning": {
             "min_trades_before_adjusting": 30,
             "retrain_every_n_trades": 5,
