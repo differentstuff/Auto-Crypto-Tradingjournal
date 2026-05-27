@@ -32,17 +32,19 @@ from typing import Dict
 
 _log = logging.getLogger(__name__)
 
-DEFAULT_MIN_TRADES = 30  # Below this, no adjustments happen at all
 
 
 def compute_adjusted_weights(
     current_weights: Dict[str, float],
     strategy_name: str,
     strategy_uid: str = "legacy",
-    min_trades: int = DEFAULT_MIN_TRADES,
+    min_trades: int = None,
 ) -> Dict[str, float]:
     """
     Compute adjusted indicator weights based on signal accuracy verdicts.
+
+    min_trades is required — it comes from the strategy config.
+    No hardcoded default; the caller must supply a value read from substrate.cfg().
 
     Contrarian signals get NEGATIVE weights. This is the key insight:
     a signal with ≤30% accuracy fires "bullish" but the market moves bearish.
@@ -61,6 +63,12 @@ def compute_adjusted_weights(
 
     Writes to weight_history for each changed weight.
     """
+    if min_trades is None:
+        raise TypeError(
+            "Required parameter 'min_trades' not provided to compute_adjusted_weights. "
+            "It must come from config (learning.min_trades_before_adjusting)."
+        )
+
     from core.database import db_conn
 
     # ── Check if we have enough trades ──────────────────────────────────────
