@@ -208,33 +208,34 @@ class Substrate:
         # This must NOT contain exchange credentials or LLM API keys.
         self._config: Dict = cfg
 
-        # Strategy section
+        # Strategy section — all values from config, no hardcoded defaults.
+        # If a key is missing from config, cfg() raises ValueError immediately.
         strategy_cfg = cfg.get("strategy", {})
         self.strategy = {
-            "name": strategy_cfg.get("name", ""),
-            "uid": strategy_cfg.get("uid", ""),
+            "name": strategy_cfg["name"],
+            "uid": strategy_cfg["uid"],
             "description": cfg.get("description", ""),
-            "timeframe": strategy_cfg.get("timeframe", "4H"),
-            "confirmation_tf": strategy_cfg.get("confirmation_tf", "1H"),
-            "cycle_interval_minutes": strategy_cfg.get(
-                "cycle_interval_minutes", 15
-            ),
-            "max_positions": strategy_cfg.get("max_positions", 3),
+            "timeframe": strategy_cfg["timeframe"],
+            "confirmation_tf": strategy_cfg["confirmation_tf"],
+            "cycle_interval_minutes": strategy_cfg["cycle_interval_minutes"],
+            "max_positions": strategy_cfg["max_positions"],
             "last_loaded_at": now,
         }
 
-        # Portfolio section
+        # Portfolio section — all config values from config, no hardcoded defaults.
+        # Runtime state (equity, positions) starts at zero/empty.
         portfolio_cfg = cfg.get("portfolio", {})
         self.portfolio = {
             "equity": 0.0,
             "available_margin": 0.0,
             "open_positions": [],
-            "max_positions": portfolio_cfg.get("max_positions", 3),
-            "risk_per_trade_pct": portfolio_cfg.get("risk_per_trade_pct", 1.0),
-            "leverage": portfolio_cfg.get("leverage", 5),
-            "max_total_risk_pct": portfolio_cfg.get("max_total_risk_pct", 3.0),
-            "fallback_equity_usdt": portfolio_cfg.get("fallback_equity_usdt", 1000.0),
-            "correlation_check": portfolio_cfg.get("correlation_check", True),
+            "max_positions": portfolio_cfg["max_positions"],
+            "risk_per_trade_pct": portfolio_cfg["risk_per_trade_pct"],
+            "leverage": portfolio_cfg["leverage"],
+            "max_total_risk_pct": portfolio_cfg["max_total_risk_pct"],
+            "fallback_equity_usdt": portfolio_cfg["fallback_equity_usdt"],
+            "correlation_check": portfolio_cfg["correlation_check"],
+            "max_same_direction": portfolio_cfg["max_same_direction"],
             "total_risk_exposure_pct": 0.0,
             "correlation_matrix": {},
         }
@@ -248,7 +249,7 @@ class Substrate:
         # This is intentional: no trades until sufficient trajectory data exists.
         symbols_cfg = cfg.get("symbols", {})
         self.market = {
-            "symbols_watched": symbols_cfg.get("always_watch", []),
+            "symbols_watched": symbols_cfg["always_watch"],
             "last_scan_at": "",
             "indicators": {},
             "indicator_history": {},  # {symbol: [{timestamp, indicators: {...}}, ...]
@@ -329,12 +330,17 @@ class Substrate:
         """Return the strategy config dict (no secrets)."""
         return self._config
 
-    def cfg(self, dotted_path: str, default: Any = None) -> Any:
+    def cfg(self, dotted_path: str, default: Any = _MISSING) -> Any:
         """
         Get a value from the *config* (not substrate state) by dotted path.
 
         Used by ISC checks and enzymes that need config values like
         scoring thresholds, risk limits, etc.
+
+        Raises ValueError if the key is not found and no default is provided.
+        This ensures config is the single source of truth — missing keys
+        are caught immediately rather than silently falling back to hardcoded
+        defaults that may be wrong.
         """
         parts = dotted_path.split(".")
         obj = self._config
@@ -342,8 +348,17 @@ class Substrate:
             if isinstance(obj, dict):
                 obj = obj.get(part, _MISSING)
             else:
+                if default is _MISSING:
+                    raise ValueError(
+                        f"Config key '{dotted_path}' not found (non-dict at '{part}')"
+                    )
                 return default
             if obj is _MISSING:
+                if default is _MISSING:
+                    raise ValueError(
+                        f"Config key '{dotted_path}' not found in strategy config. "
+                        f"Add it to config/strategies/_template.yaml and your strategy YAML."
+                    )
                 return default
         return obj if obj is not _MISSING else default
 
