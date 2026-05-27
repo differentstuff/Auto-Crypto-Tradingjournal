@@ -12,6 +12,7 @@ system:
 daemon:
   cycle_interval_minutes: 15
   max_cycle_steps: 20
+  jitter_seconds: 30
   paper_mode: true  # safe default; exchange.yaml overrides to false when credentials present
   # If true, orders are written to log files instead of exchange
   substrate_state_max_rows: 200
@@ -46,6 +47,16 @@ cache:
   regime_ttl: 14400      # 4 hours
   liquidation_ttl: 900   # 15 min
 
+# Risk defaults (position sizing)
+risk:
+  kelly_min: 0.05
+  kelly_max: 0.25
+  kelly_win_rate_base: 0.35
+  kelly_win_rate_range: 0.40
+  kelly_avg_win_r: 2.0
+  max_size_pct_of_equity: 25.0
+  min_size_pct_of_equity: 5.0
+
 # Position sizing defaults
 portfolio:
   risk_per_trade_pct: 1.0
@@ -73,12 +84,25 @@ exit_rules:
     requires_indicators_reversed: 2
     requires_confirmation_tf: true
     urgency: "soft"
+  soft_reversal_profit_threshold: 0.5
 
 # Scoring defaults
 scoring:
   entry_threshold: 6.5
   confluence_min_signals: 3
   rr_minimum: 2.0
+  min_candidate_pct: 0.20
+  rsi_signal_high: 55
+  rsi_signal_low: 45
+  momentum_cap: 1.5
+  momentum_dampening: 0.5
+  modifier_weights:
+    volume: 0.15
+    cvd: 0.1
+    order_flow: 0.1
+  label_thresholds:
+    strong: 0.60
+    weak: 0.33
   score_calibration:
     suppress_below_pct: 55
     highlight_above_pct: 75
@@ -96,6 +120,13 @@ learning:
   track_idle_cycles: true
   trajectory_lookback_hours: 48
   trajectory_min_hours: 8
+  trajectory_thresholds:
+    stable_consensus: 10
+    gradual_alignment: 8
+    earlier_min: 3
+    recent_min: 2
+    earlier_low: 2
+    min_alignment: 4
   # Verdict classification thresholds
   contrarian_win_rate: 30.0
   highlight_threshold: 75.0
