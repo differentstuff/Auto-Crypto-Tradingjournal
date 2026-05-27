@@ -303,7 +303,7 @@ class ValidateEntryZone(Enzyme):
         if not self.can_activate(substrate):
             return 0.0
         candidates = substrate.analysis.get("candidates", [])
-        entry_threshold = substrate.cfg("scoring.entry_threshold", 6.5)
+        entry_threshold = substrate.cfg("scoring.entry_threshold")
         if candidates:
             top_score = abs(candidates[0].get("score", 0))
             if top_score >= entry_threshold:
