@@ -21,6 +21,7 @@ from core.enzyme import (
 )
 from enzymes.wait import WaitEnzyme
 from core.substrate import Substrate
+from conftest import make_full_config
 
 
 class TestEnzymeBase:
@@ -37,19 +38,19 @@ class TestEnzymeBase:
 
     def test_wait_enzyme_always_activatable(self):
         """WaitEnzyme can always activate."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         wait = WaitEnzyme()
         assert wait.can_activate(sub) is True
 
     def test_wait_enzyme_flux_score_zero(self):
         """WaitEnzyme has flux_score 0 (neutral, only chosen when all others <= 0)."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         wait = WaitEnzyme()
         assert wait.flux_score(sub) == 0.0
 
     def test_wait_enzyme_transform(self):
         """WaitEnzyme sets action to 'wait'."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.decisions["action"] = "enter"
         wait = WaitEnzyme()
         result = wait.transform(sub)
@@ -110,20 +111,20 @@ class TestEnzymeConditions:
 
     def test_condition_is_set(self):
         """'is set' condition checks for non-empty values."""
-        sub = Substrate(config={"strategy": {"name": "test"}})
+        sub = Substrate(config=make_full_config())
         wait = WaitEnzyme()
         assert wait._evaluate_condition("substrate.strategy.name is set", sub) is True
 
     def test_condition_not_empty(self):
         """'not empty' condition checks for non-empty collections."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.analysis["candidates"] = [{"symbol": "BTCUSDT"}]
         wait = WaitEnzyme()
         assert wait._evaluate_condition("analysis.candidates not empty", sub) is True
 
     def test_condition_equality(self):
         """'==' condition checks string equality."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.decisions["action"] = "wait"
         wait = WaitEnzyme()
         assert wait._evaluate_condition("decisions.action == 'wait'", sub) is True
@@ -131,7 +132,7 @@ class TestEnzymeConditions:
 
     def test_condition_inequality(self):
         """'!=' condition checks string inequality."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.analysis["noise_flag"] = True
         wait = WaitEnzyme()
         assert wait._evaluate_condition("analysis.noise_flag != 'true'", sub) is True
@@ -161,12 +162,12 @@ class TestCustomEnzyme:
         sensor = TestSensor()
 
         # Should activate when strategy name is set
-        sub = Substrate(config={"strategy": {"name": "test"}})
+        sub = Substrate(config=make_full_config())
         assert sensor.can_activate(sub) is True
 
-        # Should not activate when strategy name is empty
-        sub_empty = Substrate()
-        assert sensor.can_activate(sub_empty) is False
+        # Should not activate when strategy name is empty — Substrate now requires full config
+        with pytest.raises((KeyError, ValueError)):
+            Substrate()
 
     def test_regulator_enzyme(self):
         """Regulator enzymes have priority 10."""
