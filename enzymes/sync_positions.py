@@ -56,7 +56,7 @@ class SyncPositions(Enzyme):
         self.exchange = exchange
 
     def can_activate(self, substrate: Substrate) -> bool:
-        sync_every = substrate.cfg("sync.position_sync_every_n_cycles", 4)
+        sync_every = substrate.cfg("sync.position_sync_every_n_cycles")
         cycle = substrate._cycle_count
         return cycle % sync_every == 0
 
@@ -80,13 +80,13 @@ class SyncPositions(Enzyme):
             return [], {}
 
     def transform(self, substrate: Substrate) -> Substrate:
-        paper_mode = substrate.cfg("daemon.paper_mode", True)
+        paper_mode = substrate.cfg("daemon.paper_mode")
 
         if paper_mode:
             # Paper mode: preserve rolling equity (updated by ExecuteExit PnL),
             # fall back to configured value only on first cycle or reset.
             # This gives paper trading a realistic compounding equity curve.
-            fallback = substrate.cfg("portfolio.fallback_equity_usdt", 1000.0)
+            fallback = substrate.cfg("portfolio.fallback_equity_usdt")
             current_equity = substrate.portfolio.get("equity", 0)
             if current_equity <= 0:
                 substrate.portfolio["equity"] = fallback
