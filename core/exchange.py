@@ -319,7 +319,7 @@ class Exchange:
         entry_price: float = None,
         sl_price: float = None,
         tp_price: float = None,
-        leverage: int = 5,
+        leverage: int = None,
     ) -> Optional[dict]:
         """
         Place a market or limit order.
@@ -327,8 +327,15 @@ class Exchange:
         In paper mode: logs the order and returns mock data.
         In live mode: calls the exchange API.
 
+        leverage defaults to portfolio.leverage from config if not passed.
+
         Returns dict with: order_id, symbol, direction, size_usdt, status
         """
+        if leverage is None:
+            leverage = self._config.get("portfolio", {}).get("leverage")
+        if not leverage:
+            _log.error("No leverage configured for %s — check portfolio.leverage in config", symbol)
+            return None
         if self._paper_mode:
             _log.info(
                 "PAPER ORDER: %s %s size=%.2f entry=%s sl=%s tp=%s",
@@ -383,7 +390,7 @@ class Exchange:
         side: str = None,
         direction: str = None,
         size_usdt: float = 0,
-        leverage: int = 5,
+        leverage: int = None,
     ) -> Optional[dict]:
         """
         Place a market order (convenience wrapper).
@@ -392,9 +399,15 @@ class Exchange:
         In paper mode: logs and returns mock data with paper=True.
         In live mode: calls the exchange API.
 
+        leverage defaults to portfolio.leverage from config if not passed.
+
         Returns dict with: order_id, symbol, side/direction, size_usdt, status, paper
         Raises: ExchangeError on live mode failure.
         """
+        if leverage is None:
+            leverage = self._config.get("portfolio", {}).get("leverage")
+        if not leverage:
+            raise ExchangeError(f"No leverage configured for {symbol} — check portfolio.leverage in config")
         # Normalize: accept both 'side' and 'direction'
         if direction is None and side is not None:
             direction = "Long" if side.lower() == "buy" else "Short"
