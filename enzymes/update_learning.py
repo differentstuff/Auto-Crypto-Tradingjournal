@@ -63,10 +63,29 @@ class UpdateLearning(Enzyme):
         strategy_name = substrate.strategy.get("name", "")
         strategy_uid = substrate.strategy.get("uid", "legacy")
 
+        # Read ALL learning config values from substrate.cfg() every cycle.
+        # No hardcoded defaults — config is the single source of truth.
+        min_trades_per_signal = substrate.cfg("learning.min_trades_per_signal")
+        min_trades_before_adj = substrate.cfg("learning.min_trades_before_adjusting")
+        significance_level = substrate.cfg("learning.significance_level")
+        contrarian_win_rate = substrate.cfg("learning.contrarian_win_rate")
+        highlight_threshold = substrate.cfg("learning.highlight_threshold")
+        monitor_low_threshold = substrate.cfg("learning.monitor_low_threshold")
+        suppress_range = tuple(substrate.cfg("learning.suppress_range"))
+        contrarian_threshold = substrate.cfg("learning.contrarian_threshold")
+
         # 1. Update signal accuracy (per-indicator win/loss tracking)
         try:
             from learning.analyzer import update_signal_accuracy
-            update_signal_accuracy(strategy_name, strategy_uid=strategy_uid)
+            update_signal_accuracy(
+                strategy_name,
+                strategy_uid=strategy_uid,
+                min_trades_per_signal=min_trades_per_signal,
+                highlight_threshold=highlight_threshold,
+                monitor_low_threshold=monitor_low_threshold,
+                suppress_range=suppress_range,
+                contrarian_threshold=contrarian_threshold,
+            )
             _log.info("Updated signal accuracy for '%s'", strategy_name)
         except Exception as e:
             _log.error("Failed to update signal accuracy: %s", e, exc_info=True)
@@ -74,7 +93,13 @@ class UpdateLearning(Enzyme):
         # 2. Update combination accuracy (pairwise signal tracking)
         try:
             from learning.combination import update_combination_accuracy
-            update_combination_accuracy(strategy_name, strategy_uid=strategy_uid)
+            update_combination_accuracy(
+                strategy_name,
+                strategy_uid=strategy_uid,
+                min_trades=min_trades_per_signal,
+                significance_level=significance_level,
+                contrarian_win_rate=contrarian_win_rate,
+            )
             _log.info("Updated combination accuracy for '%s'", strategy_name)
         except Exception as e:
             _log.error("Failed to update combination accuracy: %s", e, exc_info=True)
@@ -82,7 +107,15 @@ class UpdateLearning(Enzyme):
         # 3. Update trajectory accuracy (pattern tracking)
         try:
             from learning.trajectory import update_trajectory_accuracy
-            update_trajectory_accuracy(strategy_name, strategy_uid=strategy_uid)
+            update_trajectory_accuracy(
+                strategy_name,
+                strategy_uid=strategy_uid,
+                min_trades=min_trades_per_signal,
+                highlight_threshold=highlight_threshold,
+                monitor_low_threshold=monitor_low_threshold,
+                suppress_range=suppress_range,
+                contrarian_threshold=contrarian_threshold,
+            )
             _log.info("Updated trajectory accuracy for '%s'", strategy_name)
         except Exception as e:
             _log.error("Failed to update trajectory accuracy: %s", e, exc_info=True)
@@ -100,7 +133,10 @@ class UpdateLearning(Enzyme):
             }
 
             adjusted = compute_adjusted_weights(
-                weight_map, strategy_name, strategy_uid=strategy_uid,
+                weight_map,
+                strategy_name,
+                strategy_uid=strategy_uid,
+                min_trades=min_trades_before_adj,
             )
 
             if adjusted and adjusted != weight_map:
