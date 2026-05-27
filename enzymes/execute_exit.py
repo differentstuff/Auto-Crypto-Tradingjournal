@@ -56,7 +56,7 @@ class ExecuteExit(Enzyme):
 
         symbol = exit_approved.get("symbol", "?")
         exit_reason = exit_approved.get("reason", "unknown")
-        paper_mode = substrate.cfg("daemon.paper_mode", True)
+        paper_mode = substrate.cfg("daemon.paper_mode")
 
         # Find the position
         positions = substrate.portfolio.get("open_positions", [])
