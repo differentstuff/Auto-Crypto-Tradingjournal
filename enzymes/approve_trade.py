@@ -35,13 +35,14 @@ def _kelly_fraction(score: float, config: dict) -> float:
     Kelly criterion using confluence score as edge proxy.
 
     Maps score to win_rate proxy, then computes Kelly fraction.
-    Capped between kelly_min and kelly_max (config-driven).
+    Capped between kelly_min and kelly_max (from config risk section).
     """
-    kelly_min = config.get("risk", {}).get("kelly_min", 0.05)
-    kelly_max = config.get("risk", {}).get("kelly_max", 0.25)
-    wr_base = config.get("risk", {}).get("kelly_win_rate_base", 0.35)
-    wr_range = config.get("risk", {}).get("kelly_win_rate_range", 0.40)
-    avg_win_r = config.get("risk", {}).get("kelly_avg_win_r", 2.0)
+    risk_cfg = config.get("risk", {})
+    kelly_min = risk_cfg.get("kelly_min")
+    kelly_max = risk_cfg.get("kelly_max")
+    wr_base = risk_cfg.get("kelly_win_rate_base")
+    wr_range = risk_cfg.get("kelly_win_rate_range")
+    avg_win_r = risk_cfg.get("kelly_avg_win_r")
 
     # Map score (0-10) to win_rate proxy
     win_rate = wr_base + (score / 10) * wr_range
@@ -69,9 +70,9 @@ def _compute_size(
     if not equity or not entry_price or not sl_price:
         return {"size_usdt": 0, "margin_usdt": 0, "risk_pct": 0, "stop_dist_pct": 0}
 
-    risk_per_trade_pct = config.get("portfolio", {}).get("risk_per_trade_pct", 1.0)
-    max_size_pct = config.get("risk", {}).get("max_size_pct_of_equity", 25.0)
-    min_size_pct = config.get("risk", {}).get("min_size_pct_of_equity", 5.0)
+    risk_per_trade_pct = config.get("portfolio", {}).get("risk_per_trade_pct")
+    max_size_pct = config.get("risk", {}).get("max_size_pct_of_equity")
+    min_size_pct = config.get("risk", {}).get("min_size_pct_of_equity")
 
     # Stop distance
     stop_dist_pct = abs(entry_price - sl_price) / entry_price
