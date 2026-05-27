@@ -923,7 +923,7 @@ class TestShouldRegenerate:
             for _ in range(15):
                 _insert_trade(conn, outcome="win")
 
-        assert should_regenerate("test_strategy", min_trades=30) is False
+        assert should_regenerate("test_strategy", min_trades=30, retrain_every_n_trades=10) is False
 
     def test_true_above_threshold_no_previous(self, temp_db):
         """35 trades, no previous rulebook → True."""
@@ -934,7 +934,7 @@ class TestShouldRegenerate:
             for _ in range(35):
                 _insert_trade(conn, outcome="win")
 
-        assert should_regenerate("test_strategy", min_trades=30) is True
+        assert should_regenerate("test_strategy", min_trades=30, retrain_every_n_trades=10) is True
 
     def test_false_not_enough_new_trades(self, temp_db):
         """
