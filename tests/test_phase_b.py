@@ -77,6 +77,20 @@ def substrate():
         "exit_rules": {
             "hard_stop": {"width_atr_multiplier": 1.5},
         },
+        "learning": {
+            "min_trades_before_adjusting": 30,
+            "min_trades_per_signal": 15,
+            "significance_level": 0.05,
+            "contrarian_win_rate": 30.0,
+            "highlight_threshold": 75.0,
+            "monitor_low_threshold": 55.0,
+            "suppress_range": [45.0, 55.0],
+            "contrarian_threshold": 30.0,
+            "rulebook_max_rules": 10,
+            "retrain_every_n_trades": 10,
+            "trajectory_lookback_hours": 48,
+            "trajectory_min_hours": 8,
+        },
         "modules": {
             "macro_context": True,
         },
