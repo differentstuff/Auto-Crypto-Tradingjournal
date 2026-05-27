@@ -1306,26 +1306,18 @@ class TestUpdateRulebookEnzyme:
 
     def _get_enzyme(self, config: dict | None = None):
         from enzymes.update_rulebook import UpdateRulebook
-        cfg = config or {
-            "strategy": {"name": "test_strategy"},
-            "learning": {
-                "min_trades_before_adjusting": 30,
-                "retrain_every_n_trades": 10,
-                "rulebook_max_rules": 10,
-            },
-        }
+        cfg = config or make_full_config(
+            strategy={"name": "test_strategy"},
+            learning={"min_trades_before_adjusting": 30, "retrain_every_n_trades": 10, "rulebook_max_rules": 10},
+        )
         return UpdateRulebook(config=cfg)
 
     def _make_substrate(self, total_trades: int = 0, config: dict | None = None):
         from core.substrate import Substrate
-        cfg = config or {
-            "strategy": {"name": "test_strategy", "uid": "legacy"},
-            "learning": {
-                "min_trades_before_adjusting": 30,
-                "retrain_every_n_trades": 10,
-                "rulebook_max_rules": 10,
-            },
-        }
+        cfg = config or make_full_config(
+            strategy={"name": "test_strategy", "uid": "legacy"},
+            learning={"min_trades_before_adjusting": 30, "retrain_every_n_trades": 10, "rulebook_max_rules": 10},
+        )
         sub = Substrate(config=cfg)
         sub.learning["total_trades_recorded"] = total_trades
         return sub
