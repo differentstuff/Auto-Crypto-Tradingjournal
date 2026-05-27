@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.substrate import Substrate, ISCCheck
+from core.substrate import Substrate, ISCCheck, SubstrateConfigError
 from conftest import make_full_config
 
 
@@ -32,8 +32,8 @@ class TestSubstrateCreation:
         assert len(sub.validity) == 7  # 7 default ISC conditions
 
     def test_creation_without_config_raises(self):
-        """Substrate() with no config raises ValueError for missing required keys."""
-        with pytest.raises((KeyError, ValueError)):
+        """Substrate() with no config raises SubstrateConfigError for missing required keys."""
+        with pytest.raises(SubstrateConfigError):
             Substrate()
 
     def test_creation_from_config_override(self):
