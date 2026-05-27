@@ -120,6 +120,11 @@ learning:
   track_idle_cycles: true
   trajectory_lookback_hours: 48
   trajectory_min_hours: 8
+  contrarian_win_rate: 30.0
+  highlight_threshold: 75.0
+  monitor_low_threshold: 55.0
+  suppress_range: [45.0, 55.0]
+  contrarian_threshold: 30.0
 
 portfolio:
   max_positions: 3
