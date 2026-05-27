@@ -571,7 +571,7 @@ class RecordTradeOutcome(Enzyme):
                 signal_states = substrate.analysis.get("signal_states", {})
                 trajectory_data = substrate.market.get("pre_trade_context", {})
                 indicator_data = substrate.market.get("indicators", {})
-                indicator_configs = substrate.cfg("indicators", [])
+                indicator_configs = substrate.cfg("indicators")
                 _record_trade_entry(
                     trade_approved, strategy_name, strategy_uid,
                     signal_states=signal_states,
