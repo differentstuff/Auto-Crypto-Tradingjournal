@@ -90,6 +90,7 @@ noise:
   adx_no_trend: 15
   adx_overextended: 40
   noise_severity_min_reasons: 2
+  kill_zone_blocks: false
 
 telegram:
   idle_notify_every: 10
