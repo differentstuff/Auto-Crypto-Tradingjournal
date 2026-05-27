@@ -91,6 +91,8 @@ exit_rules:
   trailing_stop:
     enabled: true
     activation_profit_pct: 0.5
+    trail_atr_multiplier: 1.0
+    breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
   soft_exit:
@@ -129,6 +131,18 @@ portfolio:
   max_total_risk_pct: 3.0
   fallback_equity_usdt: 1000.0
   correlation_check: true
+  max_same_direction: 3
+
+noise:
+  conflict_signal_threshold: 2
+  volume_low_ratio: 0.7
+  volume_very_low_ratio: 0.5
+  adx_no_trend: 15
+  adx_overextended: 40
+  noise_severity_min_reasons: 2
+
+telegram:
+  idle_notify_every: 10
 
 # LLM config is defined in config/default.yaml and shared by all strategies.
 # Do not override llm: here — the router reads from the merged config.
