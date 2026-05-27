@@ -1,0 +1,136 @@
+# config/strategies/_template.yaml
+# Reference template containing EVERY possible strategy config key.
+# If a key exists here, it MUST exist in every strategy file.
+# If a key is missing from a strategy, the system fails — not falls back.
+# Copy this file to create a new strategy, then customize values.
+
+strategy:
+  name: ""                       # strategy identifier (must match filename without .yaml)
+  uid: ""                        # stable UID for learning data isolation (auto-generated on first load, clear to reset)
+  timeframe: "4h"                 # primary candle timeframe for indicator computation
+  confirmation_tf: "1h"          # higher timeframe for trend alignment check (set to null to skip)
+  max_positions: 3                # maximum concurrent open positions
+  cycle_interval_minutes: 15     # seconds between daemon cycles
+
+symbols:
+  always_watch:                   # symbol pairs to always monitor
+    - BTCUSDT
+    - ETHUSDT
+  never_trade:                    # symbol pairs to never trade
+    - SHIBUSDT
+  dynamic_filter:
+    mode: "dynamic"               # dynamic symbol filtering mode (off/dynamic)
+    limit: 15                     # max symbols from dynamic filter
+    criteria: "momentum"          # ranking criteria for dynamic filter
+    min_volume_24h_usd: 10000000  # minimum 24h volume for dynamic filter
+    min_open_interest_usd: 2000000 # minimum open interest for dynamic filter
+
+indicators:
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.25
+    description: "RSI below 30 = oversold. RSI above 70 = overbought."
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.25
+    description: "MACD histogram rising = momentum building."
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.30
+    description: "EMA 21 above 55 above 200 = bullish trend structure."
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.20
+    description: "ADX 25-35 = healthy trend. Avoid >40 or <15."
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR for SL width and position sizing, not scoring."
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "S/R levels for entry zone validation, not scoring."
+
+scoring:
+  entry_threshold: 6.5           # minimum confluence score to consider entry
+  confluence_min_signals: 3      # minimum number of aligned indicators for entry
+  rr_minimum: 2.0                # minimum risk:reward ratio for entry
+  score_calibration:
+    suppress_below_pct: 55       # accuracy below this → suppress signal weight
+    highlight_above_pct: 75     # accuracy above this → highlight signal
+    review_range_pct:
+      - 55
+      - 60                       # accuracy in this range → review signal
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"   # hard stop placement method
+    width_atr_multiplier: 1.5    # ATR multiplier for hard stop distance
+    always_active: true          # hard stop is always active
+  trailing_stop:
+    enabled: true                # enable trailing stop
+    activation_pct: 0.5          # profit % before trailing stop activates
+    trail_atr_multiplier: 1.0   # ATR multiplier for trailing distance
+    breakeven_at_activation: true # move SL to entry when trailing activates
+    distance_pct: 1.0            # trailing distance as % of price
+    move_to_breakeven_at_pct: 1.5 # profit % at which SL moves to breakeven
+  soft_exit:
+    requires_indicators_reversed: 2  # number of indicators that must reverse for soft exit
+    requires_confirmation_tf: true    # confirmation TF must also reverse for soft exit
+    urgency: "soft"                  # soft exit urgency level
+
+learning:
+  min_trades_before_adjusting: 30  # minimum trades before learning adjusts weights
+  min_trades_per_signal: 15        # minimum trades per indicator before accuracy is tracked
+  significance_level: 0.05         # statistical significance threshold for combinations
+  rulebook_max_rules: 10           # maximum rules in generated rulebook
+  retrain_every_n_trades: 10       # retrain rulebook every N new trades
+  track_idle_cycles: true          # track idle cycle reasons for learning
+  trajectory_lookback_hours: 48    # hours of indicator history for trajectory analysis
+  trajectory_min_hours: 8          # minimum hours of history before trajectory is valid
+  contrarian_win_rate: 30.0        # win rate below which a signal is contrarian (anti-signal)
+  highlight_threshold: 75.0       # accuracy above this → signal is highlighted
+  monitor_low_threshold: 55.0     # accuracy below this → signal is monitored
+  suppress_range:
+    - 45.0
+    - 55.0                        # accuracy in this range → signal is suppressed
+  contrarian_threshold: 30.0      # accuracy at or below this → signal is contrarian
+
+portfolio:
+  max_positions: 3                # maximum concurrent open positions (strategy-level override)
+  risk_per_trade_pct: 1.0        # percentage of equity risked per trade
+  leverage: 5                     # leverage multiplier for position sizing
+  max_total_risk_pct: 3.0        # maximum total portfolio risk percentage
+  fallback_equity_usdt: 1000.0   # equity used in paper mode when no real equity available
+  correlation_check: true        # check correlation between positions
+  max_same_direction: 3           # maximum positions in the same direction
+
+noise:
+  conflict_signal_threshold: 2   # number of conflicting signals to flag as noise
+  volume_low_ratio: 0.7          # volume ratio below which volume is considered low
+  volume_very_low_ratio: 0.5    # volume ratio below which volume is considered very low
+  adx_no_trend: 15               # ADX below this = no trend (noise)
+  adx_overextended: 40           # ADX above this = overextended (noise)
+  noise_severity_min_reasons: 2   # minimum noise reasons to flag as noisy
+
+telegram:
+  idle_notify_every: 10          # notify every N idle cycles when telegram_logs is enabled
+
+modules:
+  macro_context: false           # enable macro context data collection
+  regime_detection: false        # enable regime detection
+  sentiment: false               # enable sentiment analysis
+  onchain: false                 # enable on-chain data
+  liquidation: false             # enable liquidation data
+  model_consensus: false         # enable model consensus
+  telegram_logs: false            # enable Telegram log notifications
+  telegram_interaction: false    # enable Telegram interaction
