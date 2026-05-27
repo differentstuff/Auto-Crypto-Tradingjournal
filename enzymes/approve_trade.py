@@ -149,8 +149,8 @@ class ApproveTrade(Enzyme):
         equity = substrate.portfolio.get("equity", 0)
         open_positions = substrate.portfolio.get("open_positions", [])
         noise_flag = substrate.analysis.get("noise_flag", False)
-        max_positions = substrate.cfg("strategy.max_positions", 3)
-        leverage = substrate.cfg("portfolio.leverage", 5)
+        max_positions = substrate.cfg("strategy.max_positions")
+        leverage = substrate.cfg("portfolio.leverage")
 
         # ISC: max positions
         if len(open_positions) >= max_positions:
@@ -207,7 +207,7 @@ class ApproveTrade(Enzyme):
                 continue
 
             # Directional concentration check
-            max_same = substrate.cfg("portfolio.max_same_direction", 3)
+            max_same = substrate.cfg("portfolio.max_same_direction")
             same_dir_count = sum(
                 1 for p in open_positions
                 if p.get("direction", "").lower() == direction.lower()
