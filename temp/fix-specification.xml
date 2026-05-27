@@ -1,0 +1,562 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIX SPECIFICATION — Auto-Crypto-Tradingjournal
+  Format: Pseudo-XML task specification for AI agent consumption.
+  Principles: reaction-network design, shallow-copy safety, config-driven,
+              no hardcoded values, fail-safe defaults, hot-reload compatible.
+-->
+
+<specification version="1.0">
+
+  <meta>
+    <project>Auto-Crypto-Tradingjournal</project>
+    <design_pattern>Reaction Network (enzyme-substrate-attractor)</design_pattern>
+    <constraints>
+      <constraint>All enzymes must be shallow-copy safe (reassign entire fields, no nested mutation)</constraint>
+      <constraint>All config values must be read via substrate.cfg() every cycle — no constructor caching</constraint>
+      <constraint>No hardcoded thresholds, IDs, or magic numbers</constraint>
+      <constraint>Fail-safe: if config missing, use sensible default; never crash</constraint>
+      <constraint>DB writes are side-effects and cannot be rolled back — external calls first, substrate second</constraint>
+      <constraint>All indicator_history entries must represent real closed candles, not cycle snapshots</constraint>
+    </constraints>
+  </meta>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 1: confirmation_tf is fetched but ignored for entries    -->
+  <!-- ================================================================ -->
+  <problem id="P1">
+    <title>confirmation_tf is dead weight for entry decisions</title>
+    <severity>high</severity>
+    <description>
+      The strategy YAML declares confirmation_tf (e.g., "1h") and describes
+      entry confirmation via a second timeframe. CollectOHLCV fetches and
+      computes indicators for both timeframes. However, ScoreConfluence and
+      ValidateEntryZone only read primary_tf (list(sym_data.keys())[0]).
+      The confirmation data is used only by DetectNoise (conflict checking)
+      and RequestExit (signal reversal). Entry decisions are blind to it.
+    </description>
+    <current_behavior>
+      score_confluence.py: primary_tf = list(sym_data.keys())[0]  # ignores confirmation
+      validate_entry_zone.py: primary_tf = list(sym_data.keys())[0]  # ignores confirmation
+    </current_behavior>
+    <design_violation>
+      The strategy config promises multi-timeframe confirmation but the
+      reaction network does not enforce it. ISC-001 checks entry_threshold
+      but not cross-timeframe alignment. This is a broken contract between
+      config and execution.
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Require cross-timeframe alignment before a candidate is scored or validated</approach>
+      <requirements>
+        <req id="P1-R1">
+          ScoreConfluence._score_timeframe() must score BOTH timeframes.
+          The candidate's total score is only positive if BOTH timeframes
+          agree in direction (both bullish or both bearish). If they
+          conflict, the candidate is dropped or score is neutralized.
+        </req>
+        <req id="P1-R2">
+          ValidateEntryZone must require confirmation_tf data to exist
+          and align before producing an entry_zone. If confirmation_tf
+          is null in config, skip this check (backward compatible).
+        </req>
+        <req id="P1-R3">
+          Add an ISC or enzyme-level check: "confirmation_tf aligned with
+          primary_tf direction for this candidate". If not aligned, the
+          candidate is filtered before ApproveTrade sees it.
+        </req>
+        <req id="P1-R4">
+          If confirmation_tf is removed from a strategy (set to null),
+          the system must continue working without error. Do not require
+          confirmation_tf for strategies that don't declare it.
+        </req>
+      </requirements>
+      <files_affected>
+        <file>enzymes/score_confluence.py</file>
+        <file>enzymes/validate_entry_zone.py</file>
+        <file>core/substrate.py (optional new ISC)</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 2: indicator_history appends per-cycle, not per-candle   -->
+  <!-- ================================================================ -->
+  <problem id="P2">
+    <title>Trajectory analysis is destroyed by per-cycle snapshot spam</title>
+    <severity>critical</severity>
+    <description>
+      CollectOHLCV appends one snapshot to indicator_history every cycle.
+      With a 4h candle and 5-min cycle interval, the same forming candle
+      produces 48 nearly-identical snapshots. The trajectory classifier
+      (CollectPreTradeContext._classify_trajectory) counts "aligned bars"
+      but these are not real bars — they are cycle snapshots of the same
+      unfinished candle. After bootstrap, ISC-007 (coincidence_risk != high)
+      almost never blocks trades because the artificial history looks
+      "stable" even when the alignment was sudden.
+    </description>
+    <current_behavior>
+      collect_ohlcv.py:
+        history[symbol].append(snapshot)  # EVERY CYCLE
+        if len(history[symbol]) &gt; lookback:
+            history[symbol] = history[symbol][-lookback:]
+    </current_behavior>
+    <design_violation>
+      The substrate stores cycle-count-based history (trajectory_lookback_bars: 12)
+      but the underlying data source is candle-close-based. This is a unit
+      mismatch: 12 cycle snapshots != 12 candle closes. The learning engine
+      draws statistical conclusions from cycle noise, not market structure.
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Append snapshots only when a new candle has closed</approach>
+      <requirements>
+        <req id="P2-R1">
+          CollectOHLCV must track the timestamp of the last closed candle
+          per symbol per timeframe. Only append to indicator_history when
+          the latest candle's close timestamp differs from the last stored
+          timestamp. The forming (current) candle must NEVER produce a
+          history entry.
+        </req>
+        <req id="P2-R2">
+          Replace cycle-count-based configuration with time-based:
+          - REMOVE: learning.trajectory_lookback_bars
+          - REMOVE: learning.trajectory_min_bars
+          - ADD: learning.trajectory_lookback_hours (default 48)
+          - ADD: learning.trajectory_min_hours (default 8)
+          The classifier counts real candles that fall within the lookback
+          window, not a fixed number of snapshots.
+        </req>
+        <req id="P2-R3">
+          The _bootstrap_indicator_history() method already computes from
+          real historical bars. It must remain unchanged in principle but
+          should respect the new time-based configuration.
+        </req>
+        <req id="P2-R4">
+          On daemon restart, indicator_history starts empty. CollectOHLCV
+          bootstraps from historical data. The first live append happens
+          only when the NEXT candle closes after restart. Do NOT append
+          the current forming candle just because it's the first cycle.
+        </req>
+        <req id="P2-R5">
+          Store last_candle_close_ts in substrate.market (per symbol, per
+          timeframe) so the check survives reset_cycle().
+        </req>
+      </requirements>
+      <files_affected>
+        <file>enzymes/collect_ohlcv.py</file>
+        <file>enzymes/collect_pre_trade_context.py</file>
+        <file>config/strategies/*.yaml</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 3: retrain_every_hours is dead config                     -->
+  <!-- ================================================================ -->
+  <problem id="P3">
+    <title>retrain_every_hours exists in YAML but is never read</title>
+    <severity>medium</severity>
+    <description>
+      Strategy YAMLs declare learning.retrain_every_hours (e.g., 12 or 6).
+      UpdateRulebook.__init__ reads retrain_every_n_trades (default 10)
+      and ignores the hours key entirely. Rulebook regeneration is
+      trade-count-driven, which IS the correct trigger. The hours key
+      is misleading dead config.
+    </description>
+    <current_behavior>
+      paper_learning_test.yaml: retrain_every_hours: 6
+      update_rulebook.py: self._retrain_every = learning_cfg.get("retrain_every_n_trades", 10)
+    </current_behavior>
+    <design_violation>
+      Occam's razor: a config key that is never read adds complexity
+      without value. It creates false expectations about behavior.
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Remove the dead key and standardize on trade-count</approach>
+      <requirements>
+        <req id="P3-R1">
+          Remove learning.retrain_every_hours from ALL strategy YAML files.
+          The key has never been functional. Removing it eliminates confusion.
+        </req>
+        <req id="P3-R2">
+          Keep learning.retrain_every_n_trades as the sole trigger.
+          It is already config-driven and correct.
+        </req>
+        <req id="P3-R3">
+          If a user adds retrain_every_hours to a custom strategy, the
+          system must ignore it gracefully (no error, no effect).
+        </req>
+      </requirements>
+      <files_affected>
+        <file>config/strategies/momentum_rising.yaml</file>
+        <file>config/strategies/paper_learning_test.yaml</file>
+        <file>config/strategies/paper_test.yaml</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 4: YAML config values are ignored by learning modules     -->
+  <!-- ================================================================ -->
+  <problem id="P4">
+    <title>Learning parameters are hardcoded; YAML values are ignored</title>
+    <severity>high</severity>
+    <description>
+      The learning modules (analyzer.py, combination.py, trajectory.py,
+      weight_adjuster.py) define DEFAULT_* constants that override or
+      replace the strategy YAML values. UpdateLearning calls these
+      functions without passing config-derived parameters. The result:
+      paper_learning_test.yaml promises min_trades_before_adjusting: 15
+      but weight_adjuster.py uses DEFAULT_MIN_TRADES = 30. The learning
+      engine is twice as conservative as the user configured.
+    </description>
+    <current_behavior>
+      learning/analyzer.py: DEFAULT_MIN_TRADES_PER_SIGNAL = 15
+      learning/combination.py: DEFAULT_MIN_TRADES = 10
+      learning/trajectory.py: DEFAULT_MIN_TRADES = 15
+      learning/weight_adjuster.py: DEFAULT_MIN_TRADES = 30
+      enzymes/update_learning.py:
+          update_signal_accuracy(strategy_name, strategy_uid=strategy_uid)
+          # ^ min_trades_per_signal NOT passed
+          compute_adjusted_weights(weight_map, strategy_name, strategy_uid=strategy_uid)
+          # ^ min_trades NOT passed
+    </current_behavior>
+    <design_violation>
+      Config-driven design requires that all tunable parameters live in
+      config and are read every cycle. Hardcoded defaults violate the
+      hot-reload contract: editing the YAML and reloading has no effect
+      on learning behavior.
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Thread config values through the entire learning pipeline</approach>
+      <requirements>
+        <req id="P4-R1">
+          All learning module functions must accept explicit parameters
+          for thresholds instead of relying on module-level constants:
+          - update_signal_accuracy(..., min_trades_per_signal: int)
+          - update_combination_accuracy(..., min_trades: int, significance_level: float)
+          - update_trajectory_accuracy(..., min_trades: int)
+          - compute_adjusted_weights(..., min_trades: int)
+        </req>
+        <req id="P4-R2">
+          The module-level DEFAULT_* constants become fallback defaults
+          only when the parameter is explicitly omitted (backward compat
+          for external callers). Internal callers must always pass values.
+        </req>
+        <req id="P4-R3">
+          UpdateLearning.transform() must read ALL learning parameters
+          from substrate.cfg() every cycle and pass them to the learning
+          functions:
+          - learning.min_trades_before_adjusting → compute_adjusted_weights
+          - learning.min_trades_per_signal → update_signal_accuracy
+          - learning.significance_level → update_combination_accuracy
+          - learning.min_trades_per_signal → update_trajectory_accuracy
+        </req>
+        <req id="P4-R4">
+          If a config key is missing, use the current hardcoded default
+          as fallback. Log a debug message: "Using default X because
+          config key Y is not set".
+        </req>
+      </requirements>
+      <files_affected>
+        <file>enzymes/update_learning.py</file>
+        <file>learning/analyzer.py</file>
+        <file>learning/combination.py</file>
+        <file>learning/trajectory.py</file>
+        <file>learning/weight_adjuster.py</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 5: Enzymes cache config in __init__, breaking hot-reload -->
+  <!-- ================================================================ -->
+  <problem id="P5">
+    <title>Constructor caching prevents hot-reload from affecting enzyme behavior</title>
+    <severity>high</severity>
+    <description>
+      UpdateRulebook caches min_trades and retrain_every in __init__ from
+      the config dict passed at daemon startup. When the daemon hot-reloads
+      config (every cycle), the enzyme still uses the old cached values.
+      The user edits the YAML, the daemon logs "Config changed after reload",
+      but the enzyme's behavior does not change.
+    </description>
+    <current_behavior>
+      update_rulebook.py:
+        def __init__(self, config: dict | None = None):
+            self._min_trades = 30
+            self._retrain_every = 10
+            if config:
+                learning_cfg = config.get("learning", {})
+                self._min_trades = learning_cfg.get("min_trades_before_adjusting", 30)
+                self._retrain_every = learning_cfg.get("retrain_every_n_trades", 10)
+    </current_behavior>
+    <design_violation>
+      The substrate holds a reference to the live config (substrate._config)
+      that is refreshed on every cycle. Enzymes must read from the substrate
+      at decision time, not from a snapshot taken at construction time.
+      Constructor caching is an anti-pattern in a hot-reload system.
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Read all tunable values from substrate.cfg() in can_activate() and transform()</approach>
+      <requirements>
+        <req id="P5-R1">
+          UpdateRulebook.can_activate() must read min_trades and
+          retrain_every from substrate.cfg() every time it is called.
+          Remove self._min_trades and self._retrain_every instance
+          variables entirely.
+        </req>
+        <req id="P5-R2">
+          Audit ALL enzymes for constructor caching of config values.
+          Any enzyme that stores config-derived thresholds in __init__
+          must be refactored to read from substrate.cfg() at runtime.
+        </req>
+        <req id="P5-R3">
+          The config parameter passed to enzyme constructors should be
+          treated as a bootstrap hint only, not a source of truth. The
+          substrate is the source of truth for all cycle-level decisions.
+        </req>
+      </requirements>
+      <files_affected>
+        <file>enzymes/update_rulebook.py</file>
+        <file>ALL other enzymes (audit required)</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 6: Duration check recalculates every cycle wastefully    -->
+  <!-- ================================================================ -->
+  <problem id="P6">
+    <title>Max hold duration is recalculated every cycle for every position</title>
+    <severity>low</severity>
+    <description>
+      ApproveExit computes held_hours from opened_at on every cycle for
+      every open position. opened_at never changes. max_hold_hours changes
+      rarely. The calculation is pure waste: datetime parsing, arithmetic,
+      and comparison run hundreds of times per day for no reason.
+    </description>
+    <current_behavior>
+      approve_exit.py:
+        opened_at = updated_pos.get("opened_at", "")
+        if opened_at:
+            opened_dt = datetime.fromisoformat(opened_at)
+            held_hours = (datetime.now(timezone.utc) - opened_dt).total_seconds() / 3600
+            if held_hours &gt; max_hold_hours:
+                should_exit = True
+    </current_behavior>
+    <design_violation>
+      The reaction network should be efficient. Redundant computation on
+      every cycle burns CPU and adds latency for no benefit. A value that
+      is invariant for the lifetime of a position should be computed once
+      and stored.
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Compute exit_deadline once at trade creation; compare once per cycle</approach>
+      <requirements>
+        <req id="P6-R1">
+          ExecuteTrade.transform() must compute exit_deadline when creating
+          the position dict:
+          opened_dt = datetime.now(timezone.utc)
+          max_hold_hours = substrate.cfg("exit_rules.max_hold_hours", 72)
+          deadline = opened_dt + timedelta(hours=max_hold_hours)
+          new_position["opened_at"] = opened_dt.isoformat()
+          new_position["exit_deadline"] = deadline.isoformat()
+        </req>
+        <req id="P6-R2">
+          ApproveExit.transform() must use exit_deadline instead of
+          recalculating from opened_at:
+          deadline_str = updated_pos.get("exit_deadline", "")
+          if deadline_str:
+              if datetime.now(timezone.utc) &gt; datetime.fromisoformat(deadline_str):
+                  should_exit = True
+        </req>
+        <req id="P6-R3">
+          If exit_deadline is missing (legacy positions from before this
+          fix), fall back to the old opened_at calculation. Log a warning
+          once per position: "Legacy position without exit_deadline,
+          using opened_at fallback".
+        </req>
+        <req id="P6-R4">
+          If the user hot-reloads max_hold_hours to a LOWER value, existing
+          positions must respect their original deadline (no retroactive
+          tightening). If the user increases max_hold_hours, existing
+          positions do NOT get extended — the deadline is set at creation
+          and is immutable. This prevents surprise exits after config edits.
+        </req>
+      </requirements>
+      <files_affected>
+        <file>enzymes/execute_trade.py</file>
+        <file>enzymes/approve_exit.py</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 7: CollectOHLCV fetches on every cycle regardless of need -->
+  <!-- ================================================================ -->
+  <problem id="P7">
+    <title>CollectOHLCV fetches full historical data every cycle even when nothing changed</title>
+    <severity>medium</severity>
+    <description>
+      CollectOHLCV activates whenever market.indicators is empty. After the
+      first cycle, indicators are populated, so theoretically it should not
+      re-fire. However, the "freshness" check in can_activate is weak:
+      it only checks if last_scan_at is empty. In practice, indicators are
+      cleared by reset_cycle() every cycle, so CollectOHLCV fires every
+      cycle, fetching 200 bars per symbol per timeframe regardless of
+      whether a new candle has closed.
+    </description>
+    <current_behavior>
+      collect_ohlcv.py can_activate():
+        indicators = substrate.market.get("indicators", {})
+        if not indicators: return True
+        last_scan = substrate.market.get("last_scan_at", "")
+        if not last_scan: return True
+        return False  # Only returns False if indicators exist AND last_scan is set
+      # BUT reset_cycle() clears indicators every cycle!
+    </current_behavior>
+    <design_violation>
+      The enzyme fetches public API data at cycle frequency, but the
+      underlying data (4h candles) only changes every 4 hours. This is
+      wasteful, risks rate limits, and fills the DB with identical cycle
+      snapshots. The reaction network should distinguish between:
+      - Signal data (slow: new candle closes)
+      - Risk data (fast: mark prices for open positions)
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Smart activation: only fetch OHLCV when new data actually exists</approach>
+      <requirements>
+        <req id="P7-R1">
+          CollectOHLCV.can_activate() must check three conditions:
+          1. FIRST CYCLE: indicators empty AND no last_candle_close_ts → activate
+          2. NEW CANDLE: current UTC time has crossed a timeframe boundary
+             since last_candle_close_ts → activate
+          3. POSITIONS EXIST: open_positions not empty AND mark prices
+             are stale (configurable staleness threshold, default 60s)
+             → activate (but ONLY for mark prices, not full OHLCV recompute)
+        </req>
+        <req id="P7-R2">
+          The indicator computation (RSI, MACD, EMA, ADX, ATR, S/R) must
+          ONLY run when condition 1 or 2 is true. Condition 3 (positions
+          exist) should trigger UpdateMarkPrices, not CollectOHLCV.
+          Do NOT recompute indicators just because positions exist.
+        </req>
+        <req id="P7-R3">
+          Store last_candle_close_ts per symbol per timeframe in
+          substrate.market. Survive reset_cycle() by storing in a field
+          that is NOT cleared by reset_cycle().
+        </req>
+        <req id="P7-R4">
+          Add a helper function _should_refresh_ohlcv(timeframe, last_ts)
+          that returns True when:
+          - last_ts is empty (cold start)
+          - floor(now, timeframe) &gt; floor(last_ts, timeframe)
+          Where floor() rounds a timestamp down to the start of the
+          current candle for the given timeframe.
+        </req>
+        <req id="P7-R5">
+          If CollectOHLCV skips fetching because no new candle closed,
+          it must still preserve the existing indicators and indicator_history
+          in the substrate. Do NOT clear them.
+        </req>
+      </requirements>
+      <files_affected>
+        <file>enzymes/collect_ohlcv.py</file>
+        <file>core/substrate.py (reset_cycle must NOT clear last_candle_close_ts)</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- PROBLEM 8: collect_pre_trade_context uses cycle-count thresholds -->
+  <!-- ================================================================ -->
+  <problem id="P8">
+    <title>Trajectory minimum history is checked in snapshots, not real time</title>
+    <severity>high</severity>
+    <description>
+      CollectPreTradeContext checks len(symbol_history) against
+      trajectory_min_bars (default 4, not in YAML). With per-cycle
+      snapshots, 4 snapshots = 20 minutes (5-min interval). After the
+      fix in P2 (per-candle-close), 4 snapshots = 16 hours (4h candles).
+      The threshold must be time-based to remain meaningful regardless
+      of timeframe or interval configuration.
+    </description>
+    <current_behavior>
+      collect_pre_trade_context.py:
+        min_history = substrate.cfg("learning.trajectory_min_bars", 4)
+        if len(symbol_history) &lt; min_history:
+            # block trade
+    </current_behavior>
+    <design_violation>
+      Same as P2: unit mismatch between cycle snapshots and candle closes.
+      After P2 is fixed, this check becomes too strict (16h minimum) or
+      too loose depending on timeframe. Time-based thresholds are the
+      only consistent approach.
+    </design_violation>
+    <requested_fix permanent="true" reliable="true" secure="true">
+      <approach>Use time-based thresholds and read from config every cycle</approach>
+      <requirements>
+        <req id="P8-R1">
+          Replace trajectory_min_bars with trajectory_min_hours in config.
+          CollectPreTradeContext reads this value from substrate.cfg()
+          every cycle.
+        </req>
+        <req id="P8-R2">
+          The history sufficiency check must compute the time span covered
+          by the history entries (last timestamp - first timestamp) and
+          compare against trajectory_min_hours. Do NOT count entries.
+        </req>
+        <req id="P8-R3">
+          If history spans less than trajectory_min_hours, set
+          coincidence_risk='high' and block via ISC-007. The log message
+          must show real hours, not bar count:
+          "Insufficient trajectory history for BTCUSDT: 3.2h / 8h required"
+        </req>
+      </requirements>
+      <files_affected>
+        <file>enzymes/collect_pre_trade_context.py</file>
+        <file>config/strategies/*.yaml</file>
+      </files_affected>
+    </requested_fix>
+  </problem>
+
+  <!-- ================================================================ -->
+  <!-- CROSS-CUTTING CONCERNS                                            -->
+  <!-- ================================================================ -->
+  <concerns>
+    <concern id="CC-1">
+      <title>Backward Compatibility</title>
+      <description>
+        All fixes must not break existing strategy YAMLs or databases.
+        If a config key is renamed (e.g., trajectory_lookback_bars →
+        trajectory_lookback_hours), the old key must still be accepted
+        with a deprecation warning. If a new field is added to position
+        dicts (e.g., exit_deadline), missing fields must be handled
+        gracefully.
+      </description>
+    </concern>
+    <concern id="CC-2">
+      <title>Test Coverage</title>
+      <description>
+        Each fix must include unit tests:
+        - P1: Test that conflicting confirmation_tf blocks entry
+        - P2: Test that only candle-close appends to history
+        - P4: Test that YAML min_trades values are respected
+        - P5: Test that hot-reload changes enzyme behavior
+        - P6: Test that exit_deadline is set and respected
+        - P7: Test that CollectOHLCV skips when no new candle
+        - P8: Test that time-based sufficiency check works
+      </description>
+    </concern>
+    <concern id="CC-3">
+      <title>Logging</title>
+      <description>
+        Every behavioral change (weight adjustment, rulebook regeneration,
+        history append, skip decision) must be logged at INFO level with
+        the config values that drove the decision. This enables debugging
+        when behavior differs from expectations.
+      </description>
+    </concern>
+  </concerns>
+
+</specification>
