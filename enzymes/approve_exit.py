@@ -5,8 +5,7 @@ Decides whether to approve an exit request from RequestExit or any
 other enzyme. Enforces:
   - Hard stop loss breach (immediate approval)
   - Trailing stop hit (immediate approval)
-  - Max hold duration exceeded (approval)
-  - Soft signal reversal (may deny if position is healthy)
+  - Soft signal reversal (may approve or deny based on urgency)
 
 Trailing stop state lives on each position dict:
   - trailing_active: bool (False until activation threshold reached)
@@ -17,14 +16,11 @@ Writes: decisions.exit_approved (dict or None)
 
 Enzyme class: Regulator (priority 10)
 Activates when: decisions.exit_request is set
-
-Port of: agent_risk_mgmt.py, agent_trade_monitor.py (exit logic)
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 
 from core.enzyme import Enzyme, EnzymeClass, register_enzyme
@@ -132,7 +128,6 @@ class ApproveExit(Enzyme):
     Hard rules (always approve):
       - SL breach (mark_price crosses hard SL)
       - Trailing stop hit (mark_price crosses trailing_sl)
-      - Max hold duration exceeded
 
     Soft rules (may approve or deny):
       - Signal reversal (depends on urgency and position health)
@@ -191,6 +186,7 @@ class ApproveExit(Enzyme):
         mark_price = updated_pos.get("mark_price", 0)
         direction = updated_pos.get("direction", "Long").lower()
 
+        # 1. Hard SL breach — always approve
         if sl_price and mark_price:
             if direction == "long" and mark_price <= sl_price:
                 should_exit = True
@@ -211,20 +207,7 @@ class ApproveExit(Enzyme):
                 should_exit = True
                 exit_reason = "trailing_stop_hit"
 
-        # 3. Max hold duration — always approve
-        max_hold_hours = substrate.cfg("exit_rules.max_hold_hours", 72)
-        opened_at = updated_pos.get("opened_at", "")
-        if opened_at:
-            try:
-                opened_dt = datetime.fromisoformat(opened_at)
-                held_hours = (datetime.now(timezone.utc) - opened_dt).total_seconds() / 3600
-                if held_hours > max_hold_hours:
-                    should_exit = True
-                    exit_reason = "max_hold_exceeded"
-            except (ValueError, TypeError):
-                pass
-
-        # 4. Soft signal reversal — approve based on urgency
+        # 3. Soft signal reversal — approve based on urgency
         if not should_exit and "signal_reversal" in reason.lower():
             if urgency == "immediate":
                 should_exit = True
