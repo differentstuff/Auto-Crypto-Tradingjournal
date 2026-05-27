@@ -38,6 +38,11 @@ _log = logging.getLogger(__name__)
 _MISSING = object()
 
 
+class SubstrateConfigError(ValueError):
+    """Raised when required keys are missing from the strategy config."""
+    pass
+
+
 class ISCCheck:
     """
     A single hard-to-vary condition that must be verified before actions.
@@ -211,6 +216,11 @@ class Substrate:
         # Strategy section — all values from config, no hardcoded defaults.
         # If a key is missing from config, cfg() raises ValueError immediately.
         strategy_cfg = cfg.get("strategy", {})
+        missing = [k for k in ("name", "uid") if k not in strategy_cfg]
+        if missing:
+            raise SubstrateConfigError(
+                f"Missing required strategy config key(s): {', '.join(missing)}"
+            )
         self.strategy = {
             "name": strategy_cfg["name"],
             "uid": strategy_cfg["uid"],
