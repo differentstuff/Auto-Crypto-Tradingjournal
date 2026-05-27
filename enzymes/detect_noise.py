@@ -211,7 +211,7 @@ class DetectNoise(Enzyme):
         if not is_noisy and any("kill zone" in r.lower() for r in noise_reasons):
             # Only flag kill zone as noise if combined with at least one other issue
             # or if the config says to always flag outside kill zone
-            kill_zone_strict = substrate.cfg("noise.kill_zone_blocks", False)
+            kill_zone_strict = substrate.cfg("noise.kill_zone_blocks")
             if kill_zone_strict:
                 is_noisy = True
 
