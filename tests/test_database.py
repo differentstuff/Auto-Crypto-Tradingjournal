@@ -63,7 +63,7 @@ class TestSubstratePersistence:
         """
         from core.substrate import Substrate
 
-        config = {"strategy": {"name": "test_persist"}}
+        config = {"strategy": {"name": "test_persist", "uid": "test-persist-uid"}}
         sub = Substrate(config=config)
         sub.portfolio["equity"] = 5000.0
         sub.decisions["action"] = "wait"   # set but NOT persisted (per-cycle)
@@ -87,7 +87,7 @@ class TestSubstratePersistence:
         """load_latest_substrate returns the most recent entry."""
         from core.substrate import Substrate
 
-        config = {"strategy": {"name": "test_latest"}}
+        config = {"strategy": {"name": "test_latest", "uid": "test-latest-uid"}}
         sub1 = Substrate(config=config)
         sub1.portfolio["equity"] = 1000.0
         save_substrate(sub1)
