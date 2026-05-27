@@ -32,9 +32,6 @@ from typing import Dict, List, Optional
 
 _log = logging.getLogger(__name__)
 
-DEFAULT_MIN_TRADES = 30
-DEFAULT_RETRAIN_EVERY = 10
-DEFAULT_MAX_RULES = 10
 
 
 # ── Should we regenerate? ──────────────────────────────────────────────────
@@ -42,11 +39,14 @@ DEFAULT_MAX_RULES = 10
 def should_regenerate(
     strategy_name: str,
     strategy_uid: str = "legacy",
-    min_trades: int = DEFAULT_MIN_TRADES,
-    retrain_every_n_trades: int = DEFAULT_RETRAIN_EVERY,
+    min_trades: int = None,
+    retrain_every_n_trades: int = None,
 ) -> bool:
     """
     Determine whether the rulebook should be regenerated.
+
+    All thresholds are required — they come from the strategy config.
+    No hardcoded defaults.
 
     Conditions:
       1. Total closed trades >= min_trades (threshold)
@@ -60,6 +60,16 @@ def should_regenerate(
     Returns:
         True if regeneration is warranted, False otherwise.
     """
+    if min_trades is None or retrain_every_n_trades is None:
+        missing = []
+        if min_trades is None: missing.append("min_trades")
+        if retrain_every_n_trades is None: missing.append("retrain_every_n_trades")
+        raise TypeError(
+            f"Required parameter(s) not provided to should_regenerate: "
+            + ", ".join(missing)
+            + ". All thresholds must come from config (learning.*)."
+        )
+
     from core.database import db_conn
 
     try:
@@ -290,10 +300,13 @@ def _read_idle_condition_accuracy(conn, strategy_uid: str = "legacy") -> List[Di
 def generate_rulebook(
     strategy_name: str,
     strategy_uid: str = "legacy",
-    max_rules: int = DEFAULT_MAX_RULES,
+    max_rules: int = None,
 ) -> str:
     """
     Generate a ranked rulebook from all accuracy data sources.
+
+    max_rules is required — it comes from the strategy config
+    (learning.rulebook_max_rules). No hardcoded default.
 
     Sources are read independently — if one fails, the others still
     contribute candidates. This follows the reaction network principle
@@ -307,11 +320,17 @@ def generate_rulebook(
 
     Args:
         strategy_name: Strategy to generate for.
-        max_rules:     Maximum number of rules (default 10).
+        max_rules:     Maximum number of rules.
 
     Returns:
         Rulebook text string. Empty string if no accuracy data exists.
     """
+    if max_rules is None:
+        raise TypeError(
+            "Required parameter 'max_rules' not provided to generate_rulebook. "
+            "It must come from config (learning.rulebook_max_rules)."
+        )
+
     from core.database import db_conn
 
     candidates: List[Dict] = []
