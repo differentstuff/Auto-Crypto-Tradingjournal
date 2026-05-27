@@ -16,7 +16,8 @@ import numpy as np
 from datetime import datetime, timezone
 
 from core.substrate import Substrate
-from core.enzyme import list_enzymes, create_enzyme, EnzymeClass
+from core.enzyme import EnzymeClass, list_enzymes, create_enzyme
+from conftest import make_full_config
 
 # Trigger @register_enzyme decorators for all Phase B enzymes.
 # Must be at module level so the registry is populated for ALL test classes.
@@ -52,16 +53,16 @@ def sample_ohlcv():
 @pytest.fixture
 def substrate():
     """Create a substrate with test config."""
-    config = {
-        "strategy": {
+    config = make_full_config(
+        strategy={
             "name": "momentum_rising",
             "timeframe": "4H",
             "confirmation_tf": "1H",
         },
-        "symbols": {
+        symbols={
             "always_watch": ["BTCUSDT", "ETHUSDT"],
         },
-        "indicators": [
+        indicators=[
             {"name": "rsi", "weight": 1.0, "params": {"period": 14}},
             {"name": "macd", "weight": 1.0},
             {"name": "ema_stack", "weight": 1.0},
@@ -69,15 +70,15 @@ def substrate():
             {"name": "atr", "weight": 0},
             {"name": "sr_levels", "weight": 0},
         ],
-        "scoring": {
+        scoring={
             "entry_threshold": 6.5,
             "confluence_min_signals": 3,
             "rr_minimum": 2.0,
         },
-        "exit_rules": {
+        exit_rules={
             "hard_stop": {"width_atr_multiplier": 1.5},
         },
-        "learning": {
+        learning={
             "min_trades_before_adjusting": 30,
             "min_trades_per_signal": 15,
             "significance_level": 0.05,
@@ -91,10 +92,10 @@ def substrate():
             "trajectory_lookback_hours": 48,
             "trajectory_min_hours": 8,
         },
-        "modules": {
+        modules={
             "macro_context": True,
         },
-    }
+    )
     return Substrate(config=config)
 
 
