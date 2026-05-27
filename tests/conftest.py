@@ -1,7 +1,8 @@
 """
-tests_new/conftest.py -- Shared test fixtures.
+tests/conftest.py -- Shared test fixtures.
 
-Provides a clean DB_PATH per test to avoid cross-contamination.
+Provides a clean DB_PATH per test to avoid cross-contamination,
+and a standard complete config dict for Substrate creation.
 """
 
 import os
@@ -12,6 +13,132 @@ import pytest
 # Add project root to path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
+
+
+def make_full_config(**overrides) -> dict:
+    """
+    Return a complete strategy config dict with ALL required keys.
+
+    Substrate.__init__() and Substrate.cfg() raise ValueError on missing keys.
+    Every test that creates a Substrate must use this helper (or provide an
+    equally complete config) to avoid KeyError/ValueError.
+
+    Override specific sections with keyword arguments:
+        config = make_full_config(strategy={"name": "my_strat"})
+    """
+    cfg = {
+        "strategy": {
+            "name": "test_strategy",
+            "uid": "test-uid",
+            "timeframe": "4H",
+            "confirmation_tf": "1H",
+            "cycle_interval_minutes": 15,
+            "max_positions": 3,
+        },
+        "description": "Test strategy",
+        "symbols": {
+            "always_watch": ["BTCUSDT", "ETHUSDT"],
+            "never_trade": [],
+        },
+        "portfolio": {
+            "max_positions": 3,
+            "risk_per_trade_pct": 1.0,
+            "leverage": 5,
+            "max_total_risk_pct": 3.0,
+            "fallback_equity_usdt": 1000.0,
+            "correlation_check": True,
+            "max_same_direction": 3,
+        },
+        "scoring": {
+            "entry_threshold": 6.5,
+            "confluence_min_signals": 3,
+            "rr_minimum": 2.0,
+        },
+        "exit_rules": {
+            "hard_stop": {
+                "width_atr_multiplier": 1.5,
+                "always_active": True,
+            },
+            "trailing_stop": {
+                "enabled": True,
+                "activation_profit_pct": 1.5,
+                "trail_atr_multiplier": 1.0,
+                "breakeven_at_activation": True,
+            },
+            "max_hold_hours": 72,
+            "tp_exit_pct": 100.0,
+        },
+        "noise": {
+            "conflict_signal_threshold": 2,
+            "volume_low_ratio": 0.7,
+            "volume_very_low_ratio": 0.5,
+            "adx_no_trend": 15,
+            "adx_overextended": 40,
+            "noise_severity_min_reasons": 2,
+            "kill_zone_blocks": False,
+        },
+        "learning": {
+            "min_trades_before_adjusting": 30,
+            "min_trades_per_signal": 15,
+            "significance_level": 0.05,
+            "contrarian_win_rate": 30.0,
+            "highlight_threshold": 75.0,
+            "monitor_low_threshold": 55.0,
+            "suppress_range": [45.0, 55.0],
+            "contrarian_threshold": 30.0,
+            "rulebook_max_rules": 10,
+            "retrain_every_n_trades": 10,
+            "trajectory_lookback_hours": 48,
+            "trajectory_min_hours": 8,
+        },
+        "indicators": [
+            {"name": "rsi", "params": {"period": 14}, "weight": 0.25},
+            {"name": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}, "weight": 0.20},
+            {"name": "ema_stack", "params": {}, "weight": 0.20},
+            {"name": "adx", "params": {"period": 14}, "weight": 0.10},
+            {"name": "wavetrend", "params": {}, "weight": 0.15},
+            {"name": "volume", "params": {}, "weight": 0.10},
+        ],
+        "modules": {
+            "macro_context": False,
+            "telegram_logs": False,
+            "telegram_interaction": False,
+        },
+        "telegram": {
+            "bot_token": "",
+            "chat_id": "",
+            "idle_notify_every": 10,
+        },
+        "sync": {
+            "position_sync_every_n_cycles": 4,
+        },
+        "daemon": {
+            "paper_mode": True,
+            "max_cycle_steps": 20,
+            "substrate_state_max_rows": 200,
+        },
+        "risk": {
+            "kelly_min": 0.05,
+            "kelly_max": 0.25,
+            "kelly_win_rate_base": 0.35,
+            "kelly_win_rate_range": 0.40,
+            "kelly_avg_win_r": 2.0,
+            "max_size_pct_of_equity": 25.0,
+            "min_size_pct_of_equity": 5.0,
+        },
+    }
+    if overrides:
+        _deep_update(cfg, overrides)
+    return cfg
+
+
+def _deep_update(base: dict, overrides: dict) -> None:
+    """Recursively merge overrides into base dict (mutates base)."""
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = value
 
 
 @pytest.fixture
@@ -42,24 +169,9 @@ def config_dir(tmp_path):
     """Create a temporary config directory with test YAML files."""
     import yaml
 
-    # default.yaml
-    default = {
-        "system": {"version": "2.0.0", "name": "auto-trader"},
-        "daemon": {
-            "cycle_interval_minutes": 1,
-            "paper_mode": True,
-            "max_cycle_steps": 5,
-            "substrate_state_max_rows": 50,
-        },
-        "strategy": {"name": "test_strategy", "timeframe": "4H", "max_positions": 3},
-        "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
-        "indicators": [
-            {"name": "rsi", "params": {"period": 14}, "weight": 0.25},
-        ],
-        "modules": {"macro_context": False},
-        "symbols": {"always_watch": ["BTCUSDT"], "never_trade": []},
-        "portfolio": {"risk_per_trade_pct": 1.0, "leverage": 5},
-    }
+    # default.yaml — must include ALL keys that Substrate.cfg() requires
+    default = make_full_config()
+    default["system"] = {"version": "2.0.0", "name": "auto-trader"}
     with open(tmp_path / "default.yaml", "w") as f:
         yaml.dump(default, f)
 
