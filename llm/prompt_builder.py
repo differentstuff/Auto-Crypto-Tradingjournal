@@ -168,7 +168,7 @@ _SECTION_BUILDERS = {
 
 def build_prompt(
     substrate: dict,
-    max_chars: int = 4000,
+    max_chars: int = None,
     priority_order: Optional[list[str]] = None,
 ) -> str:
     """
@@ -180,12 +180,23 @@ def build_prompt(
 
     Args:
         substrate:      Dict-like substrate with strategy, analysis, learning data.
-        max_chars:      Hard character budget cap.
+        max_chars:      Hard character budget cap. Must be passed from
+                        config (llm.max_context_chars). No hardcoded default.
         priority_order: Override for section priority order.
 
     Returns:
         Assembled context string, never exceeding max_chars.
     """
+    if max_chars is None:
+        # Fallback: try reading from substrate config if available
+        cfg = substrate.get if hasattr(substrate, 'get') else None
+        if cfg and callable(cfg):
+            max_chars = cfg("llm.max_context_chars")
+        if max_chars is None:
+            raise ValueError(
+                "build_prompt: max_chars must be passed from config "
+                "(llm.max_context_chars). No hardcoded default."
+            )
     order = priority_order or DEFAULT_PRIORITY_ORDER
     sections: list[str] = []
     remaining = max_chars
