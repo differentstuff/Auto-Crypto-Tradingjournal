@@ -24,7 +24,6 @@ from typing import Dict, List, Tuple
 
 _log = logging.getLogger(__name__)
 
-DEFAULT_MIN_TRADES = 15
 
 
 # ── Trajectory classification (pure function) ──────────────────────────────
@@ -126,16 +125,37 @@ def classify_trajectory(
 def update_trajectory_accuracy(
     strategy_name: str,
     strategy_uid: str = "legacy",
-    min_trades: int = DEFAULT_MIN_TRADES,
+    min_trades: int = None,
+    highlight_threshold: float = None,
+    monitor_low_threshold: float = None,
+    suppress_range: Tuple[float, float] = None,
+    contrarian_threshold: float = None,
 ) -> None:
     """
     Recompute trajectory_accuracy from all closed trades for the given strategy.
+
+    All thresholds are required — they come from the strategy config.
+    None of them have hardcoded defaults; the caller must supply values
+    read from substrate.cfg().
 
     Reads pre_trade_trajectory_pattern from trade_learning rows and aggregates
     win/loss stats per pattern. Writes to trajectory_accuracy table.
 
     Uses INSERT OR REPLACE (idempotent).
     """
+    if any(v is None for v in (min_trades, highlight_threshold, monitor_low_threshold, suppress_range, contrarian_threshold)):
+        missing = []
+        if min_trades is None: missing.append("min_trades")
+        if highlight_threshold is None: missing.append("highlight_threshold")
+        if monitor_low_threshold is None: missing.append("monitor_low_threshold")
+        if suppress_range is None: missing.append("suppress_range")
+        if contrarian_threshold is None: missing.append("contrarian_threshold")
+        raise TypeError(
+            f"Required parameter(s) not provided to update_trajectory_accuracy: "
+            + ", ".join(missing)
+            + ". All learning thresholds must come from config (learning.*)."
+        )
+
     from core.database import db_conn
 
     try:
@@ -185,7 +205,14 @@ def update_trajectory_accuracy(
                 avg_pnl_pct = data["pnl_sum"] / trades if trades > 0 else 0.0
 
                 # Use the same verdict classification as signal accuracy
-                verdict = classify_verdict(win_rate_pct, trades, min_trades=min_trades)
+                verdict = classify_verdict(
+                    win_rate_pct, trades,
+                    min_trades=min_trades,
+                    highlight=highlight_threshold,
+                    monitor_low=monitor_low_threshold,
+                    suppress_range=suppress_range,
+                    contrarian=contrarian_threshold,
+                )
 
                 conn.execute(
                     """INSERT OR REPLACE INTO trajectory_accuracy
