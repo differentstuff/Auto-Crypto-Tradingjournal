@@ -192,8 +192,10 @@ class ScoreConfluence(Enzyme):
             # Fallback: compute on the fly (first few cycles before UpdateLearning has run)
             try:
                 from learning.weight_adjuster import compute_adjusted_weights
+                min_trades = substrate.cfg("learning.min_trades_before_adjusting")
                 adjusted = compute_adjusted_weights(
                     weight_map, strategy_name, strategy_uid=strategy_uid,
+                    min_trades=min_trades,
                 )
                 if adjusted != weight_map:
                     changed = [k for k in adjusted if adjusted.get(k) != weight_map.get(k)]
