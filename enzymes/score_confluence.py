@@ -169,7 +169,7 @@ class ScoreConfluence(Enzyme):
             self._log.info("No indicator data to score")
             return substrate
 
-        confluence_min = substrate.cfg("scoring.confluence_min_signals", 3)
+        confluence_min = substrate.cfg("scoring.confluence_min_signals")
 
         # Build weight map from config
         indicator_configs = substrate.cfg("indicators", [])
