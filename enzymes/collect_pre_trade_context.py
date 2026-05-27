@@ -196,7 +196,7 @@ class CollectPreTradeContext(Enzyme):
             return substrate
 
         # P8: Use time-based sufficiency check (trajectory_min_hours)
-        min_hours = substrate.cfg("learning.trajectory_min_hours", 8)
+        min_hours = substrate.cfg("learning.trajectory_min_hours")
         indicator_history = substrate.market.get("indicator_history", {})
         pre_trade_context = {}
 
@@ -248,7 +248,7 @@ class CollectPreTradeContext(Enzyme):
         candidates = substrate.analysis.get("candidates", [])
         if candidates:
             top_score = abs(candidates[0].get("score", 0))
-            entry_threshold = substrate.cfg("scoring.entry_threshold", 6.5)
+            entry_threshold = substrate.cfg("scoring.entry_threshold")
             if top_score >= entry_threshold:
                 return 1.5  # Strong candidate — trajectory analysis is important
         return 0.8  # Candidates exist but weak
