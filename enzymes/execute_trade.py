@@ -83,8 +83,8 @@ class ExecuteTrade(Enzyme):
         tp2 = trade_approved.get("tp2", 0)
         size_usdt = trade_approved.get("size_usdt", 0)
         atr_value = trade_approved.get("atr_value", 0)
-        paper_mode = substrate.cfg("daemon.paper_mode", True)
-        leverage = substrate.cfg("portfolio.leverage", 5)
+        paper_mode = substrate.cfg("daemon.paper_mode")
+        leverage = substrate.cfg("portfolio.leverage")
 
         if paper_mode:
             self._log.info(
