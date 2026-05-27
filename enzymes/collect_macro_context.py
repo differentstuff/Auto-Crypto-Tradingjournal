@@ -71,7 +71,7 @@ class CollectMacroContext(Enzyme):
 
     def can_activate(self, substrate: Substrate) -> bool:
         # Only activate if macro_context module is enabled
-        modules = substrate.cfg("modules", {})
+        modules = substrate.cfg("modules")
         if not modules.get("macro_context", False):
             return False
         macro_evaluated = substrate.analysis.get("macro_evaluated", False)
