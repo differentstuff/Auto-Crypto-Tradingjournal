@@ -114,6 +114,20 @@ def _make_config(overrides: dict | None = None) -> dict:
             "max_cycle_steps": 20,
             "substrate_state_max_rows": 200,
         },
+        "learning": {
+            "min_trades_before_adjusting": 30,
+            "min_trades_per_signal": 15,
+            "significance_level": 0.05,
+            "contrarian_win_rate": 30.0,
+            "highlight_threshold": 75.0,
+            "monitor_low_threshold": 55.0,
+            "suppress_range": [45.0, 55.0],
+            "contrarian_threshold": 30.0,
+            "rulebook_max_rules": 10,
+            "retrain_every_n_trades": 10,
+            "trajectory_lookback_hours": 48,
+            "trajectory_min_hours": 8,
+        },
         # Indicators the strategy actually uses — same list that ScoreConfluence
         # reads via substrate.cfg("indicators", []).  RecordTradeOutcome uses
         # this to filter which per-indicator signals are recorded so the learning
