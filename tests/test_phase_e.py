@@ -1228,6 +1228,15 @@ class TestUpdateRulebookLLM:
     If LLM is unavailable, the raw structured text is used as-is.
     """
 
+    # Shared learning config so Substrate.cfg() can resolve required keys.
+    _LEARNING_CFG = {
+        "learning": {
+            "min_trades_before_adjusting": 30,
+            "retrain_every_n_trades": 5,
+            "rulebook_max_rules": 10,
+        },
+    }
+
     def test_raw_rulebook_used_when_llm_returns_none(self, temp_db):
         """
         call_llm returns None → substrate.learning['rulebook'] is still set
@@ -1247,19 +1256,19 @@ class TestUpdateRulebookLLM:
 
         try:
             from core.substrate import Substrate
-            s = Substrate()
+            s = Substrate(config=self._LEARNING_CFG)
         except Exception:
             s = MagicMock()
             s.strategy = {"name": "test_strategy", "uid": "test-uid"}
             s.learning = {"total_trades_recorded": 35, "rulebook": ""}
+            s.cfg = lambda key, default=None: self._LEARNING_CFG.get(
+                key.split(".")[0], {}).get(".".join(key.split(".")[1:]), default) if "." in key else default
 
         s.strategy["name"] = "test_strategy"
         s.strategy["uid"] = "test-uid"
         s.learning["total_trades_recorded"] = 35
 
-        enzyme = UpdateRulebook(config={
-            "learning": {"min_trades_before_adjusting": 30, "retrain_every_n_trades": 5}
-        })
+        enzyme = UpdateRulebook(config=self._LEARNING_CFG)
 
         with patch("llm.router.call_llm", return_value=None), \
              patch("learning.rulebook.should_regenerate", return_value=True), \
@@ -1286,7 +1295,7 @@ class TestUpdateRulebookLLM:
 
         try:
             from core.substrate import Substrate
-            s = Substrate()
+            s = Substrate(config=self._LEARNING_CFG)
         except Exception:
             s = MagicMock()
             s.strategy = {"name": "test_strategy", "uid": "test-uid"}
@@ -1296,9 +1305,7 @@ class TestUpdateRulebookLLM:
         s.strategy["uid"] = "test-uid"
         s.learning["total_trades_recorded"] = 35
 
-        enzyme = UpdateRulebook(config={
-            "learning": {"min_trades_before_adjusting": 30, "retrain_every_n_trades": 5}
-        })
+        enzyme = UpdateRulebook(config=self._LEARNING_CFG)
 
         with patch("llm.router.call_llm", return_value=formatted_text), \
              patch("learning.rulebook.should_regenerate", return_value=True), \
@@ -1325,7 +1332,7 @@ class TestUpdateRulebookLLM:
 
         try:
             from core.substrate import Substrate
-            s = Substrate()
+            s = Substrate(config=self._LEARNING_CFG)
         except Exception:
             s = MagicMock()
             s.strategy = {"name": "test_strategy", "uid": "test-uid"}
@@ -1335,9 +1342,7 @@ class TestUpdateRulebookLLM:
         s.strategy["uid"] = "test-uid"
         s.learning["total_trades_recorded"] = 35
 
-        enzyme = UpdateRulebook(config={
-            "learning": {"min_trades_before_adjusting": 30, "retrain_every_n_trades": 5}
-        })
+        enzyme = UpdateRulebook(config=self._LEARNING_CFG)
 
         with patch("llm.router.call_llm", side_effect=RuntimeError("LLM exploded")), \
              patch("learning.rulebook.should_regenerate", return_value=True), \
@@ -1356,7 +1361,7 @@ class TestUpdateRulebookLLM:
 
         try:
             from core.substrate import Substrate
-            s = Substrate()
+            s = Substrate(config=self._LEARNING_CFG)
         except Exception:
             s = MagicMock()
             s.strategy = {"name": "test_strategy", "uid": "test-uid"}
@@ -1366,9 +1371,7 @@ class TestUpdateRulebookLLM:
         s.strategy["uid"] = "test-uid"
         s.learning["total_trades_recorded"] = 5  # below min_trades
 
-        enzyme = UpdateRulebook(config={
-            "learning": {"min_trades_before_adjusting": 30, "retrain_every_n_trades": 10}
-        })
+        enzyme = UpdateRulebook(config=self._LEARNING_CFG)
 
         with patch("llm.router.call_llm") as mock_llm:
             # can_activate returns False when below threshold
