@@ -41,20 +41,15 @@ class UpdateRulebook(Enzyme):
     Fires when enough new trades have been recorded since the last
     rulebook generation. The generated rulebook includes contrarian
     rules (anti-signals that should be inverted in scoring).
+
+    All thresholds are read from substrate.cfg() at decision time —
+    no constructor caching. Hot-reload changes take effect on the
+    next cycle without restart.
     """
 
     name = "UpdateRulebook"
     enzyme_class = EnzymeClass.SYNTHASE
     priority = 0
-
-    def __init__(self, config: dict | None = None):
-        super().__init__(config=config)
-        self._min_trades = 30
-        self._retrain_every = 10
-        if config:
-            learning_cfg = config.get("learning", {})
-            self._min_trades = learning_cfg.get("min_trades_before_adjusting", 30)
-            self._retrain_every = learning_cfg.get("retrain_every_n_trades", 10)
 
     def requires(self) -> list[str]:
         return []
@@ -69,17 +64,19 @@ class UpdateRulebook(Enzyme):
         """
         strategy_name = substrate.strategy.get("name", "")
         strategy_uid = substrate.strategy.get("uid", "legacy")
+        min_trades = substrate.cfg("learning.min_trades_before_adjusting")
+        retrain_every = substrate.cfg("learning.retrain_every_n_trades")
         total_trades = substrate.learning.get("total_trades_recorded", 0)
 
-        if total_trades < self._min_trades:
+        if total_trades < min_trades:
             return False
 
         from learning.rulebook import should_regenerate
         return should_regenerate(
             strategy_name,
             strategy_uid=strategy_uid,
-            min_trades=self._min_trades,
-            retrain_every_n_trades=self._retrain_every,
+            min_trades=min_trades,
+            retrain_every_n_trades=retrain_every,
         )
 
     def transform(self, substrate: Substrate) -> Substrate:
@@ -91,11 +88,16 @@ class UpdateRulebook(Enzyme):
         """
         strategy_name = substrate.strategy.get("name", "")
         strategy_uid = substrate.strategy.get("uid", "legacy")
+        rulebook_max_rules = substrate.cfg("learning.rulebook_max_rules")
 
         from learning.rulebook import generate_rulebook
 
         try:
-            rulebook_text = generate_rulebook(strategy_name, strategy_uid=strategy_uid)
+            rulebook_text = generate_rulebook(
+                strategy_name,
+                strategy_uid=strategy_uid,
+                max_rules=rulebook_max_rules,
+            )
 
             if rulebook_text:
                 # --- Optional LLM formatting ---
@@ -176,7 +178,7 @@ class UpdateRulebook(Enzyme):
             return 0.0
         # Higher urgency when many trades have been recorded since last update
         total_trades = substrate.learning.get("total_trades_recorded", 0)
-        min_trades = self._min_trades
+        min_trades = substrate.cfg("learning.min_trades_before_adjusting")
         if total_trades >= min_trades * 2:
             return 1.5  # Significant new data — regenerate rulebook
         return 1.0
