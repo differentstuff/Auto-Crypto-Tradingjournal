@@ -54,15 +54,19 @@ portfolio:
   max_total_risk_pct: 3.0
   fallback_equity_usdt: 1000.0
   correlation_check: true
+  max_same_direction: 3
 
 # Exit defaults
 exit_rules:
   hard_stop:
+    placement: "below_support"
     width_atr_multiplier: 1.5
     always_active: true
   trailing_stop:
     enabled: true
     activation_profit_pct: 0.5
+    trail_atr_multiplier: 1.0
+    breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
   soft_exit:
@@ -161,3 +165,7 @@ symbols:
     criteria: "momentum"
     min_volume_24h_usd: 10000000
     min_open_interest_usd: 2000000
+
+# System-level sync defaults
+sync:
+  position_sync_every_n_cycles: 5
