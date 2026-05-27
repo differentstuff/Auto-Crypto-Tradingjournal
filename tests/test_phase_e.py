@@ -48,6 +48,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from conftest import make_full_config
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -127,7 +129,7 @@ def substrate_with_candidates():
     """
     try:
         from core.substrate import Substrate
-        s = Substrate()
+        s = Substrate(config=make_full_config())
         s.strategy["name"] = "test_strategy"
         s.strategy["uid"] = "test-uid"
         s.analysis["candidates"] = [
