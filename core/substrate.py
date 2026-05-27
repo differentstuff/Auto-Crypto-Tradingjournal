@@ -405,7 +405,10 @@ class Substrate:
             return obj
 
         # Fall back to config (for scoring thresholds, risk limits, etc.)
-        return self.cfg(dotted_path, default)
+        try:
+            return self.cfg(dotted_path, default)
+        except ValueError:
+            return default
 
     def set(self, dotted_path: str, value: Any) -> None:
         """Set a value by dotted path in substrate state."""
@@ -456,20 +459,24 @@ class Substrate:
         Resolve a value_ref string to a concrete value.
 
         value_ref can be:
+          - A dotted substrate state path: "decisions.action" -> "wait"
           - A dotted config path: "scoring.entry_threshold" -> 6.5
-          - A dotted substrate path: "strategy.max_positions" -> 3
           - A literal string: "high", "wait"
           - Empty string: returns None
         """
         if not value_ref:
             return None
-        # Try config first, then substrate state
-        val = self.cfg(value_ref, _MISSING)
-        if val is not _MISSING:
-            return val
+        # Try substrate state first (decisions.action, portfolio.equity, etc.)
         val = self.get(value_ref, _MISSING)
         if val is not _MISSING:
             return val
+        # Then try config (scoring thresholds, risk limits, etc.)
+        try:
+            val = self.cfg(value_ref, _MISSING)
+            if val is not _MISSING:
+                return val
+        except ValueError:
+            pass
         # Treat as literal string
         return value_ref
 
