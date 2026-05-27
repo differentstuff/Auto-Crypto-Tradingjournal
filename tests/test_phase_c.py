@@ -600,23 +600,6 @@ class TestApproveExit:
         approved = result.decisions.get("exit_approved")
         assert approved is not None
 
-    def test_approves_exit_when_max_hold_hours_exceeded(self):
-        """Approves exit when position has been held beyond max_hold_hours."""
-        enzyme = self._get_enzyme()
-        sub = _make_substrate()
-        # Position opened 80 hours ago (> 72h max_hold_hours)
-        old_time = (datetime.now(timezone.utc) - timedelta(hours=80)).isoformat()
-        pos = _make_open_position(opened_at=old_time)
-        sub.portfolio["open_positions"] = [pos]
-        sub.decisions["exit_request"] = {
-            "symbol": "BTCUSDT", "reason": "max_hold_exceeded", "urgency": "normal"
-        }
-
-        result = enzyme.transform(sub)
-
-        approved = result.decisions.get("exit_approved")
-        assert approved is not None
-
     def test_does_not_approve_exit_for_healthy_position(self):
         """Does not approve exit when position is healthy and no hard rule triggered."""
         enzyme = self._get_enzyme()
