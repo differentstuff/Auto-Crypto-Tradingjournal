@@ -58,12 +58,13 @@ class KeyManager:
     """
 
     # Cooldown durations by error type (seconds)
+    # Defaults match llm.yaml cooldowns section; overridden by config if provided.
     COOLDOWN_OVERLOAD = 30       # rate limit / overload (429, 529)
     COOLDOWN_SERVER = 10         # server error (500, 502, 503)
     COOLDOWN_UNKNOWN = 5         # unknown error
     COOLDOWN_AUTH = float("inf") # auth error (401, 403) -- disable key permanently
 
-    def __init__(self, keys_config: dict):
+    def __init__(self, keys_config: dict, cooldowns: dict = None):
         """
         Initialize from exchange.yaml llm_keys section.
 
@@ -76,7 +77,16 @@ class KeyManager:
           google:
             - key: "AIza..."
               label: "gemini-key-1"
+
+        cooldowns: dict from llm.yaml cooldowns section (optional).
+          overload: 30, server: 10, unknown: 5
         """
+        # Override class-level cooldowns from config if provided
+        if cooldowns:
+            self.COOLDOWN_OVERLOAD = cooldowns.get("overload", self.COOLDOWN_OVERLOAD)
+            self.COOLDOWN_SERVER = cooldowns.get("server", self.COOLDOWN_SERVER)
+            self.COOLDOWN_UNKNOWN = cooldowns.get("unknown", self.COOLDOWN_UNKNOWN)
+
         self._providers: dict[str, list[KeyState]] = {}
 
         for provider, key_list in keys_config.items():

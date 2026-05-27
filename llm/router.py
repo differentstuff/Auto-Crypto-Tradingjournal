@@ -78,8 +78,9 @@ class LLMRouter:
         # Strategy UID for seed derivation (read from top-level config)
         self._strategy_uid = config.get("strategy", {}).get("uid", "")
 
-        # KeyManager for key rotation
-        self._km = KeyManager(keys_config)
+        # KeyManager for key rotation (cooldowns from llm.yaml)
+        cooldowns = self._config.get("cooldowns")
+        self._km = KeyManager(keys_config, cooldowns=cooldowns)
 
         # Budget tracking state
         self._daily_spend_usd: float = 0.0
