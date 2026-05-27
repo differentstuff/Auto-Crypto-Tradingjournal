@@ -13,35 +13,38 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.substrate import Substrate, ISCCheck
+from conftest import make_full_config
 
 
 class TestSubstrateCreation:
     """Test substrate initialization from config."""
 
-    def test_default_creation(self):
-        """Substrate can be created with no config (all defaults)."""
-        sub = Substrate()
-        assert sub.strategy["name"] == ""
+    def test_creation_from_config(self):
+        """Substrate requires a complete config — no hardcoded defaults."""
+        config = make_full_config()
+        sub = Substrate(config=config)
+        assert sub.strategy["name"] == "test_strategy"
         assert sub.portfolio["equity"] == 0.0
-        assert sub.market["symbols_watched"] == []
+        assert sub.market["symbols_watched"] == ["BTCUSDT", "ETHUSDT"]
         assert sub.analysis["candidates"] == []
         assert sub.decisions["action"] == "wait"
         assert sub.learning["idle_cycles"] == 0
         assert len(sub.validity) == 7  # 7 default ISC conditions
 
-    def test_creation_from_config(self):
-        """Substrate can be created from a config dict."""
-        config = {
-            "strategy": {"name": "test_strategy", "max_positions": 5},
-            "description": "Test strategy description",
-            "symbols": {"always_watch": ["BTCUSDT", "ETHUSDT"]},
-            "portfolio": {"max_positions": 5, "risk_per_trade_pct": 2.0},
-            "scoring": {"entry_threshold": 7.5, "confluence_min_signals": 4},
-            "learning": {"min_trades_before_adjusting": 50},
-        }
+    def test_creation_without_config_raises(self):
+        """Substrate() with no config raises ValueError for missing required keys."""
+        with pytest.raises((KeyError, ValueError)):
+            Substrate()
+
+    def test_creation_from_config_override(self):
+        """Substrate uses config values — overrides propagate correctly."""
+        config = make_full_config(
+            strategy={"name": "my_strat", "max_positions": 5},
+            portfolio={"max_positions": 5, "risk_per_trade_pct": 2.0},
+            scoring={"entry_threshold": 7.5, "confluence_min_signals": 4},
+        )
         sub = Substrate(config=config)
-        assert sub.strategy["name"] == "test_strategy"
-        assert sub.strategy["description"] == "Test strategy description"
+        assert sub.strategy["name"] == "my_strat"
         assert sub.strategy["max_positions"] == 5
         assert sub.market["symbols_watched"] == ["BTCUSDT", "ETHUSDT"]
         assert sub.portfolio["max_positions"] == 5
@@ -50,13 +53,11 @@ class TestSubstrateCreation:
 
     def test_config_values_populated_in_portfolio(self):
         """Portfolio config values (risk_per_trade_pct, leverage) are populated from config."""
-        config = {
-            "portfolio": {
-                "risk_per_trade_pct": 2.0,
-                "leverage": 10,
-                "max_positions": 5,
-            },
-        }
+        config = make_full_config(portfolio={
+            "risk_per_trade_pct": 2.0,
+            "leverage": 10,
+            "max_positions": 5,
+        })
         sub = Substrate(config=config)
         assert sub.portfolio["risk_per_trade_pct"] == 2.0
         assert sub.portfolio["leverage"] == 10
@@ -64,7 +65,7 @@ class TestSubstrateCreation:
 
     def test_config_reference_stored(self):
         """Substrate stores config reference for ISC lookups."""
-        config = {"scoring": {"entry_threshold": 7.5}}
+        config = make_full_config(scoring={"entry_threshold": 7.5})
         sub = Substrate(config=config)
         assert sub.cfg("scoring.entry_threshold") == 7.5
 
@@ -74,13 +75,13 @@ class TestSubstrateDotAccess:
 
     def test_get_state_value(self):
         """Substrate.get() returns values from substrate state."""
-        sub = Substrate(config={"strategy": {"name": "my_strat"}})
-        assert sub.get("strategy.name") == "my_strat"
-        assert sub.get("strategy.max_positions", 3) == 3
+        sub = Substrate(config=make_full_config())
+        assert sub.get("strategy.name") == "test_strategy"
+        assert sub.get("strategy.max_positions") == 3
 
     def test_get_config_fallback(self):
         """Substrate.get() falls back to config for values not in state."""
-        config = {"scoring": {"entry_threshold": 7.5, "confluence_min_signals": 4}}
+        config = make_full_config(scoring={"entry_threshold": 7.5, "confluence_min_signals": 4})
         sub = Substrate(config=config)
         # scoring is not in substrate state, but should fall back to config
         assert sub.get("scoring.entry_threshold") == 7.5
@@ -88,12 +89,12 @@ class TestSubstrateDotAccess:
 
     def test_get_default_for_missing(self):
         """Substrate.get() returns default for truly missing keys."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         assert sub.get("nonexistent.path", "default") == "default"
 
     def test_set_value(self):
         """Substrate.set() sets values by dotted path."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.set("decisions.action", "enter")
         assert sub.decisions["action"] == "enter"
         sub.set("strategy.name", "updated")
@@ -101,9 +102,13 @@ class TestSubstrateDotAccess:
 
     def test_cfg_method(self):
         """cfg() method accesses config values directly."""
-        config = {"scoring": {"entry_threshold": 7.5}}
+        config = make_full_config(scoring={"entry_threshold": 7.5})
         sub = Substrate(config=config)
         assert sub.cfg("scoring.entry_threshold") == 7.5
+        # cfg() raises ValueError when key is missing and no default provided
+        with pytest.raises(ValueError):
+            sub.cfg("nonexistent.path")
+        # cfg() returns explicit default when key is missing
         assert sub.cfg("nonexistent.path", 99) == 99
 
 
@@ -112,28 +117,28 @@ class TestSubstrateISC:
 
     def test_isc_initial_state(self):
         """All ISC conditions start as pending."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         for isc in sub.validity:
             assert isc.status == "pending"
 
     def test_isc_004_vacuously_true(self):
         """ISC-004 (max positions) is true when no positions open."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         assert sub._evaluate_isc(sub.validity[3]) is True
 
     def test_isc_005_vacuously_true(self):
         """ISC-005 (no trade when noise) is true when action is wait."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         assert sub._evaluate_isc(sub.validity[4]) is True
 
     def test_isc_001_fails_no_candidates(self):
         """ISC-001 fails when no candidates exist."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         assert sub._evaluate_isc(sub.validity[0]) is False
 
     def test_isc_001_passes_with_candidates(self):
         """ISC-001 passes when candidates above threshold exist."""
-        config = {"scoring": {"entry_threshold": 6.5}}
+        config = make_full_config(scoring={"entry_threshold": 6.5})
         sub = Substrate(config=config)
         sub.analysis["candidates"] = [
             {"symbol": "BTCUSDT", "score": 7.5, "direction": "long"}
@@ -142,7 +147,7 @@ class TestSubstrateISC:
 
     def test_isc_001_uses_config_threshold(self):
         """ISC-001 uses the config entry_threshold, not hardcoded value."""
-        config = {"scoring": {"entry_threshold": 8.0}}
+        config = make_full_config(scoring={"entry_threshold": 8.0})
         sub = Substrate(config=config)
         # Score 7.0 < threshold 8.0, should fail
         sub.analysis["candidates"] = [
@@ -157,7 +162,7 @@ class TestSubstrateISC:
 
     def test_isc_003_uses_portfolio_risk_pct(self):
         """ISC-003 uses risk_per_trade_pct from portfolio state (set from config)."""
-        config = {"portfolio": {"risk_per_trade_pct": 2.0}}
+        config = make_full_config(portfolio={"risk_per_trade_pct": 2.0})
         sub = Substrate(config=config)
         sub.portfolio["equity"] = 1000.0
         sub.decisions["trade_approved"] = {"size_usdt": 15.0, "sl_price": 100.0}
@@ -169,7 +174,7 @@ class TestSubstrateISC:
 
     def test_isc_006_uses_config_min_signals(self):
         """ISC-006 uses confluence_min_signals from config."""
-        config = {"scoring": {"confluence_min_signals": 4}}
+        config = make_full_config(scoring={"confluence_min_signals": 4})
         sub = Substrate(config=config)
         # 3 aligned < min 4 -> False
         sub.analysis["candidates"] = [
@@ -184,13 +189,13 @@ class TestSubstrateISC:
 
     def test_all_iscs_pass(self):
         """all_iscs_pass() returns True only when all conditions verified."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         # With default empty state, some ISC will fail
         assert sub.all_iscs_pass() is False
 
     def test_isc_002_no_trade_pending(self):
         """ISC-002 is vacuously true when no trade is pending."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         assert sub._evaluate_isc(sub.validity[1]) is True
 
 
@@ -199,7 +204,7 @@ class TestSubstrateSerialization:
 
     def test_to_dict_roundtrip(self):
         """Substrate survives dict roundtrip."""
-        config = {"strategy": {"name": "roundtrip_test"}}
+        config = make_full_config(strategy={"name": "roundtrip_test"})
         sub = Substrate(config=config)
         sub.decisions["action"] = "wait"
         sub.learning["idle_cycles"] = 5
@@ -213,7 +218,7 @@ class TestSubstrateSerialization:
 
     def test_to_json_roundtrip(self):
         """Substrate survives JSON roundtrip."""
-        config = {"strategy": {"name": "json_test"}}
+        config = make_full_config(strategy={"name": "json_test"})
         sub = Substrate(config=config)
         sub.portfolio["equity"] = 10000.0
 
@@ -225,7 +230,7 @@ class TestSubstrateSerialization:
 
     def test_json_is_valid(self):
         """Substrate JSON output is valid JSON."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         json_str = sub.to_json()
         parsed = json.loads(json_str)
         assert "strategy" in parsed
@@ -234,7 +239,7 @@ class TestSubstrateSerialization:
 
     def test_config_preserved_after_restore(self):
         """Config reference is preserved after DB restore."""
-        config = {"scoring": {"entry_threshold": 7.5}}
+        config = make_full_config(scoring={"entry_threshold": 7.5})
         sub = Substrate(config=config)
         d = sub.to_dict()
 
@@ -243,7 +248,7 @@ class TestSubstrateSerialization:
         assert sub2.cfg("scoring.entry_threshold") == 7.5
 
         # Restore with different config (config updated)
-        new_config = {"scoring": {"entry_threshold": 9.0}}
+        new_config = make_full_config(scoring={"entry_threshold": 9.0})
         sub3 = Substrate.from_dict(d, config=new_config)
         assert sub3.cfg("scoring.entry_threshold") == 9.0
 
@@ -253,7 +258,7 @@ class TestSubstrateCycleReset:
 
     def test_reset_cycle(self):
         """reset_cycle() clears per-cycle fields."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 7.0}]
         sub.analysis["noise_flag"] = True
         sub.decisions["action"] = "enter"
@@ -271,7 +276,7 @@ class TestSubstrateCycleReset:
 
     def test_mark_idle(self):
         """mark_idle() records idle cycle with reason."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.mark_idle("no candidates above threshold")
 
         assert sub.decisions["action"] == "wait"
