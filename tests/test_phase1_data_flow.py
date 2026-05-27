@@ -158,6 +158,7 @@ class TestCollectOHLCVActivation:
         config = {
             "strategy": {
                 "name": "test_strategy",
+                "uid": "test-uid",
                 "timeframe": "4H",
                 "confirmation_tf": "1H",
             },
@@ -244,7 +245,7 @@ class TestSubstrateResetPreservesIndicators:
 
     def test_reset_preserves_indicators(self):
         """After reset_cycle(), indicators should persist (not cleared)."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.market["indicators"] = {"BTCUSDT": {"4H": {"ok": True, "rsi": {"value": 55}}}}
         sub.market["last_candle_close_ts"] = {"BTCUSDT_4H": "2026-05-26T12:00:00+00:00"}
         sub.reset_cycle()
@@ -255,21 +256,21 @@ class TestSubstrateResetPreservesIndicators:
 
     def test_reset_preserves_last_candle_close_ts(self):
         """After reset_cycle(), last_candle_close_ts should persist."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.market["last_candle_close_ts"] = {"BTCUSDT_4H": "2026-05-26T12:00:00+00:00"}
         sub.reset_cycle()
         assert "BTCUSDT_4H" in sub.market["last_candle_close_ts"]
 
     def test_reset_preserves_indicator_history(self):
         """After reset_cycle(), indicator_history should persist (existing behavior)."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.market["indicator_history"] = {"BTCUSDT": [{"timestamp": "2026-05-26T12:00:00+00:00"}]}
         sub.reset_cycle()
         assert "BTCUSDT" in sub.market["indicator_history"]
 
     def test_reset_clears_transient_fields(self):
         """After reset_cycle(), transient fields should be cleared."""
-        sub = Substrate()
+        sub = Substrate(config=make_full_config())
         sub.market["macro"] = {"regime": "risk-on"}
         sub.market["pre_trade_context"] = {"BTCUSDT": {}}
         sub.analysis["candidates"] = [{"symbol": "BTCUSDT"}]
@@ -405,7 +406,7 @@ class TestPreTradeContextTimeBasedSufficiency:
     def _make_substrate_with_history(self, span_hours=16, num_entries=8):
         """Create a substrate with indicator history spanning the given hours."""
         config = {
-            "strategy": {"name": "test_strategy", "timeframe": "4H"},
+            "strategy": {"name": "test_strategy", "uid": "test-uid", "timeframe": "4H"},
             "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
             "learning": {
                 "trajectory_min_hours": 8,
@@ -457,7 +458,7 @@ class TestPreTradeContextTimeBasedSufficiency:
     def test_empty_history_blocks_trade(self):
         """Empty indicator_history → coincidence_risk='high'."""
         config = {
-            "strategy": {"name": "test_strategy", "timeframe": "4H"},
+            "strategy": {"name": "test_strategy", "uid": "test-uid", "timeframe": "4H"},
             "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
             "learning": {"trajectory_min_hours": 8},
         }
@@ -494,7 +495,7 @@ class TestPreTradeContextTimeBasedSufficiency:
     def test_config_driven_min_hours(self):
         """trajectory_min_hours is read from config, not hardcoded."""
         config = {
-            "strategy": {"name": "test_strategy", "timeframe": "4H"},
+            "strategy": {"name": "test_strategy", "uid": "test-uid", "timeframe": "4H"},
             "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
             "learning": {"trajectory_min_hours": 24},  # 24h minimum
         }
