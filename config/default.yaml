@@ -69,9 +69,6 @@ exit_rules:
     requires_indicators_reversed: 2
     requires_confirmation_tf: true
     urgency: "soft"
-  duration_exit:
-    max_hours: 12
-    max_hours_extreme: 24
 
 # Scoring defaults
 scoring:
