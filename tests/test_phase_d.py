@@ -54,6 +54,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 # ---------------------------------------------------------------------------
+# Shared test thresholds — all tests use these to call learning functions.
+# No hardcoded defaults in production code; tests are explicit about values.
+# ---------------------------------------------------------------------------
+
+_T = {
+    "min_trades_per_signal": 15,
+    "min_trades_before_adjusting": 30,
+    "significance_level": 0.05,
+    "contrarian_win_rate": 30.0,
+    "highlight_threshold": 75.0,
+    "monitor_low_threshold": 55.0,
+    "suppress_range": (45.0, 55.0),
+    "contrarian_threshold": 30.0,
+    "rulebook_max_rules": 10,
+    "retrain_every_n_trades": 10,
+}
+
+
+# ---------------------------------------------------------------------------
 # Helpers: seed trade_learning rows
 # ---------------------------------------------------------------------------
 
@@ -232,43 +251,61 @@ class TestVerdictClassification:
     def test_verdict_valid_high(self):
         """80% accuracy, n=20 → 'valid'."""
         from learning.analyzer import classify_verdict
-        assert classify_verdict(80.0, 20) == "valid"
+        assert classify_verdict(80.0, 20, _T["min_trades_per_signal"],
+                                _T["highlight_threshold"], _T["monitor_low_threshold"],
+                                _T["suppress_range"], _T["contrarian_threshold"]) == "valid"
 
     def test_verdict_monitor(self):
         """65% accuracy, n=20 → 'monitor'."""
         from learning.analyzer import classify_verdict
-        assert classify_verdict(65.0, 20) == "monitor"
+        assert classify_verdict(65.0, 20, _T["min_trades_per_signal"],
+                                _T["highlight_threshold"], _T["monitor_low_threshold"],
+                                _T["suppress_range"], _T["contrarian_threshold"]) == "monitor"
 
     def test_verdict_suppress(self):
         """50% accuracy, n=20 → 'suppress' (coin flip)."""
         from learning.analyzer import classify_verdict
-        assert classify_verdict(50.0, 20) == "suppress"
+        assert classify_verdict(50.0, 20, _T["min_trades_per_signal"],
+                                _T["highlight_threshold"], _T["monitor_low_threshold"],
+                                _T["suppress_range"], _T["contrarian_threshold"]) == "suppress"
 
     def test_verdict_contrarian_low(self):
         """25% accuracy, n=20 → 'contrarian' (reliable anti-signal)."""
         from learning.analyzer import classify_verdict
-        assert classify_verdict(25.0, 20) == "contrarian"
+        assert classify_verdict(25.0, 20, _T["min_trades_per_signal"],
+                                _T["highlight_threshold"], _T["monitor_low_threshold"],
+                                _T["suppress_range"], _T["contrarian_threshold"]) == "contrarian"
 
     def test_verdict_contrarian_boundary(self):
         """30% accuracy exactly → 'contrarian' (boundary is inclusive)."""
         from learning.analyzer import classify_verdict
-        assert classify_verdict(30.0, 20) == "contrarian"
+        assert classify_verdict(30.0, 20, _T["min_trades_per_signal"],
+                                _T["highlight_threshold"], _T["monitor_low_threshold"],
+                                _T["suppress_range"], _T["contrarian_threshold"]) == "contrarian"
 
     def test_verdict_insufficient_data_below_min(self):
         """80% accuracy but only 5 observations → 'insufficient_data'."""
         from learning.analyzer import classify_verdict
-        assert classify_verdict(80.0, 5, min_trades=15) == "insufficient_data"
+        assert classify_verdict(80.0, 5, min_trades=15,
+                                highlight=_T["highlight_threshold"],
+                                monitor_low=_T["monitor_low_threshold"],
+                                suppress_range=_T["suppress_range"],
+                                contrarian=_T["contrarian_threshold"]) == "insufficient_data"
 
     def test_verdict_insufficient_data_zero(self):
         """0 observations → 'insufficient_data'."""
         from learning.analyzer import classify_verdict
-        assert classify_verdict(0.0, 0) == "insufficient_data"
+        assert classify_verdict(0.0, 0, _T["min_trades_per_signal"],
+                                _T["highlight_threshold"], _T["monitor_low_threshold"],
+                                _T["suppress_range"], _T["contrarian_threshold"]) == "insufficient_data"
 
     def test_verdict_boundaries_are_consistent(self):
         """Verify the verdict boundaries don't overlap or leave gaps."""
         from learning.analyzer import classify_verdict
         # 31% is above contrarian threshold (≤30%) but below suppress (45–55%)
-        v = classify_verdict(31.0, 20)
+        v = classify_verdict(31.0, 20, _T["min_trades_per_signal"],
+                             _T["highlight_threshold"], _T["monitor_low_threshold"],
+                             _T["suppress_range"], _T["contrarian_threshold"])
         assert v in ("suppress", "review"), f"Unexpected verdict at 31%: {v}"
 
 
@@ -278,7 +315,12 @@ class TestUpdateSignalAccuracy:
     def test_empty_trade_learning_no_crash(self, temp_db):
         """No trades → function returns without error, no rows written."""
         from learning.analyzer import update_signal_accuracy
-        update_signal_accuracy("no_trades_strategy")
+        update_signal_accuracy("no_trades_strategy",
+                               min_trades_per_signal=_T["min_trades_per_signal"],
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
         # No exception = pass. Verify no rows written.
         from core.database import db_conn
         with db_conn() as conn:
@@ -298,7 +340,12 @@ class TestUpdateSignalAccuracy:
                 _insert_trade(conn, outcome="win", direction="Long",
                                signals_json=_signals_json("bullish", "bullish", "bullish"))
 
-        update_signal_accuracy("test_strategy")
+        update_signal_accuracy("test_strategy",
+                               min_trades_per_signal=_T["min_trades_per_signal"],
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -325,7 +372,12 @@ class TestUpdateSignalAccuracy:
                                signals_json=_signals_json("bullish", "bullish", "bullish"))
 
         # Must not raise
-        update_signal_accuracy("test_strategy")
+        update_signal_accuracy("test_strategy",
+                               min_trades_per_signal=_T["min_trades_per_signal"],
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -358,7 +410,12 @@ class TestUpdateSignalAccuracy:
                     signals_json=_signals_json("bullish", "neutral", "neutral"),
                 )
 
-        update_signal_accuracy("test_strategy")
+        update_signal_accuracy("test_strategy",
+                               min_trades_per_signal=_T["min_trades_per_signal"],
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -380,7 +437,12 @@ class TestUpdateSignalAccuracy:
                 _insert_trade(conn, outcome="win",
                                signals_json=_signals_json("bullish", "bullish", "bullish"))
 
-        update_signal_accuracy("test_strategy")
+        update_signal_accuracy("test_strategy",
+                               min_trades_per_signal=_T["min_trades_per_signal"],
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
         verdicts = get_signal_verdicts("test_strategy")
 
         assert isinstance(verdicts, dict)
@@ -399,7 +461,12 @@ class TestUpdateSignalAccuracy:
                 _insert_trade(conn, outcome="win",
                                signals_json=_signals_json("bullish", "bullish", "bullish"))
 
-        update_signal_accuracy("test_strategy", min_trades_per_signal=15)
+        update_signal_accuracy("test_strategy",
+                               min_trades_per_signal=15,
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
         verdicts = get_signal_verdicts("test_strategy")
 
         for indicator, verdict in verdicts.items():
@@ -417,8 +484,18 @@ class TestUpdateSignalAccuracy:
                 _insert_trade(conn, outcome="win",
                                signals_json=_signals_json("bullish", "bullish", "bullish"))
 
-        update_signal_accuracy("test_strategy")
-        update_signal_accuracy("test_strategy")  # second call
+        update_signal_accuracy("test_strategy",
+                               min_trades_per_signal=_T["min_trades_per_signal"],
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
+        update_signal_accuracy("test_strategy",
+                               min_trades_per_signal=_T["min_trades_per_signal"],
+                               highlight_threshold=_T["highlight_threshold"],
+                               monitor_low_threshold=_T["monitor_low_threshold"],
+                               suppress_range=_T["suppress_range"],
+                               contrarian_threshold=_T["contrarian_threshold"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -535,7 +612,10 @@ class TestUpdateCombinationAccuracy:
                 _insert_trade(conn, outcome=outcome, direction="Long",
                                signals_json=_signals_json("bullish", "bullish", "neutral"))
 
-        update_combination_accuracy("test_strategy")
+        update_combination_accuracy("test_strategy",
+                                   min_trades=_T["min_trades_per_signal"],
+                                   significance_level=_T["significance_level"],
+                                   contrarian_win_rate=_T["contrarian_win_rate"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -558,7 +638,9 @@ class TestUpdateCombinationAccuracy:
                 _insert_trade(conn, outcome="win",
                                signals_json=_signals_json("bullish", "bullish", "neutral"))
 
-        update_combination_accuracy("test_strategy", min_trades=10)
+        update_combination_accuracy("test_strategy", min_trades=10,
+                                   significance_level=_T["significance_level"],
+                                   contrarian_win_rate=_T["contrarian_win_rate"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -586,7 +668,10 @@ class TestUpdateCombinationAccuracy:
                                pnl_pct=-1.5 if i < 13 else 1.5,
                                signals_json=_signals_json("bullish", "bullish", "neutral"))
 
-        update_combination_accuracy("test_strategy")
+        update_combination_accuracy("test_strategy",
+                                   min_trades=_T["min_trades_per_signal"],
+                                   significance_level=_T["significance_level"],
+                                   contrarian_win_rate=_T["contrarian_win_rate"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -611,8 +696,14 @@ class TestUpdateCombinationAccuracy:
                 _insert_trade(conn, outcome="win",
                                signals_json=_signals_json("bullish", "bullish", "neutral"))
 
-        update_combination_accuracy("test_strategy")
-        update_combination_accuracy("test_strategy")  # second call
+        update_combination_accuracy("test_strategy",
+                                   min_trades=_T["min_trades_per_signal"],
+                                   significance_level=_T["significance_level"],
+                                   contrarian_win_rate=_T["contrarian_win_rate"])
+        update_combination_accuracy("test_strategy",
+                                   min_trades=_T["min_trades_per_signal"],
+                                   significance_level=_T["significance_level"],
+                                   contrarian_win_rate=_T["contrarian_win_rate"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -734,7 +825,12 @@ class TestUpdateTrajectoryAccuracy:
             for _ in range(5):
                 _insert_trade(conn, outcome="loss", trajectory_pattern="sudden_snap")
 
-        update_trajectory_accuracy("test_strategy")
+        update_trajectory_accuracy("test_strategy",
+                                  min_trades=_T["min_trades_per_signal"],
+                                  highlight_threshold=_T["highlight_threshold"],
+                                  monitor_low_threshold=_T["monitor_low_threshold"],
+                                  suppress_range=_T["suppress_range"],
+                                  contrarian_threshold=_T["contrarian_threshold"])
 
         with db_conn() as conn:
             gradual = conn.execute(
@@ -762,7 +858,11 @@ class TestUpdateTrajectoryAccuracy:
                 outcome = "win" if i < 18 else "loss"
                 _insert_trade(conn, outcome=outcome, trajectory_pattern="gradual_alignment")
 
-        update_trajectory_accuracy("test_strategy", min_trades=15)
+        update_trajectory_accuracy("test_strategy", min_trades=15,
+                                  highlight_threshold=_T["highlight_threshold"],
+                                  monitor_low_threshold=_T["monitor_low_threshold"],
+                                  suppress_range=_T["suppress_range"],
+                                  contrarian_threshold=_T["contrarian_threshold"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -782,7 +882,11 @@ class TestUpdateTrajectoryAccuracy:
                 outcome = "win" if i < 4 else "loss"
                 _insert_trade(conn, outcome=outcome, trajectory_pattern="sudden_snap")
 
-        update_trajectory_accuracy("test_strategy", min_trades=10)
+        update_trajectory_accuracy("test_strategy", min_trades=10,
+                                  highlight_threshold=_T["highlight_threshold"],
+                                  monitor_low_threshold=_T["monitor_low_threshold"],
+                                  suppress_range=_T["suppress_range"],
+                                  contrarian_threshold=_T["contrarian_threshold"])
 
         with db_conn() as conn:
             row = conn.execute(
@@ -795,7 +899,12 @@ class TestUpdateTrajectoryAccuracy:
     def test_empty_table_no_crash(self, temp_db):
         """No closed trades → function returns without error."""
         from learning.trajectory import update_trajectory_accuracy
-        update_trajectory_accuracy("empty_strategy")  # must not raise
+        update_trajectory_accuracy("empty_strategy",
+                                  min_trades=_T["min_trades_per_signal"],
+                                  highlight_threshold=_T["highlight_threshold"],
+                                  monitor_low_threshold=_T["monitor_low_threshold"],
+                                  suppress_range=_T["suppress_range"],
+                                  contrarian_threshold=_T["contrarian_threshold"])
 
 
 # ---------------------------------------------------------------------------
@@ -901,7 +1010,7 @@ class TestGenerateRulebook:
     def test_empty_accuracy_data_returns_empty_or_minimal(self, temp_db):
         """No accuracy data → generate_rulebook returns empty string, no crash."""
         from learning.rulebook import generate_rulebook
-        result = generate_rulebook("empty_strategy")
+        result = generate_rulebook("empty_strategy", max_rules=_T["rulebook_max_rules"])
         assert isinstance(result, str)
         # Either empty or a message saying no data
         assert len(result) < 200
@@ -918,7 +1027,7 @@ class TestGenerateRulebook:
                     conn, f"indicator_{i}", 20, 16, 80.0, "valid"
                 )
 
-        result = generate_rulebook("test_strategy")
+        result = generate_rulebook("test_strategy", max_rules=_T["rulebook_max_rules"])
         # Count lines that look like rules (start with "[" or "Rule")
         rule_lines = [ln for ln in result.split("\n")
                       if ln.strip().startswith(("[", "Rule", "-"))]
@@ -934,7 +1043,7 @@ class TestGenerateRulebook:
                 conn, "macd", 20, 4, 20.0, "contrarian"
             )
 
-        result = generate_rulebook("test_strategy")
+        result = generate_rulebook("test_strategy", max_rules=_T["rulebook_max_rules"])
         # The rulebook must mention the contrarian nature
         lower = result.lower()
         assert any(word in lower for word in ("anti", "contrarian", "invert", "reverse")), (
@@ -963,7 +1072,7 @@ class TestGenerateRulebook:
                 conn, "macd+rsi", "both_bullish", 25, 23, 90.0, 0.001, "significant"
             )
 
-        result = generate_rulebook("test_strategy")
+        result = generate_rulebook("test_strategy", max_rules=_T["rulebook_max_rules"])
         # Combination name should appear before single indicator name in the text
         macd_rsi_pos = result.find("macd+rsi")
         rsi_pos = result.find("rsi")
@@ -980,7 +1089,7 @@ class TestGenerateRulebook:
         with db_conn() as conn:
             self._populate_signal_accuracy(conn, "rsi", 20, 16, 80.0, "valid")
 
-        generate_rulebook("test_strategy")
+        generate_rulebook("test_strategy", max_rules=_T["rulebook_max_rules"])
 
         with db_conn() as conn:
             count = conn.execute(
@@ -1202,6 +1311,7 @@ class TestUpdateRulebookEnzyme:
             "learning": {
                 "min_trades_before_adjusting": 30,
                 "retrain_every_n_trades": 10,
+                "rulebook_max_rules": 10,
             },
         }
         return UpdateRulebook(config=cfg)
@@ -1213,6 +1323,7 @@ class TestUpdateRulebookEnzyme:
             "learning": {
                 "min_trades_before_adjusting": 30,
                 "retrain_every_n_trades": 10,
+                "rulebook_max_rules": 10,
             },
         }
         sub = Substrate(config=cfg)
