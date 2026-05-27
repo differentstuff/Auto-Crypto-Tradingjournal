@@ -1203,21 +1203,14 @@ class TestUpdateRulebookLLM:
     """
 
     # Shared learning config so Substrate.cfg() can resolve required keys.
-    _LEARNING_CFG = {
-        "strategy": {
-            "name": "test_strategy",
-            "uid": "test-uid",
-            "timeframe": "4H",
-            "confirmation_tf": "1H",
-            "cycle_interval_minutes": 15,
-            "max_positions": 3,
-        },
-        "learning": {
+    _LEARNING_CFG = make_full_config(
+        strategy={"name": "test_strategy", "uid": "test-uid"},
+        learning={
             "min_trades_before_adjusting": 30,
             "retrain_every_n_trades": 5,
             "rulebook_max_rules": 10,
         },
-    }
+    )
 
     def test_raw_rulebook_used_when_llm_returns_none(self, temp_db):
         """
