@@ -64,7 +64,12 @@ class LLMRouter:
         """
         self._config = config.get("llm", {})
         self._routing = self._config.get("routing", {})
-        self._budget_usd = self._config.get("cost_budget_daily_usd", 2.00)
+        self._budget_usd = self._config.get("cost_budget_daily_usd")
+        if self._budget_usd is None:
+            raise ValueError(
+                "llm.cost_budget_daily_usd must be configured in llm.yaml. "
+                "No hardcoded default — budget is a safety constraint."
+            )
         self._defaults = self._config.get("defaults", {})
         self._providers = self._config.get("providers", {})
         self._validation = self._config.get("validation", {})
@@ -184,9 +189,9 @@ class LLMRouter:
         params = {
             "provider": role_cfg.get("provider", ""),
             "model": role_cfg.get("model", ""),
-            "max_tokens": role_cfg.get("max_tokens", self._defaults.get("max_tokens", 1024)),
-            "temperature": role_cfg.get("temperature", self._defaults.get("temperature", 0.3)),
-            "top_p": role_cfg.get("top_p", self._defaults.get("top_p", 1.0)),
+            "max_tokens": role_cfg.get("max_tokens", self._defaults.get("max_tokens")),
+            "temperature": role_cfg.get("temperature", self._defaults.get("temperature")),
+            "top_p": role_cfg.get("top_p", self._defaults.get("top_p")),
             "reasoning": self._normalize_reasoning(
                 role_cfg.get("reasoning", self._defaults.get("reasoning"))
             ),
@@ -202,7 +207,7 @@ class LLMRouter:
             "provider_order": self._resolve_list(
                 role_cfg.get("provider_order", self._defaults.get("provider_order"))
             ),
-            "timeout": role_cfg.get("timeout", self._defaults.get("timeout", 30)),
+            "timeout": role_cfg.get("timeout", self._defaults.get("timeout")),
             "cost_per_million_input": role_cfg.get("cost_per_million_input", 0.0),
             "cost_per_million_output": role_cfg.get("cost_per_million_output", 0.0),
         }
