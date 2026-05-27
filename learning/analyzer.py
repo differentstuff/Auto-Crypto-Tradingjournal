@@ -33,13 +33,24 @@ from typing import Dict, Optional, Tuple
 
 _log = logging.getLogger(__name__)
 
-# ── Default thresholds (can be overridden via config) ──────────────────────
 
-DEFAULT_MIN_TRADES_PER_SIGNAL = 15
-DEFAULT_HIGHLIGHT_THRESHOLD = 75.0   # % accuracy → "valid"
-DEFAULT_MONITOR_LOW = 55.0           # % accuracy → lower bound of "monitor"
-DEFAULT_SUPPRESS_RANGE = (45.0, 55.0)  # coin-flip zone → "suppress"
-DEFAULT_CONTRARIAN_THRESHOLD = 30.0  # % accuracy → "contrarian" (≤ this)
+# ── Parameter validation ──────────────────────────────────────────────────
+
+def _validate_required_params(**kwargs) -> None:
+    """
+    Raise TypeError if any kwarg is None — caller forgot to pass a config value.
+
+    This catches the case where UpdateLearning fails to thread a config
+    value through to a learning function. The error message names every
+    missing parameter so the fix is immediate.
+    """
+    missing = [k for k, v in kwargs.items() if v is None]
+    if missing:
+        raise TypeError(
+            f"Required parameter(s) not provided to update_signal_accuracy: "
+            + ", ".join(missing)
+            + ". All learning thresholds must come from config (learning.*)."
+        )
 
 
 # ── Wilson score interval ──────────────────────────────────────────────────
@@ -85,24 +96,33 @@ def wilson_score_interval(correct: int, total: int, z: float = 1.96) -> Tuple[fl
 def classify_verdict(
     accuracy_pct: float,
     sample_size: int,
-    min_trades: int = DEFAULT_MIN_TRADES_PER_SIGNAL,
-    highlight: float = DEFAULT_HIGHLIGHT_THRESHOLD,
-    monitor_low: float = DEFAULT_MONITOR_LOW,
-    suppress_range: Tuple[float, float] = DEFAULT_SUPPRESS_RANGE,
-    contrarian: float = DEFAULT_CONTRARIAN_THRESHOLD,
+    min_trades: int,
+    highlight: float,
+    monitor_low: float,
+    suppress_range: Tuple[float, float],
+    contrarian: float,
 ) -> str:
     """
     Classify a signal's verdict based on accuracy and sample size.
 
-    The contrarian verdict is key: a signal with ≤30% accuracy is a reliable
-    anti-signal. It's not useless — it's consistently wrong, which means
-    inverting its contribution is statistically sound.
+    All thresholds are required — they come from the strategy config
+    (learning.highlight_threshold, learning.monitor_low_threshold,
+    learning.suppress_range, learning.contrarian_threshold). No
+    hardcoded defaults.
+
+    The contrarian verdict is key: a signal with ≤ contrarian % accuracy
+    is a reliable anti-signal. It's not useless — it's consistently wrong,
+    which means inverting its contribution is statistically sound.
 
     Args:
-        accuracy_pct:  Observed accuracy as a percentage (0–100).
-        sample_size:   Number of observations for this signal.
-        min_trades:    Minimum observations before any verdict other than
-                       'insufficient_data' is assigned.
+        accuracy_pct:   Observed accuracy as a percentage (0–100).
+        sample_size:    Number of observations for this signal.
+        min_trades:     Minimum observations before any verdict other than
+                        'insufficient_data' is assigned.
+        highlight:      Accuracy threshold (≥) for 'valid' verdict.
+        monitor_low:    Accuracy threshold (≥) for 'monitor' verdict.
+        suppress_range: (low, high) tuple → 'suppress' (coin flip).
+        contrarian:     Accuracy threshold (≤) for 'contrarian' anti-signal.
 
     Returns:
         One of: 'valid', 'monitor', 'suppress', 'contrarian', 'review',
@@ -132,10 +152,18 @@ def classify_verdict(
 def update_signal_accuracy(
     strategy_name: str,
     strategy_uid: str = "legacy",
-    min_trades_per_signal: int = DEFAULT_MIN_TRADES_PER_SIGNAL,
+    min_trades_per_signal: int = None,
+    highlight_threshold: float = None,
+    monitor_low_threshold: float = None,
+    suppress_range: Tuple[float, float] = None,
+    contrarian_threshold: float = None,
 ) -> None:
     """
     Recompute signal_accuracy from all closed trades for the given strategy.
+
+    All thresholds are required — they come from the strategy config.
+    None of them have hardcoded defaults; the caller must supply values
+    read from substrate.cfg().
 
     For each indicator signal present at trade entry, determines whether
     the signal direction matched the trade outcome. A signal is "correct" if:
@@ -150,6 +178,14 @@ def update_signal_accuracy(
     Connection safety: uses db_conn() which auto-commits on success and
     auto-rolls-back + closes on any exception.
     """
+    _validate_required_params(
+        min_trades_per_signal=min_trades_per_signal,
+        highlight_threshold=highlight_threshold,
+        monitor_low_threshold=monitor_low_threshold,
+        suppress_range=suppress_range,
+        contrarian_threshold=contrarian_threshold,
+    )
+
     from core.database import db_conn
 
     try:
@@ -229,7 +265,14 @@ def update_signal_accuracy(
                 correct = data["correct"]
                 accuracy_pct = (correct / total * 100) if total > 0 else 0.0
                 low, high = wilson_score_interval(correct, total)
-                verdict = classify_verdict(accuracy_pct, total, min_trades=min_trades_per_signal)
+                verdict = classify_verdict(
+                    accuracy_pct, total,
+                    min_trades=min_trades_per_signal,
+                    highlight=highlight_threshold,
+                    monitor_low=monitor_low_threshold,
+                    suppress_range=suppress_range,
+                    contrarian=contrarian_threshold,
+                )
 
                 conn.execute(
                     """INSERT OR REPLACE INTO signal_accuracy
