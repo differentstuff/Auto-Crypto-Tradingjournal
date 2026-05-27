@@ -155,24 +155,12 @@ class TestCollectOHLCVActivation:
 
     def _make_substrate(self, indicators=None, last_candle_close_ts=None):
         """Create a substrate with test config."""
-        config = {
-            "strategy": {
-                "name": "test_strategy",
-                "uid": "test-uid",
-                "timeframe": "4H",
-                "confirmation_tf": "1H",
-                "cycle_interval_minutes": 15,
-                "max_positions": 3,
-            },
-            "symbols": {"always_watch": ["BTCUSDT"]},
-            "indicators": [
-                {"name": "rsi", "params": {"period": 14}, "weight": 0.25},
-            ],
-            "learning": {
-                "trajectory_lookback_hours": 48,
-                "trajectory_min_hours": 8,
-            },
-        }
+        config = make_full_config(
+            strategy={"name": "test_strategy", "uid": "test-uid"},
+            symbols={"always_watch": ["BTCUSDT"]},
+            indicators=[{"name": "rsi", "params": {"period": 14}, "weight": 0.25}],
+            learning={"trajectory_lookback_hours": 48, "trajectory_min_hours": 8},
+        )
         sub = Substrate(config=config)
         if indicators:
             sub.market["indicators"] = indicators
@@ -407,21 +395,11 @@ class TestPreTradeContextTimeBasedSufficiency:
 
     def _make_substrate_with_history(self, span_hours=16, num_entries=8):
         """Create a substrate with indicator history spanning the given hours."""
-        config = {
-            "strategy": {
-                "name": "test_strategy",
-                "uid": "test-uid",
-                "timeframe": "4H",
-                "confirmation_tf": "1H",
-                "cycle_interval_minutes": 15,
-                "max_positions": 3,
-            },
-            "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
-            "learning": {
-                "trajectory_min_hours": 8,
-                "trajectory_lookback_hours": 48,
-            },
-        }
+        config = make_full_config(
+            strategy={"name": "test_strategy", "uid": "test-uid"},
+            scoring={"entry_threshold": 6.5, "confluence_min_signals": 3},
+            learning={"trajectory_min_hours": 8, "trajectory_lookback_hours": 48},
+        )
         sub = Substrate(config=config)
 
         # Build indicator history
@@ -466,18 +444,11 @@ class TestPreTradeContextTimeBasedSufficiency:
 
     def test_empty_history_blocks_trade(self):
         """Empty indicator_history → coincidence_risk='high'."""
-        config = {
-            "strategy": {
-                "name": "test_strategy",
-                "uid": "test-uid",
-                "timeframe": "4H",
-                "confirmation_tf": "1H",
-                "cycle_interval_minutes": 15,
-                "max_positions": 3,
-            },
-            "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
-            "learning": {"trajectory_min_hours": 8},
-        }
+        config = make_full_config(
+            strategy={"name": "test_strategy", "uid": "test-uid"},
+            scoring={"entry_threshold": 6.5, "confluence_min_signals": 3},
+            learning={"trajectory_min_hours": 8},
+        )
         sub = Substrate(config=config)
         sub.market["indicator_history"] = {}
         sub.analysis["candidates"] = [{"symbol": "BTCUSDT", "score": 7.5}]
@@ -510,18 +481,11 @@ class TestPreTradeContextTimeBasedSufficiency:
 
     def test_config_driven_min_hours(self):
         """trajectory_min_hours is read from config, not hardcoded."""
-        config = {
-            "strategy": {
-                "name": "test_strategy",
-                "uid": "test-uid",
-                "timeframe": "4H",
-                "confirmation_tf": "1H",
-                "cycle_interval_minutes": 15,
-                "max_positions": 3,
-            },
-            "scoring": {"entry_threshold": 6.5, "confluence_min_signals": 3},
-            "learning": {"trajectory_min_hours": 24},  # 24h minimum
-        }
+        config = make_full_config(
+            strategy={"name": "test_strategy", "uid": "test-uid"},
+            scoring={"entry_threshold": 6.5, "confluence_min_signals": 3},
+            learning={"trajectory_min_hours": 24},  # 24h minimum
+        )
         sub = Substrate(config=config)
 
         # History spanning 16h — sufficient for default (8h) but not for 24h
@@ -604,21 +568,12 @@ class TestCollectOHLCVPreservesIndicators:
     def test_transform_preserves_indicators_for_stale_symbols(self):
         """When no new candle, existing indicators are preserved on the substrate."""
         enz = CollectOHLCV()
-        config = {
-            "strategy": {
-                "name": "test_strategy",
-                "uid": "test-uid",
-                "timeframe": "4H",
-                "confirmation_tf": "1H",
-                "cycle_interval_minutes": 15,
-                "max_positions": 3,
-            },
-            "symbols": {"always_watch": ["BTCUSDT"]},
-            "indicators": [
-                {"name": "rsi", "params": {"period": 14}, "weight": 0.25},
-            ],
-            "learning": {"trajectory_lookback_hours": 48, "trajectory_min_hours": 8},
-        }
+        config = make_full_config(
+            strategy={"name": "test_strategy", "uid": "test-uid"},
+            symbols={"always_watch": ["BTCUSDT"]},
+            indicators=[{"name": "rsi", "params": {"period": 14}, "weight": 0.25}],
+            learning={"trajectory_lookback_hours": 48, "trajectory_min_hours": 8},
+        )
         sub = Substrate(config=config)
 
         # Simulate existing indicators from a previous cycle
