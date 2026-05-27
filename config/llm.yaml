@@ -122,6 +122,14 @@ llm:
     max_retries: 1                 # Retry once on malformed response
     retry_with_stronger_prompt: true  # Add stronger format instructions on retry
 
+  # ── Key cooldowns ──────────────────────────────────────────────────────
+  # How long a key is paused after an error (seconds).
+  # Override per provider if needed in exchange.yaml.
+  cooldowns:
+    overload: 30              # 429/529 rate-limit → 30s pause
+    server: 10                # 500/502/503 server error → 10s pause
+    unknown: 5                # any other error → 5s safety pause
+
   # ── Context budget ──────────────────────────────────────────────────────
   # Maximum characters for the assembled context block sent to LLM.
   # Sections are added in priority order; when budget is exhausted,
