@@ -87,6 +87,18 @@ scoring:
   entry_threshold: 5.5
   confluence_min_signals: 3
   rr_minimum: 1.5
+  min_candidate_pct: 0.20
+  rsi_signal_high: 55
+  rsi_signal_low: 45
+  momentum_cap: 1.5
+  momentum_dampening: 0.5
+  modifier_weights:
+    volume: 0.15
+    cvd: 0.1
+    order_flow: 0.1
+  label_thresholds:
+    strong: 0.60
+    weak: 0.33
   score_calibration:
     suppress_below_pct: 55
     highlight_above_pct: 75
@@ -108,6 +120,7 @@ exit_rules:
     requires_indicators_reversed: 2
     requires_confirmation_tf: false
     urgency: "soft"
+  soft_reversal_profit_threshold: 0.5
 
 entry_conditions:
   - "at least 3 enabled indicators aligned in same direction"
@@ -125,6 +138,13 @@ learning:
   track_idle_cycles: true
   trajectory_lookback_hours: 24
   trajectory_min_hours: 4
+  trajectory_thresholds:
+    stable_consensus: 10
+    gradual_alignment: 8
+    earlier_min: 3
+    recent_min: 2
+    earlier_low: 2
+    min_alignment: 4
   contrarian_win_rate: 30.0
   highlight_threshold: 75.0
   monitor_low_threshold: 55.0
@@ -139,6 +159,15 @@ portfolio:
   fallback_equity_usdt: 1000.0
   correlation_check: false
   max_same_direction: 3
+
+risk:
+  kelly_min: 0.05
+  kelly_max: 0.25
+  kelly_win_rate_base: 0.35
+  kelly_win_rate_range: 0.40
+  kelly_avg_win_r: 2.0
+  max_size_pct_of_equity: 25.0
+  min_size_pct_of_equity: 5.0
 
 noise:
   conflict_signal_threshold: 2
