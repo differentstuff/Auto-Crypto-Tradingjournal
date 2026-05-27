@@ -31,13 +31,19 @@ class Scheduler:
       - Interruptible sleep: checks shutdown flag every second
     """
 
-    def __init__(self, interval_minutes: int = 15, jitter_seconds: int = 30):
+    def __init__(self, interval_minutes: int = None, jitter_seconds: int = 30):
         """
         Args:
             interval_minutes: How often the daemon runs a cycle.
+                              Must be passed from config (strategy.cycle_interval_minutes).
             jitter_seconds: Random jitter added to interval (0 to jitter_seconds).
                             Prevents all instances from hitting APIs at the same time.
         """
+        if interval_minutes is None:
+            raise ValueError(
+                "Scheduler interval_minutes must be passed from config "
+                "(strategy.cycle_interval_minutes). No hardcoded default."
+            )
         self.interval_minutes = interval_minutes
         self.jitter_seconds = jitter_seconds
         self._last_cycle_start: float = 0.0

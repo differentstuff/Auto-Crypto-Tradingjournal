@@ -19,12 +19,10 @@ from core.scheduler import Scheduler
 class TestSchedulerCreation:
     """Test scheduler initialization."""
 
-    def test_default_creation(self):
-        """Scheduler can be created with defaults."""
-        s = Scheduler()
-        assert s.interval_minutes == 15
-        assert s.jitter_seconds == 30
-        assert s.cycle_count == 0
+    def test_requires_interval(self):
+        """Scheduler requires interval_minutes — no hardcoded default."""
+        with pytest.raises(ValueError, match="interval_minutes must be passed from config"):
+            Scheduler()
 
     def test_custom_creation(self):
         """Scheduler can be created with custom interval."""
