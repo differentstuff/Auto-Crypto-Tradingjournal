@@ -26,9 +26,6 @@ from typing import Dict, List, Optional, Tuple
 
 _log = logging.getLogger(__name__)
 
-DEFAULT_MIN_TRADES = 10
-DEFAULT_SIGNIFICANCE_LEVEL = 0.05
-DEFAULT_CONTRARIAN_WIN_RATE = 30.0  # win_rate ≤ 30% → contrarian anti-combination
 
 
 # ── Chi-squared significance ───────────────────────────────────────────────
@@ -181,18 +178,33 @@ def _direction_state(signals: Dict[str, Dict], direction: str) -> str:
 def update_combination_accuracy(
     strategy_name: str,
     strategy_uid: str = "legacy",
-    min_trades: int = DEFAULT_MIN_TRADES,
-    significance_level: float = DEFAULT_SIGNIFICANCE_LEVEL,
-    contrarian_win_rate: float = DEFAULT_CONTRARIAN_WIN_RATE,
+    min_trades: int = None,
+    significance_level: float = None,
+    contrarian_win_rate: float = None,
 ) -> None:
     """
     Recompute combination_accuracy from all closed trades for the given strategy.
 
+    All thresholds are required — they come from the strategy config.
+    None of them have hardcoded defaults; the caller must supply values
+    read from substrate.cfg().
+
     Idempotent: uses INSERT OR REPLACE. Safe to call multiple times.
 
-    Contrarian detection: combinations with win_rate ≤ 30% are flagged as
-    'contrarian' in the significance field, not silently dropped.
+    Contrarian detection: combinations with win_rate ≤ contrarian_win_rate
+    are flagged as 'contrarian' in the significance field, not silently dropped.
     """
+    if min_trades is None or significance_level is None or contrarian_win_rate is None:
+        missing = []
+        if min_trades is None: missing.append("min_trades")
+        if significance_level is None: missing.append("significance_level")
+        if contrarian_win_rate is None: missing.append("contrarian_win_rate")
+        raise TypeError(
+            f"Required parameter(s) not provided to update_combination_accuracy: "
+            + ", ".join(missing)
+            + ". All learning thresholds must come from config (learning.*)."
+        )
+
     from core.database import db_conn
 
     try:
