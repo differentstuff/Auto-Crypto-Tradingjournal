@@ -48,11 +48,18 @@ _STANDARD_LEARNING = {
 
 def _make_config(**overrides) -> dict:
     """Build a complete strategy config for testing using make_full_config."""
-    return make_full_config(
+    base = make_full_config(
         strategy={"name": "test_strategy", "uid": "legacy"},
-        learning=dict(_STANDARD_LEARNING),
-        **overrides,
     )
+    # Merge _STANDARD_LEARNING into base learning section
+    base.setdefault("learning", {}).update(_STANDARD_LEARNING)
+    # Apply any overrides (deep-merge at top level)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            base[key].update(value)
+        else:
+            base[key] = value
+    return base
 
 
 def _deep_update(base: dict, overrides: dict) -> None:
