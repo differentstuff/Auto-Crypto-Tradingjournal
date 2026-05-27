@@ -37,9 +37,14 @@ def _is_in_kill_zone(utc_hour: int = None) -> bool:
     return (7 <= h < 10) or (12 <= h < 15)
 
 
-def _check_conflicting_signals(indicators: dict, weight_map: dict) -> list[str]:
+def _check_conflicting_signals(
+    indicators: dict, weight_map: dict, conflict_threshold: int,
+) -> list[str]:
     """
     Check if scoring indicators are giving conflicting directional signals.
+
+    conflict_threshold: minimum bullish AND bearish count to flag as conflict.
+        Read from noise.conflict_signal_threshold in config.
 
     Returns list of conflict descriptions (empty if no conflicts).
     """
@@ -80,7 +85,7 @@ def _check_conflicting_signals(indicators: dict, weight_map: dict) -> list[str]:
                     bearish_count += 1
 
     # If we have both bullish and bearish signals, that's a conflict
-    if bullish_count >= 2 and bearish_count >= 2:
+    if bullish_count >= conflict_threshold and bearish_count >= conflict_threshold:
         conflicts.append(
             f"Conflicting signals: {bullish_count} bullish vs {bearish_count} bearish"
         )
@@ -88,9 +93,14 @@ def _check_conflicting_signals(indicators: dict, weight_map: dict) -> list[str]:
     return conflicts
 
 
-def _check_volume(indicators: dict) -> list[str]:
+def _check_volume(indicators: dict, vol_low: float, vol_very_low: float) -> list[str]:
     """
     Check volume conditions for noise.
+
+    vol_low:       volume ratio below this → "low volume" warning.
+                   Read from noise.volume_low_ratio in config.
+    vol_very_low:  volume ratio below this → "very low volume" warning.
+                   Read from noise.volume_very_low_ratio in config.
 
     Returns list of noise reasons (empty if volume is healthy).
     """
@@ -104,17 +114,22 @@ def _check_volume(indicators: dict) -> list[str]:
             vol = tf_inds.get("volume", {})
             if isinstance(vol, dict):
                 ratio = vol.get("ratio", 1.0)
-                if ratio < 0.5:
+                if ratio < vol_very_low:
                     reasons.append(f"{symbol}: very low volume ratio ({ratio:.1f})")
-                elif ratio < 0.7:
+                elif ratio < vol_low:
                     reasons.append(f"{symbol}: low volume ratio ({ratio:.1f})")
 
     return reasons
 
 
-def _check_adx_extremes(indicators: dict, weight_map: dict) -> list[str]:
+def _check_adx_extremes(
+    indicators: dict, weight_map: dict, adx_no_trend: float, adx_overextended: float,
+) -> list[str]:
     """
-    Check for ADX extremes: no trend (ADX < 15) or overextended (ADX > 40).
+    Check for ADX extremes: no trend or overextended.
+
+    adx_no_trend:      ADX below this → no trend (noise). Read from noise.adx_no_trend.
+    adx_overextended:   ADX above this → overextended (noise). Read from noise.adx_overextended.
 
     Returns list of noise reasons.
     """
@@ -128,9 +143,9 @@ def _check_adx_extremes(indicators: dict, weight_map: dict) -> list[str]:
             adx = tf_inds.get("adx", {})
             if isinstance(adx, dict) and weight_map.get("adx", 0) > 0:
                 adx_val = adx.get("value", 0)
-                if adx_val < 15:
+                if adx_val < adx_no_trend:
                     reasons.append(f"{symbol}: no trend (ADX={adx_val:.0f})")
-                elif adx_val > 40:
+                elif adx_val > adx_overextended:
                     reasons.append(f"{symbol}: overextended (ADX={adx_val:.0f})")
 
     return reasons
@@ -192,21 +207,27 @@ class DetectNoise(Enzyme):
         if not _is_in_kill_zone(utc_hour):
             noise_reasons.append("Outside kill zone (low liquidity window)")
 
-        # 2. Conflicting signals
-        conflicts = _check_conflicting_signals(indicators, weight_map)
+        # 2. Conflicting signals (threshold from config)
+        conflict_threshold = substrate.cfg("noise.conflict_signal_threshold")
+        conflicts = _check_conflicting_signals(indicators, weight_map, conflict_threshold)
         noise_reasons.extend(conflicts)
 
-        # 3. Volume check
-        volume_issues = _check_volume(indicators)
+        # 3. Volume check (thresholds from config)
+        vol_low = substrate.cfg("noise.volume_low_ratio")
+        vol_very_low = substrate.cfg("noise.volume_very_low_ratio")
+        volume_issues = _check_volume(indicators, vol_low, vol_very_low)
         noise_reasons.extend(volume_issues)
 
-        # 4. ADX extremes
-        adx_issues = _check_adx_extremes(indicators, weight_map)
+        # 4. ADX extremes (thresholds from config)
+        adx_no_trend = substrate.cfg("noise.adx_no_trend")
+        adx_overextended = substrate.cfg("noise.adx_overextended")
+        adx_issues = _check_adx_extremes(indicators, weight_map, adx_no_trend, adx_overextended)
         noise_reasons.extend(adx_issues)
 
-        # Set noise flag based on severity
-        # Only flag as noisy if we have 2+ reasons (avoid false positives)
-        is_noisy = len(noise_reasons) >= 2
+        # Set noise flag based on severity (threshold from config)
+        # Only flag as noisy if we have enough reasons (avoid false positives)
+        min_reasons = substrate.cfg("noise.noise_severity_min_reasons")
+        is_noisy = len(noise_reasons) >= min_reasons
         # Kill zone alone is enough to flag
         if not is_noisy and any("kill zone" in r.lower() for r in noise_reasons):
             # Only flag kill zone as noise if combined with at least one other issue
