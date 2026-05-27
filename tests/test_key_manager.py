@@ -49,6 +49,23 @@ class TestKeyManagerInit:
         """get_key returns None for unconfigured provider."""
         assert km.get_key("openai") is None
 
+    def test_custom_cooldowns(self):
+        """KeyManager accepts custom cooldowns from config."""
+        km = KeyManager(
+            {"anthropic": [{"key": "sk-1", "label": "test"}]},
+            cooldowns={"overload": 60, "server": 20, "unknown": 10},
+        )
+        assert km.COOLDOWN_OVERLOAD == 60
+        assert km.COOLDOWN_SERVER == 20
+        assert km.COOLDOWN_UNKNOWN == 10
+
+    def test_default_cooldowns_without_config(self):
+        """KeyManager uses class defaults when no cooldowns dict passed."""
+        km = KeyManager({"anthropic": [{"key": "sk-1", "label": "test"}]})
+        assert km.COOLDOWN_OVERLOAD == 30
+        assert km.COOLDOWN_SERVER == 10
+        assert km.COOLDOWN_UNKNOWN == 5
+
 
 class TestKeySelection:
     """Test key selection logic."""
