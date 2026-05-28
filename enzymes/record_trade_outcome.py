@@ -47,13 +47,14 @@ def _now_iso() -> str:
 # that the learning engine's accuracy tracking is consistent with the
 # scoring that actually triggered the trade.
 
-def _extract_rsi_signal(rsi: dict) -> dict:
-    """RSI directional signal: overbought → bearish, oversold → bullish."""
+def _extract_rsi_signal(rsi: dict, rsi_high: float = 55, rsi_low: float = 45) -> dict:
+    """RSI directional signal: overbought → bearish, oversold → bullish.
+    Thresholds read from scoring.rsi_signal_high/low in config."""
     value = rsi.get("value", 50)
     level = rsi.get("level", "neutral")
-    if value > 55:
+    if value > rsi_high:
         signal = "bullish"
-    elif value < 45:
+    elif value < rsi_low:
         signal = "bearish"
     else:
         signal = "neutral"
