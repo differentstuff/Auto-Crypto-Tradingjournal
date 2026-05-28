@@ -142,10 +142,14 @@ def _compute_size(
             notional = atr_cap_notional
             atr_cap_applied = True
 
-    # Floor at min_size_pct of equity
-    min_notional = equity * min_size_pct / 100
-    if notional < min_notional:
-        notional = min_notional
+    # Floor at min_size_pct of equity (only when ATR cap doesn't bind).
+    # When ATR cap is applied, it's a hard maximum that overrides the soft
+    # floor — the asset is too volatile for a normal-sized position, and
+    # the min floor must not override that safety constraint.
+    if not atr_cap_applied:
+        min_notional = equity * min_size_pct / 100
+        if notional < min_notional:
+            notional = min_notional
 
     margin = notional / leverage
 
