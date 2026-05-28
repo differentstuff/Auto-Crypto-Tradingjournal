@@ -1,298 +1,360 @@
-# Trading Journal — Claude Code Context
+# Auto-Trader v2 — Claude Code Context
 
 ## Project Overview
-Self-hosted crypto futures trading journal. Flask 3.1 / Python 3.13 / SQLite WAL.
-Runs as a systemd service on a Raspberry Pi 5 (<Pi-IP>). Accessible from any browser on the local network.
 
-## Deployment
-- **Pi SSH:** `<user>@<Pi-IP>` (use expect — no BatchMode; credentials in local memory only)
-- **Service:** `sudo systemctl restart trading-journal`
-- **Pi path:** `/home/<user>/trading-journal`
-- **Dev path:** local clone of this repo
-- **Port:** 8082
+**Autonomous, self-improving, 24/7 crypto futures trading daemon** based on the Reaction Network architecture. Not a web app. Not a Telegram bot. A daemon that runs continuously, trades your account using your strategy, learns from every trade, and adapts over time.
 
-## Database
-- **Mode:** SQLite WAL — safe for concurrent reads during sync
-- **Migrations:** database.py::init_db() — ALL must be idempotent
-- **Tables:** positions, orders, wallet_snapshots, analyzed_calls, pending_limits, trader_rulebook, trade_hindsight, settings, import_log, token_usage, schema_version
+Runs as a systemd service on a Raspberry Pi 5. Single entrypoint: `python3 main.py`.
 
-## Import Graph (safe edit order)
-constants.py, prompt_fragments.py, trade_history.py, chart_sr.py, chart_indicators.py — no internal deps, edit freely
-token_log.py — token telemetry only; imported by ai_client via helpers re-export
-helpers.py, database.py — imported by everything, edit carefully
-sync_base.py — SyncDriver protocol, SyncState class, auto_close_calls, retroactive_close_calls
-ai_client.py — imports constants + helpers (log_token_usage re-exported from token_log)
-chart_candles.py, chart_patterns.py, chart_confluence.py — split from chart_context
-chart_context.py — thin facade over chart_candles + chart_patterns + chart_confluence
-prompt_builder.py — imports chart_context, ai_rulebook, ai_pattern_detector, nansen_client
-agent_types.py — TypedDicts + empty_interpreter/empty_sentiment/empty_reviewer factories
-ai_*.py — import ai_client + prompt_builder + trade_history
-scanner_watchlist.py — symbol lists; scanner_criteria.py — CRITERIA_DEFAULTS + kill-zone; scanner_prompts.py — prompt builders; scanner_stages.py — Stage 1/2
-ai_scanner.py — thin: _state, scan thread, Stage 3, public API (imports scanner_* modules)
-routes/*.py — import helpers + ai_* modules
+**Core principle:** Enzymes, not agents. Substrate, not contracts. Attractors, not endpoints. The system fires whichever enzyme moves the substrate closest to an attractor — no stochastic tool selection, no LLM-driven orchestration.
 
-## AI Pipeline
-- Sonnet (claude-sonnet-4-6): call analyzer, advisor, scanner, rulebook, pattern detector, grader
-- Haiku (claude-haiku-4-5-20251001): scanner quick-score, hindsight, live trade check, limit analysis
-- Token logging: log_token_usage(module, model, in, out, cached) — import from helpers or token_log
-- Prompt caching: build_cached_messages() — ephemeral cache on context blocks >= 4096 chars
-- Error fallbacks: use empty_interpreter/empty_sentiment/empty_reviewer from agent_types (not private _empty_* functions)
-- **Gemini API fallback**: `ai_client.send()` catches `anthropic.APIError` → calls `gemini_client.send_text()` transparently; all modules get fallback with no per-module changes; usage logged as `{module}+gemini / gemini-fallback`
-- Data pipeline: agent_data_collector → 15 parallel workers → CollectorResult → prompt_builder → Claude
-- Adding a new data source: add fetch_X() to data_sources.py + field to CollectorResult in agent_types.py
+---
 
-## Data Sources (active, wired into 12-worker CollectorResult)
-| Layer | Client | Data | Key |
-|---|---|---|---|
-| 1 — Global Macro | market_context.py | VIX/DXY (yfinance) | none |
-| 1 — Global Macro | market_context.py | ES1! — S&P 500 Futures price + 24h change (yfinance ES=F) | none |
-| 1 — Global Macro | market_context.py | Fear & Greed (alternative.me) | none |
-| 1 — Global Macro | finnhub_client.py | Economic calendar — FOMC/CPI/NFP macro risk flag | FINNHUB_API_KEY |
-| 1 — Global Macro | coingecko_client.py | BTC.D, ETH.D, USDT.D, OTHERS.D, TOTAL2, TOTAL3 (market_cap_percentage) | none |
-| 1 — Global Macro | coingecko_client.py | MEME.C, STABLE.C, STABLE.C.D — /coins/categories | none |
-| 2 — Market Structure | deribit_client.py | BTC/ETH put/call skew — institutional sentiment proxy | none |
-| 2 — Market Structure | market_context.py | BTC mempool congestion (blockchain.com) | none |
-| 2 — Market Structure | coingecko_client.py | Trending coins (top-10, last 24h) | none |
-| 3 — Symbol-Level | ccxt_client.py + market_context.py | Multi-exchange L/S ratio + retail vs smart-money divergence | none |
-| 3 — Symbol-Level | coinalyze_client.py | Aggregated OI + funding + liq trend + per-exchange funding spread | COINALYZE_API_KEY |
-| 3 — Symbol-Level | liquidation_client.py | Historical liquidations per day (longs_usd/shorts_usd); CSV cache in data/liquidations/{symbol}/ | COINALYZE_API_KEY |
-| 3 — Symbol-Level | coingecko_client.py | Cap rank, cap tier, 24h volume | none |
-| 3 — Symbol-Level | market_context.py | DefiLlama TVL (DeFi tokens only) | none |
-| 3 — Symbol-Level | chart_context.py via ccxt | OHLCV candles (Binance Futures) | none |
-| 4 — Trade Intelligence | nansen_client.py | Smart money wallet flows + accumulating/distributing direction | paid |
-| 4 — Trade Intelligence | grok_client.py | Social/news context per coin (cap-weighted 0-80%) | XAI_API_KEY |
+## Architecture
 
-See Tools → Data Sources page in the UI for the full interactive reference.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     DAEMON (24/7 loop)                       │
+│  Every cycle: hot-reload config → reset substrate →          │
+│  run network → persist state → sleep                         │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     SUBSTRATE (shared state)                 │
+│  strategy | portfolio | market | analysis | decisions |     │
+│  learning | validity | pending                               │
+│  See: docs/reaction-design/substrate-schema.yaml             │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌──────────┐   ┌──────────────┐   ┌──────────┐
+    │ SENSOR   │   │OXIDOREDUCTASE│   │REGULATOR │
+    │ enzymes  │   │  enzymes      │   │ enzymes  │
+    └──────────┘   └──────────────┘   └──────────┘
+           │               │               │
+           └───────────────┼───────────────┘
+                           ▼
+    ┌──────────┐   ┌──────────────┐   ┌──────────┐
+    │SYNTHASE  │   │TRANSPORTER   │   │WAIT      │
+    │ enzymes  │   │  enzymes     │   │ enzyme   │
+    └──────────┘   └──────────────┘   └──────────┘
+```
 
-## Prompt budget order (prompt_builder.py)
-1. Backtest context — most relevant to setup
-2. Market context string — pre-fetched by caller
-3. All data source blocks (Coinalyze, Fear&Greed, macro regime, L/S divergence, etc.)
-4. Rulebook — protected until remaining < 100 chars (was 500)
-5. Calibration — protected until remaining < 100 chars
-6. Chart context — protected until remaining < 100 chars
-7. Grok social — protected until remaining < 150 chars
+**Enzyme classes:**
 
-## Scanner macro layer (scanner_stages.py)
-- _get_scan_macro_context() called ONCE per scan: VIX, F&G, Finnhub events, BTC dominance
-- _apply_macro_cap(): VIX > 35 → cap 6.0, VIX 25-35 → cap 7.5, macro event in 24h → cap 7.0
-- _build_macro_header(): prepended to every Stage 3 scoring prompt — shows VIX | ES1! | F&G | BTC.D | USDT.D | STABLE.D | MEME cap
-- macro_ctx stored in _state["macro_ctx"] — visible in scanner status API
-- get_macro_regime() now includes ES=F (S&P 500 futures via yfinance): returns es, es_change_pct alongside vix and dxy
-- get_global_market() extended: btc_dominance_pct, eth_dominance_pct, usdt_dominance_pct (USDT.D), others_dominance_pct (OTHERS.D), total2_usd (TOTAL2), total3_usd (TOTAL3)
-- get_category_caps() in coingecko_client.py: calls /coins/categories → meme_cap_usd (MEME.C), stable_cap_usd, stable_dominance_pct (STABLE.C.D)
+| Class | Role | Current Enzymes |
+|-------|------|-----------------|
+| **Sensor** | Extract data from environment | CollectOHLCV, CollectPreTradeContext, CollectMacroContext, RequestExit |
+| **Oxidoreductase** | Evaluate, score, rank | ScoreConfluence, ValidateEntryZone, DetectNoise |
+| **Regulator** | Override authority, gate decisions | ApproveTrade, ApproveExit |
+| **Transporter** | Execute on exchange, send notifications | ExecuteTrade, ExecuteExit, SyncPositions, SendTelegramLog, UpdateMarkPrices |
+| **Synthase** | Build new knowledge | UpdateLearning, UpdateRulebook, RecordTradeOutcome |
+| **Isomerase** | Default state transform | Wait |
 
-## Confluence Signals (chart_confluence.py)
-12 signals total: 11 TF-level + 1 symbol-level → max_per_tf = 5.55 (non-SMT) / 5.85 (SMT):
-TF-level: RSI, MACD (grouped momentum cap ±1.5), EMA, ADX,
-          WaveTrend, MFI (grouped oscillator cap ±1.0), CVD, order_flow, volume,
-          _smt_weight (cross-exchange price divergence ≥0.5%),
-          _smt_direction_weight (24h directional divergence vs correlated pair ±0.15)
-Symbol-level: liquidation wall +0.20 (conditional — short-squeeze/cascade within 3%)
-VIX multiplier: score × 0.80 when VIX > 30 (5-min cached)
-SMT_SYMBOLS = {BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT}
-SMT_PAIRS = {BTC↔ETH, SOL→ETH, BNB→BTC, XRP→BTC}
+**Attractors (goal states):** `watching`, `trade_opened`, `trade_managed`, `trade_closed`, `learning_updated`
 
-## Testing
-- Framework: pytest
-- Tests in tests/ directory
-- Run: python3 -m pytest tests/ -v
-- Fixtures: tests/conftest.py — db (in-memory SQLite), sample_positions
+**ISC (Ideal State Criteria):** Config-driven hard-to-vary conditions that MUST pass before any trade. No ISC bypass possible. See `substrate.py DEFAULT_ISCS`.
 
-## API Rules
-- All routes return {"ok": true/false, "data": ...} via _ok() / _err()
-- Never expose exception messages in API responses (CWE-209)
-- Never change existing endpoint URLs or response shapes
-- Use _safe_float(val) in routes/calls.py for parsing price fields from request JSON
-- Validate status fields against VALID_STATUSES allowlist before DB writes (see routes/limits.py)
+---
 
-## Deployment (IMPORTANT)
-- **Never rsync *.db files to Pi** — production DB lives on Pi only, local has none
-- rsync exclude flags: --exclude="*.db" --exclude="*.db-wal" --exclude="*.db-shm" --exclude=".agents"
-- Always backup before restart: `bash ~/trading-journal/scripts/backup_db.sh`
-- Backups auto-run via ExecStopPost on every systemctl stop/restart (7-day rolling, in backups/)
-- Daily cron backup at 04:00 Pi time
-- Restore procedure: stop service → cp backups/trading_journal_YYYYMMDD_HHMMSS.db trading_journal.db → start service
+## Directory Structure
 
-## Browser Verification (major UI changes only)
+```
+auto-trader/
+  main.py                         # Single entrypoint: daemon loop
+  config/
+    default.yaml                  # All defaults (never hand-edit)
+    llm.yaml                      # LLM routing, parameters, prompts
+    strategies/
+      _template.yaml              # Full template with all keys
+      momentum_rising.yaml        # Primary strategy
+      paper_learning_test.yaml    # Paper mode test strategy
+      paper_test.yaml             # Paper trading strategy
+  core/
+    daemon.py                     # 24/7 loop, config hot-reload, attractor logic
+    substrate.py                  # Shared state container, ISC verification
+    enzyme.py                     # Enzyme base class, activation conditions, registry
+    database.py                   # SQLite WAL, all tables, migrations
+    config_loader.py              # YAML config merge (default < strategy < exchange)
+    exchange.py                   # CCXT wrapper (Bitget primary, Binance/Bybit fallback)
+    scheduler.py                  # Cycle timing with jitter
+  enzymes/                        # Each enzyme = one file
+    collect_ohlcv.py              # Sensor: fetch OHLCV, compute indicators
+    collect_pre_trade_context.py  # Sensor: trajectory analysis, coincidence risk
+    collect_macro_context.py      # Sensor: VIX, DXY, BTC dominance (optional)
+    score_confluence.py           # Oxidoreductase: weighted confluence scoring
+    validate_entry_zone.py       # Oxidoreductase: S/R entry zones, R:R validation
+    detect_noise.py               # Oxidoreductase: noise detection, kill zones
+    approve_trade.py              # Regulator: RiskManager approval gate
+    approve_exit.py               # Regulator: RiskManager exit approval
+    request_exit.py               # Sensor: exit request from signal reversal
+    execute_trade.py              # Transporter: place order on exchange
+    execute_exit.py               # Transporter: close position on exchange
+    sync_positions.py             # Transporter: sync open positions with exchange
+    send_telegram_log.py          # Transporter: one-way push notifications
+    update_mark_prices.py         # Transporter: update mark prices for open positions
+    update_learning.py            # Synthase: per-signal accuracy tracking
+    update_rulebook.py            # Synthase: auto-generated rulebook from accuracy data
+    record_trade_outcome.py       # Synthase: record trade outcome in learning DB
+    wait.py                       # Isomerase: default resting state
+  indicators/                     # Pure computation, no API calls, no side effects
+    momentum.py                   # rsi, macd, adx, wavetrend
+    momentum_quality.py           # slope × R² ranking (dynamic symbol filter)
+    trend.py                      # ema, sma, supertrend
+    volatility.py                 # atr, bollinger, keltner
+    volume.py                     # obv, cvd, vwap
+    structure.py                  # sr_levels, pivots, fib
+    registry.py                   # name → function lookup
+  learning/
+    analyzer.py                   # Per-signal accuracy with Wilson CI
+    combination.py                # Pairwise signal combination significance
+    trajectory.py                 # Pre-trade trajectory pattern classification
+    rulebook.py                   # Auto-generated rules (max 10)
+    weight_adjuster.py            # Adjust indicator weights from accuracy verdicts
+  llm/
+    key_manager.py                # API key rotation (multi-key per provider, auto-switch on 429/529)
+    router.py                     # Cost-aware model selection
+    anthropic_client.py           # Sonnet/Haiku for analysis
+    gemini_client.py              # Fallback provider
+    openrouter_client.py          # Optional provider
+    prompt_builder.py              # Dynamic budget with rulebook priority
+    response_parser.py             # Parse LLM responses
+  tools/
+    backtest/                     # Backtesting engine (PBO, deflated Sharpe)
+  data/
+    trading_journal.db            # SQLite WAL database
+  tests/                          # Pytest suite
+  scripts/
+    verify_learning.py            # Learning verification script
+    self_test.py                  # End-to-end self-test
+```
 
-Run when a deploy touches `static/js/*.js`, `templates/*.html`, or adds new UI components.
-**Skip** for backend-only deploys, migrations, config changes, and bug fixes.
+---
 
-### Starting a browser test session
+## How to Run
+
 ```bash
-open -a 'Google Chrome' --args \
-  --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/claude-chrome-debug \
-  'http://192.168.1.21:8082'
-sleep 3
+# Paper mode (default, safe):
+python3 main.py --paper --strategy momentum_rising
+
+# Single cycle (for testing):
+python3 main.py --cycle-once --paper
+
+# Live mode (requires API keys in config/exchange.yaml):
+python3 main.py --strategy momentum_rising
+
+# Verbose logging:
+python3 main.py --log-level DEBUG --paper
 ```
 
-### Running the test sequence
-Read `scripts/browser_test_sequence.json` and execute each phase using chrome-devtools-mcp tools.
+Systemd service: `auto-trader.service` — `sudo systemctl restart auto-trader`
 
-**CRITICAL — SPA navigation:** This app uses `showPage('name')` — there is NO URL hash routing.
-Tab navigation must use `evaluate_script`, not `navigate_page` to a different URL:
-```js
-// Switch to dashboard tab:
-evaluate_script("showPage('dashboard')")
-// Then wait for section to become active:
-wait_for("#page-dashboard.active")
+---
+
+## Config System
+
+**Merge order (later overrides earlier):**
+```
+default.yaml < strategies/<name>.yaml < exchange.yaml
 ```
 
-**Per tab:** `evaluate_script("showPage(name)")` → `wait_for("#page-{name}.active")` → `take_screenshot` → `list_console_messages` → `evaluate_script("document.querySelectorAll('*').length")` (FAIL if < 20)
+**Critical rule: NO hardcoded defaults in Python code.** All config values must be in `default.yaml` or the strategy YAML. `Substrate.cfg()` raises `ValueError` if a key is missing — this catches config errors immediately at startup, not silently at runtime.
 
-**Lighthouse:** `lighthouse_audit` on the 4 pages in `phase2_lighthouse`. Thresholds in the JSON.
+**Strategy UID:** Each strategy has a `uid` field (auto-generated UUID4 on first load). All learning data is keyed by `strategy_uid`. Clear the uid to reset learning data.
 
-**Interactions:** navigate to tab → `click` selector → `wait_for` pass selector → record elapsed.
+**Hot-reload:** The daemon reloads config on every cycle. No restart needed to adjust strategy, risk limits, or indicator selection.
 
-### Generating the report
-Collect all results into the JSON shape defined in `scripts/generate_browser_report.py`, save as `/tmp/browser_test_results.json`, then:
-```bash
-python3 scripts/generate_browser_report.py /tmp/browser_test_results.json
-```
-Report saved to `scripts/browser_test_report.html`.
+---
 
-### Triage rules
-- **FAIL** (console error, DOM < 20 nodes, 5xx, a11y < 80, perf < 50): fix inline, re-test tab, verify clean.
-- **WARN obvious** (missing aria-label, button without type): one-liner fix, no re-test.
-- **WARN complex** (perf regression, heading hierarchy): append to `scripts/browser_issues.md`.
+## Substrate
 
-### Commit when clean
-```bash
-git add scripts/browser_test_report.html
-git commit -m "test: browser check clean — vX.Y.Z"
-```
+The single shared state container. All enzymes read from and write to this object. No enzyme talks to another enzyme directly — all communication goes through substrate fields.
 
-### Full scan (Phase 4 — one-time baseline or after major UI overhaul)
-After standard Phases 1–3 pass, run `phase4_full_scan` from the JSON.
-Use after: new tab added, major component redesign, or v2.x milestone.
+**Sections:**
+- `strategy` — name, uid, timeframe, max_positions (from config, persisted)
+- `portfolio` — equity, open_positions, risk limits (persisted across restarts)
+- `market` — indicators, pre_trade_context, macro (NOT persisted, sensors repopulate)
+- `analysis` — candidates, entry_zones, noise_flag, signal_states (NOT persisted)
+- `decisions` — action, trade_approved, exit_request, exit_approved (cleared each cycle)
+- `learning` — signal_accuracy, combination_accuracy, rulebook, adjusted_weights (persisted)
+- `validity` — ISC conditions (config-driven, verified each cycle)
 
-## Calculation Invariants (do not change without updating both sides)
-- WaveTrend: n1=10, n2=21, rolling(4) — must match in both chart_indicators.py AND backtest_engine.py
-- CVD: Money Flow Multiplier formula v*(2c-l-h)/(h-l) — must match in both chart_indicators.py AND backtest_engine.py
-- Sharpe annualization: periods_per_year=2190 for 4H crypto (6 bars/day × 365, 24/7 market)
-- SMT weight: +0.15 on divergence (delta >= 0.5%), 0.0 on agreement — signal fires when prices DISAGREE
-- SMT direction weight: +0.15 bullish (symbol↑ pair↓), -0.15 bearish (symbol↓ pair↑), threshold ≥1% delta
-- Walk-forward split: 70% training / 30% test; end_offset_days prevents data leakage (training ends at now-test_days)
-- Sharpe (dashboard): sample variance (N-1 denominator), daily returns, annualize × sqrt(365)
-- Calmar (dashboard): max_dd_pct tracked as % of running peak at each step (NOT final all-time peak)
-- Wallet snapshot filter: wallet_balance > 1 USDT — excludes dust/zero entries that corrupt return series
+**Shallow-copy safety:** The daemon passes a `shallow_copy()` to each enzyme. If an enzyme raises, the original substrate is unchanged. Enzymes must NOT mutate nested values in-place — they must create new values and reassign entire fields.
 
-## New Tools (Analysis tab)
-- Optimizer history: GET /api/backtest/optimizer-history — last 5 runs with Sharpe + params
-- Walk-forward test: POST /api/backtest/walk-forward — splits real positions 70/30, tests generalization
-- Walk-forward poll: GET /api/backtest/walk-forward/<job_id> — dedicated poll endpoint (not /optimize/)
-- Hindsight re-run: POST /api/hindsight/run?n=200 — skips already-scored positions (LEFT JOIN fix), max 200
+**Persistence:** `to_persistent_dict()` serializes durable state (strategy, portfolio, learning, validity). Market and analysis are NOT persisted — they're stale on restart and sensors repopulate them.
 
-## Market & Analytics API (routes/market.py, routes/analytics.py)
-- GET /api/price/<symbol> — live price via Binance, Bitget fallback
-- GET /api/coin/summary/<symbol> — price + 4H/1H indicators (RSI, EMA, WaveTrend, ADX, ATR) + Nansen + Coinalyze + BTC regime + F&G + liquidations_14d
-- GET /api/market/dominances — full dashboard: BTC.D, ETH.D, USDT.D, OTHERS.D, TOTAL2, TOTAL3, MEME.C, STABLE.C, STABLE.C.D, ES1! price+change
-- GET /api/chart/annotated/<symbol> — on-demand annotated chart PNG (base64); params: direction, entry, entry_high, sl, tp1, tp2, tf
-- GET /api/liquidations/<symbol>?days=30 — Coinalyze historical liquidation data (longs_usd, shorts_usd per day); available=false when plan doesn't include it
-- POST /api/scanner/cancel — cancel running scan; sets _cancel_event in ai_scanner.py; status becomes "cancelled"
+---
 
-## Data Sources page
-- Tools → Data Sources in left nav — lists all 14 sources grouped by macro→micro layer
-- Shows: provider, auth requirement, inputs, data returned, pipeline usage
-
-## JS Frontend
-- 17 modules static/js/01-utils.js through 16-settings.js
-- Bump ?v=X.X in templates/index.html on every JS change
-- notify(msg, type) toast function in 01-utils.js
-
-## Scanner Stage 3 — HTF→LTF Breakdown
-- `enrich_finalists_1h()` in scanner_stages.py: fetches 1H candles via `compute_indicators()` + `format_for_prompt()` — adds S/R levels + prompt_text to ctx["1H"] for all 30 finalists before Stage 3
-- Stage 3 prompts (_build_prompt, _build_batch_prompt, _quick_score) include 1H data and explicit instruction: **1D bias → 4H confirmation → 1H entry/SL → 4H/1D TP**
-- Scored output reports `"timeframe": "Multi-TF (1D/4H/1H)"`
-- Rationale: closed 4H bars can be up to 4h stale; 1H cuts max staleness to 1h for entry/SL precision
-
-## Chart System
-
-### Static Annotated Chart (agent_chart_draw.py)
-Generated as base64 PNG for Telegram alerts + pending limit cards.
+## Enzyme Execution Loop
 
 ```python
-agent_chart_draw.draw(
-    candles, symbol, direction,
-    entry,          # entry zone low (or single entry)
-    sl, tp1, tp2,
-    criteria=[],    # key_conditions list → top-right text box
-    n_candles=60,
-    entry_high=None,   # entry zone high → shaded blue band
-    sr_levels=[],      # list of {type, price, touches, strength}
-)
+for step in range(max_cycle_steps):  # default 20
+    if at_attractor(substrate): break
+
+    activatable = [e for e in enzymes if e.can_activate(substrate)]
+    if not activatable: fire_wait("no enzyme can activate"); break
+
+    # Regulators always have priority (priority=10)
+    best = highest_flux_score(activatable)
+
+    substrate = best.transform(substrate.shallow_copy())
+    substrate.verify_iscs()  # check all ISC conditions
 ```
 
-**Visual elements:**
-- `▲ LONG` / `▼ SHORT` colored badge (top-left, green/red)
-- Entry zone: shaded blue band between entry and entry_high
-- SL = red dashed, TP1 = bright green `#26D96B`, TP2 = cyan `#4FC3F7`
-- Price labels on right edge of every level line
-- S&R zones: green (support) / red (resistance), alpha scales with touches
-- Confluence zones: adjacent levels within 0.3% merged into wider band (`_merge_sr()`)
-- At-level highlight: zones within 0.5% of current price get brighter fill + border + ⚡ label
-- ATR-based zone width: `ATR × 0.15` half-width for singleton zones (F)
-- `scanner_scheduler._enrich_and_filter_setups()` passes `entry_zone.low/high`, `key_conditions`, `detect_support_resistance(candles)` as `sr_levels`
+**Loop guard:** If the same enzyme fires 3+ times consecutively, it's stuck. Break with Wait.
 
-### Live Chart Popup (templates/chart.html — LightweightCharts)
-- Direction badge chip: `▲ LONG` (green) / `▼ SHORT` (red) shown first in legend
-- Trade levels: Entry (blue, solid), SL (red, dashed), TP1 (green, solid), TP2 (cyan, solid) — all with axis labels
-- S&R canvas overlay: green support / red resistance (was uniform grey)
-- `_mergeSrLevels()`: JS confluence merge (within 0.3%), `_computeAtr()`: ATR from candle array for zone width
-- `_startOverlay(wrap, series, mergedLvls, htf_levels, liquidations, atr)`: uses ATR × 0.15 for singleton zone half-width
-- At-level zones: 2px border rect + brighter fill + `⚡AT LEVEL` chip in legend
-- Weekly S&R stays gold, unchanged
-- **? Legend panel** — `#btn-info` button toggles `#legend-info` div (static HTML, no innerHTML); 7 sections explain every abbreviation with color-coded indicators; CSS classes: `.li-head/.li-row/.li-line/.li-box/.li-spacer/.li-lbl/.li-desc`
+**Each enzyme fires at most once per cycle** (tracked by `fired_this_cycle` set).
 
-## Pending Limit Orders (routes/limits.py + static/js/10-pending.js)
+---
 
-### AI Verdict Display (bug fixed)
-- `analysis_json` from `ai_limit.py` uses fields: `recommendation`, `setup_quality.score`, `risk_assessment`
-- Old code read `verdict`/`setup_score`/`confidence` → showed "undefined". Fixed in 10-pending.js v3.0+
-- Color: Keep=green, Cancel=red, Adjust*=yellow
+## Learning Engine
 
-### Bitget Preset SL/TP Sync
-- `bitget_client.get_pending_orders()` now parses `presetStopLossPrice` → `preset_sl`, `presetTakeProfitPrice` → `preset_tp`
-- `GET /api/live/pending-orders` backfills `sl_price`/`tp1_price` on journal limit rows where NULL, matched by `bitget_order_id`
+The unique selling point. Tracks:
 
-### Scanner Chart in Limit Card
-- `GET /api/limits` JOINs `analyzed_calls.analysis_json` for rows with a `call_id` and extracts `chart_png_b64`
-- Pending limit card renders the chart as inline `<img>` below the AI verdict
-- Chart container uses `display:block` so image fills full card width
-- `↗ Pop Out` button overlaid top-right on chart image; opens `chart.html` popup
-- If `analysis_json.summary` starts with `{` (truncated Gemini JSON): tries to extract `entry_reason`; on parse failure shows `⚠ Analysis was truncated — click AI Analysis to retry.`
-- `ai_limit.py` max_tokens: 768 → 1024 (Gemini fallback verbosity)
+1. **Per-signal accuracy** — "RSI(14) was right 71% of the time. MACD solo was 50% — suppress it."
+2. **Pairwise combinations** — "RSI+MACD both bullish = 83% win rate (p<0.01). Statistically significant."
+3. **Pre-trade trajectory** — Were indicators aligning gradually or snapping together by coincidence?
+4. **Idle cycle tracking** — When no trade was made, WHY? Prevents false "high win rate" from cherry-picking.
+5. **Weight adjustment** — Signals with ≥75% accuracy get boosted (+20%). Signals with ≤30% accuracy get NEGATIVE weights (contrarian). Coin-flip signals (45-55%) get suppressed (weight=0).
+6. **Rulebook generation** — Max 10 rules, auto-generated from findings, injected into prompts.
 
-### Delete Route
-- `DELETE /api/limits/<id>` now has try/except → returns JSON error instead of HTML 500
+**Verdict classification:**
+- `valid` (≥75%): highlight, boost weight
+- `monitor` (55-75%): keep, no change
+- `suppress` (45-55%): coin flip, weight=0
+- `contrarian` (≤30%): anti-signal, NEGATIVE weight
+- `review` (30-45%): borderline, reduce weight 10%
+- `insufficient_data`: keep original weight
 
-### Scanner Timeframe Normalization (14-scanner.js)
-- `setup.timeframe` may be `"Multi-TF (1D/4H/1H)"` display label — normalised against `_VALID_TF` Set before chart URL
-- Prevents "no candle data" errors on scanner chart popups (Bitget rejects invalid granularity strings)
+---
 
-## Live Trade Analysis (agent_trade_monitor.py)
+## ISC (Ideal State Criteria)
 
-### Direction-Aware Prompt (bug fixed)
-Position dict from `bitget_client.get_open_positions()` uses `direction` / `entry_price` / `mark_price` — the prompt was reading `side` / `openPrice` / `markPrice` (all wrong, all defaulted). Fixed field names.
+Config-driven hard-to-vary conditions. Cannot be bypassed. All must pass before any trade.
 
-For Short positions, the prompt now injects a `DIRECTION CONTEXT — SHORT` block:
-- Bearish momentum = **favorable** (price moving toward TP)
-- SL must be **above** entry (not below)
-- TP is **below** entry
-- Hard rule: "never swap SL/TP placement for Short positions"
+| ISC | Criterion | Operator |
+|-----|-----------|----------|
+| ISC-001 | Entry threshold met before trade | `any_score_gte` |
+| ISC-002 | Stop loss always set | `sl_set_or_no_trade` |
+| ISC-003 | Position size within risk limit | `size_within_risk` |
+| ISC-004 | Max concurrent positions not exceeded | `count_lt` |
+| ISC-005 | No trade when noise_flag is true | `false_or_action_wait` |
+| ISC-006 | Minimum confluence signals aligned | `all_field_gte` |
+| ISC-007 | Pre-trade trajectory not sudden coincidence | `none_field_eq` |
 
-## Hermes Agent (interactive Telegram assistant)
-Separate from the scanner alert bot. Two-bot setup:
-- **Alert bot** (`TELEGRAM_BOT_TOKEN` in journal .env): one-way push from `telegram_notify.py`
-- **Hermes bot** (`~/.hermes/.env`): two-way interactive chat for querying the journal
+New ISC conditions can be added in strategy YAML without touching Python code.
 
-Hermes runs as a user systemd service (`hermes-gateway.service`) on the Pi, configured to query the journal API at `http://localhost:8082`. SOUL.md documents all key endpoints + response style. MEMORY.md seeds trader profile.
+---
 
-Service commands:
+## Database
+
+**SQLite WAL** — safe for concurrent reads during sync. All migrations are idempotent.
+
+**Key tables:**
+- `positions`, `orders`, `wallet_snapshots` — legacy trade journal
+- `trade_learning` — per-trade signal recording, trajectory, outcome
+- `signal_accuracy` — per-indicator accuracy with Wilson CI, verdicts
+- `combination_accuracy` — pairwise signal combinations with p-values
+- `trajectory_accuracy` — trajectory pattern classification
+- `weight_history` — every weight change with justification
+- `rulebook_versions` — auto-generated rulebook history
+- `substrate_state` — persistent substrate snapshots (pruned to max_rows)
+- `cycle_log` — every cycle: action, enzymes fired, ISC results, duration
+
+---
+
+## Exchange Support
+
+- **Primary:** Bitget (USDT-M perpetuals)
+- **Data source:** Bitget (public OHLCV, no auth needed)
+- **Fallback:** Binance, Bybit (public endpoints)
+- Paper mode: all enzymes run, no real orders placed
+
+---
+
+## LLM Integration
+
+- **Primary:** Anthropic Claude (Sonnet for analysis, Haiku for quick tasks)
+- **Fallback:** Google Gemini (automatic on 429/529 from Anthropic)
+- **Optional:** OpenRouter, Grok
+- Key rotation: multiple keys per provider, auto-switch on overload (429/529)
+- All LLM calls are OPTIONAL — enzymes fall back to rule-based logic if no keys configured
+
+---
+
+## Testing
+
 ```bash
-hermes gateway status
-hermes gateway start / stop
-journalctl --user -u hermes-gateway -f
+python3 -m pytest tests/ -v
 ```
+
+**Test structure:**
+- `conftest.py` — `make_full_config()` helper for complete substrate configs
+- `test_substrate.py` — substrate creation, ISC verification, serialization
+- `test_enzyme.py` — enzyme base class, activation conditions, registry
+- `test_config_loader.py` — YAML merge, hot-reload
+- `test_database.py` — DB init, migrations, substrate persistence
+- `test_daemon.py` — daemon loop, attractor detection, cycle execution
+- `test_momentum_quality.py` — momentum_quality indicator (slope × R²)
+- `test_phase_b.py` through `test_phase_e.py` — enzyme integration tests
+- `test_learning_config.py` — learning engine with config
+
+**Key test pattern:** `Substrate(config=make_full_config())` — always use `make_full_config()` from conftest. Never create a Substrate with partial config (it will raise ValueError on missing keys).
+
+---
+
+## Deployment
+
+- **Pi SSH:** `<user>@<Pi-IP>` (use expect — no BatchMode)
+- **Service:** `sudo systemctl restart auto-trader`
+- **Pi path:** `/home/<user>/auto-trader`
+- **Dev path:** local clone of this repo
+- **Log file:** `logs/auto-trader.log` (10MB rotating, 5 backups)
+- **Database:** `data/trading_journal.db` — never rsync to Pi, production DB lives on Pi only
+
+---
+
+## Calculation Invariants (do not change without updating both sides)
+
+- **momentum_quality**: `slope × R²` on log-price series via OLS. R² < `min_r_squared` → filtered (no score). Adaptive lookback: high R² → shorter window.
+- **Kelly criterion**: `kelly_fraction = (win_rate × avg_win_ratio - loss_rate) / avg_win_ratio`. Half-Kelly applied. Hard cap at `max_size_pct_of_equity`.
+- **Confluence score**: weighted sum of enabled, non-suppressed indicators. Suppressed (weight=0) excluded. Contrarian (negative weight) subtracts. Normalized to 0-10 scale.
+- **Signal accuracy**: Wilson score confidence interval for binomial proportion. Verdict at 95% CI.
+- **Combination significance**: Chi-squared test, p < 0.05 = statistically significant.
+- **Position sizing**: `size_usdt = equity × risk_per_trade_pct / 100`. Capped by `max_size_pct_of_equity`. Correlation check reduces size for same-direction positions.
+
+---
+
+## System Goals
+
+**The completed Auto-Trader is:**
+
+1. **Autonomous** — runs 24/7 without human intervention. Trades, learns, adapts on its own.
+2. **Self-improving** — every trade feeds back into signal accuracy, combination significance, trajectory classification, and weight adjustment. The system gets better at its own strategy over time.
+3. **Dynamically scoped** — not limited to a static watchlist. The system discovers the best symbols from the exchange in real time, filtered by volume, OI, and momentum quality. `always_watch` always overrides inclusion; `never_trade` always overrides exclusion (applied last).
+4. **Validated** — every weight change is paper-forward tested against the previous weights before going live. Profit factor decides: new weights must earn their place. The challenger runs the same daemon with the same data, strictly separated actions, full `challenger_log` DB table for traceability.
+5. **Risk-calibrated** — position sizing accounts for volatility via ATR caps. No single position exceeds its ATR-based limit, regardless of what Kelly or risk-per-trade suggests.
+
+---
+
+## What This System Is NOT
+
+- ❌ NOT a Flask web app — there is no HTTP server
+- ❌ NOT a Telegram bot — SendTelegramLog is one-way push only
+- ❌ NOT a browser-based UI — no HTML, no JS frontend
+- ❌ NOT a multi-agent pipeline — enzymes fire based on activation conditions and flux scores
+- ❌ NOT stochastic — the daemon selects enzymes deterministically (highest flux score wins)
+
+---
+
+## What NOT to Do
+
+- **Never add hardcoded defaults in Python code.** All config values come from YAML. `Substrate.cfg()` raises ValueError on missing keys.
+- **Never mutate substrate nested values in-place.** Create new values and reassign entire fields. The shallow-copy safety depends on this.
+- **Never bypass ISC conditions.** They are hard-to-vary constraints, not suggestions.
+- **Never store exchange credentials or LLM keys on the substrate.** The substrate gets a secrets-free config slice. Enzymes that need credentials get them from ConfigLoader directly.
+- **Never restart the daemon to change config.** Hot-reload on every cycle. Change YAML, save, done.
+- **Never create a Substrate with partial config in tests.** Always use `make_full_config()` from conftest.
+- **Never let an enzyme fire twice in one cycle.** The `fired_this_cycle` set prevents this.
