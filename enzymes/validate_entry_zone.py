@@ -30,13 +30,14 @@ def _compute_sl_tp(
     sr_levels: list[dict],
     rr_minimum: float = 2.0,
     atr_sl_multiplier: float = 1.5,
+    tp2_rr_ratio: float = 2.5,
 ) -> dict:
     """
     Compute stop-loss and take-profit levels.
 
     SL: max of (ATR-based) and (nearest S/R level), ensuring minimum distance.
     TP1: conservative target at rr_minimum R:R.
-    TP2: full target at 2.5× R:R.
+    TP2: full target at tp2_rr_ratio R:R (default 2.5, from exit_rules.tp2_rr_ratio).
 
     Returns {sl_price, tp1, tp2, rr_ratio, sl_atr_multiple, sl_type}
     """
@@ -103,10 +104,10 @@ def _compute_sl_tp(
     rr_ratio = rr_minimum
     if direction == "Long":
         tp1 = entry_price + risk * rr_minimum
-        tp2 = entry_price + risk * 2.5
+        tp2 = entry_price + risk * tp2_rr_ratio
     else:
         tp1 = entry_price - risk * rr_minimum
-        tp2 = entry_price - risk * 2.5
+        tp2 = entry_price - risk * tp2_rr_ratio
 
     return {
         "sl_price": round(sl_price, 8),
@@ -159,6 +160,7 @@ class ValidateEntryZone(Enzyme):
         # Config values
         rr_minimum = substrate.cfg("scoring.rr_minimum")
         atr_sl_multiplier = substrate.cfg("exit_rules.hard_stop.width_atr_multiplier")
+        tp2_rr_ratio = substrate.cfg("exit_rules.tp2_rr_ratio")
 
         entry_zones = {}
 
@@ -221,6 +223,7 @@ class ValidateEntryZone(Enzyme):
                 sr_levels=sr_levels,
                 rr_minimum=rr_minimum,
                 atr_sl_multiplier=atr_sl_multiplier,
+                tp2_rr_ratio=tp2_rr_ratio,
             )
 
             # Validate R:R
