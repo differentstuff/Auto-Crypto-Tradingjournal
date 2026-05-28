@@ -90,13 +90,15 @@ def _wavetrend_weight(wt: dict) -> float:
     return max(-0.5, min(0.5, wt1 / 60.0))
 
 
-def _volume_weight(inds: dict, directional_score: float) -> float:
-    """Volume confirms the dominant direction."""
+def _volume_weight(inds: dict, directional_score: float,
+                   vol_high_ratio: float = 1.5, vol_low_ratio: float = 0.7) -> float:
+    """Volume confirms the dominant direction.
+    Thresholds from scoring.modifier_weights.volume_high_ratio/low_ratio in config."""
     ratio = inds.get("volume", {}).get("ratio", 1.0)
     sign = 1 if directional_score > 0 else (-1 if directional_score < 0 else 0)
-    if ratio > 1.5:
+    if ratio > vol_high_ratio:
         return 0.5 * sign
-    if ratio < 0.7:
+    if ratio < vol_low_ratio:
         return -0.25 * sign
     return 0.0
 
@@ -364,7 +366,11 @@ class ScoreConfluence(Enzyme):
 
         # Volume (confirms direction)
         if "volume" in tf_inds:
-            vol_w = _volume_weight(tf_inds, score)
+            vol_high_ratio = modifier_weights.get("volume_high_ratio", 1.5)
+            vol_low_ratio = modifier_weights.get("volume_low_ratio", 0.7)
+            vol_w = _volume_weight(tf_inds, score,
+                                   vol_high_ratio=vol_high_ratio,
+                                   vol_low_ratio=vol_low_ratio)
             score += vol_w * vol_weight
             max_possible += 0.5 * vol_weight
 
