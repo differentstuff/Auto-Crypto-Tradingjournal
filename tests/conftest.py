@@ -48,6 +48,7 @@ def make_full_config(**overrides) -> dict:
             "fallback_equity_usdt": 1000.0,
             "correlation_check": True,
             "max_same_direction": 3,
+            "atr_cap_equity_pct": 2.0,
         },
         "scoring": {
             "entry_threshold": 6.5,
