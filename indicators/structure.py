@@ -12,9 +12,12 @@ Public API (used by registry and enzymes):
 
 from __future__ import annotations
 
+import logging
 import time
 
 import pandas as pd
+
+_log = logging.getLogger(__name__)
 
 # Default tolerance for S/R clustering (from constants.py PRICE_TOLERANCE)
 DEFAULT_TOLERANCE = 0.004
@@ -25,14 +28,36 @@ def detect_sr_levels(
     window: int = 5,
     max_levels: int = 8,
     cluster_pct: float = 0.005,
+    tolerance: float | None = None,
+    min_touches: int = 2,
 ) -> list[dict]:
     """
     Find S/R levels using swing high/low pivots with cluster merging.
+
+    Args:
+        df: OHLCV DataFrame
+        window: lookback/forward bars for pivot detection
+        max_levels: maximum number of S/R levels to return
+        cluster_pct: cluster merge tolerance as % of price (legacy, use tolerance instead)
+        tolerance: cluster merge tolerance as % of price (overrides cluster_pct if provided)
+        min_touches: minimum touches for a level to be included (filters weak levels)
 
     Returns list of dicts sorted by strength DESC:
     [{"price": float, "type": "support"|"resistance", "touches": int, "strength": float}]
     Empty list if df has < 15 bars.
     """
+    # Use tolerance if provided (config key), else fall back to cluster_pct
+    if tolerance is not None:
+        effective_tolerance = tolerance
+    else:
+        _log.warning(
+            "detect_sr_levels: tolerance not passed from config — "
+            "falling back to cluster_pct=%.4f (hardcoded default). "
+            "Set indicators[].params.tolerance in YAML to override.",
+            cluster_pct,
+        )
+        effective_tolerance = cluster_pct
+
     if df.empty or len(df) < 15:
         return []
 
@@ -55,13 +80,19 @@ def detect_sr_levels(
     for pivot in pivots:
         merged = False
         for cluster in clusters:
-            if abs(pivot["price"] - cluster["price"]) / (cluster["price"] or 1) < cluster_pct:
+            if abs(pivot["price"] - cluster["price"]) / (cluster["price"] or 1) < effective_tolerance:
                 cluster["price"] = (cluster["price"] + pivot["price"]) / 2
                 cluster["touches"] += 1
                 merged = True
                 break
         if not merged:
             clusters.append({**pivot, "touches": 1, "strength": 0.0})
+
+    # Filter out levels with too few touches
+    clusters = [c for c in clusters if c["touches"] >= min_touches]
+
+    if not clusters:
+        return []
 
     max_touches = max((c["touches"] for c in clusters), default=1)
     for c in clusters:
