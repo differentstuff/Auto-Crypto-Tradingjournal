@@ -47,7 +47,14 @@ def _stochrsi_fn(df: pd.DataFrame, **params) -> dict | None:
 
 def _wavetrend_fn(df: pd.DataFrame, **params) -> dict:
     from indicators.momentum import compute_wavetrend
-    wt_df = compute_wavetrend(df)
+    wt_df = compute_wavetrend(
+        df,
+        n1=params.get("n1", 10),
+        n2=params.get("n2", 21),
+        ob=params.get("ob", 53),
+        os_=params.get("os", -53),
+        mfi_period=params.get("mfi_period", 60),
+    )
     if wt_df is None or wt_df.empty:
         return {}
     wt1_last = float(wt_df["wt1"].iloc[-1])
@@ -56,13 +63,15 @@ def _wavetrend_fn(df: pd.DataFrame, **params) -> dict:
     sig_last = wt_df["signal"].iloc[-1]
     cb_last = bool(wt_df["cross_bull"].iloc[-1])
     cs_last = bool(wt_df["cross_bear"].iloc[-1])
+    ob = params.get("ob", 53)
+    os_ = params.get("os", -53)
     return {
         "wt1": round(wt1_last, 2),
         "wt2": round(wt2_last, 2),
         "histogram": round(wt1_last - wt2_last, 2),
         "mfi": round(mfi_last, 2),
         "cross": "bullish" if cb_last else ("bearish" if cs_last else None),
-        "zone": "overbought" if wt1_last > 53 else "oversold" if wt1_last < -53 else "neutral",
+        "zone": "overbought" if wt1_last > ob else "oversold" if wt1_last < os_ else "neutral",
         "signal": sig_last,
     }
 
@@ -79,7 +88,8 @@ def _order_flow_fn(df: pd.DataFrame, **params) -> dict | None:
 
 def _ema_stack_fn(df: pd.DataFrame, **params) -> dict:
     from indicators.trend import compute_ema_alignment
-    return compute_ema_alignment(df)
+    periods = params.get("periods")
+    return compute_ema_alignment(df, periods=periods)
 
 
 def _adx_fn(df: pd.DataFrame, **params) -> dict:
@@ -99,7 +109,11 @@ def _atr_fn(df: pd.DataFrame, **params) -> dict | None:
 
 def _bollinger_fn(df: pd.DataFrame, **params) -> dict | None:
     from indicators.volatility import compute_bollinger
-    return compute_bollinger(df)
+    return compute_bollinger(
+        df,
+        period=params.get("period", 20),
+        std_dev=params.get("std_dev", 2.0),
+    )
 
 
 def _volume_fn(df: pd.DataFrame, **params) -> dict | None:
@@ -113,7 +127,8 @@ def _sr_levels_fn(df: pd.DataFrame, **params) -> list[dict]:
         df,
         window=params.get("window", 5),
         max_levels=params.get("max_levels", 8),
-        cluster_pct=params.get("cluster_pct", 0.005),
+        tolerance=params.get("tolerance"),
+        min_touches=params.get("min_touches", 2),
     )
 
 

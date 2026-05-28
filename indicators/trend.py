@@ -12,25 +12,41 @@ Public API (used by registry and enzymes):
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 import numpy as np
 
+_log = logging.getLogger(__name__)
 
-def compute_ema_alignment(df: pd.DataFrame) -> dict:
+
+def compute_ema_alignment(df: pd.DataFrame, periods: list[int] | None = None) -> dict:
     """
-    EMA 20/50/200 alignment.
-    Returns {"ema20","ema50","ema200","current_price","alignment","stack"}.
+    EMA alignment for configurable periods.
+    Default periods: [20, 50, 200] (backward compatible).
+    Config overrides via indicators[].params.periods (e.g. [21, 55, 200]).
+    Returns {"ema21","ema55","ema200","current_price","alignment","stack"}.
     """
-    default = {
-        "ema20": 0.0, "ema50": 0.0, "ema200": 0.0,
-        "current_price": 0.0, "alignment": "neutral", "stack": "mixed",
-    }
+    if periods is None:
+        _log.warning(
+            "compute_ema_alignment: no periods passed from config — "
+            "using hardcoded [20, 50, 200]. "
+            "Set indicators[].params.periods in YAML to override."
+        )
+        periods = [20, 50, 200]
+
+    # Build default dict with dynamic keys
+    default = {f"ema{p}": 0.0 for p in periods}
+    default["current_price"] = 0.0
+    default["alignment"] = "neutral"
+    default["stack"] = "mixed"
+
     if df is None or df.empty or len(df) < 30:
         return default
     try:
         close = df["close"].astype(float)
         emas: dict[str, float] = {}
-        for length in [20, 50, 200]:
+        for length in periods:
             if len(df) >= length:
                 s = close.ewm(span=length, adjust=False).mean()
                 val = s.iloc[-1]
@@ -51,11 +67,18 @@ def compute_ema_alignment(df: pd.DataFrame) -> dict:
         elif len(below) > len(above):  alignment = "mixed-bearish"
         else:                          alignment = "neutral"
 
-        e20 = emas.get("ema20", 0.0)
-        e50 = emas.get("ema50", 0.0)
-        e200 = emas.get("ema200", 0.0)
-        if e20 and e50 and e200:
-            stack = "bullish" if e20 > e50 > e200 else "bearish" if e20 < e50 < e200 else "mixed"
+        # Stack: check if EMAs are ordered (shortest > middle > longest = bullish)
+        sorted_emas = [v for _, v in sorted(emas.items(), key=lambda x: x[0])]
+        if len(sorted_emas) >= 3:
+            # Check bullish stack (descending order: shortest period > longest)
+            bullish_stack = all(sorted_emas[i] > sorted_emas[i + 1] for i in range(len(sorted_emas) - 1))
+            bearish_stack = all(sorted_emas[i] < sorted_emas[i + 1] for i in range(len(sorted_emas) - 1))
+            if bullish_stack:
+                stack = "bullish"
+            elif bearish_stack:
+                stack = "bearish"
+            else:
+                stack = "mixed"
         else:
             stack = "mixed"
 
