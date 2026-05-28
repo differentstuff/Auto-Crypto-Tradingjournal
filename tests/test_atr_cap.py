@@ -98,14 +98,13 @@ class TestComputeAtrCap:
 class TestComputeSizeWithAtrCap:
     def test_atr_cap_reduces_high_vol_size(self):
         """High ATR → ATR cap reduces position below Kelly size."""
-        # Use config with min_size_pct=0 so the floor doesn't override the ATR cap
-        cfg = make_full_config()
-        cfg["risk"]["min_size_pct_of_equity"] = 0.0
         # equity=10000, risk_per_trade_pct=1.0,
         # kelly_fraction=0.25, leverage=5, max_size_pct=25
         # Without ATR cap: notional = (10000 * 1.0/100) / 0.02 * 0.25 = 1250
         # ATR cap with ATR=100: (10000 * 2.0) / 100 = 200
         # So ATR cap should bind: size = 200
+        # min_size_pct floor is skipped when ATR cap applies (hard max > soft floor)
+        cfg = make_full_config()
         sizing = _compute_size(
             equity=10000,
             entry_price=50000,
@@ -119,6 +118,52 @@ class TestComputeSizeWithAtrCap:
         assert sizing["atr_cap_applied"] is True
         assert sizing["size_usdt"] == 200.0
         assert sizing["atr_cap_notional"] == pytest.approx(200.0, abs=0.01)
+
+    def test_atr_cap_overrides_min_size_floor(self):
+        """ATR cap is a hard maximum that overrides the min_size_pct floor.
+
+        When ATR cap says the asset is too volatile for a normal position,
+        the min_size floor must not override that safety constraint.
+        Without this rule, min_size_pct_of_equity=5% (500 USDT) would
+        override the ATR cap of 200 USDT, violating the hard constraint
+        that ATR cap can only reduce, never increase.
+        """
+        cfg = make_full_config()
+        # min_size_pct_of_equity=5.0 → min_notional = 500
+        # ATR cap with ATR=100 → atr_cap_notional = 200
+        # ATR cap must win: size = 200, not 500
+        assert cfg["risk"]["min_size_pct_of_equity"] == 5.0
+        sizing = _compute_size(
+            equity=10000,
+            entry_price=50000,
+            sl_price=49000,
+            direction="Long",
+            kelly_fraction=0.25,
+            leverage=5,
+            config=cfg,
+            atr_value=100,
+        )
+        assert sizing["atr_cap_applied"] is True
+        assert sizing["size_usdt"] == 200.0  # ATR cap, not min floor (500)
+
+    def test_min_size_floor_applies_when_atr_cap_does_not_bind(self):
+        """min_size_pct floor still applies when ATR cap doesn't bind."""
+        cfg = make_full_config()
+        # Very small kelly → notional below min_size_pct floor
+        # Low ATR → ATR cap doesn't bind
+        sizing = _compute_size(
+            equity=10000,
+            entry_price=50000,
+            sl_price=49000,
+            direction="Long",
+            kelly_fraction=0.01,  # tiny kelly → notional well below min floor
+            leverage=5,
+            config=cfg,
+            atr_value=10,  # low ATR → cap = 2000, won't bind
+        )
+        assert sizing["atr_cap_applied"] is False
+        # min_size_pct_of_equity=5.0 → min_notional = 500
+        assert sizing["size_usdt"] == 500.0
 
 
     def test_atr_cap_no_effect_low_vol(self, config):
