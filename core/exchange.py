@@ -65,7 +65,7 @@ class Exchange:
         """
         self._config = config_loader
         self._primary: str = config_loader.get("exchange.primary", "bitget")
-        self._data_source: str = config_loader.get("exchange.data_source", "binance")
+        self._data_source: str = config_loader.get("exchange.data_source", "bitget")
         self._fallback: str = config_loader.get("exchange.fallback", "bybit")
         self._paper_mode: bool = config_loader.paper_mode
 
@@ -104,9 +104,10 @@ class Exchange:
             exchange_id = self._data_source
             exchange_class = getattr(ccxt, exchange_id, None)
             if exchange_class is None:
-                _log.warning("Unknown data exchange %s, falling back to binance", exchange_id)
-                exchange_class = ccxt.binance
-                exchange_id = "binance"
+                fallback_id = self._data_source
+                _log.warning("Unknown data exchange %s, falling back to %s", exchange_id, fallback_id)
+                exchange_class = getattr(ccxt, fallback_id, ccxt.binance)
+                exchange_id = fallback_id
 
             self._data_exchange = exchange_class()
             self._data_exchange.enableRateLimit = True
