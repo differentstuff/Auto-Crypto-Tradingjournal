@@ -515,7 +515,19 @@ class TestPreTradeContextTimeBasedSufficiency:
 class TestClassifyTrajectory:
     """P8: _classify_trajectory still works correctly with real history entries."""
 
-    def test_gradual_alignment(self):
+    @pytest.fixture
+    def default_thresholds(self):
+        """Default trajectory thresholds matching default.yaml."""
+        return {
+            "stable_consensus": 10,
+            "gradual_alignment": 8,
+            "earlier_min": 3,
+            "recent_min": 2,
+            "earlier_low": 2,
+            "min_alignment": 4,
+        }
+
+    def test_gradual_alignment(self, default_thresholds):
         """8+ aligned bars with earlier support → gradual_alignment."""
         history = [
             {"signal": "bullish"},
@@ -529,10 +541,10 @@ class TestClassifyTrajectory:
             {"signal": "bullish"},
             {"signal": "bullish"},
         ]
-        result = _classify_trajectory(history)
+        result = _classify_trajectory(history, default_thresholds)
         assert result["coincidence_risk"] in ("low", "medium")
 
-    def test_sudden_coincidence(self):
+    def test_sudden_coincidence(self, default_thresholds):
         """Aligned only in last 2-3 bars → sudden_coincidence."""
         history = [
             {"signal": "bearish"},
@@ -544,19 +556,19 @@ class TestClassifyTrajectory:
             {"signal": "bullish"},
             {"signal": "bullish"},
         ]
-        result = _classify_trajectory(history)
+        result = _classify_trajectory(history, default_thresholds)
         assert result["coincidence_risk"] == "high"
 
-    def test_empty_history(self):
+    def test_empty_history(self, default_thresholds):
         """Empty history → unknown, high risk."""
-        result = _classify_trajectory([])
+        result = _classify_trajectory([], default_thresholds)
         assert result["trajectory_type"] == "unknown"
         assert result["coincidence_risk"] == "high"
 
-    def test_no_alignment(self):
+    def test_no_alignment(self, default_thresholds):
         """All neutral → no_alignment, high risk."""
         history = [{"signal": "neutral"}] * 5
-        result = _classify_trajectory(history)
+        result = _classify_trajectory(history, default_thresholds)
         assert result["coincidence_risk"] == "high"
 
 

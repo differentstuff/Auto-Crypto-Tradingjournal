@@ -53,6 +53,22 @@ def make_full_config(**overrides) -> dict:
             "entry_threshold": 6.5,
             "confluence_min_signals": 3,
             "rr_minimum": 2.0,
+            "min_candidate_pct": 0.20,
+            "rsi_signal_high": 55,
+            "rsi_signal_low": 45,
+            "momentum_cap": 1.5,
+            "momentum_dampening": 0.5,
+            "modifier_weights": {
+                "volume": 0.15,
+                "cvd": 0.1,
+                "order_flow": 0.1,
+                "volume_high_ratio": 1.5,
+                "volume_low_ratio": 0.7,
+            },
+            "label_thresholds": {
+                "strong": 0.60,
+                "weak": 0.33,
+            },
         },
         "exit_rules": {
             "hard_stop": {
@@ -65,6 +81,8 @@ def make_full_config(**overrides) -> dict:
                 "trail_atr_multiplier": 1.0,
                 "breakeven_at_activation": True,
             },
+            "tp2_rr_ratio": 2.5,
+            "soft_reversal_profit_threshold": 0.5,
             "max_hold_hours": 72,
             "tp_exit_pct": 100.0,
         },
@@ -76,6 +94,7 @@ def make_full_config(**overrides) -> dict:
             "adx_overextended": 40,
             "noise_severity_min_reasons": 2,
             "kill_zone_blocks": False,
+            "kill_zone_hours": [[7, 10], [12, 15]],
         },
         "learning": {
             "min_trades_before_adjusting": 30,
@@ -90,6 +109,14 @@ def make_full_config(**overrides) -> dict:
             "retrain_every_n_trades": 10,
             "trajectory_lookback_hours": 48,
             "trajectory_min_hours": 8,
+            "trajectory_thresholds": {
+                "stable_consensus": 10,
+                "gradual_alignment": 8,
+                "earlier_min": 3,
+                "recent_min": 2,
+                "earlier_low": 2,
+                "min_alignment": 4,
+            },
         },
         "indicators": [
             {"name": "rsi", "params": {"period": 14}, "weight": 0.25},
