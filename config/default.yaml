@@ -172,6 +172,16 @@ indicators:
       min_touches: 3
     weight: 0.0
     description: "S/R levels for entry zone validation, not scoring."
+  - name: "momentum_quality"
+    params:
+      ranking_window: 90
+      min_r_squared: 0.15
+      lookback_short: 30
+      lookback_long: 90
+      r_squared_high: 0.5
+      r_squared_low: 0.3
+    weight: 0.0
+    description: "Momentum quality ranking (slope × R²) for dynamic symbol filter."
 
 # Modules (all off by default)
 modules:
