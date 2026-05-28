@@ -125,6 +125,7 @@ def make_full_config(**overrides) -> dict:
             {"name": "adx", "params": {"period": 14}, "weight": 0.10},
             {"name": "wavetrend", "params": {}, "weight": 0.15},
             {"name": "volume", "params": {}, "weight": 0.10},
+            {"name": "momentum_quality", "params": {"ranking_window": 90, "min_r_squared": 0.15, "lookback_short": 30, "lookback_long": 90, "r_squared_high": 0.5, "r_squared_low": 0.3}, "weight": 0.0},
         ],
         "modules": {
             "macro_context": False,
