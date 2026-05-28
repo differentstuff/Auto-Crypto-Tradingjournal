@@ -27,24 +27,29 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _is_in_kill_zone(utc_hour: int = None) -> bool:
+def _is_in_kill_zone(utc_hour: int = None, kill_zone_hours: list | None = None) -> bool:
     """
     Return True if the given UTC hour falls within an institutional kill zone.
-    London: 07:00-09:59 UTC  |  NY AM: 12:00-14:59 UTC
+    Default: London 07:00-09:59 UTC | NY AM 12:00-14:59 UTC.
+    Configurable via noise.kill_zone_hours in YAML (list of [start, end] pairs).
     Outside these windows, liquidity is lower and noise is higher.
     """
     h = utc_hour if utc_hour is not None else datetime.now(timezone.utc).hour
-    return (7 <= h < 10) or (12 <= h < 15)
+    if kill_zone_hours is None:
+        kill_zone_hours = [[7, 10], [12, 15]]
+    return any(start <= h < end for start, end in kill_zone_hours)
 
 
 def _check_conflicting_signals(
     indicators: dict, weight_map: dict, conflict_threshold: int,
+    rsi_high: float = 55, rsi_low: float = 45,
 ) -> list[str]:
     """
     Check if scoring indicators are giving conflicting directional signals.
 
     conflict_threshold: minimum bullish AND bearish count to flag as conflict.
         Read from noise.conflict_signal_threshold in config.
+    rsi_high/low: RSI thresholds for directional signal. Read from scoring.rsi_signal_high/low.
 
     Returns list of conflict descriptions (empty if no conflicts).
     """
@@ -61,9 +66,9 @@ def _check_conflicting_signals(
             rsi = tf_inds.get("rsi", {})
             if isinstance(rsi, dict) and weight_map.get("rsi", 0) > 0:
                 rsi_val = rsi.get("value", 50)
-                if rsi_val > 55:
+                if rsi_val > rsi_high:
                     bullish_count += 1
-                elif rsi_val < 45:
+                elif rsi_val < rsi_low:
                     bearish_count += 1
 
             # MACD
@@ -202,14 +207,20 @@ class DetectNoise(Enzyme):
 
         noise_reasons = []
 
-        # 1. Kill zone check
+        # 1. Kill zone check (hours from config)
         utc_hour = datetime.now(timezone.utc).hour
-        if not _is_in_kill_zone(utc_hour):
+        kill_zone_hours = substrate.cfg("noise.kill_zone_hours")
+        if not _is_in_kill_zone(utc_hour, kill_zone_hours=kill_zone_hours):
             noise_reasons.append("Outside kill zone (low liquidity window)")
 
-        # 2. Conflicting signals (threshold from config)
+        # 2. Conflicting signals (thresholds from config)
         conflict_threshold = substrate.cfg("noise.conflict_signal_threshold")
-        conflicts = _check_conflicting_signals(indicators, weight_map, conflict_threshold)
+        rsi_high = substrate.cfg("scoring.rsi_signal_high")
+        rsi_low = substrate.cfg("scoring.rsi_signal_low")
+        conflicts = _check_conflicting_signals(
+            indicators, weight_map, conflict_threshold,
+            rsi_high=rsi_high, rsi_low=rsi_low,
+        )
         noise_reasons.extend(conflicts)
 
         # 3. Volume check (thresholds from config)
