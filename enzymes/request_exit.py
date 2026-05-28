@@ -211,13 +211,15 @@ class RequestExit(Enzyme):
             if not isinstance(tf_inds, dict) or not tf_inds.get("ok"):
                 continue
 
-            # RSI reversal
+            # RSI reversal (thresholds from config)
             rsi = tf_inds.get("rsi", {})
             if isinstance(rsi, dict) and weight_map.get("rsi", 0) > 0:
                 rsi_val = rsi.get("value", 50)
-                if direction == "long" and rsi_val < 30:
+                rsi_reversal_low = substrate.cfg("scoring.rsi_signal_low") or 30
+                rsi_reversal_high = substrate.cfg("scoring.rsi_signal_high") or 70
+                if direction == "long" and rsi_val < rsi_reversal_low:
                     reversed_count += 1
-                elif direction == "short" and rsi_val > 70:
+                elif direction == "short" and rsi_val > rsi_reversal_high:
                     reversed_count += 1
 
             # MACD reversal
