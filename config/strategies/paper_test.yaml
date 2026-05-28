@@ -102,6 +102,7 @@ portfolio:
   fallback_equity_usdt: 1000.0
   correlation_check: false
   max_same_direction: 1
+  atr_cap_equity_pct: 2.0        # ATR-based position cap: max % of equity allocated per trade based on volatility
 
 risk:
   kelly_min: 0.05
