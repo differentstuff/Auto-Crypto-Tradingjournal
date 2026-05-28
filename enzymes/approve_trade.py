@@ -5,6 +5,7 @@ Validates entry zones from substrate.analysis.entry_zones and decides
 whether to approve the trade. Enforces:
   - SL placement correctness (below entry for long, above for short)
   - Position size via Kelly criterion (config-driven)
+  - ATR-based volatility cap on position size
   - Max position count
   - Noise flag (ISC-005)
   - Directional concentration risk
@@ -16,6 +17,10 @@ Enzyme class: Regulator (priority 10)
 Activates when: analysis.entry_zones not empty AND trade_approved not yet set
 
 Port of: agent_risk_mgmt.py (Kelly sizing, SL validation, concentration checks)
+ATR cap: position size = min(kelly_size, atr_cap_size) where
+    atr_cap_size = (equity * atr_cap_equity_pct) / ATR_value
+This ensures volatile assets never risk more than a configurable
+percentage of equity per trade.
 """
 
 from __future__ import annotations
@@ -53,6 +58,27 @@ def _kelly_fraction(score: float, config: dict) -> float:
     return round(max(kelly_min, min(kelly_max, f)), 3)
 
 
+def _compute_atr_cap(equity: float, atr_value: float, config: dict) -> float:
+    """
+    ATR-based position size cap.
+
+    Returns the maximum notional position size based on asset volatility.
+    Formula: atr_cap_notional = (equity * atr_cap_equity_pct) / ATR_value
+
+    High ATR (volatile asset) → small cap.
+    Low ATR (calm asset) → large cap (likely won't bind).
+
+    Returns 0.0 if the cap cannot be computed (missing config or ATR),
+    which signals to _compute_size() that the cap should not be applied.
+    """
+    if not equity or not atr_value or atr_value <= 0:
+        return 0.0
+    atr_cap_equity_pct = config.get("portfolio", {}).get("atr_cap_equity_pct")
+    if atr_cap_equity_pct is None or atr_cap_equity_pct <= 0:
+        return 0.0
+    return (equity * atr_cap_equity_pct) / atr_value
+
+
 def _compute_size(
     equity: float,
     entry_price: float,
@@ -61,14 +87,23 @@ def _compute_size(
     kelly_fraction: float,
     leverage: int,
     config: dict,
+    atr_value: float = 0.0,
 ) -> dict:
     """
     Compute position size based on risk parameters.
 
-    Returns dict with: size_usdt, margin_usdt, risk_pct, stop_dist_pct
+    Applies ATR cap as an additional constraint:
+        position_size = min(kelly_size, atr_cap_size)
+
+    Returns dict with: size_usdt, margin_usdt, risk_pct, stop_dist_pct,
+                        atr_cap_applied, atr_cap_notional
     """
+    _empty = {
+        "size_usdt": 0, "margin_usdt": 0, "risk_pct": 0,
+        "stop_dist_pct": 0, "atr_cap_applied": False, "atr_cap_notional": 0.0,
+    }
     if not equity or not entry_price or not sl_price:
-        return {"size_usdt": 0, "margin_usdt": 0, "risk_pct": 0, "stop_dist_pct": 0}
+        return _empty
 
     risk_per_trade_pct = config.get("portfolio", {}).get("risk_per_trade_pct")
     max_size_pct = config.get("risk", {}).get("max_size_pct_of_equity")
@@ -77,7 +112,7 @@ def _compute_size(
     # Stop distance
     stop_dist_pct = abs(entry_price - sl_price) / entry_price
     if stop_dist_pct == 0:
-        return {"size_usdt": 0, "margin_usdt": 0, "risk_pct": 0, "stop_dist_pct": 0}
+        return _empty
 
     # Risk amount
     risk_amt = equity * risk_per_trade_pct / 100
@@ -93,6 +128,20 @@ def _compute_size(
     if notional > max_notional:
         notional = max_notional
 
+    # ATR cap: reduce position for volatile assets
+    atr_cap_applied = False
+    atr_cap_notional = 0.0
+    if atr_value > 0:
+        atr_cap_notional = _compute_atr_cap(equity, atr_value, config)
+        if atr_cap_notional > 0 and notional > atr_cap_notional:
+            _log.info(
+                "ATR cap applied: notional %.2f → %.2f (ATR=%.4f, cap_pct=%.1f%%)",
+                notional, atr_cap_notional, atr_value,
+                config.get("portfolio", {}).get("atr_cap_equity_pct", 0),
+            )
+            notional = atr_cap_notional
+            atr_cap_applied = True
+
     # Floor at min_size_pct of equity
     min_notional = equity * min_size_pct / 100
     if notional < min_notional:
@@ -105,6 +154,8 @@ def _compute_size(
         "margin_usdt": round(margin, 2),
         "risk_pct": round(risk_per_trade_pct, 2),
         "stop_dist_pct": round(stop_dist_pct * 100, 3),
+        "atr_cap_applied": atr_cap_applied,
+        "atr_cap_notional": round(atr_cap_notional, 2),
     }
 
 
@@ -122,7 +173,8 @@ class ApproveTrade(Enzyme):
       2. Max positions limit
       3. Noise flag (ISC-005)
       4. Kelly sizing within bounds
-      5. Directional concentration
+      5. ATR volatility cap on position size
+      6. Directional concentration
     """
 
     name = "ApproveTrade"
@@ -192,7 +244,7 @@ class ApproveTrade(Enzyme):
             # Kelly sizing
             kelly = _kelly_fraction(abs(score), substrate._config)
 
-            # Compute size
+            # Compute size (with ATR cap)
             sizing = _compute_size(
                 equity=equity,
                 entry_price=entry_price,
@@ -201,6 +253,7 @@ class ApproveTrade(Enzyme):
                 kelly_fraction=kelly,
                 leverage=leverage,
                 config=substrate._config,
+                atr_value=atr_value,
             )
 
             if sizing["size_usdt"] <= 0:
@@ -232,6 +285,8 @@ class ApproveTrade(Enzyme):
                 "kelly_fraction": kelly,
                 "approved_at": datetime.now(timezone.utc).isoformat(),
                 "atr_value": atr_value,
+                "atr_cap_applied": sizing["atr_cap_applied"],
+                "atr_cap_notional": sizing["atr_cap_notional"],
                 "score": score,
             }
 
@@ -242,10 +297,12 @@ class ApproveTrade(Enzyme):
 
         if best_approved:
             substrate.decisions["trade_approved"] = best_approved
+            atr_cap_msg = " [ATR cap]" if best_approved.get("atr_cap_applied") else ""
             self._log.info(
-                "Approved: %s %s size=%.2f kelly=%.3f",
+                "Approved: %s %s size=%.2f kelly=%.3f%s",
                 best_approved["direction"], best_approved["symbol"],
                 best_approved["size_usdt"], best_approved["kelly_fraction"],
+                atr_cap_msg,
             )
         else:
             substrate.decisions["trade_approved"] = None
