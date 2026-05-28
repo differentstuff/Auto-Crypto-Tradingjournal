@@ -1,0 +1,84 @@
+# WorkingBrief — substrate for session state
+# Path: /opt/KnowledgeBase/briefs/AutoTraderChallenger.yaml
+
+meta:
+  task_name:        "AutoTraderChallenger"
+  created:          "2026-05-28T10:15:00Z"
+  updated:          "2026-05-28T10:15:00Z"
+  status:           active
+  owner_agent:      "ProblemClarification"
+  brief_version:    1
+
+current_task:
+  goal:             "Implement paper-forward challenger module that validates weight adjustments before promoting them to production, with full traceability via trading journal log"
+  definition_of_done: "1) Weight Challenger module stores challenger_weights alongside current_weights in substrate. 2) Shadow Scorer computes confluence twice when challenger exists (same indicators, different weights). 3) Hypothetical Trade Tracker records what the challenger WOULD have done (entry, exit, confluence score, all signal states). 4) Comparator evaluates challenger after N trades (configurable: challenger_min_trades, default 15) using PROFIT FACTOR (gross wins / gross losses). 5) Challenger created automatically every time weight_adjuster computes new weights (Option A). 6) Promotion threshold configurable: challenger_min_improvement (default 5% better profit factor). 7) Every promotion/discard logged to challenger_log table with full traceability (timestamp, challenger_weights_json, current_weights_json, reason, outcome, production_pnl, challenger_pnl, promoted bool). 8) Telegram notification on promotion/discard. 9) Challenger runs in same daemon, same data, strictly separated actions — no interference with production loop. 10) Unit tests for all 5 sub-modules."
+  scope:            "New learning/ modules: challenger.py, hypothetical_tracker.py, comparator.py. New DB table: challenger_log. Enhancement to score_confluence.py for shadow scoring. Integration with existing weight_adjuster. Does NOT change production trading logic."
+  deadline:         ""
+
+constraints:
+  hard:
+    - "Challenger runs in same daemon process — same data, same loop — but strictly separated actions"
+    - "Challenger MUST NOT slow down or block the main daemon loop"
+    - "Challenger weights are NEVER used for production trades until promoted"
+    - "Profit factor (gross wins / gross losses) is the comparison metric — not raw P&L, not win rate"
+    - "Every promotion/discard MUST be logged with reason to challenger_log table"
+    - "Hypothetical trades close when production trades close (same market data, same timing)"
+    - "Only one challenger exists at a time — new weight_adjuster output replaces the old challenger"
+  soft:
+    - "challenger_min_trades: 15 (configurable) — minimum trades before evaluation"
+    - "challenger_min_improvement: 0.05 (5%) — challenger must be 5% better to promote"
+    - "Telegram notification on promotion/discard for transparency"
+    - "Consider logging challenger state to substrate for observability"
+
+context:
+  background:       "The auto-trader's learning loop (weight_adjuster) computes new weights based on trade outcomes, but these weights go directly into production. There's no validation step. The challenger module introduces paper-forward testing: new weights run hypothetically alongside production, and only get promoted if they demonstrably outperform."
+  key_facts:
+    - "5 sub-modules: Weight Challenger, Shadow Scorer, Hypothetical Trade Tracker, Comparator, Challenger Log"
+    - "Weight Challenger stores challenger_weights in substrate alongside current_weights"
+    - "Shadow Scorer is an enhancement to score_confluence.py — when challenger exists, compute confluence twice"
+    - "Hypothetical Trade Tracker records entries/exits that challenger WOULD have made"
+    - "Comparator runs after challenger_min_trades: compares profit factor of challenger vs production"
+    - "Challenger Log (DB table) provides full traceability — any weight change traceable to its source data"
+    - "Paper mode (strategy testing) and challenger (weight validation) share hypothetical trade tracking but serve different purposes"
+    - "Same daemon, same data, strictly separated — no separate process needed"
+  assumptions:
+    - "weight_adjuster already exists and produces new weights as a dict"
+    - "score_confluence.py can be enhanced to compute a second score with different weights without significant performance impact"
+    - "SQLite can handle the additional challenger_log table without performance issues"
+
+decisions:
+  - date: "2026-05-28"
+    decision: "Profit factor (gross wins / gross losses) as comparison metric"
+    rationale: "Risk-adjusted, not distorted by single large wins. More meaningful than win rate (which ignores magnitude) or raw P&L (which ignores risk taken)."
+    made_by: "user"
+  - date: "2026-05-28"
+    decision: "Challenger creation trigger: Option A — automatic, every time weight_adjuster computes new weights"
+    rationale: "Most natural trigger. Aligns with when you'd actually want to validate a change. No manual intervention needed."
+    made_by: "user"
+  - date: "2026-05-28"
+    decision: "Challenger runs in same daemon, same data, strictly separated actions"
+    rationale: "Same data source means fair comparison. Strict separation means no interference. No need for a separate process or daemon."
+    made_by: "user"
+  - date: "2026-05-28"
+    decision: "Modular design: paper mode enhancement and challenger module are separate but share hypothetical trade tracking"
+    rationale: "Paper mode tests strategies, challenger validates weights. Different purposes, shared infrastructure."
+    made_by: "user"
+  - date: "2026-05-28"
+    decision: "Every promotion/discard logged to challenger_log with full traceability"
+    rationale: "Transparent traceability — user can understand what happened, why, and when. Like a trading journal for weight changes."
+    made_by: "user"
+
+artifacts: []
+
+open_blockers: []
+
+resolved_tasks: []
+
+execution_packet:
+  next_action:      "Design challenger_log DB schema and substrate structure for challenger_weights, then implement learning/challenger.py"
+  inputs_required:  ["Existing substrate structure (core/substrate.py)", "Existing weight_adjuster module (learning/weight_adjuster.py)", "Existing score_confluence.py (enzymes/score_confluence.py)", "Existing DB schema (core/database.py)"]
+  output_expected:  "1) learning/challenger.py — Weight Challenger module. 2) learning/hypothetical_tracker.py — Hypothetical Trade Tracker. 3) learning/comparator.py — Comparator with profit factor evaluation. 4) challenger_log DB table in core/database.py. 5) Enhancement to enzymes/score_confluence.py for shadow scoring. 6) Config keys in default.yaml under challenger section. 7) Unit tests for all sub-modules."
+  validation:       "1) Challenger weights stored in substrate but never used for production. 2) Shadow scorer produces second confluence score when challenger exists. 3) Hypothetical tracker records entries/exits with full signal state. 4) Comparator promotes after min_trades with min_improvement. 5) Challenger log records every decision with reason. 6) Production loop performance unaffected."
+  model_hint:       "execution"
+
+stale_context: []

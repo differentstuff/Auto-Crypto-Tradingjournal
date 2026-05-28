@@ -1,0 +1,76 @@
+# WorkingBrief — substrate for session state
+# Path: /opt/KnowledgeBase/briefs/AutoTraderDynamicFilter.yaml
+
+meta:
+  task_name:        "AutoTraderDynamicFilter"
+  created:          "2026-05-28T10:15:00Z"
+  updated:          "2026-05-28T10:15:00Z"
+  status:           active
+  owner_agent:      "ProblemClarification"
+  brief_version:    1
+
+current_task:
+  goal:             "Implement dynamic symbol selection that fetches all USDT-M perps from exchange, filters by volume/OI/R² floor, ranks by momentum_quality, and returns top-N candidates merged with always_watch list"
+  definition_of_done: "1) Two modes supported: static (always_watch only) and combined (always_watch + dynamic top-N). 2) Dynamic mode fetches all USDT-M perpetual pairs from Bitget API. 3) Filters applied in order: never_trade exclusion (last), min_volume_24h_usd, min_open_interest_usd, min_r_squared. 4) Remaining symbols ranked by momentum_quality, top-N selected. 5) always_watch symbols ALWAYS included regardless of ranking (override). 6) never_trade symbols ALWAYS excluded even if top-1 (subtracted last). 7) refresh_interval controls how often the exchange universe is re-fetched and re-ranked. 8) Config keys in default.yaml under symbols section. 9) Unit tests for both modes."
+  scope:            "New module for dynamic symbol selection. Depends on momentum_quality indicator (separate brief). Does NOT change existing static symbol list logic — adds dynamic capability alongside it."
+  deadline:         ""
+
+constraints:
+  hard:
+    - "Two modes only: static and combined. No 'dynamic-only' mode — always_watch always overrides inclusion"
+    - "never_trade is subtracted LAST — even if a symbol is top-1 in ranking, if it's in never_trade, it's excluded"
+    - "If always_watch is empty or omitted, skip it (no forced symbols)"
+    - "universe_source: 'exchange' fetches all USDT-M perps from Bitget API (one call, cached for refresh_interval)"
+    - "Dynamic ranking depends on momentum_quality indicator being available"
+    - "Same daemon loop — dynamic filter runs as an enzyme, not a separate process"
+  soft:
+    - "Cache exchange universe list for refresh_interval duration to avoid API spam"
+    - "Log which symbols pass/fail each filter stage for observability"
+    - "Consider universe_source: 'watchlist' as future option (predefined list instead of exchange fetch)"
+
+context:
+  background:       "The auto-trader currently uses a hardcoded symbol list in config. Dynamic ranking allows the system to discover trending symbols automatically, trading only the strongest momentum candidates while always keeping core symbols (BTC, ETH) under observation."
+  key_facts:
+    - "Symbol selection pipeline: fetch universe → apply volume/OI filters → compute momentum_quality → apply R² floor → rank → take top-N → merge with always_watch → subtract never_trade"
+    - "Filter order matters: never_trade is applied LAST so it always wins"
+    - "always_watch symbols are always analyzed regardless of their momentum_quality score"
+    - "Bitget API endpoint for all USDT-M perps: /api/v2/mix/market/contracts (or equivalent)"
+    - "refresh_interval default: 4h — re-ranking every 4 hours is frequent enough without being excessive"
+  assumptions:
+    - "Bitget API provides 24h volume and open interest in the instruments endpoint"
+    - "The daemon can make one additional API call per refresh_interval for the universe list"
+    - "momentum_quality indicator is implemented and available before this module"
+
+decisions:
+  - date: "2026-05-28"
+    decision: "Two modes only: static and combined. No 'dynamic-only' mode"
+    rationale: "always_watch always overrides inclusion — there's no case where you'd want to exclude BTC/ETH from analysis. If always_watch is empty, combined mode degenerates to pure dynamic. 'static' is the current behavior."
+    made_by: "user"
+  - date: "2026-05-28"
+    decision: "never_trade subtracted LAST in pipeline"
+    rationale: "Even if a symbol is top-1 by momentum_quality, if it's in never_trade, it must be excluded. This is a hard override."
+    made_by: "user"
+  - date: "2026-05-28"
+    decision: "universe_source: exchange fetches all USDT-M perps from Bitget"
+    rationale: "No hardcoded universe list needed for dynamic mode. The exchange provides the full universe. Only the exclude list (never_trade) is hardcoded."
+    made_by: "user"
+  - date: "2026-05-28"
+    decision: "Timeframe abbreviations: 5m, 15m, 1h, 4h, 1d (lowercase m = minutes, never month)"
+    rationale: "Matches Bitget/Binance/Bybit API conventions. No ambiguity. Monthly cycles would be a different repo."
+    made_by: "user"
+
+artifacts: []
+
+open_blockers:
+  - "Depends on momentum_quality indicator being implemented first (AutoTraderMomentumQuality brief)"
+
+resolved_tasks: []
+
+execution_packet:
+  next_action:      "Implement dynamic_filter.py as a new enzyme that fetches exchange universe, filters, ranks, and returns symbol list for the daemon loop"
+  inputs_required:  ["momentum_quality indicator (from AutoTraderMomentumQuality brief)", "Bitget API documentation for instruments endpoint", "Existing enzyme structure (enzymes/ directory)"]
+  output_expected:  "1) enzymes/dynamic_filter.py with DynamicFilterEnzyme class. 2) Config section in default.yaml: symbols.mode, symbols.always_watch, symbols.never_trade, symbols.dynamic_filter.*. 3) Integration with daemon loop (daemon selects symbols from substrate after dynamic_filter runs). 4) Unit tests for static and combined modes."
+  validation:       "1) static mode returns only always_watch symbols. 2) combined mode returns always_watch + top-N from exchange, deduped. 3) never_trade symbols never appear in output. 4) Exchange fetch is cached for refresh_interval. 5) If momentum_quality is None for a symbol, it's filtered out."
+  model_hint:       "execution"
+
+stale_context: []
