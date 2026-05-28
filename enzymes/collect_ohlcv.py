@@ -199,12 +199,12 @@ class CollectOHLCV(Enzyme):
 
         # Determine which indicators to compute:
         # - weight > 0: scoring indicators (rsi, macd, ema_stack, adx)
-        # - weight == 0 but needed: infrastructure (atr, sr_levels)
+        # - weight == 0 but needed: infrastructure (atr, sr_levels, momentum_quality)
         compute_configs = []
         for ind_cfg in indicator_configs:
             name = ind_cfg.get("name", "")
             weight = ind_cfg.get("weight", 0)
-            if weight > 0 or name in ("atr", "sr_levels"):
+            if weight > 0 or name in ("atr", "sr_levels", "momentum_quality"):
                 compute_configs.append(ind_cfg)
 
         # Exchange instance should be injected from main.py.
