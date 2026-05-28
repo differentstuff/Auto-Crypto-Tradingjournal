@@ -93,7 +93,7 @@ exit_rules:
     always_active: true          # hard stop is always active
   trailing_stop:
     enabled: true                # enable trailing stop
-    activation_pct: 0.5          # profit % before trailing stop activates
+    activation_profit_pct: 0.5   # profit % before trailing stop activates
     trail_atr_multiplier: 1.0   # ATR multiplier for trailing distance
     breakeven_at_activation: true # move SL to entry when trailing activates
     distance_pct: 1.0            # trailing distance as % of price
