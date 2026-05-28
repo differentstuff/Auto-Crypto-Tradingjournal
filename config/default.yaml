@@ -80,6 +80,7 @@ exit_rules:
     breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
+  tp2_rr_ratio: 2.5  # TP2 risk-reward multiplier (was hardcoded)
   soft_exit:
     requires_indicators_reversed: 2
     requires_confirmation_tf: true
@@ -100,6 +101,8 @@ scoring:
     volume: 0.15
     cvd: 0.1
     order_flow: 0.1
+    volume_high_ratio: 1.5   # Volume above this confirms direction
+    volume_low_ratio: 0.7    # Volume below this weakens direction
   label_thresholds:
     strong: 0.60
     weak: 0.33
@@ -206,6 +209,9 @@ noise:
   adx_overextended: 40
   noise_severity_min_reasons: 2
   kill_zone_blocks: false
+  kill_zone_hours:  # UTC hours for institutional kill zones (configurable)
+    - [7, 10]    # London session
+    - [12, 15]   # NY AM session
 
 # System-level sync defaults
 sync:
