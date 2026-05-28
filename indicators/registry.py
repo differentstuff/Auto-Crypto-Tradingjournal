@@ -146,6 +146,19 @@ def _fibonacci_fn(df: pd.DataFrame, **params) -> dict | None:
     return detect_fibonacci(df, n_swing=params.get("n_swing", 10))
 
 
+def _momentum_quality_fn(df: pd.DataFrame, **params) -> dict | None:
+    from indicators.momentum_quality import compute_momentum_quality
+    return compute_momentum_quality(
+        df,
+        ranking_window=params.get("ranking_window", 90),
+        min_r_squared=params.get("min_r_squared", 0.15),
+        lookback_short=params.get("lookback_short", 30),
+        lookback_long=params.get("lookback_long", 90),
+        r_squared_high=params.get("r_squared_high", 0.5),
+        r_squared_low=params.get("r_squared_low", 0.3),
+    )
+
+
 # ── Registry: name -> function ──────────────────────────────────────────────
 
 _REGISTRY: dict[str, IndicatorFn] = {
@@ -164,6 +177,7 @@ _REGISTRY: dict[str, IndicatorFn] = {
     "sr_levels": _sr_levels_fn,
     "trendlines": _trendlines_fn,
     "fibonacci": _fibonacci_fn,
+    "momentum_quality": _momentum_quality_fn,
 }
 
 
