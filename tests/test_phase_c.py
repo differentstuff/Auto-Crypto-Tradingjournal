@@ -70,6 +70,7 @@ def _make_config(overrides: dict | None = None) -> dict:
             "fallback_equity_usdt": 1000.0,     # used in paper mode
             "correlation_check": True,
             "max_same_direction": 3,            # directional concentration limit
+            "atr_cap_equity_pct": 2.0,          # ATR-based position cap
         },
         "scoring": {
             "entry_threshold": 6.5,
@@ -94,9 +95,19 @@ def _make_config(overrides: dict | None = None) -> dict:
                 "activation_profit_pct": 1.5,          # % profit before trailing activates
                 "trail_atr_multiplier": 1.0,    # trail distance = ATR * this
                 "breakeven_at_activation": True,# move SL to entry when trailing starts
+                "distance_pct": 1.0,
+                "move_to_breakeven_at_pct": 1.5,
             },
             "max_hold_hours": 72,               # exit if held longer than this
             "tp_exit_pct": 100.0,               # close 100% at TP (vs partial)
+            "soft_exit": {
+                "requires_indicators_reversed": 2,
+                "requires_confirmation_tf": True,
+                "urgency": "soft",
+            },
+            "soft_reversal_profit_threshold": 0.5,
+            "near_sl_urgency_pct": 0.5,
+            "tp2_rr_ratio": 2.5,
         },
         "noise": {
             "conflict_signal_threshold": 2,
@@ -149,6 +160,73 @@ def _make_config(overrides: dict | None = None) -> dict:
             {"name": "adx", "params": {"period": 14}, "weight": 0.10},
             {"name": "wavetrend", "params": {}, "weight": 0.15},
             {"name": "volume", "params": {}, "weight": 0.10},
+        ],
+        # ISC definitions — required by Substrate (no hardcoded fallback).
+        # Must match config/default.yaml validity section.
+        "validity": [
+            {
+                "id": "ISC-001",
+                "criterion": "entry_threshold met before any trade opens",
+                "verification": "analysis.candidates not empty AND score >= threshold",
+                "field": "analysis.candidates",
+                "operator": "any_score_gte",
+                "value_ref": "scoring.entry_threshold",
+                "field_key": "score",
+            },
+            {
+                "id": "ISC-002",
+                "criterion": "stop loss always set before position opens",
+                "verification": "decisions.trade_approved.sl_price > 0",
+                "field": "decisions.trade_approved",
+                "operator": "sl_set_or_no_trade",
+                "value_ref": "",
+                "field_key": "sl_price",
+            },
+            {
+                "id": "ISC-003",
+                "criterion": "position size within risk limit",
+                "verification": "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100",
+                "field": "decisions.trade_approved",
+                "operator": "size_within_risk",
+                "value_ref": "",
+                "field_key": "size_usdt",
+            },
+            {
+                "id": "ISC-004",
+                "criterion": "max concurrent positions not exceeded",
+                "verification": "portfolio.open_positions count < strategy.max_positions",
+                "field": "portfolio.open_positions",
+                "operator": "count_lt",
+                "value_ref": "strategy.max_positions",
+                "field_key": "",
+            },
+            {
+                "id": "ISC-005",
+                "criterion": "no trade when noise_flag is true",
+                "verification": "analysis.noise_flag == false OR decisions.action == 'wait'",
+                "field": "analysis.noise_flag",
+                "operator": "false_or_action_wait",
+                "value_ref": "decisions.action",
+                "field_key": "",
+            },
+            {
+                "id": "ISC-006",
+                "criterion": "confluence minimum signals aligned",
+                "verification": "best_candidate.indicators_aligned >= strategy.confluence_min_signals",
+                "field": "analysis.candidates",
+                "operator": "best_field_gte",
+                "value_ref": "scoring.confluence_min_signals",
+                "field_key": "indicators_aligned",
+            },
+            {
+                "id": "ISC-007",
+                "criterion": "pre_trade trajectory not sudden coincidence",
+                "verification": "pre_trade_context.coincidence_risk != 'high'",
+                "field": "market.pre_trade_context",
+                "operator": "none_field_eq",
+                "value_ref": "high",
+                "field_key": "coincidence_risk",
+            },
         ],
     }
     if overrides:
@@ -437,9 +515,10 @@ class TestApproveTrade:
 
         assert result.decisions.get("trade_approved") is None
 
-    def test_blocks_when_max_positions_reached(self):
-        """Blocks new trade when portfolio already at max_positions."""
-        enzyme = self._get_enzyme()
+    def test_isc_blocks_when_max_positions_reached(self):
+        """ISC-004: isc_blocks_trade() returns True when max_positions reached.
+        The daemon's ISC gate prevents ApproveTrade from firing — the enzyme
+        no longer duplicates this check."""
         sub = _make_substrate({"strategy": {"max_positions": 2}})
         sub.portfolio["equity"] = 10000.0
         sub.portfolio["open_positions"] = [
@@ -449,22 +528,28 @@ class TestApproveTrade:
         sub.analysis["entry_zones"] = {"SOLUSDT": _make_entry_zone("SOLUSDT")}
         sub.analysis["noise_flag"] = False
 
-        result = enzyme.transform(sub)
+        sub.verify_iscs()
+        assert sub.isc_blocks_trade() is True
+        assert "ISC-004" in sub.failed_isc_ids()
 
-        assert result.decisions.get("trade_approved") is None
-
-    def test_blocks_when_noise_flag_true(self):
-        """Blocks trade when noise_flag is True (ISC-005)."""
-        enzyme = self._get_enzyme()
+    def test_isc_blocks_when_noise_flag_true(self):
+        """ISC-005: isc_blocks_trade() returns True when noise_flag is True
+        AND the system is trying to trade (action != 'wait').
+        When action='wait', ISC-005 passes vacuously (no trade to block).
+        The daemon's ISC gate prevents ApproveTrade from firing — the enzyme
+        no longer duplicates this check."""
         sub = _make_substrate()
         sub.portfolio["equity"] = 10000.0
         sub.portfolio["open_positions"] = []
         sub.analysis["entry_zones"] = {"BTCUSDT": _make_entry_zone()}
         sub.analysis["noise_flag"] = True
+        # ISC-005: noise_flag=True AND action!='wait' → fails
+        # With action='wait', ISC-005 passes (no trade attempt to block)
+        sub.decisions["action"] = "enter"
 
-        result = enzyme.transform(sub)
-
-        assert result.decisions.get("trade_approved") is None
+        sub.verify_iscs()
+        assert sub.isc_blocks_trade() is True
+        assert "ISC-005" in sub.failed_isc_ids()
 
     def test_kelly_fraction_capped_min(self):
         """Kelly fraction is never below kelly_min (config-driven floor)."""
@@ -642,7 +727,7 @@ class TestApproveExit:
         pos["trailing_sl"] = None
         pos["peak_price"] = 50250.0
 
-        result = _update_trailing_stop(pos, sub.config)
+        result = _update_trailing_stop(pos, sub)
         assert result["trailing_active"] is False
 
     def test_trailing_stop_activates_above_threshold(self):
@@ -654,7 +739,7 @@ class TestApproveExit:
         pos["trailing_sl"] = None
         pos["peak_price"] = 51000.0
 
-        result = _update_trailing_stop(pos, sub.config)
+        result = _update_trailing_stop(pos, sub)
         assert result["trailing_active"] is True
         # When breakeven_at_activation=True, trailing_sl should be >= entry_price
         assert result["trailing_sl"] is not None
@@ -676,7 +761,7 @@ class TestApproveExit:
         pos["trailing_sl"] = 50000.0  # at breakeven
         pos["peak_price"] = 51000.0   # previous peak
 
-        result = _update_trailing_stop(pos, sub.config)
+        result = _update_trailing_stop(pos, sub)
         # peak_price should have moved up to 51500
         assert result["peak_price"] >= 51500.0
 
@@ -1392,17 +1477,19 @@ class TestPhaseC_Integration:
         assert sub.decisions["action"] == "trade_closed"
 
     def test_isc_blocks_trade_when_noise_flag_true(self, temp_db):
-        """ISC-005: ApproveTrade is blocked when noise_flag is True."""
+        """ISC-005: the ISC gate blocks trade enzymes when noise_flag is True.
+        ApproveTrade no longer checks noise_flag directly — the daemon's ISC
+        gate excludes it from the activatable set. Verify the ISC gate works."""
         sub, enzyme_list = self._build_pipeline()
         sub.analysis["entry_zones"] = {"BTCUSDT": _make_entry_zone()}
-        sub.analysis["noise_flag"] = True  # ISC-005 must block this
+        sub.analysis["noise_flag"] = True
+        # Set action to non-wait to make ISC-005 fail
+        sub.decisions["action"] = "enter"
 
-        approve = next(e for e in enzyme_list if e.name == "ApproveTrade")
-        if approve.can_activate(sub):
-            sub = approve.transform(sub)
-
-        assert sub.decisions.get("trade_approved") is None
-        assert len(sub.portfolio["open_positions"]) == 0
+        # Verify the ISC gate would block trade enzymes
+        sub.verify_iscs()
+        assert sub.isc_blocks_trade() is True
+        assert "ISC-005" in sub.failed_isc_ids()
 
     def test_isc_blocks_trade_when_max_positions_reached(self, temp_db):
         """ISC-004: ApproveTrade is blocked when max_positions is reached."""
