@@ -28,16 +28,19 @@ def _compute_sl_tp(
     atr_value: float,
     atr_pct: float,
     sr_levels: list[dict],
-    rr_minimum: float = 2.0,
-    atr_sl_multiplier: float = 1.5,
-    tp2_rr_ratio: float = 2.5,
+    rr_minimum: float,
+    atr_sl_multiplier: float,
+    tp2_rr_ratio: float,
 ) -> dict:
     """
     Compute stop-loss and take-profit levels.
 
+    All parameters are required — they must come from substrate.cfg().
+    No hardcoded defaults. Config is the single source of truth.
+
     SL: max of (ATR-based) and (nearest S/R level), ensuring minimum distance.
     TP1: conservative target at rr_minimum R:R.
-    TP2: full target at tp2_rr_ratio R:R (default 2.5, from exit_rules.tp2_rr_ratio).
+    TP2: full target at tp2_rr_ratio R:R.
 
     Returns {sl_price, tp1, tp2, rr_ratio, sl_atr_multiple, sl_type}
     """
