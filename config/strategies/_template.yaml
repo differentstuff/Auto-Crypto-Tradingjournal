@@ -95,6 +95,29 @@ scoring:
     review_range_pct:
       - 55
       - 60                       # accuracy in this range → review signal
+  # Scoring formula constants — internal normalization factors.
+  # These define how raw indicator values map to contribution scores.
+  # Final contribution = indicator_weight × formula_factor.
+  # Do NOT change these casually — they define the scoring model's shape.
+  # They are here for transparency, not for frequent tuning.
+  formula:
+    rsi_midpoint: 50              # RSI midpoint for neutral zone
+    rsi_scale: 30.0               # RSI scaling divisor: (rsi - midpoint) / scale
+    macd_aligned_growing: 1.0     # MACD contribution when aligned and histogram growing
+    macd_aligned_fading: 0.5     # MACD contribution when aligned but histogram fading
+    ema_full_alignment: 1.0       # EMA contribution when fully aligned
+    ema_partial_alignment: 0.5   # EMA contribution when partially aligned
+    adx_scale: 50.0              # ADX scaling divisor: adx_value / scale
+    wavetrend_gold_signal: 1.0    # WaveTrend gold_buy signal contribution
+    wavetrend_signal: 0.85       # WaveTrend regular buy/sell signal contribution
+    wavetrend_wt1_scale: 60.0    # WaveTrend WT1 scaling divisor: wt1 / scale
+    wavetrend_no_signal_cap: 0.5  # WaveTrend cap when no fresh crossover
+    volume_confirm: 0.5          # Volume contribution when confirming direction
+    volume_weaken: -0.25         # Volume contribution when weakening direction
+    cvd_trend: 0.4               # CVD contribution for rising/falling trend
+    order_flow_pressure: 0.15    # Order flow contribution for buying/selling pressure
+    mfi_threshold: 10            # MFI threshold for significant deviation
+    mfi_contribution: 0.3       # MFI contribution per deviation above threshold
 
 exit_rules:
   hard_stop:
@@ -137,6 +160,11 @@ learning:
     - 45.0
     - 55.0                        # accuracy in this range → signal is suppressed
   contrarian_threshold: 30.0      # accuracy at or below this → signal is contrarian
+  # Weight adjustment multipliers (applied by weight_adjuster.py)
+  # "valid" verdict → weight × boost, "review" verdict → weight × reduce
+  # These are single-pass factors, not compounded with indicator weights.
+  adjustment_boost: 1.2          # +20% for signals with ≥75% accuracy
+  adjustment_review_reduce: 0.9    # -10% for borderline signals (30-45% accuracy)
 
 # Risk parameters (position sizing)
 risk:
@@ -169,6 +197,70 @@ noise:
 
 telegram:
   idle_notify_every: 10          # notify every N idle cycles when telegram_logs is enabled
+
+# Macro context thresholds (used by CollectMacroContext)
+macro:
+  vix_risk_off: 30              # VIX above this → risk-off regime
+  vix_neutral: 20               # VIX above this (but below risk_off) → neutral regime
+  yfinance_period: "2d"         # yfinance download period for VIX/DXY
+  yfinance_interval: "1h"       # yfinance download interval for VIX/DXY
+
+# Data fetch defaults
+exchange:
+  ohlcv_limit: 200               # Number of candles to fetch per OHLCV call
+
+# ISC (hard-to-vary conditions) — config-driven, no hardcoded IDs
+# Each condition is fully defined here. substrate.py reads these at init.
+validity:
+  - id: ISC-001
+    criterion: "entry_threshold met before any trade opens"
+    verification: "analysis.candidates not empty AND score >= threshold"
+    field: "analysis.candidates"
+    operator: "any_score_gte"
+    value_ref: "scoring.entry_threshold"
+    field_key: "score"
+  - id: ISC-002
+    criterion: "stop loss always set before position opens"
+    verification: "decisions.trade_approved.sl_price > 0"
+    field: "decisions.trade_approved"
+    operator: "sl_set_or_no_trade"
+    value_ref: ""
+    field_key: "sl_price"
+  - id: ISC-003
+    criterion: "position size within risk limit"
+    verification: "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100"
+    field: "decisions.trade_approved"
+    operator: "size_within_risk"
+    value_ref: ""
+    field_key: "size_usdt"
+  - id: ISC-004
+    criterion: "max concurrent positions not exceeded"
+    verification: "portfolio.open_positions count < strategy.max_positions"
+    field: "portfolio.open_positions"
+    operator: "count_lt"
+    value_ref: "strategy.max_positions"
+    field_key: ""
+  - id: ISC-005
+    criterion: "no trade when noise_flag is true"
+    verification: "analysis.noise_flag == false OR decisions.action == 'wait'"
+    field: "analysis.noise_flag"
+    operator: "false_or_action_wait"
+    value_ref: "decisions.action"
+    field_key: ""
+  - id: ISC-006
+    criterion: "confluence minimum signals aligned"
+    verification: "candidate.indicators_aligned >= strategy.confluence_min_signals"
+    field: "analysis.candidates"
+    operator: "all_field_gte"
+    value_ref: "scoring.confluence_min_signals"
+    field_key: "indicators_aligned"
+  - id: ISC-007
+    criterion: "pre_trade trajectory not sudden coincidence"
+    verification: "pre_trade_context.coincidence_risk != 'high'"
+    field: "market.pre_trade_context"
+    operator: "none_field_eq"
+    value_ref: "high"
+    field_key: "coincidence_risk"
 
 modules:
   macro_context: false           # enable macro context data collection
