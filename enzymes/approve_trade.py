@@ -6,10 +6,11 @@ whether to approve the trade. Enforces:
   - SL placement correctness (below entry for long, above for short)
   - Position size via Kelly criterion (config-driven)
   - ATR-based volatility cap on position size
-  - Max position count
-  - Noise flag (ISC-005)
   - Directional concentration risk
   - Size caps (min/max % of equity)
+
+ISC enforcement (max positions, noise flag) is handled by the daemon's
+ISC gate — this enzyme never fires when ISCs block trades.
 
 Writes: decisions.trade_approved (dict or None), decisions.action
 
@@ -178,11 +179,12 @@ class ApproveTrade(Enzyme):
 
     Checks (all config-driven):
       1. SL placement (below entry for long, above for short)
-      2. Max positions limit
-      3. Noise flag (ISC-005)
-      4. Kelly sizing within bounds
-      5. ATR volatility cap on position size
-      6. Directional concentration
+      2. Kelly sizing within bounds
+      3. ATR volatility cap on position size
+      4. Directional concentration
+
+    ISC enforcement (max positions, noise flag) is handled by the
+    daemon's ISC gate — this enzyme never fires when ISCs block trades.
     """
 
     name = "ApproveTrade"
@@ -202,31 +204,19 @@ class ApproveTrade(Enzyme):
         return bool(entry_zones) and trade_approved is None
 
     def transform(self, substrate: Substrate) -> Substrate:
-        """Evaluate entry zones and approve or block trades."""
+        """Evaluate entry zones and approve or block trades.
+
+        Note: ISC enforcement (max positions, noise flag) is handled by the
+        daemon's ISC gate — this enzyme never fires when ISCs block trades.
+        This enzyme focuses on risk sizing and SL validation only.
+        """
         entry_zones = substrate.analysis.get("entry_zones", {})
         if not entry_zones:
             return substrate
 
         equity = substrate.portfolio.get("equity", 0)
         open_positions = substrate.portfolio.get("open_positions", [])
-        noise_flag = substrate.analysis.get("noise_flag", False)
-        max_positions = substrate.cfg("strategy.max_positions")
         leverage = substrate.cfg("portfolio.leverage")
-
-        # ISC: max positions
-        if len(open_positions) >= max_positions:
-            self._log.info(
-                "Blocked: max positions reached (%d/%d)",
-                len(open_positions), max_positions,
-            )
-            substrate.decisions["trade_approved"] = None
-            return substrate
-
-        # ISC: noise flag
-        if noise_flag:
-            self._log.info("Blocked: noise flag is set")
-            substrate.decisions["trade_approved"] = None
-            return substrate
 
         # Evaluate each entry zone (take the best one)
         best_approved = None
