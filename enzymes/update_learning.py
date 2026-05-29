@@ -137,6 +137,8 @@ class UpdateLearning(Enzyme):
                 strategy_name,
                 strategy_uid=strategy_uid,
                 min_trades=min_trades_before_adj,
+                adjustment_boost=substrate.cfg("learning.adjustment_boost"),
+                adjustment_review_reduce=substrate.cfg("learning.adjustment_review_reduce"),
             )
 
             if adjusted and adjusted != weight_map:

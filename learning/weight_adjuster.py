@@ -39,12 +39,18 @@ def compute_adjusted_weights(
     strategy_name: str,
     strategy_uid: str = "legacy",
     min_trades: int = None,
+    adjustment_boost: float = None,
+    adjustment_review_reduce: float = None,
 ) -> Dict[str, float]:
     """
     Compute adjusted indicator weights based on signal accuracy verdicts.
 
-    min_trades is required — it comes from the strategy config.
-    No hardcoded default; the caller must supply a value read from substrate.cfg().
+    All parameters are required — they must come from substrate.cfg().
+    No hardcoded defaults. Config is the single source of truth.
+
+    min_trades: from learning.min_trades_before_adjusting
+    adjustment_boost: from learning.adjustment_boost (e.g. 1.2 = +20%)
+    adjustment_review_reduce: from learning.adjustment_review_reduce (e.g. 0.9 = -10%)
 
     Contrarian signals get NEGATIVE weights. This is the key insight:
     a signal with ≤30% accuracy fires "bullish" but the market moves bearish.
@@ -67,6 +73,16 @@ def compute_adjusted_weights(
         raise TypeError(
             "Required parameter 'min_trades' not provided to compute_adjusted_weights. "
             "It must come from config (learning.min_trades_before_adjusting)."
+        )
+    if adjustment_boost is None:
+        raise TypeError(
+            "Required parameter 'adjustment_boost' not provided to compute_adjusted_weights. "
+            "It must come from config (learning.adjustment_boost)."
+        )
+    if adjustment_review_reduce is None:
+        raise TypeError(
+            "Required parameter 'adjustment_review_reduce' not provided to compute_adjusted_weights. "
+            "It must come from config (learning.adjustment_review_reduce)."
         )
 
     from core.database import db_conn
@@ -128,12 +144,12 @@ def compute_adjusted_weights(
         accuracy = info["accuracy"]
 
         if verdict == "valid":
-            # Boost by 20%
-            new_weight = weight * 1.2
+            # Boost by adjustment_boost (e.g. 1.2 = +20%)
+            new_weight = weight * adjustment_boost
             adjusted[indicator] = new_weight
             changes[indicator] = {
                 "old": weight, "new": new_weight,
-                "justification": f"accuracy {accuracy:.0f}% (valid), highlight boost +20%",
+                "justification": f"accuracy {accuracy:.0f}% (valid), highlight boost +{int((adjustment_boost - 1) * 100)}%",
             }
 
         elif verdict == "monitor":
@@ -161,14 +177,12 @@ def compute_adjusted_weights(
             }
 
         elif verdict == "review":
-            # Reduce by 10% (before re-normalization; after re-normalization
-            # the final value may differ slightly from 0.9 * original because
-            # all positive weights are scaled to preserve their sum at 1.0)
-            new_weight = weight * 0.9
+            # Reduce by adjustment_review_reduce (e.g. 0.9 = -10%)
+            new_weight = weight * adjustment_review_reduce
             adjusted[indicator] = new_weight
             changes[indicator] = {
                 "old": weight, "new": new_weight,
-                "justification": f"accuracy {accuracy:.0f}% (review), borderline → reduce -10%",
+                "justification": f"accuracy {accuracy:.0f}% (review), borderline → reduce -{int((1 - adjustment_review_reduce) * 100)}%",
             }
 
         else:
