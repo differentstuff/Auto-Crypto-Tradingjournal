@@ -215,8 +215,8 @@ class RequestExit(Enzyme):
             rsi = tf_inds.get("rsi", {})
             if isinstance(rsi, dict) and weight_map.get("rsi", 0) > 0:
                 rsi_val = rsi.get("value", 50)
-                rsi_reversal_low = substrate.cfg("scoring.rsi_signal_low") or 30
-                rsi_reversal_high = substrate.cfg("scoring.rsi_signal_high") or 70
+                rsi_reversal_low = substrate.cfg("scoring.rsi_signal_low")
+                rsi_reversal_high = substrate.cfg("scoring.rsi_signal_high")
                 if direction == "long" and rsi_val < rsi_reversal_low:
                     reversed_count += 1
                 elif direction == "short" and rsi_val > rsi_reversal_high:

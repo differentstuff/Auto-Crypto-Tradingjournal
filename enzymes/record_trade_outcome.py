@@ -47,9 +47,10 @@ def _now_iso() -> str:
 # that the learning engine's accuracy tracking is consistent with the
 # scoring that actually triggered the trade.
 
-def _extract_rsi_signal(rsi: dict, rsi_high: float = 55, rsi_low: float = 45) -> dict:
+def _extract_rsi_signal(rsi: dict, rsi_high: float, rsi_low: float) -> dict:
     """RSI directional signal: overbought → bearish, oversold → bullish.
-    Thresholds read from scoring.rsi_signal_high/low in config."""
+    Thresholds read from scoring.rsi_signal_high/low in config.
+    All parameters are required — they must come from substrate.cfg()."""
     value = rsi.get("value", 50)
     level = rsi.get("level", "neutral")
     if value > rsi_high:

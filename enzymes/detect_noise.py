@@ -42,7 +42,7 @@ def _is_in_kill_zone(utc_hour: int = None, kill_zone_hours: list | None = None) 
 
 def _check_conflicting_signals(
     indicators: dict, weight_map: dict, conflict_threshold: int,
-    rsi_high: float = 55, rsi_low: float = 45,
+    rsi_high: float, rsi_low: float,
 ) -> list[str]:
     """
     Check if scoring indicators are giving conflicting directional signals.
@@ -50,8 +50,7 @@ def _check_conflicting_signals(
     conflict_threshold: minimum bullish AND bearish count to flag as conflict.
         Read from noise.conflict_signal_threshold in config.
     rsi_high/low: RSI thresholds for directional signal. Read from scoring.rsi_signal_high/low.
-
-    Returns list of conflict descriptions (empty if no conflicts).
+    All parameters are required — they must come from substrate.cfg().
     """
     conflicts = []
     bullish_count = 0
