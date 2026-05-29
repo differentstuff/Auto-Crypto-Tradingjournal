@@ -75,6 +75,7 @@ class RequestExit(Enzyme):
 
         # Use current indicator data if available
         indicators = substrate.market.get("indicators", {})
+        soft_exit_requires = substrate.cfg("exit_rules.soft_exit.requires_indicators_reversed")
 
         for pos in positions:
             symbol = pos.get("symbol", "")
@@ -173,7 +174,7 @@ class RequestExit(Enzyme):
                 reversed_signals = self._check_signal_reversal(
                     pos, sym_indicators, substrate
                 )
-                if reversed_signals >= 2:
+                if reversed_signals >= soft_exit_requires:
                     substrate.decisions["exit_request"] = {
                         "symbol": symbol,
                         "reason": "signal_reversal",
@@ -211,7 +212,7 @@ class RequestExit(Enzyme):
             if not isinstance(tf_inds, dict) or not tf_inds.get("ok"):
                 continue
 
-            # RSI reversal (thresholds from config)
+            # RSI reversal
             rsi = tf_inds.get("rsi", {})
             if isinstance(rsi, dict) and weight_map.get("rsi", 0) > 0:
                 rsi_val = rsi.get("value", 50)
@@ -256,6 +257,7 @@ class RequestExit(Enzyme):
 
         # Pre-scan positions for urgency signals
         positions = substrate.portfolio.get("open_positions", [])
+        near_sl_threshold = substrate.cfg("exit_rules.near_sl_urgency_pct", 0.5)
         for pos in positions:
             mark_price = pos.get("mark_price", 0)
             sl_price = pos.get("sl_price", 0)
@@ -277,13 +279,13 @@ class RequestExit(Enzyme):
                 if direction == "short" and mark_price >= trailing_sl:
                     return 5.0
 
-            # Near SL (within 0.5%) — high urgency
+            # Near SL (within threshold) — high urgency
             if sl_price and mark_price:
                 if direction == "long":
                     dist_pct = (mark_price - sl_price) / mark_price * 100
                 else:
                     dist_pct = (sl_price - mark_price) / mark_price * 100
-                if dist_pct < 0.5:
+                if dist_pct < near_sl_threshold:
                     return 4.0
 
             # TP hit — important
