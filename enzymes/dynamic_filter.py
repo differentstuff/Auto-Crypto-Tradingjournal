@@ -120,20 +120,14 @@ class DynamicFilter(Enzyme):
         """
         Execute the dynamic filter pipeline and update symbols_watched.
 
-        All values come from config — no hardcoded thresholds.
+        Only runs in "combined" mode (can_activate enforces this).
+        In static mode, this method is never called by the daemon.
         """
         mode = substrate.cfg("symbols.mode", "static")
-
-        # --- Static mode: just use always_watch ---
         if mode != "combined":
-            always_watch = substrate.cfg("symbols.always_watch", [])
-            never_trade = substrate.cfg("symbols.never_trade", [])
-            filtered = [s for s in always_watch if s not in never_trade]
-            substrate.market["symbols_watched"] = filtered
-            self._log.info(
-                "Static mode: %d symbols (always_watch=%d, never_trade=%d)",
-                len(filtered), len(always_watch), len(never_trade),
-            )
+            # Defensive: should never be called in static mode (can_activate
+            # returns False), but if it is, return substrate unchanged.
+            self._log.warning("DynamicFilter.transform() called in static mode — no-op")
             return substrate
 
         # --- Combined mode: full pipeline ---
@@ -269,16 +263,28 @@ class DynamicFilter(Enzyme):
           3. If score is None or filtered=True (R² < floor), exclude
           4. Otherwise, include with score
 
+        The min_r_squared floor comes from symbols.dynamic_filter.min_r_squared
+        (the dynamic filter's config key), NOT from the indicator's own params.
+        This override ensures the filter's floor is authoritative for ranking.
+
         Returns list of dicts sorted by score descending:
             [{"symbol": str, "score": float, "r_squared": float}, ...]
         """
+        if self._exchange is None:
+            self._log.warning("No Exchange instance — cannot rank by momentum_quality")
+            return []
+
         from indicators.momentum_quality import compute_momentum_quality
 
         timeframe = substrate.strategy.get("timeframe", "4h")
         ohlcv_limit = substrate.cfg("exchange.ohlcv_limit", 200)
 
-        # Get momentum_quality params from indicator config
+        # Get momentum_quality params from indicator config, then OVERRIDE
+        # min_r_squared with the dynamic filter's authoritative floor value.
+        # The indicator's own min_r_squared is for scoring; the filter's
+        # min_r_squared is the hard floor for inclusion in the symbol list.
         mq_params = self._get_momentum_quality_params(substrate)
+        mq_params["min_r_squared"] = min_r_squared
 
         ranked = []
         for candidate in candidates:
