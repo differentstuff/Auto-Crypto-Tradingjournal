@@ -230,6 +230,8 @@ class ScoreConfluence(Enzyme):
                 adjusted = compute_adjusted_weights(
                     weight_map, strategy_name, strategy_uid=strategy_uid,
                     min_trades=min_trades,
+                    adjustment_boost=substrate.cfg("learning.adjustment_boost"),
+                    adjustment_review_reduce=substrate.cfg("learning.adjustment_review_reduce"),
                 )
                 if adjusted != weight_map:
                     changed = [k for k in adjusted if adjusted.get(k) != weight_map.get(k)]
