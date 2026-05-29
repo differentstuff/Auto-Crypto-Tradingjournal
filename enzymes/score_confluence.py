@@ -303,12 +303,17 @@ class ScoreConfluence(Enzyme):
             pct = total_score / total_max if total_max else 0.0
             label = self._pct_to_label(pct, label_thresholds)
 
+            # Normalize score to 0-10 scale.
+            # entry_threshold (default 6.5) is on this scale, so ISC-001
+            # can compare candidate.score directly against the threshold.
+            normalized_score = (total_score / total_max * 10) if total_max else 0.0
+
             # Only include as candidate if above minimum threshold
             if indicators_aligned >= confluence_min or abs(pct) >= min_candidate_pct:
                 candidates.append({
                     "symbol": symbol,
-                    "score": round(total_score, 2),
-                    "max_score": round(total_max, 2),
+                    "score": round(normalized_score, 2),
+                    "max_score": 10.0,
                     "pct": round(pct, 3),
                     "label": label,
                     "indicators_aligned": indicators_aligned,
