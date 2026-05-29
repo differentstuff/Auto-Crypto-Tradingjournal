@@ -51,14 +51,14 @@ class ISCCheck:
     from the strategy YAML. No ISC IDs are hardcoded in evaluation logic.
 
     Supported operators:
-        any_score_gte   -- any item in list has score >= value_ref
-        lte             -- field value <= resolved value_ref
-        lt              -- field value < resolved value_ref
-        eq              -- field value == value_ref (string or bool)
-        not_empty       -- field is a non-empty list/dict
-        is_false        -- field is falsy (False, 0, None, "")
-        all_gte         -- all items in list have field_key >= value_ref
-        none_eq         -- no item in list has field_key == value_ref
+        any_score_gte   -- any item in list has field_key >= value_ref
+        sl_set_or_no_trade -- SL > 0 if trade pending, vacuous if not
+        size_within_risk -- size_usdt <= equity * risk_pct / 100
+        count_lt        -- len(list) < threshold (reads threshold from live config)
+        false_or_action_wait -- field is falsy OR resolved action == 'wait'
+        best_field_gte  -- best (first) item in list has field_key >= threshold
+        all_field_gte   -- all items in list have field_key >= threshold
+        none_field_eq   -- no item in dict/list has field_key == value
     """
 
     def __init__(
@@ -129,75 +129,6 @@ class Substrate:
       validity   - ISC conditions (hard-to-vary constraints)
     """
 
-    # Default ISC definitions — used when config doesn't provide them.
-    # These are the system's inviolable rules. Config can override them
-    # per strategy, but the defaults ensure the system always has ISC
-    # protection even in tests and minimal configs.
-    _DEFAULT_ISC_DEFINITIONS = [
-        {
-            "id": "ISC-001",
-            "criterion": "entry_threshold met before any trade opens",
-            "verification": "analysis.candidates not empty AND score >= threshold",
-            "field": "analysis.candidates",
-            "operator": "any_score_gte",
-            "value_ref": "scoring.entry_threshold",
-            "field_key": "score",
-        },
-        {
-            "id": "ISC-002",
-            "criterion": "stop loss always set before position opens",
-            "verification": "decisions.trade_approved.sl_price > 0",
-            "field": "decisions.trade_approved",
-            "operator": "sl_set_or_no_trade",
-            "value_ref": "",
-            "field_key": "sl_price",
-        },
-        {
-            "id": "ISC-003",
-            "criterion": "position size within risk limit",
-            "verification": "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100",
-            "field": "decisions.trade_approved",
-            "operator": "size_within_risk",
-            "value_ref": "",
-            "field_key": "size_usdt",
-        },
-        {
-            "id": "ISC-004",
-            "criterion": "max concurrent positions not exceeded",
-            "verification": "portfolio.open_positions count < strategy.max_positions",
-            "field": "portfolio.open_positions",
-            "operator": "count_lt",
-            "value_ref": "strategy.max_positions",
-            "field_key": "",
-        },
-        {
-            "id": "ISC-005",
-            "criterion": "no trade when noise_flag is true",
-            "verification": "analysis.noise_flag == false OR decisions.action == 'wait'",
-            "field": "analysis.noise_flag",
-            "operator": "false_or_action_wait",
-            "value_ref": "decisions.action",
-            "field_key": "",
-        },
-        {
-            "id": "ISC-006",
-            "criterion": "confluence minimum signals aligned",
-            "verification": "candidate.indicators_aligned >= strategy.confluence_min_signals",
-            "field": "analysis.candidates",
-            "operator": "all_field_gte",
-            "value_ref": "scoring.confluence_min_signals",
-            "field_key": "indicators_aligned",
-        },
-        {
-            "id": "ISC-007",
-            "criterion": "pre_trade trajectory not sudden coincidence",
-            "verification": "pre_trade_context.coincidence_risk != 'high'",
-            "field": "market.pre_trade_context",
-            "operator": "none_field_eq",
-            "value_ref": "high",
-            "field_key": "coincidence_risk",
-        },
-    ]
 
     def __init__(self, config: Optional[Dict] = None):
         """
@@ -321,15 +252,15 @@ class Substrate:
         }
 
         # Validity section (ISC conditions — hard-to-vary constraints)
-        # Config can override per strategy, but defaults ensure the system
-        # always has ISC protection even in tests and minimal configs.
-        isc_defs = cfg.get("validity", [])
+        # ISC definitions MUST come from config (default.yaml or strategy YAML).
+        # No hardcoded fallback — missing validity is a fatal config error.
+        # This ensures config is the single source of truth (CLAUDE.md principle).
+        isc_defs = cfg.get("validity")
         if not isc_defs:
-            _log.info(
-                "No ISC definitions in config — using built-in defaults. "
-                "Add a validity section to config/default.yaml to customize."
+            raise SubstrateConfigError(
+                "Missing required config key: 'validity'. "
+                "Add a validity section to config/default.yaml (ISC definitions)."
             )
-            isc_defs = self._DEFAULT_ISC_DEFINITIONS
         self.validity = [ISCCheck.from_dict(isc) for isc in isc_defs]
         self.pending = []
 
@@ -531,17 +462,34 @@ class Substrate:
             return field_val.get(isc.field_key, 0) <= max_size
 
         # --- count_lt: len(list) < threshold ----------------------------------
+        # Reads threshold from live config (self.cfg()) to avoid stale state.
         elif op == "count_lt":
             items = field_val if field_val is not _MISSING else []
             count = len(items) if isinstance(items, (list, dict)) else 0
-            limit = resolved if resolved is not None else 0
+            # Always read limit from live config, never stale substrate state
+            try:
+                limit = self.cfg(isc.value_ref) if isc.value_ref else 0
+            except ValueError:
+                limit = resolved if resolved is not None else 0
             return count < limit
 
         # --- false_or_action_wait: field is falsy OR action == 'wait' --------
         elif op == "false_or_action_wait":
             noise = field_val if field_val is not _MISSING else False
-            action = self.get(isc.value_ref, "wait")
+            action = resolved if resolved is not None else "wait"
             return (not noise) or (action == "wait")
+
+        # --- best_field_gte: best (first) item has field_key >= threshold ----
+        # Used by ISC-006: only the best candidate must meet the threshold,
+        # not all candidates (weak symbols shouldn't block the best one).
+        elif op == "best_field_gte":
+            if field_val is _MISSING or not field_val:
+                return False  # empty list = condition not met
+            threshold = resolved if resolved is not None else 0
+            best = field_val[0] if isinstance(field_val, list) else next(iter(field_val.values()), {})
+            if not isinstance(best, dict):
+                return False
+            return best.get(isc.field_key, 0) >= threshold
 
         # --- all_field_gte: all items in list have field_key >= threshold -----
         elif op == "all_field_gte":
@@ -576,6 +524,21 @@ class Substrate:
         """Check if all ISC conditions are verified (or vacuously true)."""
         results = self.verify_iscs()
         return all(s == "verified" for s in results.values())
+
+    def isc_blocks_trade(self) -> bool:
+        """
+        Returns True if any ISC condition has failed, blocking trade execution.
+
+        Called by the daemon before selecting trade-executing enzymes.
+        This is the enforcement point — ISC is not just audit, it's a hard gate.
+        Pending ISCs (not yet evaluated this cycle) do NOT block trades;
+        only explicitly failed ISCs block.
+        """
+        return any(isc.status == "failed" for isc in self.validity)
+
+    def failed_isc_ids(self) -> list[str]:
+        """Return IDs of all ISC conditions that have failed."""
+        return [isc.id for isc in self.validity if isc.status == "failed"]
 
     # --- Reset helpers --------------------------------------------------------
 
@@ -739,15 +702,18 @@ class Substrate:
         sub.strategy = d.get("strategy", sub.strategy)
         sub.portfolio = d.get("portfolio", sub.portfolio)
         sub.learning = d.get("learning", sub.learning)
-        sub.validity = [
-            ISCCheck.from_dict(isc)
-            for isc in d.get("validity", [])
-        ]
-        if not sub.validity:
-            # Fallback to config ISCs if DB has none
-            isc_defs = config.get("validity", []) if config else []
-            if isc_defs:
-                sub.validity = [ISCCheck.from_dict(isc) for isc in isc_defs]
+        validity_data = d.get("validity", [])
+        if validity_data:
+            sub.validity = [ISCCheck.from_dict(isc) for isc in validity_data]
+        else:
+            # DB has no ISCs — use live config (hot-reload may have changed them)
+            isc_defs = (config or {}).get("validity")
+            if not isc_defs:
+                raise SubstrateConfigError(
+                    "No ISC definitions in DB or config — cannot restore safely. "
+                    "Add a validity section to config/default.yaml."
+                )
+            sub.validity = [ISCCheck.from_dict(isc) for isc in isc_defs]
         sub.pending = d.get("pending", [])
         sub._cycle_count = d.get("_cycle_count", 0)
         sub._created_at = d.get("_created_at", sub._created_at)
