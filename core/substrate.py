@@ -129,74 +129,10 @@ class Substrate:
       validity   - ISC conditions (hard-to-vary constraints)
     """
 
-    # Default ISC conditions (from substrate-schema.yaml).
-    # Each condition is fully config-driven: field + operator + value_ref.
-    # No ISC IDs are referenced in evaluation code.
-    DEFAULT_ISCS = [
-        {
-            "id": "ISC-001",
-            "criterion": "entry_threshold met before any trade opens",
-            "verification": "analysis.candidates not empty AND score >= threshold",
-            "field": "analysis.candidates",
-            "operator": "any_score_gte",
-            "value_ref": "scoring.entry_threshold",
-            "field_key": "score",
-        },
-        {
-            "id": "ISC-002",
-            "criterion": "stop loss always set before position opens",
-            "verification": "decisions.trade_approved.sl_price > 0",
-            "field": "decisions.trade_approved",
-            "operator": "sl_set_or_no_trade",
-            "value_ref": "",
-            "field_key": "sl_price",
-        },
-        {
-            "id": "ISC-003",
-            "criterion": "position size within risk limit",
-            "verification": "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100",
-            "field": "decisions.trade_approved",
-            "operator": "size_within_risk",
-            "value_ref": "",
-            "field_key": "size_usdt",
-        },
-        {
-            "id": "ISC-004",
-            "criterion": "max concurrent positions not exceeded",
-            "verification": "portfolio.open_positions count < strategy.max_positions",
-            "field": "portfolio.open_positions",
-            "operator": "count_lt",
-            "value_ref": "strategy.max_positions",
-            "field_key": "",
-        },
-        {
-            "id": "ISC-005",
-            "criterion": "no trade when noise_flag is true",
-            "verification": "analysis.noise_flag == false OR decisions.action == 'wait'",
-            "field": "analysis.noise_flag",
-            "operator": "false_or_action_wait",
-            "value_ref": "decisions.action",
-            "field_key": "",
-        },
-        {
-            "id": "ISC-006",
-            "criterion": "confluence minimum signals aligned",
-            "verification": "candidate.indicators_aligned >= strategy.confluence_min_signals",
-            "field": "analysis.candidates",
-            "operator": "all_field_gte",
-            "value_ref": "scoring.confluence_min_signals",
-            "field_key": "indicators_aligned",
-        },
-        {
-            "id": "ISC-007",
-            "criterion": "pre_trade trajectory not sudden coincidence",
-            "verification": "pre_trade_context.coincidence_risk != 'high'",
-            "field": "market.pre_trade_context",
-            "operator": "none_field_eq",
-            "value_ref": "high",
-            "field_key": "coincidence_risk",
-        },
-    ]
+    # ISC definitions are now in config/default.yaml (validity section).
+    # No hardcoded defaults — config is the single source of truth.
+    # If config is missing the validity section, SubstrateConfigError is raised.
+    # See config/default.yaml for the full ISC definitions.
 
     def __init__(self, config: Optional[Dict] = None):
         """
@@ -319,8 +255,13 @@ class Substrate:
             "last_retrain_at": "",
         }
 
-        # Validity section (ISC conditions -- config-driven, no hardcoded IDs)
-        isc_defs = cfg.get("validity", self.DEFAULT_ISCS)
+        # Validity section (ISC conditions — read from config, no hardcoded IDs)
+        isc_defs = cfg.get("validity", [])
+        if not isc_defs:
+            raise SubstrateConfigError(
+                "No ISC definitions found in config (validity section). "
+                "Add ISC definitions to config/default.yaml or your strategy YAML."
+            )
         self.validity = [ISCCheck.from_dict(isc) for isc in isc_defs]
         self.pending = []
 
@@ -732,8 +673,13 @@ class Substrate:
         sub.learning = d.get("learning", sub.learning)
         sub.validity = [
             ISCCheck.from_dict(isc)
-            for isc in d.get("validity", cls.DEFAULT_ISCS)
+            for isc in d.get("validity", [])
         ]
+        if not sub.validity:
+            # Fallback to config ISCs if DB has none
+            isc_defs = config.get("validity", []) if config else []
+            if isc_defs:
+                sub.validity = [ISCCheck.from_dict(isc) for isc in isc_defs]
         sub.pending = d.get("pending", [])
         sub._cycle_count = d.get("_cycle_count", 0)
         sub._created_at = d.get("_created_at", sub._created_at)
