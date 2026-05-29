@@ -237,6 +237,7 @@ modules:
 
 # Default symbol watchlist
 symbols:
+  mode: "static"                    # "static" = always_watch only | "combined" = always_watch + dynamic top-N
   always_watch:
     - BTCUSDT
     - ETHUSDT
@@ -245,11 +246,12 @@ symbols:
     - SHIBUSDT
     - BOMEUSDT
   dynamic_filter:
-    mode: "dynamic"
-    limit: 15
-    criteria: "momentum"
-    min_volume_24h_usd: 10000000
-    min_open_interest_usd: 2000000
+    universe_source: "exchange"     # "exchange" = fetch all USDT-M perps from Bitget API
+    limit: 15                       # max dynamic symbols to select (ranked by momentum_quality)
+    min_volume_24h_usd: 10000000    # minimum 24h volume filter (USD)
+    min_open_interest_usd: 2000000  # minimum open interest filter (USD)
+    min_r_squared: 0.15             # minimum R² for momentum quality — below this, symbol is filtered
+    refresh_interval_hours: 4       # how often to re-fetch universe and re-rank
 
 # Macro context thresholds (used by CollectMacroContext)
 macro:
