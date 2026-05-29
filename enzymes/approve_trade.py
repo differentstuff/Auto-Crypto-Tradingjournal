@@ -75,7 +75,7 @@ def _compute_atr_cap(equity: float, atr_value: float, substrate: Substrate) -> f
     """
     if not equity or not atr_value or atr_value <= 0:
         return 0.0
-    atr_cap_equity_pct = substrate.cfg("portfolio.atr_cap_equity_pct")
+    atr_cap_equity_pct = substrate.cfg("portfolio.atr_cap_equity_pct", None)
     if atr_cap_equity_pct is None or atr_cap_equity_pct <= 0:
         return 0.0
     return (equity * atr_cap_equity_pct) / atr_value
