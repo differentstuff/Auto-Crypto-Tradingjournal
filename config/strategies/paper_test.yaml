@@ -13,15 +13,17 @@ strategy:
   cycle_interval_minutes: 15
 
 symbols:
+  mode: "static"                    # "static" = always_watch only (no dynamic filtering)
   always_watch:
     - BTCUSDT
   never_trade: []
   dynamic_filter:
-    mode: "off"
-    limit: 0                 # no dynamic scanning, no 100+ symbol ranking
-    criteria: "momentum"
-    min_volume_24h_usd: 0
-    min_open_interest_usd: 0
+    universe_source: "exchange"     # fetch all USDT-M perps from Bitget API
+    limit: 0                        # 0 = no dynamic symbols (static mode)
+    min_volume_24h_usd: 0           # no volume filter
+    min_open_interest_usd: 0        # no OI filter
+    min_r_squared: 0.15             # minimum R² for momentum quality
+    refresh_interval_hours: 4       # how often to re-fetch universe and re-rank
 
 indicators:
   - name: "rsi"
