@@ -29,12 +29,14 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _update_trailing_stop(position: dict, config: dict) -> dict:
+def _update_trailing_stop(position: dict, substrate: Substrate) -> dict:
     """
     Compute updated trailing stop state for a position.
 
     Returns a NEW position dict with updated trailing stop fields.
     Does NOT mutate the original position dict (shallow-copy safe).
+
+    Reads all config via substrate.cfg() — no raw dict access.
 
     Updates:
       - peak_price if current mark exceeds it
@@ -49,13 +51,13 @@ def _update_trailing_stop(position: dict, config: dict) -> dict:
     if not entry_price or not mark_price:
         return position
 
-    trailing_cfg = config.get("exit_rules", {}).get("trailing_stop", {})
-    if not trailing_cfg["enabled"]:
+    trailing_enabled = substrate.cfg("exit_rules.trailing_stop.enabled")
+    if not trailing_enabled:
         return position
 
-    activation_pct = trailing_cfg["activation_profit_pct"]
-    trail_atr_mult = trailing_cfg["trail_atr_multiplier"]
-    breakeven_on_activate = trailing_cfg["breakeven_at_activation"]
+    activation_pct = substrate.cfg("exit_rules.trailing_stop.activation_profit_pct")
+    trail_atr_mult = substrate.cfg("exit_rules.trailing_stop.trail_atr_multiplier")
+    breakeven_on_activate = substrate.cfg("exit_rules.trailing_stop.breakeven_at_activation")
 
     # Compute current profit percentage
     if direction == "long":
@@ -175,7 +177,7 @@ class ApproveExit(Enzyme):
             return substrate
 
         # Update trailing stop state before evaluating (returns new dict, no mutation)
-        updated_pos = _update_trailing_stop(target_pos, substrate._config)
+        updated_pos = _update_trailing_stop(target_pos, substrate)
 
         # Evaluate exit rules
         should_exit = False
