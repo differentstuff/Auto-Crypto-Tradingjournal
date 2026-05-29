@@ -245,7 +245,8 @@ class CollectOHLCV(Enzyme):
                     continue
 
                 # New candle — fetch and compute
-                df = self._exchange.fetch_ohlcv(symbol, timeframe=tf, limit=200)
+                ohlcv_limit = substrate.cfg("exchange.ohlcv_limit")
+                df = self._exchange.fetch_ohlcv(symbol, timeframe=tf, limit=ohlcv_limit)
                 if df is None or df.empty or len(df) < 30:
                     self._log.warning(
                         "Insufficient data for %s %s (%d bars)",
@@ -418,8 +419,9 @@ class CollectOHLCV(Enzyme):
         # Calculate how many candles we need based on lookback_hours
         tf_minutes = timeframe_to_minutes(timeframe)
         bootstrap_bars = max(12, int(lookback_hours * 60 / tf_minutes))
-        # Cap at 200 (max OHLCV fetch)
-        bootstrap_bars = min(bootstrap_bars, 200)
+        # Cap at ohlcv_limit (max OHLCV fetch)
+        ohlcv_limit = substrate.cfg("exchange.ohlcv_limit")
+        bootstrap_bars = min(bootstrap_bars, ohlcv_limit)
 
         self._log.info(
             "Cold start: bootstrapping indicator history with %d bars per symbol "
@@ -429,7 +431,7 @@ class CollectOHLCV(Enzyme):
 
         for symbol in symbols:
             # Fetch extended historical data for bootstrap
-            df = self._exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=200)
+            df = self._exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=ohlcv_limit)
             if df is None or df.empty or len(df) < bootstrap_bars:
                 self._log.warning(
                     "Insufficient data for bootstrap of %s (%d bars needed, %d available)",
