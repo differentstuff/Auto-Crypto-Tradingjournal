@@ -37,8 +37,17 @@ def make_full_config(**overrides) -> dict:
         },
         "description": "Test strategy",
         "symbols": {
+            "mode": "static",
             "always_watch": ["BTCUSDT", "ETHUSDT"],
             "never_trade": [],
+            "dynamic_filter": {
+                "universe_source": "exchange",
+                "limit": 15,
+                "min_volume_24h_usd": 10000000,
+                "min_open_interest_usd": 2000000,
+                "min_r_squared": 0.15,
+                "refresh_interval_hours": 4,
+            },
         },
         "portfolio": {
             "max_positions": 3,
