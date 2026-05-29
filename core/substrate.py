@@ -190,8 +190,11 @@ class Substrate:
         # which sets coincidence_risk='high' and blocks trades via ISC-007.
         # This is intentional: no trades until sufficient trajectory data exists.
         symbols_cfg = cfg.get("symbols", {})
+        # Filter never_trade from always_watch at init time
+        _always = symbols_cfg.get("always_watch", [])
+        _never = symbols_cfg.get("never_trade", [])
         self.market = {
-            "symbols_watched": symbols_cfg.get("always_watch", []),
+            "symbols_watched": [s for s in _always if s not in _never],
             "last_scan_at": "",
             "last_dynamic_filter_at": "",  # ISO timestamp of last dynamic filter run
             "indicators": {},
