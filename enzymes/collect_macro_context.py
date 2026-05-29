@@ -86,10 +86,11 @@ class CollectMacroContext(Enzyme):
         macro = {}
 
         # 1. Fear & Greed Index
+        fg_url = substrate.cfg("macro.fear_greed_url", "https://api.alternative.me/fng/?limit=1")
         try:
             fg_data = _cached_fetch(
                 "fear_greed",
-                "https://api.alternative.me/fng/?limit=1",
+                fg_url,
                 ttl=macro_ttl,
             )
             if fg_data and "data" in fg_data:
@@ -105,10 +106,11 @@ class CollectMacroContext(Enzyme):
             macro["fear_greed"] = {"ok": False, "error": str(e)}
 
         # 2. BTC Dominance
+        dominance_url = substrate.cfg("macro.dominance_url", "https://api.coingecko.com/api/v3/global")
         try:
             global_data = _cached_fetch(
                 "btc_dominance",
-                "https://api.coingecko.com/api/v3/global",
+                dominance_url,
                 ttl=dominance_ttl,
             )
             if global_data and "data" in global_data:
@@ -168,10 +170,11 @@ class CollectMacroContext(Enzyme):
             macro["regime"] = {"vix": None, "dxy": None, "regime": "unknown", "ok": False}
 
         # 4. Economic calendar
+        calendar_url = substrate.cfg("macro.calendar_url", "https://nfs.faireconomy.media/ff_calendar_thisweek.json")
         try:
             eco_data = _cached_fetch(
                 "eco_calendar",
-                "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+                calendar_url,
                 ttl=onchain_ttl,
             )
             if isinstance(eco_data, list):
