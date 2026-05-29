@@ -185,6 +185,9 @@ def main() -> None:
         daemon.register_enzyme(enz)
 
     # Phase B: Sensors and Evaluators
+    # DynamicFilter needs the Exchange instance for universe fetching
+    # Must run before CollectOHLCV so symbol list is set first
+    _register("DynamicFilter", exchange=exchange)
     # CollectOHLCV needs the Exchange instance for OHLCV fetching
     _register("CollectOHLCV", exchange=exchange)
 
