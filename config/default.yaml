@@ -81,12 +81,13 @@ exit_rules:
     breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
-  tp2_rr_ratio: 2.5  # TP2 risk-reward multiplier (was hardcoded)
+  tp2_rr_ratio: 2.5  # TP2 risk-reward multiplier
   soft_exit:
     requires_indicators_reversed: 2
     requires_confirmation_tf: true
     urgency: "soft"
   soft_reversal_profit_threshold: 0.5
+  near_sl_urgency_pct: 0.5  # Near-SL urgency threshold (% distance from SL → high urgency)
 
 # Scoring defaults
 scoring:
