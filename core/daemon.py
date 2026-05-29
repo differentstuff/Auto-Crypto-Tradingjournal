@@ -37,6 +37,9 @@ _log = logging.getLogger(__name__)
 # Config keys that contain secrets -- stripped before passing to substrate
 _SECRET_KEYS = {"exchange", "llm_keys"}
 
+# Enzymes that execute trades — blocked by ISC gate when any ISC fails
+_TRADE_ENZYMES = {"ApproveTrade", "ExecuteTrade", "ExecuteExit"}
+
 
 def _strategy_config_slice(full_config: dict) -> dict:
     """
@@ -283,6 +286,19 @@ class Daemon:
                 e for e in self.enzymes
                 if e.can_activate(self.substrate) and e.name not in fired_this_cycle
             ]
+
+            # ISC gate: if any ISC has failed, exclude trade-executing enzymes.
+            # This is the enforcement point — ISC is not just audit, it's a hard gate.
+            # Pending ISCs (not yet evaluated this cycle) do NOT block.
+            if self.substrate.isc_blocks_trade():
+                failed_ids = self.substrate.failed_isc_ids()
+                trade_blocked = [e for e in activatable if e.name in _TRADE_ENZYMES]
+                if trade_blocked:
+                    _log.info(
+                        "ISC gate: blocking trade enzymes %s — failed ISCs: %s",
+                        [e.name for e in trade_blocked], failed_ids,
+                    )
+                activatable = [e for e in activatable if e.name not in _TRADE_ENZYMES]
 
             if not activatable:
                 # No enzyme can fire -- fire Wait explicitly
