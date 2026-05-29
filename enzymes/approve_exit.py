@@ -72,10 +72,11 @@ def _update_trailing_stop(position: dict, config: dict) -> dict:
     if direction == "long":
         if mark_price > peak_price:
             peak_price = mark_price
-    else:
-        if mark_price < peak_price or peak_price == entry_price:
-            if mark_price < peak_price:
-                peak_price = mark_price
+    else:  # Short
+        # For short: peak_price tracks the lowest price. Update only when
+        # mark_price drops below peak_price. Simple and correct.
+        if mark_price < peak_price:
+            peak_price = mark_price
 
     # Activate trailing if not yet active and profit exceeds threshold
     if not trailing_active:
