@@ -231,9 +231,9 @@ def make_full_config(**overrides) -> dict:
             {
                 "id": "ISC-006",
                 "criterion": "confluence minimum signals aligned",
-                "verification": "candidate.indicators_aligned >= strategy.confluence_min_signals",
+                "verification": "best_candidate.indicators_aligned >= strategy.confluence_min_signals",
                 "field": "analysis.candidates",
-                "operator": "all_field_gte",
+                "operator": "best_field_gte",
                 "value_ref": "scoring.confluence_min_signals",
                 "field_key": "indicators_aligned",
             },
