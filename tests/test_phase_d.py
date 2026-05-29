@@ -1157,7 +1157,8 @@ class TestWeightAdjuster:
 
         original = {"rsi": 0.25, "macd": 0.25, "ema_stack": 0.25, "adx": 0.25}
         result = compute_adjusted_weights(
-            original, "test_strategy", min_trades=30
+            original, "test_strategy", min_trades=30,
+            adjustment_boost=1.2, adjustment_review_reduce=0.9,
         )
         assert result == original
 
@@ -1172,7 +1173,8 @@ class TestWeightAdjuster:
             self._seed_signal_accuracy(conn, "macd", "suppress", accuracy=50.0)
 
         original = {"rsi": 0.5, "macd": 0.5}
-        result = compute_adjusted_weights(original, "test_strategy", min_trades=30)
+        result = compute_adjusted_weights(original, "test_strategy", min_trades=30,
+                                        adjustment_boost=1.2, adjustment_review_reduce=0.9)
         assert result["macd"] == 0.0
 
     def test_contrarian_verdict_sets_negative_weight(self, temp_db):
@@ -1192,7 +1194,8 @@ class TestWeightAdjuster:
             self._seed_signal_accuracy(conn, "macd", "contrarian", accuracy=20.0)
 
         original = {"rsi": 0.5, "macd": 0.5}
-        result = compute_adjusted_weights(original, "test_strategy", min_trades=30)
+        result = compute_adjusted_weights(original, "test_strategy", min_trades=30,
+                                        adjustment_boost=1.2, adjustment_review_reduce=0.9)
         assert result["macd"] < 0.0, (
             f"Contrarian signal must have negative weight, got: {result['macd']}"
         )
@@ -1208,7 +1211,8 @@ class TestWeightAdjuster:
             self._seed_signal_accuracy(conn, "rsi", "valid", accuracy=80.0)
 
         original = {"rsi": 0.5, "macd": 0.5}
-        result = compute_adjusted_weights(original, "test_strategy", min_trades=30)
+        result = compute_adjusted_weights(original, "test_strategy", min_trades=30,
+                                        adjustment_boost=1.2, adjustment_review_reduce=0.9)
         # rsi should be boosted (> original 0.5 before normalization)
         # After normalization, rsi's share should be larger than macd's
         assert result["rsi"] > result["macd"]
@@ -1226,7 +1230,8 @@ class TestWeightAdjuster:
             self._seed_signal_accuracy(conn, "macd", "monitor", accuracy=65.0)
 
         original = {"rsi": 0.5, "macd": 0.5}
-        result = compute_adjusted_weights(original, "test_strategy", min_trades=30)
+        result = compute_adjusted_weights(original, "test_strategy", min_trades=30,
+                                        adjustment_boost=1.2, adjustment_review_reduce=0.9)
         # Positive weights should sum to the original total (1.0)
         positive_sum = sum(v for v in result.values() if v > 0)
         assert positive_sum == pytest.approx(1.0, abs=0.01)
@@ -1246,7 +1251,8 @@ class TestWeightAdjuster:
             self._seed_signal_accuracy(conn, "macd", "suppress", accuracy=48.0)
 
         original = {"rsi": 0.5, "macd": 0.5}
-        result = compute_adjusted_weights(original, "test_strategy", min_trades=30)
+        result = compute_adjusted_weights(original, "test_strategy", min_trades=30,
+                                        adjustment_boost=1.2, adjustment_review_reduce=0.9)
         # Safety: cannot zero out everything
         positive_sum = sum(v for v in result.values() if v > 0)
         assert positive_sum > 0, "All weights zeroed — safety guard must prevent this"
@@ -1263,7 +1269,8 @@ class TestWeightAdjuster:
             self._seed_signal_accuracy(conn, "macd", "suppress", accuracy=48.0)
 
         original = {"rsi": 0.5, "macd": 0.5}
-        compute_adjusted_weights(original, "test_strategy", min_trades=30)
+        compute_adjusted_weights(original, "test_strategy", min_trades=30,
+                                 adjustment_boost=1.2, adjustment_review_reduce=0.9)
 
         with db_conn() as conn:
             rows = conn.execute(
@@ -1290,7 +1297,8 @@ class TestWeightAdjuster:
             self._seed_signal_accuracy(conn, "macd", "monitor", accuracy=62.0)
 
         original = {"rsi": 0.5, "macd": 0.5}
-        compute_adjusted_weights(original, "test_strategy", min_trades=30)
+        compute_adjusted_weights(original, "test_strategy", min_trades=30,
+                                 adjustment_boost=1.2, adjustment_review_reduce=0.9)
 
         with db_conn() as conn:
             count = conn.execute(
