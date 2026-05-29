@@ -257,6 +257,9 @@ macro:
   vix_neutral: 20             # VIX above this (but below risk_off) → neutral regime
   yfinance_period: "2d"       # yfinance download period for VIX/DXY
   yfinance_interval: "1h"     # yfinance download interval for VIX/DXY
+  fear_greed_url: "https://api.alternative.me/fng/?limit=1"
+  dominance_url: "https://api.coingecko.com/api/v3/global"
+  calendar_url: "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
 # Data fetch defaults
 exchange:
