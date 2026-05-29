@@ -112,6 +112,7 @@ exit_rules:
     requires_confirmation_tf: true
     urgency: "soft"
   soft_reversal_profit_threshold: 0.5
+  near_sl_urgency_pct: 0.5
 
 entry_conditions:
   - "at least 3 enabled indicators aligned in same direction"
