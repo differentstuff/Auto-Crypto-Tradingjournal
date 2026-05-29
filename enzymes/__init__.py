@@ -6,6 +6,7 @@
 # populating the enzyme registry in core.enzyme.
 
 # Phase B: Sensors and Evaluators
+from enzymes.dynamic_filter import DynamicFilter
 from enzymes.collect_ohlcv import CollectOHLCV
 from enzymes.score_confluence import ScoreConfluence
 from enzymes.detect_noise import DetectNoise
@@ -31,6 +32,7 @@ from enzymes.update_rulebook import UpdateRulebook
 
 __all__ = [
     # Phase B
+    "DynamicFilter",
     "CollectOHLCV",
     "ScoreConfluence",
     "DetectNoise",
