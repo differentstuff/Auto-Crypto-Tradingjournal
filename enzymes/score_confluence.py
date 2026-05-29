@@ -27,46 +27,57 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _rsi_weight(rsi_val: float, rsi_high: float, rsi_low: float) -> float:
-    """RSI contribution: ±1 at extremes, 0 at midpoint. Dead-band around midpoint."""
+def _rsi_weight(rsi_val: float, rsi_high: float, rsi_low: float, formula: dict) -> float:
+    """RSI contribution: ±1 at extremes, 0 at midpoint. Dead-band around midpoint.
+    Formula constants from config: scoring.formula.rsi_midpoint, scoring.formula.rsi_scale."""
+    midpoint = formula["rsi_midpoint"]
+    scale = formula["rsi_scale"]
     if rsi_val > rsi_high:
-        return min((rsi_val - 50) / 30.0, 1.0)
+        return min((rsi_val - midpoint) / scale, 1.0)
     if rsi_val < rsi_low:
-        return max((rsi_val - 50) / 30.0, -1.0)
+        return max((rsi_val - midpoint) / scale, -1.0)
     return 0.0
 
 
-def _macd_weight(macd: dict) -> float:
-    """MACD contribution: full ±1 when aligned + growing, ±0.5 when aligned but fading."""
+def _macd_weight(macd: dict, formula: dict) -> float:
+    """MACD contribution: full ±aligned_growing when aligned + growing, ±aligned_fading when aligned but fading.
+    Formula constants from config: scoring.formula.macd_aligned_growing, scoring.formula.macd_aligned_fading."""
+    aligned_growing = formula["macd_aligned_growing"]
+    aligned_fading = formula["macd_aligned_fading"]
     trend = macd.get("bias", "")
     hist_dir = "growing" if macd.get("histogram_growing", False) else "shrinking"
     if trend == "bullish":
-        return 1.0 if hist_dir == "growing" else 0.5
+        return aligned_growing if hist_dir == "growing" else aligned_fading
     if trend == "bearish":
-        return -1.0 if hist_dir == "growing" else -0.5
+        return -aligned_growing if hist_dir == "growing" else -aligned_fading
     return 0.0
 
 
-def _ema_weight(ema: dict) -> float:
-    """EMA contribution: ±1 fully aligned stack + price, ±0.5 partial."""
+def _ema_weight(ema: dict, formula: dict) -> float:
+    """EMA contribution: full_alignment when fully aligned, partial_alignment when partially aligned.
+    Formula constants from config: scoring.formula.ema_full_alignment, scoring.formula.ema_partial_alignment."""
+    full = formula["ema_full_alignment"]
+    partial = formula["ema_partial_alignment"]
     al = ema.get("alignment", "")
     sk = ema.get("stack", "")
     if "bullish" in al and "bullish" in sk:
-        return 1.0
+        return full
     if "bearish" in al and "bearish" in sk:
-        return -1.0
+        return -full
     if "bullish" in sk or "bullish" in al:
-        return 0.5
+        return partial
     if "bearish" in sk or "bearish" in al:
-        return -0.5
+        return -partial
     return 0.0
 
 
-def _adx_weight(adx: dict) -> float:
-    """ADX contribution: direction × trend strength (ADX value / 50, capped at 1)."""
+def _adx_weight(adx: dict, formula: dict) -> float:
+    """ADX contribution: direction × trend strength (ADX value / adx_scale, capped at 1).
+    Formula constant from config: scoring.formula.adx_scale."""
+    adx_scale = formula["adx_scale"]
     direction = adx.get("direction", "")
     adx_val = adx.get("value", 0)
-    strength = min(adx_val / 50.0, 1.0)
+    strength = min(adx_val / adx_scale, 1.0)
     if "bullish" in direction:
         return strength
     if "bearish" in direction:
@@ -74,62 +85,78 @@ def _adx_weight(adx: dict) -> float:
     return 0.0
 
 
-def _wavetrend_weight(wt: dict) -> float:
-    """WaveTrend contribution: crossover signals in OB/OS zones are strongest."""
+def _wavetrend_weight(wt: dict, formula: dict) -> float:
+    """WaveTrend contribution: crossover signals in OB/OS zones are strongest.
+    Formula constants from config: scoring.formula.wavetrend_gold_signal,
+    scoring.formula.wavetrend_signal, scoring.formula.wavetrend_wt1_scale,
+    scoring.formula.wavetrend_no_signal_cap."""
     if not wt:
         return 0.0
+    gold_signal = formula["wavetrend_gold_signal"]
+    wt_signal = formula["wavetrend_signal"]
+    wt1_scale = formula["wavetrend_wt1_scale"]
+    no_signal_cap = formula["wavetrend_no_signal_cap"]
     signal = wt.get("signal")
     if signal == "gold_buy":
-        return 1.0
+        return gold_signal
     if signal == "buy":
-        return 0.85
+        return wt_signal
     if signal == "sell":
-        return -0.85
-    # No fresh cross — use WT1 position scaled to ±0.5
+        return -wt_signal
+    # No fresh cross — use WT1 position scaled to ±no_signal_cap
     wt1 = wt.get("wt1", 0.0)
-    return max(-0.5, min(0.5, wt1 / 60.0))
+    return max(-no_signal_cap, min(no_signal_cap, wt1 / wt1_scale))
 
 
 def _volume_weight(inds: dict, directional_score: float,
-                   vol_high_ratio: float = 1.5, vol_low_ratio: float = 0.7) -> float:
-    """Volume confirms the dominant direction.
-    Thresholds from scoring.modifier_weights.volume_high_ratio/low_ratio in config."""
+                   vol_high_ratio: float, vol_low_ratio: float,
+                   formula: dict) -> float:
+    """Volume confirms or weakens the dominant direction.
+    Thresholds from scoring.modifier_weights.volume_high_ratio/low_ratio.
+    Contribution from scoring.formula.volume_confirm/volume_weaken."""
     ratio = inds.get("volume", {}).get("ratio", 1.0)
     sign = 1 if directional_score > 0 else (-1 if directional_score < 0 else 0)
     if ratio > vol_high_ratio:
-        return 0.5 * sign
+        return formula["volume_confirm"] * sign
     if ratio < vol_low_ratio:
-        return -0.25 * sign
+        return formula["volume_weaken"] * sign
     return 0.0
 
 
-def _cvd_weight(cvd: dict) -> float:
-    """CVD rising = bullish signal (+0.4), falling = bearish (-0.4)."""
+def _cvd_weight(cvd: dict, formula: dict) -> float:
+    """CVD contribution: rising = +cvd_trend, falling = -cvd_trend.
+    Formula constant from config: scoring.formula.cvd_trend."""
     trend = cvd.get("trend", "flat")
-    return 0.4 if trend == "rising" else (-0.4 if trend == "falling" else 0.0)
+    cvd_trend = formula["cvd_trend"]
+    return cvd_trend if trend == "rising" else (-cvd_trend if trend == "falling" else 0.0)
 
 
-def _order_flow_weight(of: dict | None) -> float:
-    """+0.15 buying pressure, -0.15 selling pressure or divergence."""
+def _order_flow_weight(of: dict | None, formula: dict) -> float:
+    """+order_flow_pressure for buying, -order_flow_pressure for selling or divergence.
+    Formula constant from config: scoring.formula.order_flow_pressure."""
     if not of:
         return 0.0
+    pressure = formula["order_flow_pressure"]
     if of.get("divergence"):
-        return -0.15
+        return -pressure
     sig = of.get("signal", "neutral")
     if sig == "buying_pressure":
-        return 0.15
+        return pressure
     if sig == "selling_pressure":
-        return -0.15
+        return -pressure
     return 0.0
 
 
-def _mfi_weight(wt: dict) -> float:
-    """MFI contribution from WaveTrend data."""
+def _mfi_weight(wt: dict, formula: dict) -> float:
+    """MFI contribution from WaveTrend data.
+    Formula constants from config: scoring.formula.mfi_threshold, scoring.formula.mfi_contribution."""
     mfi = wt.get("mfi", 0.0) if wt else 0.0
-    if mfi > 10:
-        return 0.3
-    if mfi < -10:
-        return -0.3
+    threshold = formula["mfi_threshold"]
+    contribution = formula["mfi_contribution"]
+    if mfi > threshold:
+        return contribution
+    if mfi < -threshold:
+        return -contribution
     return 0.0
 
 
@@ -179,6 +206,7 @@ class ScoreConfluence(Enzyme):
         momentum_dampening = substrate.cfg("scoring.momentum_dampening")
         modifier_weights = substrate.cfg("scoring.modifier_weights")
         label_thresholds = substrate.cfg("scoring.label_thresholds")
+        formula = substrate.cfg("scoring.formula")
 
         # Build weight map from config
         indicator_configs = substrate.cfg("indicators", [])
@@ -229,7 +257,7 @@ class ScoreConfluence(Enzyme):
 
                 tf_score, tf_max, tf_details = self._score_timeframe(
                     tf_inds, weight_map, rsi_high, rsi_low,
-                    momentum_cap, momentum_dampening, modifier_weights,
+                    momentum_cap, momentum_dampening, modifier_weights, formula,
                 )
                 tf_scores[tf] = tf_score
                 total_score += tf_score
@@ -307,7 +335,7 @@ class ScoreConfluence(Enzyme):
         self, tf_inds: dict, weight_map: dict,
         rsi_high: float, rsi_low: float,
         momentum_cap: float, momentum_dampening: float,
-        modifier_weights: dict,
+        modifier_weights: dict, formula: dict,
     ) -> tuple[float, float, list[str]]:
         """
         Score indicators for a single timeframe.
@@ -324,7 +352,7 @@ class ScoreConfluence(Enzyme):
         # RSI
         if "rsi" in tf_inds and weight_map.get("rsi", 0) > 0:
             rsi_val = tf_inds["rsi"].get("value", 50)
-            w = _rsi_weight(rsi_val, rsi_high, rsi_low)
+            w = _rsi_weight(rsi_val, rsi_high, rsi_low, formula)
             cfg_weight = weight_map["rsi"]
             score += w * cfg_weight
             max_possible += 1.0 * cfg_weight
@@ -332,7 +360,7 @@ class ScoreConfluence(Enzyme):
 
         # MACD
         if "macd" in tf_inds and weight_map.get("macd", 0) > 0:
-            w = _macd_weight(tf_inds["macd"])
+            w = _macd_weight(tf_inds["macd"], formula)
             cfg_weight = weight_map["macd"]
             score += w * cfg_weight
             max_possible += 1.0 * cfg_weight
@@ -340,7 +368,7 @@ class ScoreConfluence(Enzyme):
 
         # EMA stack
         if "ema_stack" in tf_inds and weight_map.get("ema_stack", 0) > 0:
-            w = _ema_weight(tf_inds["ema_stack"])
+            w = _ema_weight(tf_inds["ema_stack"], formula)
             cfg_weight = weight_map["ema_stack"]
             score += w * cfg_weight
             max_possible += 1.0 * cfg_weight
@@ -348,7 +376,7 @@ class ScoreConfluence(Enzyme):
 
         # ADX
         if "adx" in tf_inds and weight_map.get("adx", 0) > 0:
-            w = _adx_weight(tf_inds["adx"])
+            w = _adx_weight(tf_inds["adx"], formula)
             cfg_weight = weight_map["adx"]
             score += w * cfg_weight
             max_possible += 1.0 * cfg_weight
@@ -356,8 +384,8 @@ class ScoreConfluence(Enzyme):
 
         # WaveTrend (optional)
         if "wavetrend" in tf_inds and weight_map.get("wavetrend", 0) > 0:
-            wt_w = _wavetrend_weight(tf_inds["wavetrend"])
-            mfi_w = _mfi_weight(tf_inds["wavetrend"])
+            wt_w = _wavetrend_weight(tf_inds["wavetrend"], formula)
+            mfi_w = _mfi_weight(tf_inds["wavetrend"], formula)
             cfg_weight = weight_map.get("wavetrend", 0.15)
             # Cap correlated oscillator group
             oscillator = max(-1.0, min(1.0, wt_w + mfi_w))
@@ -368,30 +396,28 @@ class ScoreConfluence(Enzyme):
         if "volume" in tf_inds:
             vol_high_ratio = modifier_weights.get("volume_high_ratio", 1.5)
             vol_low_ratio = modifier_weights.get("volume_low_ratio", 0.7)
-            vol_w = _volume_weight(tf_inds, score,
-                                   vol_high_ratio=vol_high_ratio,
-                                   vol_low_ratio=vol_low_ratio)
+            vol_w = _volume_weight(tf_inds, score, vol_high_ratio, vol_low_ratio, formula)
             score += vol_w * vol_weight
             max_possible += 0.5 * vol_weight
 
         # CVD (optional)
         if "cvd" in tf_inds:
-            cvd_w = _cvd_weight(tf_inds["cvd"])
+            cvd_w = _cvd_weight(tf_inds["cvd"], formula)
             score += cvd_w * cvd_weight
             max_possible += 0.4 * cvd_weight
 
         # Order flow (optional)
         if "order_flow" in tf_inds:
-            of_w = _order_flow_weight(tf_inds["order_flow"])
+            of_w = _order_flow_weight(tf_inds["order_flow"], formula)
             score += of_w * of_weight
             max_possible += 0.15 * of_weight
 
         # Cap correlated momentum group (RSI + MACD)
         momentum_raw = 0.0
         if "rsi" in tf_inds and weight_map.get("rsi", 0) > 0:
-            momentum_raw += _rsi_weight(tf_inds["rsi"].get("value", 50), rsi_high, rsi_low)
+            momentum_raw += _rsi_weight(tf_inds["rsi"].get("value", 50), rsi_high, rsi_low, formula)
         if "macd" in tf_inds and weight_map.get("macd", 0) > 0:
-            momentum_raw += _macd_weight(tf_inds["macd"])
+            momentum_raw += _macd_weight(tf_inds["macd"], formula)
         if abs(momentum_raw) > momentum_cap:
             excess = abs(momentum_raw) - momentum_cap
             # Dampen the excess
