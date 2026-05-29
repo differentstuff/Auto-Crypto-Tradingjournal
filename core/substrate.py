@@ -191,8 +191,9 @@ class Substrate:
         # This is intentional: no trades until sufficient trajectory data exists.
         symbols_cfg = cfg.get("symbols", {})
         self.market = {
-            "symbols_watched": symbols_cfg["always_watch"],
+            "symbols_watched": symbols_cfg.get("always_watch", []),
             "last_scan_at": "",
+            "last_dynamic_filter_at": "",  # ISO timestamp of last dynamic filter run
             "indicators": {},
             "indicator_history": {},  # {symbol: [{timestamp, indicators: {...}}, ...]
             "last_candle_close_ts": {},  # {symbol_tf: ISO_timestamp} — survives reset_cycle
