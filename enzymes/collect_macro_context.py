@@ -125,11 +125,16 @@ class CollectMacroContext(Enzyme):
             macro["btc_dominance"] = {"ok": False, "error": str(e)}
 
         # 3. VIX / DXY / Macro regime (requires yfinance)
+        # VIX thresholds and yfinance params from config (macro section)
         try:
             import yfinance as yf
+            vix_risk_off = substrate.cfg("macro.vix_risk_off")
+            vix_neutral = substrate.cfg("macro.vix_neutral")
+            yf_period = substrate.cfg("macro.yfinance_period")
+            yf_interval = substrate.cfg("macro.yfinance_interval")
             tickers = yf.download(
                 ["^VIX", "DX-Y.NYB"],
-                period="2d", interval="1h",
+                period=yf_period, interval=yf_interval,
                 group_by="ticker", auto_adjust=True, progress=False,
             )
 
@@ -145,9 +150,9 @@ class CollectMacroContext(Enzyme):
 
             if vix is None:
                 regime = "unknown"
-            elif vix > 30:
+            elif vix > vix_risk_off:
                 regime = "risk-off"
-            elif vix > 20:
+            elif vix > vix_neutral:
                 regime = "neutral"
             else:
                 regime = "risk-on"
