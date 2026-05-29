@@ -698,6 +698,78 @@ class Exchange:
             _log.error("fetch_ticker failed for %s: %s", symbol, e)
             return None
 
+    def fetch_usdt_perps(self) -> List[Dict]:
+        """
+        Fetch all USDT-M perpetual futures from the data source exchange.
+
+        Returns a list of dicts, each with:
+          - symbol: journal format (e.g. "BTCUSDT")
+          - volume_24h_usd: 24h quote volume in USD (0.0 if unavailable)
+          - open_interest_usd: open interest in USD (0.0 if unavailable)
+
+        Uses CCXT's fetch_markets() to get the full instrument list, then
+        filters for USDT-settled perpetual swaps. Volume and OI come from
+        the market info dict if available (exchange-dependent).
+
+        No authentication required — market metadata is public.
+        """
+        try:
+            exchange = self._get_data_exchange()
+            markets = exchange.fetch_markets()
+
+            result = []
+            for market in markets:
+                # Filter: only USDT-settled perpetual swaps
+                if market.get("type") != "swap":
+                    continue
+                settle = market.get("settle", "") or ""
+                if settle.upper() != "USDT":
+                    continue
+
+                # Symbol in journal format
+                ccxt_sym = market.get("symbol", "")
+                jour_sym = _to_journal_symbol(ccxt_sym)
+
+                # Extract volume and OI from market info (exchange-dependent fields)
+                info = market.get("info", {})
+                volume_24h = 0.0
+                open_interest = 0.0
+
+                # Bitget-specific fields
+                if "volume24h" in info:
+                    try:
+                        volume_24h = float(info["volume24h"]) * float(market.get("last", 0) or 1)
+                    except (ValueError, TypeError):
+                        pass
+                if "openInterest" in info:
+                    try:
+                        oi_contracts = float(info["openInterest"])
+                        contract_size = float(market.get("contractSize", 1) or 1)
+                        last_price = float(market.get("last", 0) or 1)
+                        open_interest = oi_contracts * contract_size * last_price
+                    except (ValueError, TypeError):
+                        pass
+
+                # Generic CCXT fields as fallback
+                if volume_24h == 0.0 and market.get("quoteVolume"):
+                    try:
+                        volume_24h = float(market["quoteVolume"])
+                    except (ValueError, TypeError):
+                        pass
+
+                result.append({
+                    "symbol": jour_sym,
+                    "volume_24h_usd": volume_24h,
+                    "open_interest_usd": open_interest,
+                })
+
+            _log.info("Fetched %d USDT-M perpetual pairs from exchange", len(result))
+            return result
+
+        except Exception as e:
+            _log.error("fetch_usdt_perps failed: %s", e)
+            return []
+
     def test_connection(self) -> dict:
         """
         Test exchange connectivity.
