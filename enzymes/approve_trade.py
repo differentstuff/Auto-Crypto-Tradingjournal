@@ -35,19 +35,20 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _kelly_fraction(score: float, config: dict) -> float:
+def _kelly_fraction(score: float, substrate: Substrate) -> float:
     """
     Kelly criterion using confluence score as edge proxy.
 
     Maps score to win_rate proxy, then computes Kelly fraction.
     Capped between kelly_min and kelly_max (from config risk section).
+    Uses substrate.cfg() for all config reads — no raw dict access.
     """
-    risk_cfg = config.get("risk", {})
-    kelly_min = risk_cfg.get("kelly_min")
-    kelly_max = risk_cfg.get("kelly_max")
-    wr_base = risk_cfg.get("kelly_win_rate_base")
-    wr_range = risk_cfg.get("kelly_win_rate_range")
-    avg_win_r = risk_cfg.get("kelly_avg_win_r")
+    risk_cfg = substrate.cfg("risk")
+    kelly_min = substrate.cfg("risk.kelly_min")
+    kelly_max = substrate.cfg("risk.kelly_max")
+    wr_base = substrate.cfg("risk.kelly_win_rate_base")
+    wr_range = substrate.cfg("risk.kelly_win_rate_range")
+    avg_win_r = substrate.cfg("risk.kelly_avg_win_r")
 
     # Map score (0-10) to win_rate proxy
     win_rate = wr_base + (score / 10) * wr_range
@@ -58,7 +59,7 @@ def _kelly_fraction(score: float, config: dict) -> float:
     return round(max(kelly_min, min(kelly_max, f)), 3)
 
 
-def _compute_atr_cap(equity: float, atr_value: float, config: dict) -> float:
+def _compute_atr_cap(equity: float, atr_value: float, substrate: Substrate) -> float:
     """
     ATR-based position size cap.
 
@@ -70,10 +71,11 @@ def _compute_atr_cap(equity: float, atr_value: float, config: dict) -> float:
 
     Returns 0.0 if the cap cannot be computed (missing config or ATR),
     which signals to _compute_size() that the cap should not be applied.
+    Uses substrate.cfg() for all config reads.
     """
     if not equity or not atr_value or atr_value <= 0:
         return 0.0
-    atr_cap_equity_pct = config.get("portfolio", {}).get("atr_cap_equity_pct")
+    atr_cap_equity_pct = substrate.cfg("portfolio.atr_cap_equity_pct")
     if atr_cap_equity_pct is None or atr_cap_equity_pct <= 0:
         return 0.0
     return (equity * atr_cap_equity_pct) / atr_value
@@ -86,7 +88,7 @@ def _compute_size(
     direction: str,
     kelly_fraction: float,
     leverage: int,
-    config: dict,
+    substrate: Substrate,
     atr_value: float = 0.0,
 ) -> dict:
     """
@@ -97,6 +99,7 @@ def _compute_size(
 
     Returns dict with: size_usdt, margin_usdt, risk_pct, stop_dist_pct,
                         atr_cap_applied, atr_cap_notional
+    Uses substrate.cfg() for all config reads.
     """
     _empty = {
         "size_usdt": 0, "margin_usdt": 0, "risk_pct": 0,
@@ -105,9 +108,9 @@ def _compute_size(
     if not equity or not entry_price or not sl_price:
         return _empty
 
-    risk_per_trade_pct = config.get("portfolio", {}).get("risk_per_trade_pct")
-    max_size_pct = config.get("risk", {}).get("max_size_pct_of_equity")
-    min_size_pct = config.get("risk", {}).get("min_size_pct_of_equity")
+    risk_per_trade_pct = substrate.cfg("portfolio.risk_per_trade_pct")
+    max_size_pct = substrate.cfg("risk.max_size_pct_of_equity")
+    min_size_pct = substrate.cfg("risk.min_size_pct_of_equity")
 
     # Stop distance
     stop_dist_pct = abs(entry_price - sl_price) / entry_price
@@ -132,12 +135,13 @@ def _compute_size(
     atr_cap_applied = False
     atr_cap_notional = 0.0
     if atr_value > 0:
-        atr_cap_notional = _compute_atr_cap(equity, atr_value, config)
+        atr_cap_notional = _compute_atr_cap(equity, atr_value, substrate)
         if atr_cap_notional > 0 and notional > atr_cap_notional:
+            atr_cap_equity_pct = substrate.cfg("portfolio.atr_cap_equity_pct")
             _log.info(
                 "ATR cap applied: notional %.2f → %.2f (ATR=%.4f, cap_pct=%.1f%%)",
                 notional, atr_cap_notional, atr_value,
-                config.get("portfolio", {}).get("atr_cap_equity_pct", 0),
+                atr_cap_equity_pct if atr_cap_equity_pct else 0,
             )
             notional = atr_cap_notional
             atr_cap_applied = True
@@ -246,7 +250,7 @@ class ApproveTrade(Enzyme):
                 continue
 
             # Kelly sizing
-            kelly = _kelly_fraction(abs(score), substrate._config)
+            kelly = _kelly_fraction(abs(score), substrate)
 
             # Compute size (with ATR cap)
             sizing = _compute_size(
@@ -256,7 +260,7 @@ class ApproveTrade(Enzyme):
                 direction=direction,
                 kelly_fraction=kelly,
                 leverage=leverage,
-                config=substrate._config,
+                substrate=substrate,
                 atr_value=atr_value,
             )
 
