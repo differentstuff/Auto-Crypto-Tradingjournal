@@ -129,16 +129,18 @@ class TestHoursSince:
 # ── Static mode tests ────────────────────────────────────────────────────────
 
 class TestStaticMode:
-    def test_static_mode_returns_always_watch(self):
-        """Static mode: symbols_watched = always_watch only."""
+    def test_static_mode_transform_is_noop(self):
+        """Static mode: transform() is a no-op — substrate unchanged."""
         config = make_full_config(symbols={"mode": "static"})
         substrate = Substrate(config=config)
+        original_symbols = list(substrate.market["symbols_watched"])
         enzyme = DynamicFilter(config=substrate._config)
         result = enzyme.transform(substrate)
-        assert result.market["symbols_watched"] == ["BTCUSDT", "ETHUSDT"]
+        # transform() should not change symbols_watched in static mode
+        assert result.market["symbols_watched"] == original_symbols
 
-    def test_static_mode_never_trade_excluded(self):
-        """Static mode: never_trade symbols are excluded from always_watch."""
+    def test_static_mode_substrate_init_excludes_never_trade(self):
+        """Static mode: Substrate.__init__ already excludes never_trade from always_watch."""
         config = make_full_config(symbols={
             "mode": "static",
             "always_watch": ["BTCUSDT", "ETHUSDT", "SHIBUSDT"],
@@ -153,11 +155,10 @@ class TestStaticMode:
             },
         })
         substrate = Substrate(config=config)
-        enzyme = DynamicFilter(config=substrate._config)
-        result = enzyme.transform(substrate)
-        assert "SHIBUSDT" not in result.market["symbols_watched"]
-        assert "BTCUSDT" in result.market["symbols_watched"]
-        assert "ETHUSDT" in result.market["symbols_watched"]
+        # Substrate init already filters never_trade from always_watch
+        assert "SHIBUSDT" not in substrate.market["symbols_watched"]
+        assert "BTCUSDT" in substrate.market["symbols_watched"]
+        assert "ETHUSDT" in substrate.market["symbols_watched"]
 
     def test_static_mode_does_not_activate(self):
         """In static mode, can_activate() returns False."""
