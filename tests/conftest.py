@@ -164,6 +164,22 @@ def make_full_config(**overrides) -> dict:
             {"name": "volume", "params": {}, "weight": 0.10},
             {"name": "momentum_quality", "params": {"ranking_window": 90, "min_r_squared": 0.15, "lookback_short": 30, "lookback_long": 90, "r_squared_high": 0.5, "r_squared_low": 0.3}, "weight": 0.0},
         ],
+        "challenger": {
+            "enabled": False,
+            "min_trades": 5,
+            "min_improvement": 0.1,
+        },
+        "karpathy": {
+            "enabled": False,
+            "step_size": 0.05,
+            "max_experiments_per_cycle": 1,
+        },
+        "hyperopt": {
+            "enabled": False,
+            "n_trials": 100,
+            "top_n_candidates": 3,
+            "search_interval_hours": 24,
+        },
         "modules": {
             "macro_context": False,
             "telegram_logs": False,
