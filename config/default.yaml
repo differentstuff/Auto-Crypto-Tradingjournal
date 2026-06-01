@@ -224,6 +224,29 @@ indicators:
     weight: 0.0
     description: "Momentum quality ranking (slope × R²) for dynamic symbol filter."
 
+# Challenger system (disabled by default)
+# When enabled, weight adjustments go through the CandidateQueue and
+# must pass challenger paper-trading validation before reaching production.
+challenger:
+  enabled: false
+  min_trades: 5                 # minimum hypothetical trades before evaluation
+  min_improvement: 0.1          # minimum profit factor improvement (10%) to promote
+
+# Karpathy experiment loop (disabled by default)
+# Proposes one parameter change at a time, backtests, pushes to CandidateQueue.
+karpathy:
+  enabled: false
+  step_size: 0.05               # weight change per experiment step
+  max_experiments_per_cycle: 1  # experiments per daemon cycle
+
+# Hyperopt prefilter (disabled by default)
+# Systematic parameter search via Optuna TPE, pushes top candidates to CandidateQueue.
+hyperopt:
+  enabled: false
+  n_trials: 100                 # Optuna trials per search
+  top_n_candidates: 3           # candidates pushed to queue per search
+  search_interval_hours: 24     # minimum hours between searches
+
 # Modules (all off by default)
 modules:
   macro_context: false
