@@ -189,6 +189,10 @@ class ScoreConfluence(Enzyme):
         candidates = substrate.analysis.get("candidates", [])
         confluence_scored = substrate.analysis.get("confluence_scored", False)
         noise_flag = substrate.analysis.get("noise_flag", False)
+        # HMM regime filter: skip scoring during Spike regime
+        regime_normal = substrate.confluence.get("regime_normal", True)
+        if not regime_normal:
+            return False
         return bool(indicators) and not candidates and not confluence_scored and not noise_flag
 
     def transform(self, substrate: Substrate) -> Substrate:
