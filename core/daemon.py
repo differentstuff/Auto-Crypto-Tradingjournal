@@ -433,6 +433,16 @@ class Daemon:
             duration_ms,
         )
 
+        # ── Post-cycle: Challenger branch (non-blocking) ──────────────────
+        if self.config.get("challenger.enabled", False):
+            try:
+                self._run_challenger_branch()
+            except Exception as e:
+                _log.error(
+                    "Challenger branch failed (production unaffected): %s",
+                    e, exc_info=True,
+                )
+
         return {
             "cycle": self.scheduler.cycle_count,
             "action": self.substrate.decisions.get("action", "wait"),
@@ -465,6 +475,56 @@ class Daemon:
         self._shutdown_requested = True
         self._running = False
         self.scheduler.stop()
+
+    def _run_challenger_branch(self) -> None:
+        """Run the challenger paper-trading branch after the production cycle.
+
+        This method runs AFTER the production cycle is complete and state is
+        persisted. It uses the same market data as production but scores with
+        challenger weights. All operations are non-blocking — if anything
+        fails, production is completely unaffected.
+
+        Flow:
+          1. If no active challenger, try to activate next from queue
+          2. Run hypothetical tracker cycle (exits + entries)
+          3. Evaluate challenger (promote / discard / accumulating)
+          4. If resolved, try to activate next from queue
+        """
+        from learning.challenger import WeightChallenger, CandidateQueue
+        from learning.hypothetical_tracker import HypotheticalTracker
+        from learning.comparator import ChallengerComparator
+
+        challenger = self.substrate.learning.get("challenger", {})
+        challenger_weights = challenger.get("weights")
+
+        # Step 1: If no active challenger, try to activate one from the queue
+        if not challenger_weights:
+            activated = WeightChallenger.activate_next_candidate(self.substrate)
+            if not activated:
+                return  # No candidates in queue
+            challenger_weights = self.substrate.learning["challenger"]["weights"]
+
+        # Step 2: Run hypothetical tracker cycle
+        HypotheticalTracker.run_cycle(self.substrate, challenger_weights)
+
+        # Step 3: Evaluate challenger
+        verdict = ChallengerComparator.evaluate(self.substrate)
+
+        if verdict == "promote":
+            metrics = ChallengerComparator.get_metrics(self.substrate)
+            WeightChallenger.promote(self.substrate, "profit_factor_improvement", metrics)
+
+            # Try to activate next candidate from queue
+            WeightChallenger.activate_next_candidate(self.substrate)
+
+        elif verdict == "discard":
+            metrics = ChallengerComparator.get_metrics(self.substrate)
+            WeightChallenger.discard(self.substrate, "insufficient_improvement", metrics)
+
+            # Try to activate next candidate from queue
+            WeightChallenger.activate_next_candidate(self.substrate)
+
+        # "accumulating" — do nothing, keep collecting data
 
     def register_enzyme(self, enzyme) -> None:
         """Register an enzyme with the daemon."""
