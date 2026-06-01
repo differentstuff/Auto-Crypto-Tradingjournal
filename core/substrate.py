@@ -208,6 +208,13 @@ class Substrate:
             "sentiment": {},
         }
 
+        # Confluence section (populated by Sensor enzymes, read by Oxidoreductase enzymes)
+        # Persists across cycles within a run — regime_normal is valid until
+        # next sensor run. NOT persisted across restarts (sensors repopulate).
+        self.confluence = {
+            "regime_normal": True,  # HMM regime filter (default: True = fail-open)
+        }
+
         # Analysis section (populated by Oxidoreductase enzymes each cycle)
         # NOT persisted across restarts -- evaluators recompute on first cycle.
         self.analysis = {
@@ -623,6 +630,7 @@ class Substrate:
         new.strategy = self.strategy.copy()
         new.portfolio = self.portfolio.copy()
         new.market = self.market.copy()
+        new.confluence = self.confluence.copy()
         new.analysis = self.analysis.copy()
         new.decisions = self.decisions.copy()
         new.learning = self.learning.copy()
@@ -671,6 +679,7 @@ class Substrate:
             "strategy": copy.deepcopy(self.strategy),
             "portfolio": copy.deepcopy(self.portfolio),
             "market": copy.deepcopy(self.market),
+            "confluence": copy.deepcopy(self.confluence),
             "analysis": copy.deepcopy(self.analysis),
             "decisions": copy.deepcopy(self.decisions),
             "learning": copy.deepcopy(self.learning),
@@ -736,6 +745,8 @@ class Substrate:
         # Restore transient sections if present (e.g. in test roundtrips)
         if "market" in d:
             sub.market = d["market"]
+        if "confluence" in d:
+            sub.confluence = d["confluence"]
         if "analysis" in d:
             sub.analysis = d["analysis"]
         if "decisions" in d:
