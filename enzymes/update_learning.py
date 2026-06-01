@@ -121,8 +121,10 @@ class UpdateLearning(Enzyme):
             _log.error("Failed to update trajectory accuracy: %s", e, exc_info=True)
 
         # 4. Compute adjusted weights and write to substrate
-        #    ScoreConfluence reads from substrate.learning["adjusted_weights"]
-        #    on the next cycle instead of re-computing.
+        #    If challenger is enabled, push to CandidateQueue instead of
+        #    writing directly to production. The challenger validates before
+        #    weights reach substrate.learning["adjusted_weights"].
+        #    If challenger is disabled, write directly (legacy behavior).
         try:
             from learning.weight_adjuster import compute_adjusted_weights
             indicator_configs = substrate.cfg("indicators", [])
@@ -142,15 +144,25 @@ class UpdateLearning(Enzyme):
             )
 
             if adjusted and adjusted != weight_map:
-                substrate.learning["adjusted_weights"] = adjusted
-                changed = [
-                    k for k in adjusted
-                    if adjusted.get(k) != weight_map.get(k)
-                ]
-                _log.info(
-                    "Adjusted weights for '%s': %d indicators changed: %s",
-                    strategy_name, len(changed), changed,
-                )
+                challenger_enabled = substrate.cfg("challenger.enabled", False)
+
+                if challenger_enabled:
+                    from learning.challenger import CandidateQueue
+                    CandidateQueue.push(adjusted, source="weight_adjuster", substrate=substrate)
+                    _log.info(
+                        "Adjusted weights pushed to CandidateQueue for '%s' (challenger enabled)",
+                        strategy_name,
+                    )
+                else:
+                    substrate.learning["adjusted_weights"] = adjusted
+                    changed = [
+                        k for k in adjusted
+                        if adjusted.get(k) != weight_map.get(k)
+                    ]
+                    _log.info(
+                        "Adjusted weights for '%s': %d indicators changed: %s",
+                        strategy_name, len(changed), changed,
+                    )
             else:
                 _log.debug("No weight adjustments needed for '%s'", strategy_name)
 
