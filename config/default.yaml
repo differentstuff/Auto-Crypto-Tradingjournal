@@ -224,6 +224,17 @@ indicators:
     weight: 0.0
     description: "Momentum quality ranking (slope × R²) for dynamic symbol filter."
 
+# HMM regime detection (disabled by default)
+# When enabled, DetectRegime enzyme fits a 2-state GaussianHMM on hourly
+# log-returns and blocks entries during high-volatility Spike regimes.
+hmm:
+  enabled: false
+  lookback_days: 30            # days of hourly data for model fitting
+  confidence_threshold: 0.70   # min prob_normal to consider regime Normal
+  refit_interval_days: 7       # refit model weekly
+  min_bars: 720                # minimum hourly bars needed to fit (30 days × 24h)
+  n_restarts: 3                # multi-start optimization to avoid local optima
+
 # Challenger system (disabled by default)
 # When enabled, weight adjustments go through the CandidateQueue and
 # must pass challenger paper-trading validation before reaching production.
