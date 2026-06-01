@@ -53,6 +53,13 @@ substrate:
     noise_reason: ""              # "low volume" | "kill_zone" | "conflicting signals"
     signal_states: {}             # {SYMBOLUSDT: {rsi: "bullish", macd: "bullish", ema: "neutral"}}
     # Raw signal alignment state for each watched symbol
+    confluence: {}                # {funding_squeeze: bool, fgi_contrarian: bool, liquidation_cascade: bool}
+    # External confluence signals from CollectExternalSignals enzyme.
+    # Populated when modules.external_signals is true.
+    # funding_squeeze: funding_rate < threshold (crowded shorts → explosive upside)
+    # fgi_contrarian: FGI <= threshold (extreme fear → contrarian long)
+    # liquidation_cascade: > $threshold liquidations in window (smart money fading)
+    external_signals_evaluated: false  # true after CollectExternalSignals runs
 
   # WHAT WE DECIDE: Decision state (updated by Regulator enzymes)
   decisions:
