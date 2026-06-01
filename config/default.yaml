@@ -258,6 +258,17 @@ hyperopt:
   top_n_candidates: 3           # candidates pushed to queue per search
   search_interval_hours: 24     # minimum hours between searches
 
+# Walk-Forward + PBO validation (disabled by default)
+# Multi-window walk-forward analysis with Probability of Backtest Overfitting.
+# Strategies must survive ALL windows (no negative Sharpe) and pass PBO/WFE thresholds.
+walk_forward_pbo:
+  enabled: false
+  n_windows: 5                  # number of expanding windows (>= 2 recommended)
+  train_ratio: 0.7              # 70% train, 30% test per window
+  n_trials: 50                  # Optuna trials per window optimization
+  wfe_threshold: 0.5            # Walk-Forward Efficiency must exceed this to pass
+  pbo_threshold: 0.5            # PBO must be below this to pass (lower = less overfitting)
+
 # Modules (all off by default)
 modules:
   macro_context: false

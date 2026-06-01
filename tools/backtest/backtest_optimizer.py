@@ -211,6 +211,42 @@ def start_walk_forward_job(symbol: str, timeframe: str = "4H",
     return job_id
 
 
+def start_walk_forward_pbo_job(symbol: str, timeframe: str = "4H",
+                               n_windows: int = 5,
+                               train_ratio: float = 0.7,
+                               n_trials: int = 50,
+                               wfe_threshold: float = 0.5,
+                               pbo_threshold: float = 0.5) -> str:
+    """Start an async walk-forward PBO job in a daemon thread. Returns job_id immediately."""
+    from backtest_quality import run_walk_forward_pbo
+
+    job_id = str(uuid.uuid4())
+    job = _OptJob(job_id=job_id, symbol=symbol)
+    with _jobs_lock:
+        _evict_old_jobs()
+        _jobs[job_id] = job
+
+    def _run():
+        try:
+            result = run_walk_forward_pbo(
+                symbol, timeframe, n_windows, train_ratio,
+                n_trials, wfe_threshold, pbo_threshold,
+            )
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id].status = "complete"
+                    _jobs[job_id].result = result
+        except Exception:
+            _logger.exception("Walk-forward PBO job %s failed", job_id)
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id].status = "error"
+                    _jobs[job_id].error = "Walk-forward PBO failed — check server logs"
+
+    threading.Thread(target=_run, daemon=True, name=f"wfpbo-{job_id[:8]}").start()
+    return job_id
+
+
 def run_optimizer(symbol: str = "BTCUSDT", timeframe: str = "4H",
                   days: int = 180, n_trials: int = 100,
                   end_offset_days: int = 0) -> dict:

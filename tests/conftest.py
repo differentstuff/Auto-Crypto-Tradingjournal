@@ -188,6 +188,14 @@ def make_full_config(**overrides) -> dict:
             "top_n_candidates": 3,
             "search_interval_hours": 24,
         },
+        "walk_forward_pbo": {
+            "enabled": False,
+            "n_windows": 5,
+            "train_ratio": 0.7,
+            "n_trials": 50,
+            "wfe_threshold": 0.5,
+            "pbo_threshold": 0.5,
+        },
         "modules": {
             "macro_context": False,
             "telegram_logs": False,
