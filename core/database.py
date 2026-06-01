@@ -639,6 +639,29 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         DROP TABLE _idle_condition_accuracy_old;
     """)
 
+    # ── Challenger system tables ──────────────────────────────────────────────
+    _apply(47, "challenger_log", """
+        CREATE TABLE IF NOT EXISTS challenger_log (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid             TEXT NOT NULL,
+            event_type               TEXT NOT NULL,
+            source                   TEXT,
+            timestamp                TEXT DEFAULT (datetime('now')),
+            challenger_weights_json  TEXT,
+            current_weights_json     TEXT,
+            reason                   TEXT,
+            production_profit_factor REAL,
+            challenger_profit_factor REAL,
+            promoted                 INTEGER DEFAULT 0,
+            trade_count              INTEGER,
+            symbol                   TEXT,
+            entry_score              REAL,
+            exit_pnl_pct             REAL,
+            exit_reason              TEXT,
+            signal_states_json       TEXT
+        )
+    """)
+
     conn.commit()
     _log.info("DB initialized at %s", DB_PATH)
     # Note: connection is closed by init_db()'s finally block, not here.
