@@ -191,6 +191,9 @@ def main() -> None:
     # CollectOHLCV needs the Exchange instance for OHLCV fetching
     _register("CollectOHLCV", exchange=exchange)
 
+    # DetectRegime needs Exchange for hourly data (must fire before ScoreConfluence)
+    _register("DetectRegime", exchange=exchange)
+
     for name in [
         "ScoreConfluence",
         "DetectNoise",
