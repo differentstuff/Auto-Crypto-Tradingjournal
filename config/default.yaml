@@ -268,6 +268,18 @@ modules:
   model_consensus: false
   telegram_logs: false
   telegram_interaction: false
+  external_signals: false     # CollectExternalSignals enzyme (funding, FGI, liquidations)
+
+# External confluence signals (Kaizen-inspired)
+# When modules.external_signals is true, the CollectExternalSignals enzyme
+# fetches funding rate, Fear & Greed Index, and liquidation data from free APIs.
+# Produces confluence signals: funding_squeeze, fgi_contrarian, liquidation_cascade.
+external:
+  funding_squeeze_threshold: -0.0003   # funding rate below this → squeeze signal (default -0.03% per 8h)
+  fgi_contrarian_threshold: 20         # FGI at or below this → contrarian long signal (extreme fear)
+  liquidation_cascade_usd: 250000      # USD threshold for 5min liquidation cascade
+  liquidation_window_seconds: 300      # time window for cascade detection (5 min)
+  cache_ttl: 3600                      # cache TTL for API responses (1 hour default)
 
 # Default symbol watchlist
 symbols:
