@@ -192,6 +192,14 @@ def make_full_config(**overrides) -> dict:
             "macro_context": False,
             "telegram_logs": False,
             "telegram_interaction": False,
+            "external_signals": False,
+        },
+        "external": {
+            "funding_squeeze_threshold": -0.0003,
+            "fgi_contrarian_threshold": 20,
+            "liquidation_cascade_usd": 250000,
+            "liquidation_window_seconds": 300,
+            "cache_ttl": 3600,
         },
         "telegram": {
             "bot_token": "",
