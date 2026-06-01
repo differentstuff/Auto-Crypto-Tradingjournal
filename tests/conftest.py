@@ -164,6 +164,14 @@ def make_full_config(**overrides) -> dict:
             {"name": "volume", "params": {}, "weight": 0.10},
             {"name": "momentum_quality", "params": {"ranking_window": 90, "min_r_squared": 0.15, "lookback_short": 30, "lookback_long": 90, "r_squared_high": 0.5, "r_squared_low": 0.3}, "weight": 0.0},
         ],
+        "hmm": {
+            "enabled": False,
+            "lookback_days": 30,
+            "confidence_threshold": 0.70,
+            "refit_interval_days": 7,
+            "min_bars": 720,
+            "n_restarts": 3,
+        },
         "challenger": {
             "enabled": False,
             "min_trades": 5,
