@@ -54,6 +54,7 @@ def send(
     transforms: Optional[list] = None,
     provider_order: Optional[list] = None,
     base_url: Optional[str] = None,
+    timeout: Optional[int] = None,
 ) -> str:
     """
     Make a single OpenRouter chat-completion call via OpenAI-compatible API.
@@ -72,6 +73,7 @@ def send(
         transforms:     OpenRouter transforms, e.g. ["strip_reasoning"].
         provider_order: Preferred provider routing order.
         base_url:       Override base URL (from env, injected by config_loader).
+        timeout:        Request timeout in seconds (passed to OpenAI client).
 
     Returns:
         Response text string.
@@ -88,6 +90,7 @@ def send(
         base_url=effective_base_url,
         api_key=key,
         default_headers=_DEFAULT_HEADERS,
+        timeout=timeout,
     )
 
     messages = []
