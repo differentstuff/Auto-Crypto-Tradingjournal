@@ -662,6 +662,22 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # ── LLM validation tracking fields ──────────────────────────────────────────
+    # These columns record LLM verdicts alongside trade outcomes so we can
+    # answer: "Does LLM validation actually improve trade outcomes?"
+    # llm_verdict:  proceed|confirm|concern|adjust (or NULL if LLM was disabled)
+    # llm_reason:   free-text LLM reasoning
+    # llm_model:    model used (e.g. "z-ai/glm-5.1")
+    # llm_enabled:  1 if LLM was active at trade time, 0 if not
+    # llm_override: 1 if trade was allowed via LLM "proceed" despite sub-threshold score
+    _apply(48, "trade_learning_llm_fields", """
+        ALTER TABLE trade_learning ADD COLUMN llm_verdict TEXT;
+        ALTER TABLE trade_learning ADD COLUMN llm_reason TEXT;
+        ALTER TABLE trade_learning ADD COLUMN llm_model TEXT;
+        ALTER TABLE trade_learning ADD COLUMN llm_enabled INTEGER DEFAULT 0;
+        ALTER TABLE trade_learning ADD COLUMN llm_override INTEGER DEFAULT 0
+    """)
+
     conn.commit()
     _log.info("DB initialized at %s", DB_PATH)
     # Note: connection is closed by init_db()'s finally block, not here.
