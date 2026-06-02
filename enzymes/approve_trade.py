@@ -221,6 +221,8 @@ class ApproveTrade(Enzyme):
         # Evaluate each entry zone (take the best one)
         best_approved = None
         best_score = -float("inf")
+        entry_threshold = substrate.cfg("scoring.entry_threshold")
+        llm_enabled = substrate.cfg("llm.enabled")
 
         for symbol, zone in entry_zones.items():
             direction = zone.get("direction", "")
@@ -230,6 +232,26 @@ class ApproveTrade(Enzyme):
             tp1 = zone.get("tp1", 0)
             tp2 = zone.get("tp2", 0)
             atr_value = zone.get("atr_value", 0)
+            llm_verdict = zone.get("llm_verdict")
+            llm_override = zone.get("llm_override", False)
+
+            # --- LLM override gate ---
+            # Borderline candidates (score < threshold) need LLM "proceed" to pass.
+            # Above-threshold candidates pass on numeric rules alone.
+            # LLM NEVER blocks a trade — it only enables sub-threshold ones.
+            if abs(score) < entry_threshold:
+                if llm_verdict == "proceed" and llm_override:
+                    self._log.info(
+                        "LLM override: %s approved despite score %.1f < threshold %.1f",
+                        symbol, abs(score), entry_threshold,
+                    )
+                else:
+                    # Sub-threshold without LLM proceed — skip this candidate
+                    self._log.debug(
+                        "Skipping %s: score %.1f < threshold %.1f and LLM verdict=%s",
+                        symbol, abs(score), entry_threshold, llm_verdict,
+                    )
+                    continue
 
             # Validate SL placement
             if direction == "Long" and sl_price >= entry_price:
@@ -286,6 +308,12 @@ class ApproveTrade(Enzyme):
                 "atr_cap_applied": sizing["atr_cap_applied"],
                 "atr_cap_notional": sizing["atr_cap_notional"],
                 "score": score,
+                # LLM tracking fields — recorded in trade_learning for analysis
+                "llm_verdict": llm_verdict,
+                "llm_reason": zone.get("llm_reason"),
+                "llm_model": zone.get("llm_model"),
+                "llm_enabled": llm_enabled,
+                "llm_override": llm_override,
             }
 
             # Track the best candidate by absolute score
@@ -296,11 +324,13 @@ class ApproveTrade(Enzyme):
         if best_approved:
             substrate.decisions["trade_approved"] = best_approved
             atr_cap_msg = " [ATR cap]" if best_approved.get("atr_cap_applied") else ""
+            llm_msg = f" [LLM {best_approved.get('llm_verdict', '?')}]" if best_approved.get("llm_verdict") else ""
+            llm_override_msg = " [LLM OVERRIDE]" if best_approved.get("llm_override") else ""
             self._log.info(
-                "Approved: %s %s size=%.2f kelly=%.3f%s",
+                "Approved: %s %s size=%.2f kelly=%.3f%s%s%s",
                 best_approved["direction"], best_approved["symbol"],
                 best_approved["size_usdt"], best_approved["kelly_fraction"],
-                atr_cap_msg,
+                atr_cap_msg, llm_msg, llm_override_msg,
             )
         else:
             substrate.decisions["trade_approved"] = None
