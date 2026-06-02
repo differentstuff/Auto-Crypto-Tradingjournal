@@ -55,13 +55,13 @@ def _make_config(overrides: dict | None = None) -> dict:
                      "cvd_trend": 0.4, "order_flow_pressure": 0.15,
                      "mfi_threshold": 10, "mfi_contribution": 0.3,
                  }},
-        llm={"enabled": True, "relax_factor": 0.8},
-        llm_routing={
-            "analysis": {
-                "provider": "openrouter",
-                "model": "z-ai/glm-5.1",
-            }
-        },
+        llm={"enabled": True, "relax_factor": 0.8,
+              "routing": {
+                  "analysis": {
+                      "provider": "openrouter",
+                      "model": "z-ai/glm-5.1",
+                  }
+              }},
         portfolio={"risk_per_trade_pct": 1.0, "leverage": 5, "max_positions": 3,
                    "max_total_risk_pct": 3.0, "fallback_equity_usdt": 1000.0,
                    "correlation_check": False, "max_same_direction": 3,
