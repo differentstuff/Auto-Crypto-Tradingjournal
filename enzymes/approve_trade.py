@@ -222,7 +222,7 @@ class ApproveTrade(Enzyme):
         best_approved = None
         best_score = -float("inf")
         entry_threshold = substrate.cfg("scoring.entry_threshold")
-        llm_enabled = substrate.cfg("llm.enabled")
+        llm_enabled = substrate.cfg("llm.enabled", False)
 
         for symbol, zone in entry_zones.items():
             direction = zone.get("direction", "")
