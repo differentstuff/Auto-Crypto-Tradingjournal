@@ -36,7 +36,7 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 # Config keys that contain secrets -- stripped before passing to substrate
-_SECRET_KEYS = {"exchange", "llm_keys"}
+_SECRET_KEYS = {"llm_keys"}
 
 # Enzymes that execute trades — blocked by ISC gate when any ISC fails
 _TRADE_ENZYMES = {"ApproveTrade", "ExecuteTrade", "ExecuteExit"}
