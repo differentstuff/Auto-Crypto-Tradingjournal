@@ -431,6 +431,14 @@ class LLMRouter:
         # --- Call the provider ---
         try:
             result_text = client_mod.send(**send_kwargs)
+            _log.debug(
+                "LLM request: role='%s' model='%s' prompt_len=%d system_len=%d",
+                role, model, len(prompt) if prompt else 0, len(system) if system else 0,
+            )
+            _log.debug(
+                "LLM response: role='%s' model='%s' len=%d first=%r",
+                role, model, len(result_text), result_text[:200] if result_text else None,
+            )
         except TypeError as exc:
             # Client may not accept all kwargs — try with core params only
             _log.debug("Client %s doesn't accept all params, trying core params: %s", client_type, exc)
