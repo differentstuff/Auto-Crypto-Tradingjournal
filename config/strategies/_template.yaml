@@ -8,7 +8,7 @@ strategy:
   name: ""                       # strategy identifier (must match filename without .yaml)
   uid: ""                        # stable UID for learning data isolation (auto-generated on first load, clear to reset)
   timeframe: "4h"                 # primary candle timeframe for indicator computation
-  confirmation_tf: "1h"          # higher timeframe for trend alignment check (set to null to skip)
+  confirmation_tf: "1d"          # higher timeframe for trend alignment check (set to null to skip)
   max_positions: 3                # maximum concurrent open positions
   cycle_interval_minutes: 15     # minutes between daemon cycles
 
