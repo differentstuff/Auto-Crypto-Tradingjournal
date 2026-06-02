@@ -28,6 +28,7 @@ import time
 from typing import Dict, List, Optional
 
 from core.config_loader import ConfigLoader
+from core.enzyme import Enzyme
 from core.database import init_db, save_substrate, save_cycle_log, db_conn, load_latest_substrate
 from core.scheduler import Scheduler
 from core.substrate import Substrate
@@ -205,7 +206,7 @@ class Daemon:
                 return True
         return False
 
-    def _find_wait_enzyme(self) -> Optional:
+    def _find_wait_enzyme(self) -> Optional[Enzyme]:
         """Find the Wait enzyme from the registered enzymes list."""
         for e in self.enzymes:
             if e.name == "Wait":
