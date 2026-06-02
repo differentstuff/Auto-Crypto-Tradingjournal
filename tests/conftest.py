@@ -222,6 +222,10 @@ def make_full_config(**overrides) -> dict:
             "max_cycle_steps": 20,
             "substrate_state_max_rows": 200,
         },
+        "llm": {
+            "enabled": True,
+            "relax_factor": 0.8,
+        },
         "risk": {
             "kelly_min": 0.05,
             "kelly_max": 0.25,
