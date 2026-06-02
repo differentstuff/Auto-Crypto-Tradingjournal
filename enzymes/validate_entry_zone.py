@@ -122,6 +122,63 @@ def _compute_sl_tp(
     }
 
 
+def _parse_llm_verdict(response: str) -> tuple[str, str]:
+    """
+    Parse LLM response into structured (verdict, reason) tuple.
+
+    Expects format:
+        VERDICT: proceed|confirm|concern|adjust
+        REASON: one sentence
+
+    Parsing strategy:
+    1. Look for 'VERDICT:' line and extract the keyword
+    2. Look for 'REASON:' line and extract the text
+    3. Fallback: keyword search in full text if no VERDICT: line found
+    4. Safe default: 'confirm' if nothing parseable (don't override on failure)
+
+    Returns:
+        (verdict, reason) where verdict is one of:
+        proceed, confirm, concern, adjust
+    """
+    if not response:
+        return "confirm", ""
+
+    lines = response.strip().split("\n")
+    verdict = None
+    reason = ""
+
+    # Structured parse: look for VERDICT: and REASON: lines
+    for line in lines:
+        line_stripped = line.strip()
+        if line_stripped.upper().startswith("VERDICT:"):
+            verdict_text = line_stripped[len("VERDICT:"):].strip().lower()
+            # Match known keywords
+            for keyword in ("proceed", "confirm", "concern", "adjust"):
+                if keyword in verdict_text:
+                    verdict = keyword
+                    break
+        elif line_stripped.upper().startswith("REASON:"):
+            reason = line_stripped[len("REASON:"):].strip()
+
+    # Fallback: keyword search in full text if structured parse failed
+    if verdict is None:
+        lower = response.lower()
+        if "proceed" in lower:
+            verdict = "proceed"
+        elif "concern" in lower or "flag" in lower:
+            verdict = "concern"
+        elif "adjust" in lower:
+            verdict = "adjust"
+        else:
+            verdict = "confirm"  # Safe default — don't override on parse failure
+
+    # If no REASON: line found, use the full response (truncated)
+    if not reason:
+        reason = response.strip()[:200]
+
+    return verdict, reason
+
+
 @register_enzyme
 class ValidateEntryZone(Enzyme):
     """
@@ -262,16 +319,33 @@ class ValidateEntryZone(Enzyme):
 
     def _optional_llm_validation(self, substrate: Substrate, entry_zones: dict) -> None:
         """
-        Optionally enrich entry zones with LLM validation.
+        Enrich entry zones with LLM validation.
 
-        Only fires when 'analysis' role is configured in llm.routing.
-        If call_llm returns None, the entry zones remain unchanged —
-        LLM is purely additive and never blocks the enzyme.
+        The LLM's role is to ENABLE trades that numeric rules would reject.
+        It can say "proceed" to allow a sub-threshold trade, or "concern"/
+        "adjust" to flag trades for learning analysis. It NEVER blocks a trade.
 
-        The LLM receives a compact summary of the entry zone and returns
-        a brief validation string stored in entry_zone['llm_validation'].
+        Config switches:
+          - llm.enabled: system-wide on/off for LLM calls
+          - llm.relax_factor: candidates scoring above (threshold * relax_factor)
+            but below threshold are sent to LLM for review.
+
+        Verdict parsing:
+          - VERDICT: proceed  → trade allowed despite sub-threshold score
+          - VERDICT: confirm  → numeric and LLM agree, trade solid
+          - VERDICT: concern  → flag for learning, trade still proceeds
+          - VERDICT: adjust  → SL/TP suggestion, trade still proceeds
+
+        If call_llm returns None or parsing fails, the entry zone keeps its
+        numeric verdict only — LLM is additive, never required.
         """
-        # Check if 'analysis' role is configured
+        # Check system-wide LLM switch
+        llm_enabled = substrate.cfg("llm.enabled")
+        if not llm_enabled:
+            self._log.debug("LLM validation skipped: llm.enabled is false")
+            return
+
+        # Check if 'analysis' role is configured in routing
         llm_routing = substrate.cfg("llm.routing", {})
         if not llm_routing or "analysis" not in llm_routing:
             return  # No analysis role configured — skip LLM entirely
@@ -282,38 +356,97 @@ class ValidateEntryZone(Enzyme):
             return  # LLM module not available
 
         entry_threshold = substrate.cfg("scoring.entry_threshold")
+        relax_factor = substrate.cfg("llm.relax_factor")
+        relaxed_threshold = entry_threshold * relax_factor
+
+        llm_model = llm_routing.get("analysis", {}).get("model", "unknown")
 
         for symbol, zone in entry_zones.items():
-            # Skip LLM for candidates below entry_threshold — they can never
-            # pass ApproveTrade, so LLM validation is wasted budget.
-            if abs(zone.get("score", 0)) < entry_threshold:
+            score = abs(zone.get("score", 0))
+
+            # Send to LLM if score is above relaxed threshold
+            # (includes both above-threshold and borderline candidates)
+            if score < relaxed_threshold:
                 self._log.debug(
-                    "Skipping LLM validation for %s: score %.1f below threshold %.1f",
-                    symbol, zone.get("score", 0), entry_threshold,
+                    "Skipping LLM validation for %s: score %.1f below relaxed threshold %.1f",
+                    symbol, score, relaxed_threshold,
                 )
                 continue
 
             try:
+                # Build indicator summary for LLM context
+                indicators = substrate.market.get("indicators", {})
+                sym_data = indicators.get(symbol, {})
+                indicator_summary = self._summarize_indicators(sym_data, zone)
+
                 prompt = (
-                    f"Validate this crypto entry zone:\n"
+                    f"Analyze this crypto entry setup:\n"
                     f"Symbol: {symbol}\n"
                     f"Direction: {zone.get('direction', '?')}\n"
                     f"Entry: {zone.get('entry_price', 0):.2f}\n"
                     f"SL: {zone.get('sl_price', 0):.2f} ({zone.get('sl_type', '?')})\n"
                     f"TP1: {zone.get('tp1', 0):.2f} | TP2: {zone.get('tp2', 0):.2f}\n"
                     f"R:R: {zone.get('rr_ratio', 0):.1f}\n"
-                    f"Score: {zone.get('score', 0):+.1f}\n"
-                    f"Respond with one sentence: confirm, flag concern, or suggest adjustment."
+                    f"Score: {zone.get('score', 0):+.1f} (threshold: {entry_threshold})\n"
+                    f"{indicator_summary}\n"
+                    f"\nRespond with EXACTLY this format:\n"
+                    f"VERDICT: proceed|confirm|concern|adjust\n"
+                    f"REASON: one sentence explaining your assessment"
                 )
 
                 result = call_llm("analysis", prompt)
                 if result:
-                    zone["llm_validation"] = result.strip()
-                    self._log.debug("LLM validation added for %s", symbol)
+                    verdict, reason = _parse_llm_verdict(result)
+                    zone["llm_verdict"] = verdict
+                    zone["llm_reason"] = reason
+                    zone["llm_model"] = llm_model
+                    zone["llm_enabled"] = True
+                    # Flag override: LLM enabled a sub-threshold trade
+                    zone["llm_override"] = verdict == "proceed" and score < entry_threshold
+                    self._log.info(
+                        "LLM verdict for %s: %s (score=%.1f, override=%s)",
+                        symbol, verdict, score, zone.get("llm_override", False),
+                    )
+                else:
+                    zone["llm_verdict"] = None
+                    zone["llm_reason"] = None
+                    zone["llm_model"] = None
+                    zone["llm_enabled"] = True
+                    zone["llm_override"] = False
 
             except Exception as exc:
                 # Never let LLM errors break the enzyme
                 self._log.debug("LLM validation skipped for %s: %s", symbol, exc)
+                zone["llm_verdict"] = None
+                zone["llm_reason"] = None
+                zone["llm_model"] = None
+                zone["llm_enabled"] = True
+                zone["llm_override"] = False
+
+    @staticmethod
+    def _summarize_indicators(sym_data: dict, zone: dict) -> str:
+        """Build a compact indicator summary for the LLM prompt."""
+        if not sym_data:
+            return "Indicators: (no data)"
+        # Pick the first timeframe with data
+        for tf, tf_data in sym_data.items():
+            if isinstance(tf_data, dict) and tf_data.get("ok"):
+                parts = []
+                for key in ("rsi", "macd", "ema_stack", "adx", "volume"):
+                    ind = tf_data.get(key)
+                    if isinstance(ind, dict):
+                        if key == "rsi":
+                            parts.append(f"RSI: {ind.get('value', '?')}")
+                        elif key == "macd":
+                            parts.append(f"MACD: {ind.get('bias', '?')} (hist {'growing' if ind.get('histogram_growing') else 'fading'})")
+                        elif key == "ema_stack":
+                            parts.append(f"EMA: {ind.get('alignment', '?')} stack={ind.get('stack', '?')}")
+                        elif key == "adx":
+                            parts.append(f"ADX: {ind.get('value', '?')} ({ind.get('direction', '?')})")
+                        elif key == "volume":
+                            parts.append(f"Volume: {ind.get('ratio', '?')}x avg")
+                return f"Indicators ({tf}): {', '.join(parts)}" if parts else "Indicators: (summary unavailable)"
+        return "Indicators: (no valid timeframe data)"
 
     def flux_score(self, substrate: Substrate) -> float:
         """Dynamic flux: higher when entry zones have strong candidates."""
