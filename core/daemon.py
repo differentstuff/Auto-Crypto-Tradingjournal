@@ -199,7 +199,7 @@ class Daemon:
         The 'watching' attractor is special — it's reached when the Wait
         enzyme fires (action == 'wait').
         """
-        action = substrate.decisions.get("action", "wait")
+        action = substrate.decisions.get("action", "")
         for attr_name, attr_def in self.ATTRACTORS.items():
             if action in attr_def["terminal_actions"]:
                 return True
@@ -417,7 +417,7 @@ class Daemon:
         save_cycle_log(
             strategy_name=self.strategy_name,
             cycle_count=self.scheduler.cycle_count,
-            action=self.substrate.decisions.get("action", "wait"),
+            action=self.substrate.decisions.get("action", ""),
             enzymes_fired=enzymes_fired,
             isc_results=isc_results,
             duration_ms=duration_ms,
@@ -428,7 +428,7 @@ class Daemon:
         _log.info(
             "Cycle %d complete: action=%s, enzymes=%s, duration=%dms",
             self.scheduler.cycle_count,
-            self.substrate.decisions.get("action", "wait"),
+            self.substrate.decisions.get("action", ""),
             enzymes_fired or ["none"],
             duration_ms,
         )
@@ -445,7 +445,7 @@ class Daemon:
 
         return {
             "cycle": self.scheduler.cycle_count,
-            "action": self.substrate.decisions.get("action", "wait"),
+            "action": self.substrate.decisions.get("action", ""),
             "enzymes_fired": enzymes_fired,
             "isc_results": isc_results,
             "duration_ms": duration_ms,

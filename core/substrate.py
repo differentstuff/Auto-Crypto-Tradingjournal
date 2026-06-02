@@ -237,7 +237,7 @@ class Substrate:
         # Decisions section (populated by Regulator enzymes)
         # Per-cycle fields are cleared by reset_cycle().
         self.decisions = {
-            "action": "wait",
+            "action": "",
             "trade_approved": None,
             "exit_request": None,
             "exit_approved": None,
@@ -487,8 +487,8 @@ class Substrate:
         # --- false_or_action_wait: field is falsy OR action == 'wait' --------
         elif op == "false_or_action_wait":
             noise = field_val if field_val is not _MISSING else False
-            action = resolved if resolved is not None else "wait"
-            return (not noise) or (action == "wait")
+            action = resolved if resolved is not None else ""
+            return (not noise) or (action == "")
 
         # --- best_field_gte: best (first) item has field_key >= threshold ----
         # Used by ISC-006: only the best candidate must meet the threshold,
@@ -583,7 +583,7 @@ class Substrate:
         self.analysis["pre_trade_evaluated"] = False
         self.analysis["macro_evaluated"] = False
         # Decisions section: clear for new decisions
-        self.decisions["action"] = "wait"
+        self.decisions["action"] = ""
         self.decisions["trade_approved"] = None
         self.decisions["exit_request"] = None
         self.decisions["exit_approved"] = None
@@ -759,7 +759,7 @@ class Substrate:
         return cls.from_dict(json.loads(json_str), config=config)
 
     def __repr__(self) -> str:
-        action = self.decisions.get("action", "wait")
+        action = self.decisions.get("action", "")
         n_pos = len(self.portfolio.get("open_positions", []))
         n_cand = len(self.analysis.get("candidates", []))
         return (
