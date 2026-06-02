@@ -13,6 +13,7 @@ from enzymes.detect_noise import DetectNoise
 from enzymes.validate_entry_zone import ValidateEntryZone
 from enzymes.collect_pre_trade_context import CollectPreTradeContext
 from enzymes.collect_macro_context import CollectMacroContext
+from enzymes.detect_regime import DetectRegime
 
 # Phase C: Regulators and Transporters
 from enzymes.approve_trade import ApproveTrade
@@ -39,6 +40,7 @@ __all__ = [
     "ValidateEntryZone",
     "CollectPreTradeContext",
     "CollectMacroContext",
+    "DetectRegime",
     # Phase C
     "ApproveTrade",
     "ApproveExit",
