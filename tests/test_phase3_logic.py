@@ -93,7 +93,7 @@ def _base_config() -> dict:
             "max_positions": 3,
         },
         scoring={
-            "entry_threshold": 6.5,
+            "entry_threshold": 0.0,
             "confluence_min_signals": 3,
             "rr_minimum": 2.0,
         },
