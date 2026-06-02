@@ -281,7 +281,18 @@ class ValidateEntryZone(Enzyme):
         except ImportError:
             return  # LLM module not available
 
+        entry_threshold = substrate.cfg("scoring.entry_threshold")
+
         for symbol, zone in entry_zones.items():
+            # Skip LLM for candidates below entry_threshold — they can never
+            # pass ApproveTrade, so LLM validation is wasted budget.
+            if abs(zone.get("score", 0)) < entry_threshold:
+                self._log.debug(
+                    "Skipping LLM validation for %s: score %.1f below threshold %.1f",
+                    symbol, zone.get("score", 0), entry_threshold,
+                )
+                continue
+
             try:
                 prompt = (
                     f"Validate this crypto entry zone:\n"
