@@ -130,6 +130,10 @@ def _make_config(overrides: dict | None = None) -> dict:
         "sync": {
             "position_sync_every_n_cycles": 4,  # sync positions every N cycles
         },
+        "llm": {
+            "enabled": True,
+            "relax_factor": 0.8,
+        },
         "daemon": {
             "paper_mode": True,
             "max_cycle_steps": 20,
