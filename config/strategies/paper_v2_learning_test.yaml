@@ -203,3 +203,12 @@ modules:
   model_consensus: false
   telegram_logs: false           # ⚠️ NOT IMPLEMENTED — postponed indefinitely
   telegram_interaction: false    # ⚠️ NOT IMPLEMENTED — postponed indefinitely
+
+# LLM override for this strategy
+# enabled: true → LLM validates entry zones (costs ~$0.29/day)
+# relax_factor: 0.8 → candidates scoring 4.0-5.0 get LLM review
+#   If LLM says "proceed", trade is allowed despite sub-threshold score.
+#   Set to 1.0 to disable override (only above-threshold trades).
+llm:
+  enabled: true
+  relax_factor: 0.8
