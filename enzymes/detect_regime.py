@@ -83,7 +83,7 @@ class DetectRegime(Enzyme):
             exchange: core.exchange.Exchange instance for hourly data fetching.
         """
         super().__init__(config=config)
-        self._exchange = exchange
+        self.exchange = exchange
         self._model: Optional[GaussianMixture] = None
         self._fitted = False
         self._normal_state = 0
@@ -204,7 +204,7 @@ class DetectRegime(Enzyme):
         falls back to direct exchange API call.
         """
         # Try to get hourly data from exchange
-        if self._exchange is None:
+        if self.exchange is None:
             self._log.warning("No Exchange instance — cannot fetch hourly data for regime detection")
             return None
 
@@ -222,7 +222,7 @@ class DetectRegime(Enzyme):
         regime_symbol = "BTCUSDT" if "BTCUSDT" in symbols else symbols[0]
 
         try:
-            df = self._exchange.fetch_ohlcv(
+            df = self.exchange.fetch_ohlcv(
                 regime_symbol, timeframe="1h", limit=limit
             )
             if df is None or df.empty or len(df) < 100:
