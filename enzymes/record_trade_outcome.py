@@ -431,13 +431,23 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
                 trajectory_pattern = traj.get("trajectory_type", "")
                 coincidence_risk = traj.get("coincidence_risk", "")
 
+        # Extract LLM tracking fields from trade_approved
+        # These are recorded in trade_learning for analysis:
+        # "Does LLM validation actually improve trade outcomes?"
+        llm_verdict = trade_approved.get("llm_verdict") if trade_approved else None
+        llm_reason = trade_approved.get("llm_reason") if trade_approved else None
+        llm_model = trade_approved.get("llm_model") if trade_approved else None
+        llm_enabled = trade_approved.get("llm_enabled", False) if trade_approved else False
+        llm_override = trade_approved.get("llm_override", False) if trade_approved else False
+
         with db_conn() as conn:
             conn.execute(
                 """INSERT INTO trade_learning
                    (strategy_name, strategy_uid, symbol, direction, entry_time,
                     confluence_score_at_entry, signals_at_entry_json,
-                    pre_trade_trajectory_pattern, pre_trade_coincidence_risk)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    pre_trade_trajectory_pattern, pre_trade_coincidence_risk,
+                    llm_verdict, llm_reason, llm_model, llm_enabled, llm_override)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     strategy_name,
                     strategy_uid,
@@ -448,6 +458,11 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
                     signals_json,
                     trajectory_pattern,
                     coincidence_risk,
+                    llm_verdict,
+                    llm_reason,
+                    llm_model,
+                    1 if llm_enabled else 0,
+                    1 if llm_override else 0,
                 ),
             )
     except Exception as e:
