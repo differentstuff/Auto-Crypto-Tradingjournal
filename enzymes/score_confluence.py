@@ -253,7 +253,7 @@ class ScoreConfluence(Enzyme):
         # LLM relax factor: borderline candidates (between relaxed and full threshold)
         # are included as candidates so ValidateEntryZone can send them to LLM.
         # If LLM says "proceed", ApproveTrade allows them as overrides.
-        llm_relax_factor = substrate.cfg("llm.relax_factor")
+        llm_relax_factor = substrate.cfg("llm.relax_factor", 0.8)
         relaxed_threshold = entry_threshold * llm_relax_factor if llm_relax_factor else entry_threshold
 
         candidates = []
