@@ -340,7 +340,7 @@ class ValidateEntryZone(Enzyme):
         numeric verdict only — LLM is additive, never required.
         """
         # Check system-wide LLM switch
-        llm_enabled = substrate.cfg("llm.enabled")
+        llm_enabled = substrate.cfg("llm.enabled", False)
         if not llm_enabled:
             self._log.debug("LLM validation skipped: llm.enabled is false")
             return
@@ -356,7 +356,7 @@ class ValidateEntryZone(Enzyme):
             return  # LLM module not available
 
         entry_threshold = substrate.cfg("scoring.entry_threshold")
-        relax_factor = substrate.cfg("llm.relax_factor")
+        relax_factor = substrate.cfg("llm.relax_factor", 0.8)
         relaxed_threshold = entry_threshold * relax_factor
 
         llm_model = llm_routing.get("analysis", {}).get("model", "unknown")
