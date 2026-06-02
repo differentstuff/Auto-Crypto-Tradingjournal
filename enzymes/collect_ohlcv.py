@@ -138,7 +138,7 @@ class CollectOHLCV(Enzyme):
                       ConfigLoader/Exchange instances.
         """
         super().__init__(config=config)
-        self._exchange = exchange
+        self.exchange = exchange
 
     def requires(self) -> list[str]:
         return ["strategy.name is set"]
@@ -208,7 +208,7 @@ class CollectOHLCV(Enzyme):
                 compute_configs.append(ind_cfg)
 
         # Exchange instance should be injected from main.py.
-        if self._exchange is None:
+        if self.exchange is None:
             self._log.warning(
                 "No Exchange instance injected — creating fallback. "
                 "This should be fixed by passing exchange= to the constructor."
@@ -217,7 +217,7 @@ class CollectOHLCV(Enzyme):
             config_loader = ConfigLoader(
                 strategy_name=substrate.strategy.get("name", "momentum_rising")
             )
-            self._exchange = Exchange(config_loader)
+            self.exchange = Exchange(config_loader)
 
         # P7: Check which symbols/timeframes need refresh
         now = datetime.now(timezone.utc)
@@ -246,7 +246,7 @@ class CollectOHLCV(Enzyme):
 
                 # New candle — fetch and compute
                 ohlcv_limit = substrate.cfg("exchange.ohlcv_limit")
-                df = self._exchange.fetch_ohlcv(symbol, timeframe=tf, limit=ohlcv_limit)
+                df = self.exchange.fetch_ohlcv(symbol, timeframe=tf, limit=ohlcv_limit)
                 if df is None or df.empty or len(df) < 30:
                     self._log.warning(
                         "Insufficient data for %s %s (%d bars)",
@@ -431,7 +431,7 @@ class CollectOHLCV(Enzyme):
 
         for symbol in symbols:
             # Fetch extended historical data for bootstrap
-            df = self._exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=ohlcv_limit)
+            df = self.exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=ohlcv_limit)
             if df is None or df.empty or len(df) < bootstrap_bars:
                 self._log.warning(
                     "Insufficient data for bootstrap of %s (%d bars needed, %d available)",
