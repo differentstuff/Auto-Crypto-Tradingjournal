@@ -249,7 +249,10 @@ class ScoreConfluence(Enzyme):
         confirmation_tf = substrate.strategy.get("confirmation_tf")
         primary_tf = substrate.strategy.get("timeframe", "")
 
+        entry_threshold = substrate.cfg("scoring.entry_threshold")
+
         candidates = []
+        all_scores = {}  # All scored symbols for monitoring (regardless of threshold)
         for symbol, sym_data in indicators.items():
             total_score = 0.0
             total_max = 0.0
@@ -312,8 +315,18 @@ class ScoreConfluence(Enzyme):
             # can compare candidate.score directly against the threshold.
             normalized_score = (total_score / total_max * 10) if total_max else 0.0
 
-            # Only include as candidate if above minimum threshold
-            if indicators_aligned >= confluence_min or abs(pct) >= min_candidate_pct:
+            # Record all scores for monitoring visibility
+            all_scores[symbol] = {
+                "score": round(normalized_score, 2),
+                "pct": round(pct, 3),
+                "label": label,
+                "indicators_aligned": indicators_aligned,
+                "confirmation_tf_misaligned": confirmation_misaligned,
+            }
+
+            # Only include as candidate if above minimum threshold AND entry_threshold
+            if (indicators_aligned >= confluence_min or abs(pct) >= min_candidate_pct) \
+                    and abs(normalized_score) >= entry_threshold:
                 candidates.append({
                     "symbol": symbol,
                     "score": round(normalized_score, 2),
@@ -329,16 +342,24 @@ class ScoreConfluence(Enzyme):
         candidates.sort(key=lambda c: abs(c["score"]), reverse=True)
 
         substrate.analysis["candidates"] = candidates
+        substrate.analysis["all_scores"] = all_scores
         substrate.analysis["signal_states"] = {
             c["symbol"]: c["label"] for c in candidates
         }
         substrate.analysis["confluence_scored"] = True
 
+        n_below_threshold = len(all_scores) - len(candidates)
         self._log.info(
-            "Scored confluence: %d candidates, top=%s",
-            len(candidates),
+            "Scored confluence: %d/%d symbols above entry_threshold=%.1f, top=%s",
+            len(candidates), len(all_scores), entry_threshold,
             candidates[0]["symbol"] if candidates else "none",
         )
+        if n_below_threshold > 0:
+            self._log.debug(
+                "Below threshold: %d symbols (scores: %s)",
+                n_below_threshold,
+                {s: v["score"] for s, v in all_scores.items() if abs(v["score"]) < entry_threshold},
+            )
 
         return substrate
 
