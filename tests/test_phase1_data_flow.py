@@ -272,7 +272,7 @@ class TestSubstrateResetPreservesIndicators:
         assert sub.market["pre_trade_context"] == {}
         assert sub.analysis["candidates"] == []
         assert sub.analysis["noise_flag"] is False
-        assert sub.decisions["action"] == "wait"
+        assert sub.decisions["action"] == ""
 
 
 # ── P2: Per-candle-close history ─────────────────────────────────────────────
