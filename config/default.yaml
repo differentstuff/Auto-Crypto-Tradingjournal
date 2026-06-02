@@ -44,6 +44,16 @@ exchange:
 # LLM configuration has moved to config/llm.yaml
 # Merge order: default.yaml < llm.yaml < strategy.yaml
 # See config/llm.yaml for all LLM routing, parameters, and prompts.
+#
+# LLM enable/veto defaults (overridden by llm.yaml and strategy YAML):
+#   llm.enabled: true          -- system-wide on/off switch for LLM calls
+#   llm.relax_factor: 0.8      -- candidates scoring above threshold*relax_factor
+#                                 but below threshold are sent to LLM for review.
+#                                 If LLM says "proceed", the trade is allowed.
+#                                 Set to 1.0 to disable override (only above-threshold trades).
+llm:
+  enabled: true
+  relax_factor: 0.8
 
 # Cache TTLs (seconds)
 cache:
