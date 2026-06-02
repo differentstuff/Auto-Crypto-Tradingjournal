@@ -2,6 +2,13 @@
 
 > The unique selling point. A self-improving system that learns from every trade and every idle cycle.
 
+> **⚠️ Telegram is NOT implemented.** This doc, and the learning engine, do not
+> depend on Telegram. The `SendTelegramLog` enzyme is wired but not implemented
+> — the feature is postponed indefinitely. Keep `modules.telegram_logs: false`
+> and `modules.telegram_interaction: false` in all strategy YAMLs. This applies
+> to all strategies (momentum_rising, paper_learning_test,
+> paper_v2_learning_test, etc.).
+
 ---
 
 ## Overview

@@ -1,7 +1,20 @@
-# Paper Learning Test — Manual
+# Paper Learning Test — Manual (V1, long-run)
 
-Run the paper trading strategy `paper_learning_test` for 24–48 hours, then verify
+Run the paper trading strategy `paper_learning_test` for 7–14 days, then verify
 that the learning engine actually improved indicator weights and produced a rulebook.
+
+> **⚠️ This is the LONG-RUN variant.** It is tuned for high statistical confidence
+> over 7-14 days. If you want to validate the learning loop in **48-72 hours**,
+> use the V2 strategy instead: `paper_v2_learning_test` — see
+> [`PAPER-LEARNING-TEST-V2.md`](./PAPER-LEARNING-TEST-V2.md). V1 needs ~15
+> closed trades before any verdict (vs V2's ~5) and ~15 trades before any
+> weight adjustment (vs V2's ~8).
+
+> **⚠️ Telegram is NOT implemented.** `modules.telegram_logs`,
+> `modules.telegram_interaction`, and the `SendTelegramLog` enzyme are wired in
+> code but **not implemented** — the feature is postponed indefinitely. Keep
+> both flags at `false` in your strategy YAML. Enabling them logs "no Telegram
+> token configured" and exits cleanly. This applies to **all** strategies.
 
 ---
 
