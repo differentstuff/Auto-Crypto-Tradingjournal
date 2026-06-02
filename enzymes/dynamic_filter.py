@@ -83,7 +83,7 @@ class DynamicFilter(Enzyme):
                       Injected from main.py — avoids creating duplicate instances.
         """
         super().__init__(config=config)
-        self._exchange = exchange
+        self.exchange = exchange
 
     def requires(self) -> list[str]:
         return ["strategy.name is set"]
@@ -238,7 +238,7 @@ class DynamicFilter(Enzyme):
 
         Returns list of dicts with symbol, volume, and OI data.
         """
-        if self._exchange is None:
+        if self.exchange is None:
             self._log.warning(
                 "No Exchange instance injected — cannot fetch universe. "
                 "Pass exchange= to the DynamicFilter constructor."
@@ -246,7 +246,7 @@ class DynamicFilter(Enzyme):
             return []
 
         try:
-            return self._exchange.fetch_usdt_perps()
+            return self.exchange.fetch_usdt_perps()
         except Exception as e:
             self._log.error("Failed to fetch USDT perps from exchange: %s", e)
             return []
@@ -270,7 +270,7 @@ class DynamicFilter(Enzyme):
         Returns list of dicts sorted by score descending:
             [{"symbol": str, "score": float, "r_squared": float}, ...]
         """
-        if self._exchange is None:
+        if self.exchange is None:
             self._log.warning("No Exchange instance — cannot rank by momentum_quality")
             return []
 
@@ -291,7 +291,7 @@ class DynamicFilter(Enzyme):
             symbol = candidate["symbol"]
 
             try:
-                df = self._exchange.fetch_ohlcv(
+                df = self.exchange.fetch_ohlcv(
                     symbol, timeframe=timeframe, limit=ohlcv_limit
                 )
                 if df is None or len(df) < 30:
