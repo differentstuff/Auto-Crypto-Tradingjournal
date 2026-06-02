@@ -287,6 +287,13 @@ hyperopt:
   top_n_candidates: 3           # candidates pushed to queue per search
   search_interval_hours: 24     # minimum hours between searches
 
+# LLM configuration (shared by all strategies)
+# Detailed routing, providers, and prompts live in config/llm.yaml.
+# Do not override llm: here — the router reads from the merged config.
+llm:
+  enabled: true
+  relax_factor: 0.8
+
 modules:
   macro_context: false           # enable macro context data collection
   regime_detection: false        # enable regime detection
