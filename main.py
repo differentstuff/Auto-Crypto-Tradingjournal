@@ -106,15 +106,16 @@ def main() -> None:
     )
     parser.add_argument(
         "--log-level",
-        default="INFO",
+        default=None,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level",
+        help="Logging level (default: LOG_LEVEL env var or INFO)",
     )
 
     args = parser.parse_args()
 
     # Setup logging (stdout + rotating file)
-    setup_logging(args.log_level)
+    log_level = args.log_level or os.environ.get("LOG_LEVEL", "INFO")
+    setup_logging(log_level)
     log = logging.getLogger("main")
 
     log.info("=" * 60)
@@ -123,7 +124,7 @@ def main() -> None:
     log.info("Strategy:  %s", args.strategy)
     log.info("Paper mode: %s", args.paper)
     log.info("Cycle once: %s", args.cycle_once)
-    log.info("Log level:  %s", args.log_level)
+    log.info("Log level:  %s", log_level)
     log.info("Project:    %s", PROJECT_ROOT)
 
     # ── Initialize daemon ──────────────────────────────────────────────────────
