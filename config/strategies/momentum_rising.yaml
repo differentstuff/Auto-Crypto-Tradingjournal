@@ -14,8 +14,8 @@ description: |
 strategy:
   name: momentum_rising
   uid: "e600dffb-8c47-4ac9-a32a-4a54becdcc45"   # Auto-generated on first load. Remove or clear to reset learning data.
-  timeframe: "4h"
-  confirmation_tf: "1h"
+  timeframe: "1h"
+  confirmation_tf: "4h"
   max_positions: 3
   cycle_interval_minutes: 15
 
