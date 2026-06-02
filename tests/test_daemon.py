@@ -76,7 +76,7 @@ class TestDaemonCycle:
         result = daemon.run_cycle()
 
         assert result["action"] == "wait"
-        assert result["enzymes_fired"] == []
+        assert result["enzymes_fired"] == ["Wait"]
 
     def test_substrate_persists_after_cycle(self, config_dir, temp_db):
         """Substrate durable state is persisted to database after cycle."""
