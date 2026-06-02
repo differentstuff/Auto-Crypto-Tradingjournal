@@ -148,10 +148,15 @@ class Substrate:
         # Strategy section — all values from config, no hardcoded defaults.
         # If a key is missing from config, cfg() raises ValueError immediately.
         strategy_cfg = cfg.get("strategy", {})
-        missing = [k for k in ("name", "uid") if k not in strategy_cfg]
+        _REQUIRED_STRATEGY_KEYS = (
+            "name", "uid", "timeframe", "confirmation_tf",
+            "cycle_interval_minutes", "max_positions",
+        )
+        missing = [k for k in _REQUIRED_STRATEGY_KEYS if k not in strategy_cfg]
         if missing:
             raise SubstrateConfigError(
-                f"Missing required strategy config key(s): {', '.join(missing)}"
+                f"Missing required strategy config key(s): {', '.join(missing)}. "
+                f"Add them to config/default.yaml or your strategy YAML."
             )
         self.strategy = {
             "name": strategy_cfg["name"],
