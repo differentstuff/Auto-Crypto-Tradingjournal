@@ -250,6 +250,11 @@ class ScoreConfluence(Enzyme):
         primary_tf = substrate.strategy.get("timeframe", "")
 
         entry_threshold = substrate.cfg("scoring.entry_threshold")
+        # LLM relax factor: borderline candidates (between relaxed and full threshold)
+        # are included as candidates so ValidateEntryZone can send them to LLM.
+        # If LLM says "proceed", ApproveTrade allows them as overrides.
+        llm_relax_factor = substrate.cfg("llm.relax_factor")
+        relaxed_threshold = entry_threshold * llm_relax_factor if llm_relax_factor else entry_threshold
 
         candidates = []
         all_scores = {}  # All scored symbols for monitoring (regardless of threshold)
@@ -324,9 +329,13 @@ class ScoreConfluence(Enzyme):
                 "confirmation_tf_misaligned": confirmation_misaligned,
             }
 
-            # Only include as candidate if above minimum threshold AND entry_threshold
+            # Only include as candidate if above relaxed threshold.
+            # Candidates between relaxed_threshold and entry_threshold are "borderline"
+            # — they need LLM "proceed" to be approved by ApproveTrade.
+            # Candidates above entry_threshold pass on numeric rules alone.
+            # Candidates below relaxed_threshold are too weak even for LLM review.
             if (indicators_aligned >= confluence_min or abs(pct) >= min_candidate_pct) \
-                    and abs(normalized_score) >= entry_threshold:
+                    and abs(normalized_score) >= relaxed_threshold:
                 candidates.append({
                     "symbol": symbol,
                     "score": round(normalized_score, 2),
@@ -336,6 +345,7 @@ class ScoreConfluence(Enzyme):
                     "indicators_aligned": indicators_aligned,
                     "details": all_details,
                     "confirmation_tf_misaligned": confirmation_misaligned,
+                    "llm_borderline": abs(normalized_score) < entry_threshold,
                 })
 
         # Sort by absolute score descending (strongest signals first)
@@ -349,10 +359,12 @@ class ScoreConfluence(Enzyme):
         substrate.analysis["confluence_scored"] = True
 
         n_below_threshold = len(all_scores) - len(candidates)
+        n_borderline = sum(1 for c in candidates if c.get("llm_borderline"))
         self._log.info(
-            "Scored confluence: %d/%d symbols above entry_threshold=%.1f, top=%s",
-            len(candidates), len(all_scores), entry_threshold,
+            "Scored confluence: %d/%d symbols above relaxed_threshold=%.1f, top=%s (borderline: %d)",
+            len(candidates), len(all_scores), relaxed_threshold,
             candidates[0]["symbol"] if candidates else "none",
+            n_borderline,
         )
         if n_below_threshold > 0:
             self._log.debug(
