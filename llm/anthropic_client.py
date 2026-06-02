@@ -52,6 +52,7 @@ def send(
     transforms: Optional[list] = None,
     provider_order: Optional[list] = None,
     base_url: Optional[str] = None,
+    timeout: Optional[int] = None,
 ) -> str:
     """
     Make a single Anthropic chat-completion call.
@@ -71,6 +72,7 @@ def send(
         transforms:     Not applicable to Anthropic — ignored.
         provider_order: Not applicable to Anthropic — ignored.
         base_url:       Override base URL (from env, injected by config_loader).
+        timeout:        Request timeout in seconds (passed to Anthropic client).
 
     Returns:
         Response text string.
@@ -83,6 +85,8 @@ def send(
     client_kwargs = {"api_key": key}
     if base_url:
         client_kwargs["base_url"] = base_url
+    if timeout is not None:
+        client_kwargs["timeout"] = timeout
     client = anthropic.Anthropic(**client_kwargs)
 
     kwargs: dict = {
