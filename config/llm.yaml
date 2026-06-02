@@ -5,6 +5,17 @@
 # Change models, costs, and parameters here — no code changes needed.
 
 llm:
+  # ── LLM enable/override switches ─────────────────────────────────────────
+  # enabled: system-wide on/off for all LLM calls. When false, no LLM calls
+  #   are made and trades proceed based on numeric rules only.
+  # relax_factor: candidates scoring above (threshold * relax_factor) but below
+  #   threshold are sent to LLM. If LLM says "proceed", the trade is allowed
+  #   as an override. Set to 1.0 to disable overrides (only above-threshold trades).
+  #   Example: threshold=5.0, relax_factor=0.8 → candidates scoring 4.0-5.0
+  #   get LLM review. LLM "proceed" → trade allowed despite sub-threshold score.
+  enabled: true
+  relax_factor: 0.8
+
   # ── Daily cost budget ──────────────────────────────────────────────────
   # Hard cap: LLM calls stop when daily spend reaches this amount.
   # Resets at UTC midnight. Increase if you want more analysis capacity.
