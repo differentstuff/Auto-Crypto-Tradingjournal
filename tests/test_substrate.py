@@ -45,7 +45,7 @@ class TestSubstrateCreation:
         assert sub.portfolio["equity"] == 0.0
         assert sub.market["symbols_watched"] == ["BTCUSDT", "ETHUSDT"]
         assert sub.analysis["candidates"] == []
-        assert sub.decisions["action"] == "wait"
+        assert sub.decisions["action"] == ""
         assert sub.learning["idle_cycles"] == 0
         assert len(sub.validity) == 7  # 7 ISC conditions from config
 
@@ -442,7 +442,7 @@ class TestSubstrateCycleReset:
 
         assert sub.analysis["candidates"] == []
         assert sub.analysis["noise_flag"] is False
-        assert sub.decisions["action"] == "wait"
+        assert sub.decisions["action"] == ""
         assert sub.decisions["trade_approved"] is None
         assert sub._cycle_count == 1
 
