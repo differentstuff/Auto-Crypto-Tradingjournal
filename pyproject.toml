@@ -10,7 +10,7 @@ dependencies = [
     "pandas>=3.0.3",
     "matplotlib>=3.10.9",
     "ccxt>=4.5.54",
-    "optuna>=4.8.0",
+    "optuna>=4.9.0",
     "joblib>=1.5.3",
     "scikit-learn>=1.8.0",
     "xgboost>=3.2.0",
@@ -28,5 +28,5 @@ dev = [
 markers = [
     "integration: marks tests that require real network/API access (deselect with '-m not integration')",
 ]
-testpaths = ["tests_new"]
+testpaths = ["tests"]
 addopts = "-v --tb=short"
