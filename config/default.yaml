@@ -272,11 +272,17 @@ karpathy:
 
 # Hyperopt prefilter (disabled by default)
 # Systematic parameter search via Optuna TPE, pushes top candidates to CandidateQueue.
+# Composite objective: profit_factor * (1 + sharpe_alpha * max(0, sharpe_ratio))
+# This prefers stable weight combinations over erratic ones with the same raw PF.
+# Post-search PBO check: warns if Probability of Backtest Overfitting > 0.5.
 hyperopt:
   enabled: false
   n_trials: 100                 # Optuna trials per search
   top_n_candidates: 3           # candidates pushed to queue per search
   search_interval_hours: 24     # minimum hours between searches
+  search_width: 0.5             # neighborhood radius around current weights (±0.5 per indicator)
+  min_trades_for_eval: 20       # minimum historical trades needed for evaluation
+  sharpe_alpha: 0.3             # Sharpe bonus weight in composite score (0 = PF only)
 
 # Walk-Forward + PBO validation (disabled by default)
 # Multi-window walk-forward analysis with Probability of Backtest Overfitting.
