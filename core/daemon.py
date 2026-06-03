@@ -444,6 +444,17 @@ class Daemon:
                     e, exc_info=True,
                 )
 
+        # ── Post-cycle: Karpathy experiment loop (non-blocking) ───────────
+        if self.config.get("karpathy.enabled", False):
+            try:
+                from learning.karpathy_method import KarpathyMethod
+                KarpathyMethod.run_experiment_cycle(self.substrate)
+            except Exception as e:
+                _log.error(
+                    "Karpathy experiment cycle failed (production unaffected): %s",
+                    e, exc_info=True,
+                )
+
         return {
             "cycle": self.scheduler.cycle_count,
             "action": self.substrate.decisions.get("action", ""),
