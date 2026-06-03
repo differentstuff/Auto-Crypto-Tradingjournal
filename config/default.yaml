@@ -267,6 +267,8 @@ karpathy:
   enabled: false
   step_size: 0.05               # weight change per experiment step
   max_experiments_per_cycle: 1  # experiments per daemon cycle
+  min_trades_for_eval: 20       # minimum historical trades needed for evaluation
+  interval_hours: 24            # minimum hours between experiment cycles
 
 # Hyperopt prefilter (disabled by default)
 # Systematic parameter search via Optuna TPE, pushes top candidates to CandidateQueue.
