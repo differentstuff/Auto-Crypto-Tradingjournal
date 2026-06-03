@@ -455,6 +455,17 @@ class Daemon:
                     e, exc_info=True,
                 )
 
+        # ── Post-cycle: Hyperopt prefilter (non-blocking) ─────────────────
+        if self.config.get("hyperopt.enabled", False):
+            try:
+                from learning.hyperopt_prefilter import HyperoptPrefilter
+                HyperoptPrefilter.run_search(self.substrate)
+            except Exception as e:
+                _log.error(
+                    "Hyperopt search failed (production unaffected): %s",
+                    e, exc_info=True,
+                )
+
         return {
             "cycle": self.scheduler.cycle_count,
             "action": self.substrate.decisions.get("action", ""),
