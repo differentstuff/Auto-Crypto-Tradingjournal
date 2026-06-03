@@ -695,6 +695,23 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # ── Hyperopt search log table ──────────────────────────────────────────────
+    _apply(50, "hyperopt_log", """
+        CREATE TABLE IF NOT EXISTS hyperopt_log (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid             TEXT NOT NULL,
+            timestamp                TEXT DEFAULT (datetime('now')),
+            n_trials                 INTEGER DEFAULT 0,
+            baseline_profit_factor   REAL,
+            best_profit_factor       REAL,
+            candidates_pushed        INTEGER DEFAULT 0,
+            search_space_json        TEXT,
+            best_weights_json        TEXT,
+            duration_seconds         REAL,
+            reason                   TEXT
+        )
+    """)
+
     conn.commit()
     _log.info("DB initialized at %s", DB_PATH)
     # Note: connection is closed by init_db()'s finally block, not here.
