@@ -189,6 +189,9 @@ def make_full_config(**overrides) -> dict:
             "n_trials": 100,
             "top_n_candidates": 3,
             "search_interval_hours": 24,
+            "search_width": 0.5,
+            "min_trades_for_eval": 20,
+            "sharpe_alpha": 0.3,
         },
         "walk_forward_pbo": {
             "enabled": False,
