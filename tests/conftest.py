@@ -181,6 +181,8 @@ def make_full_config(**overrides) -> dict:
             "enabled": False,
             "step_size": 0.05,
             "max_experiments_per_cycle": 1,
+            "min_trades_for_eval": 20,
+            "interval_hours": 24,
         },
         "hyperopt": {
             "enabled": False,
