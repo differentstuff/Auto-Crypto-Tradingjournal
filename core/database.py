@@ -678,6 +678,23 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         ALTER TABLE trade_learning ADD COLUMN llm_override INTEGER DEFAULT 0
     """)
 
+    # ── Karpathy experiment log table ──────────────────────────────────────────
+    _apply(49, "karpathy_log", """
+        CREATE TABLE IF NOT EXISTS karpathy_log (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid             TEXT NOT NULL,
+            timestamp                TEXT DEFAULT (datetime('now')),
+            param_changed            TEXT NOT NULL,
+            old_value                REAL NOT NULL,
+            new_value                REAL NOT NULL,
+            baseline_profit_factor   REAL,
+            proposed_profit_factor   REAL,
+            backtest_trades_count    INTEGER DEFAULT 0,
+            kept_or_discarded        TEXT NOT NULL,
+            reason                   TEXT
+        )
+    """)
+
     conn.commit()
     _log.info("DB initialized at %s", DB_PATH)
     # Note: connection is closed by init_db()'s finally block, not here.
