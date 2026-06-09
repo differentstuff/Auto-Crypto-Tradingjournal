@@ -225,8 +225,11 @@ class Substrate:
         self.analysis = {
             "candidates": [],
             "entry_zones": {},
-            "noise_flag": False,
+            "noise_flag": False,          # kept for backward compat / logging; no longer blocks trades
             "noise_reason": "",
+            "noise_penalty_ratio": 0.0,   # soft penalty: 0.0 = no noise, 1.0 = full noise penalty
+            "confluence_penalty_ratio": 0.0,  # soft penalty: 0.0 = sufficient alignment, up to config max
+            "trajectory_penalty_ratio": 0.0,  # soft penalty: 0.0 = safe trajectory, up to config max
             "signal_states": {},
             # Evaluation markers: distinguish "not yet evaluated" from
             # "evaluated and found nothing".  Without these, an empty list
@@ -262,6 +265,7 @@ class Substrate:
             "suppressed_signals": [],
             "highlight_signals": [],
             "adjusted_weights": {},    # Learning-adjusted indicator weights (written by UpdateLearning)
+            "adjusted_thresholds": {}, # Learning-adjusted penalty thresholds (written by UpdateLearning)
             "total_trades_recorded": 0,
             "total_idle_cycles_recorded": 0,
             "last_retrain_at": "",
@@ -303,11 +307,23 @@ class Substrate:
         Used by ISC checks and enzymes that need config values like
         scoring thresholds, risk limits, etc.
 
+        If the key starts with "soft_penalties.", checks learning-adjusted
+        thresholds first (substrate.learning["adjusted_thresholds"]).
+        This allows the learning engine to tune penalty ratios at runtime
+        without modifying the config file.
+
         Raises ValueError if the key is not found and no default is provided.
         This ensures config is the single source of truth — missing keys
         are caught immediately rather than silently falling back to hardcoded
         defaults that may be wrong.
         """
+        # Check learning-adjusted thresholds first for soft_penalties keys
+        if dotted_path.startswith("soft_penalties."):
+            adjusted = self.learning.get("adjusted_thresholds", {})
+            penalty_key = dotted_path.split(".", 1)[1]  # e.g. "noise_penalty_ratio"
+            if penalty_key in adjusted:
+                return adjusted[penalty_key]
+
         parts = dotted_path.split(".")
         obj = self._config
         for part in parts:
@@ -556,6 +572,49 @@ class Substrate:
         """Return IDs of all ISC conditions that have failed."""
         return [isc.id for isc in self.validity if isc.status == "failed"]
 
+    # --- Soft penalties (replace former hard-gate ISCs 005/006/007) -----------
+
+    def soft_penalties(self) -> Dict[str, float]:
+        """
+        Return current soft penalty ratios from analysis state.
+
+        Penalties are written by enzymes (DetectNoise, ScoreConfluence,
+        CollectPreTradeContext) and read by ApproveTrade to compute
+        effective_score. Each ratio is 0.0 (no penalty) to 1.0 (full block).
+
+        Returns:
+            dict with keys: noise, confluence, trajectory
+        """
+        return {
+            "noise": self.analysis.get("noise_penalty_ratio", 0.0),
+            "confluence": self.analysis.get("confluence_penalty_ratio", 0.0),
+            "trajectory": self.analysis.get("trajectory_penalty_ratio", 0.0),
+        }
+
+    def compute_effective_score(self, raw_score: float) -> float:
+        """
+        Apply multiplicative soft penalties to a raw confluence score.
+
+        Formula: effective_score = raw_score
+            × (1 - noise_penalty)
+            × (1 - confluence_penalty)
+            × (1 - trajectory_penalty)
+
+        This replaces the former hard-gate ISCs (005/006/007) that blocked
+        ALL trades when noise_flag=True, confluence_min not met, or
+        coincidence_risk=high. Now these conditions reduce the score
+        instead of blocking entirely, allowing the learning engine to
+        collect data from penalized trades.
+
+        A trade with penalties applied still needs to meet
+        scoring.approval_threshold to proceed.
+        """
+        penalties = self.soft_penalties()
+        effective = raw_score
+        for name, ratio in penalties.items():
+            effective *= (1.0 - ratio)
+        return effective
+
     # --- Reset helpers --------------------------------------------------------
 
     def reset_cycle(self) -> None:
@@ -580,6 +639,9 @@ class Substrate:
         self.analysis["entry_zones"] = {}
         self.analysis["noise_flag"] = False
         self.analysis["noise_reason"] = ""
+        self.analysis["noise_penalty_ratio"] = 0.0
+        self.analysis["confluence_penalty_ratio"] = 0.0
+        self.analysis["trajectory_penalty_ratio"] = 0.0
         self.analysis["signal_states"] = {}
         # Reset evaluation markers so enzymes can fire again
         self.analysis["confluence_scored"] = False
