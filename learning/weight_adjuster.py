@@ -226,3 +226,118 @@ def compute_adjusted_weights(
             _log.error("Failed to write weight_history: %s", e, exc_info=True)
 
     return adjusted
+
+
+def compute_adjusted_thresholds(
+    current_penalties: Dict[str, float],
+    strategy_name: str,
+    strategy_uid: str = "legacy",
+    min_trades: int = 30,
+    adjustment_rate: float = 0.05,
+) -> Dict[str, float]:
+    """
+    Compute adjusted soft penalty thresholds based on trade outcomes.
+
+    If trades made under a penalty are winning at a higher rate than
+    the overall win rate, the penalty is too aggressive and should be
+    reduced. If they're losing more, the penalty should increase.
+
+    This allows the learning engine to tune soft penalties over time,
+    making the system more or less aggressive based on real outcomes.
+
+    Args:
+        current_penalties: Dict of {penalty_name: current_ratio}.
+            e.g. {"noise_penalty_ratio": 0.3, "confluence_penalty_ratio": 0.3, ...}
+        strategy_name: Strategy name for DB lookups.
+        strategy_uid: Strategy UID for DB lookups.
+        min_trades: Minimum trades before any adjustment.
+        adjustment_rate: Max adjustment per call (e.g. 0.05 = ±5%).
+
+    Returns:
+        Dict of {penalty_name: adjusted_ratio}. Clamped to [0.0, 1.0].
+    """
+    from core.database import db_conn
+
+    # Check if we have enough trades
+    try:
+        with db_conn() as conn:
+            total_trades = conn.execute(
+                """SELECT COUNT(*) FROM trade_learning
+                   WHERE strategy_name = ?
+                     AND exit_time IS NOT NULL
+                     AND outcome IS NOT NULL""",
+                (strategy_name,),
+            ).fetchone()[0]
+
+        if total_trades < min_trades:
+            return current_penalties
+
+    except Exception as e:
+        _log.error("Failed to count trades for threshold adjustment: %s", e, exc_info=True)
+        return current_penalties
+
+    adjusted = dict(current_penalties)
+
+    # For each penalty, check if penalized trades are winning more than expected
+    # This is a simple heuristic: if the overall win rate is >50% for trades
+    # that had this penalty active, the penalty is too aggressive.
+    try:
+        with db_conn() as conn:
+            # Get overall win rate
+            overall = conn.execute(
+                """SELECT
+                       COUNT(*) as total,
+                       SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as wins
+                   FROM trade_learning
+                   WHERE strategy_name = ?
+                     AND exit_time IS NOT NULL""",
+                (strategy_name,),
+            ).fetchone()
+
+            if not overall or overall["total"] == 0:
+                return current_penalties
+
+            overall_win_rate = overall["wins"] / overall["total"]
+
+            # Check penalized trades (trades with effective_score < raw_score)
+            penalized = conn.execute(
+                """SELECT
+                       COUNT(*) as total,
+                       SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as wins
+                   FROM trade_learning
+                   WHERE strategy_name = ?
+                     AND exit_time IS NOT NULL
+                     AND effective_score IS NOT NULL
+                     AND effective_score < score""",
+                (strategy_name,),
+            ).fetchone()
+
+            if not penalized or penalized["total"] < 5:
+                return current_penalties  # Not enough penalized trades
+
+            penalized_win_rate = penalized["wins"] / penalized["total"]
+
+            # If penalized trades win more than overall, penalties are too aggressive
+            # If penalized trades win less, penalties are appropriate or too lenient
+            delta = penalized_win_rate - overall_win_rate
+
+            # Apply proportional adjustment to all penalty ratios
+            # delta > 0 → reduce penalties (they're blocking good trades)
+            # delta < 0 → increase penalties (they're not blocking bad trades enough)
+            for key, current_ratio in current_penalties.items():
+                # Scale adjustment by delta and cap at adjustment_rate
+                change = max(-adjustment_rate, min(adjustment_rate, delta * adjustment_rate * 2))
+                new_ratio = round(max(0.0, min(1.0, current_ratio - change)), 3)
+                if new_ratio != current_ratio:
+                    adjusted[key] = new_ratio
+                    _log.info(
+                        "Adjusted %s: %.3f → %.3f (penalized WR=%.1f%%, overall WR=%.1f%%)",
+                        key, current_ratio, new_ratio,
+                        penalized_win_rate * 100, overall_win_rate * 100,
+                    )
+
+    except Exception as e:
+        _log.error("Failed to compute adjusted thresholds: %s", e, exc_info=True)
+        return current_penalties
+
+    return adjusted
