@@ -10,12 +10,18 @@ P8 (Time-Based Trajectory Sufficiency):
   by bar count. This ensures consistent behavior regardless of cycle frequency.
 
 If indicator history is insufficient (time span < trajectory_min_hours), falls
-back to empty trajectory data, which sets coincidence_risk='high' and blocks
-trades via ISC-007. This is intentional: no trades until sufficient trajectory
-data exists.
+back to empty trajectory data, which sets coincidence_risk='high' and applies
+a trajectory soft penalty (instead of blocking via former ISC-007).
+This is intentional: no trades until sufficient trajectory data exists,
+but once data exists, high coincidence_risk only reduces the effective score
+rather than blocking entirely.
+
+Writes:
+  market.pre_trade_context (dict per symbol)
+  analysis.trajectory_penalty_ratio (float 0.0-1.0)
 
 Enzyme class: Sensor
-Activates when: analysis.candidates not empty AND market.pre_trade_context is empty
+Activates when: analysis.candidates not empty AND pre_trade_evaluated is False
 """
 
 from __future__ import annotations
@@ -178,10 +184,14 @@ class CollectPreTradeContext(Enzyme):
 
     P8: History sufficiency is measured by time span (trajectory_min_hours),
     not bar count. If the history spans less than trajectory_min_hours,
-    coincidence_risk is set to 'high' and trades are blocked via ISC-007.
+    coincidence_risk is set to 'high' and a trajectory soft penalty is applied
+    (instead of blocking via former ISC-007).
 
     Writes to substrate.market.pre_trade_context as:
         {symbol: {trajectory_type, coincidence_risk, bars_aligned, ...}}
+
+    Also writes analysis.trajectory_penalty_ratio (0.0-1.0) for the
+    best candidate, used by ApproveTrade via compute_effective_score().
     """
 
     name = "CollectPreTradeContext"
@@ -211,6 +221,13 @@ class CollectPreTradeContext(Enzyme):
         indicator_history = substrate.market.get("indicator_history", {})
         pre_trade_context = {}
 
+        # Read penalty ratios from config
+        trajectory_penalty_high = substrate.cfg("soft_penalties.trajectory_penalty_ratio", 0.5)
+        trajectory_penalty_medium = substrate.cfg("soft_penalties.trajectory_medium_ratio", 0.2)
+
+        # Track the worst coincidence risk across all candidates for the penalty
+        worst_risk = "low"
+
         for candidate in candidates:
             symbol = candidate.get("symbol", "")
 
@@ -221,7 +238,7 @@ class CollectPreTradeContext(Enzyme):
             span_hours = _compute_history_span_hours(symbol_history)
 
             if span_hours < min_hours:
-                # Insufficient time span — block trade via ISC-007
+                # Insufficient time span — apply high trajectory penalty
                 _log.info(
                     "Insufficient trajectory history for %s: %.1fh / %.1fh required",
                     symbol, span_hours, min_hours,
@@ -234,6 +251,7 @@ class CollectPreTradeContext(Enzyme):
                     "span_hours": round(span_hours, 1),
                     "strength": 0.0,
                 }
+                worst_risk = "high"
                 continue
 
             # Use real history for trajectory classification
@@ -242,12 +260,28 @@ class CollectPreTradeContext(Enzyme):
             trajectory["span_hours"] = round(span_hours, 1)
             pre_trade_context[symbol] = trajectory
 
+            # Track worst risk for penalty computation
+            risk = trajectory.get("coincidence_risk", "low")
+            if risk == "high":
+                worst_risk = "high"
+            elif risk == "medium" and worst_risk != "high":
+                worst_risk = "medium"
+
+        # Compute trajectory_penalty_ratio based on worst coincidence risk
+        if worst_risk == "high":
+            trajectory_penalty_ratio = trajectory_penalty_high
+        elif worst_risk == "medium":
+            trajectory_penalty_ratio = trajectory_penalty_medium
+        else:
+            trajectory_penalty_ratio = 0.0
+
         substrate.market["pre_trade_context"] = pre_trade_context
+        substrate.analysis["trajectory_penalty_ratio"] = trajectory_penalty_ratio
         substrate.analysis["pre_trade_evaluated"] = True
 
         self._log.info(
-            "Pre-trade context: %d symbols analyzed (using real history, min %.1fh)",
-            len(pre_trade_context), min_hours,
+            "Pre-trade context: %d symbols analyzed (using real history, min %.1fh, penalty=%.2f)",
+            len(pre_trade_context), min_hours, trajectory_penalty_ratio,
         )
 
         return substrate
