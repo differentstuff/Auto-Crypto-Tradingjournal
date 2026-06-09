@@ -1,18 +1,21 @@
 """
 enzymes/detect_noise.py -- Oxidoreductase enzyme: noise detection.
 
-Checks market conditions for noise that should suppress trading:
-  - Kill zone time filter (ICT Asian session = low liquidity)
-  - Conflicting signals across indicators
+Checks market conditions for noise and computes a soft penalty ratio:
+  - Liquidity filter (outside high-liquidity windows = lower liquidity)
+  - Conflicting signals across indicators (relative ratio)
   - Low volume / spread conditions
   - Extreme ADX (no trend or overextended)
 
-Writes: analysis.noise_flag (bool), analysis.noise_reason (str)
+Writes:
+  analysis.noise_flag (bool)           -- kept for logging/backward compat
+  analysis.noise_reason (str)          -- human-readable reasons
+  analysis.noise_penalty_ratio (float) -- soft penalty 0.0-1.0 (replaces hard gate)
 
 Enzyme class: Oxidoreductase
-Activates when: market.indicators not empty AND analysis.noise_flag not yet set this cycle
+Activates when: market.indicators not empty AND analysis.noise_evaluated is False
 
-Port of: scanner_criteria.py (kill zone, criteria)
+Port of: scanner_criteria.py (liquidity filter, criteria)
 """
 
 from __future__ import annotations
@@ -27,30 +30,33 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _is_in_kill_zone(utc_hour: int = None, kill_zone_hours: list | None = None) -> bool:
+def _is_in_liquidity_window(utc_hour: int = None, liquidity_hours: list | None = None) -> bool:
     """
-    Return True if the given UTC hour falls within an institutional kill zone.
+    Return True if the given UTC hour falls within a high-liquidity window.
     Default: London 07:00-09:59 UTC | NY AM 12:00-14:59 UTC.
-    Configurable via noise.kill_zone_hours in YAML (list of [start, end] pairs).
-    Outside these windows, liquidity is lower and noise is higher.
+    Configurable via noise.liquidity_filter_hours in YAML (list of [start, end] pairs).
+    Outside these windows, liquidity is lower and noise penalty increases.
     """
     h = utc_hour if utc_hour is not None else datetime.now(timezone.utc).hour
-    if kill_zone_hours is None:
-        kill_zone_hours = [[7, 10], [12, 15]]
-    return any(start <= h < end for start, end in kill_zone_hours)
+    if liquidity_hours is None:
+        liquidity_hours = [[7, 10], [12, 15]]
+    return any(start <= h < end for start, end in liquidity_hours)
 
 
 def _check_conflicting_signals(
-    indicators: dict, weight_map: dict, conflict_threshold: int,
+    indicators: dict, weight_map: dict, conflict_max_ratio: float,
     rsi_high: float, rsi_low: float,
-) -> list[str]:
+) -> tuple[list[str], float]:
     """
     Check if scoring indicators are giving conflicting directional signals.
 
-    conflict_threshold: minimum bullish AND bearish count to flag as conflict.
-        Read from noise.conflict_signal_threshold in config.
+    conflict_max_ratio: max ratio of min(bullish,bearish)/total to tolerate.
+        Read from noise.conflict_max_ratio in config.
+        If the conflict ratio exceeds this, a conflict is flagged.
     rsi_high/low: RSI thresholds for directional signal. Read from scoring.rsi_signal_high/low.
     All parameters are required — they must come from substrate.cfg().
+
+    Returns: (list of conflict reason strings, conflict_ratio 0.0-1.0)
     """
     conflicts = []
     bullish_count = 0
@@ -88,13 +94,19 @@ def _check_conflicting_signals(
                 elif "bearish" in alignment:
                     bearish_count += 1
 
-    # If we have both bullish and bearish signals, that's a conflict
-    if bullish_count >= conflict_threshold and bearish_count >= conflict_threshold:
+    # Compute conflict ratio: how much the minority direction divides the total
+    total = bullish_count + bearish_count
+    conflict_ratio = 0.0
+    if total > 0:
+        conflict_ratio = min(bullish_count, bearish_count) / total
+
+    # If conflict ratio exceeds threshold, flag as conflict
+    if conflict_ratio > conflict_max_ratio and total > 0:
         conflicts.append(
-            f"Conflicting signals: {bullish_count} bullish vs {bearish_count} bearish"
+            f"Conflicting signals: {bullish_count} bullish vs {bearish_count} bearish (ratio={conflict_ratio:.2f})"
         )
 
-    return conflicts
+    return conflicts, conflict_ratio
 
 
 def _check_volume(indicators: dict, vol_low: float, vol_very_low: float) -> list[str]:
@@ -160,13 +172,14 @@ class DetectNoise(Enzyme):
     """
     Oxidoreductase enzyme: detect noisy market conditions.
 
-    Sets analysis.noise_flag and analysis.noise_reason when conditions
-    suggest avoiding trades. This feeds into ISC-005 (no trade when
-    noise_flag is true).
+    Computes analysis.noise_penalty_ratio (0.0-1.0) based on noise severity.
+    Also sets analysis.noise_flag (bool) for logging/backward compat, but
+    noise_flag no longer blocks trades — the penalty ratio is used by
+    ApproveTrade via substrate.compute_effective_score() instead.
 
     Checks:
-      1. Outside kill zone (lower liquidity = more noise)
-      2. Conflicting directional signals
+      1. Outside liquidity window (lower liquidity = more noise)
+      2. Conflicting directional signals (relative ratio)
       3. Low volume
       4. ADX extremes (no trend or overextended)
     """
@@ -185,15 +198,15 @@ class DetectNoise(Enzyme):
         indicators = substrate.market.get("indicators", {})
         noise_evaluated = substrate.analysis.get("noise_evaluated", False)
         # Activate when indicators exist and noise hasn't been evaluated yet.
-        # This fires BEFORE ScoreConfluence so we can skip scoring when noisy.
         return bool(indicators) and not noise_evaluated
 
     def transform(self, substrate: Substrate) -> Substrate:
-        """Evaluate noise conditions and set analysis.noise_flag."""
+        """Evaluate noise conditions and compute noise_penalty_ratio."""
         indicators = substrate.market.get("indicators", {})
         if not indicators:
             substrate.analysis["noise_flag"] = False
             substrate.analysis["noise_reason"] = ""
+            substrate.analysis["noise_penalty_ratio"] = 0.0
             return substrate
 
         # Build weight map from config
@@ -206,18 +219,18 @@ class DetectNoise(Enzyme):
 
         noise_reasons = []
 
-        # 1. Kill zone check (hours from config)
+        # 1. Liquidity filter check (hours from config)
         utc_hour = datetime.now(timezone.utc).hour
-        kill_zone_hours = substrate.cfg("noise.kill_zone_hours")
-        if not _is_in_kill_zone(utc_hour, kill_zone_hours=kill_zone_hours):
-            noise_reasons.append("Outside kill zone (low liquidity window)")
+        liquidity_hours = substrate.cfg("noise.liquidity_filter_hours", [[7, 10], [12, 15]])
+        if not _is_in_liquidity_window(utc_hour, liquidity_hours=liquidity_hours):
+            noise_reasons.append("Outside liquidity window (lower liquidity)")
 
-        # 2. Conflicting signals (thresholds from config)
-        conflict_threshold = substrate.cfg("noise.conflict_signal_threshold")
+        # 2. Conflicting signals (relative ratio from config)
+        conflict_max_ratio = substrate.cfg("noise.conflict_max_ratio", 0.5)
         rsi_high = substrate.cfg("scoring.rsi_signal_high")
         rsi_low = substrate.cfg("scoring.rsi_signal_low")
-        conflicts = _check_conflicting_signals(
-            indicators, weight_map, conflict_threshold,
+        conflicts, conflict_ratio = _check_conflicting_signals(
+            indicators, weight_map, conflict_max_ratio,
             rsi_high=rsi_high, rsi_low=rsi_low,
         )
         noise_reasons.extend(conflicts)
@@ -238,22 +251,29 @@ class DetectNoise(Enzyme):
         # Only flag as noisy if we have enough reasons (avoid false positives)
         min_reasons = substrate.cfg("noise.noise_severity_min_reasons")
         is_noisy = len(noise_reasons) >= min_reasons
-        # Kill zone alone is enough to flag
-        if not is_noisy and any("kill zone" in r.lower() for r in noise_reasons):
-            # Only flag kill zone as noise if combined with at least one other issue
-            # or if the config says to always flag outside kill zone
-            kill_zone_strict = substrate.cfg("noise.kill_zone_blocks")
-            if kill_zone_strict:
-                is_noisy = True
+
+        # Compute noise_penalty_ratio: scale by number of reasons vs min_reasons
+        # More reasons = higher penalty, capped at the configured max ratio
+        noise_penalty_max = substrate.cfg("soft_penalties.noise_penalty_ratio", 0.3)
+        if len(noise_reasons) > 0:
+            # Scale: 1 reason = 50% of max, 2+ reasons = full max
+            scale = min(1.0, len(noise_reasons) / max(min_reasons, 1))
+            noise_penalty_ratio = round(noise_penalty_max * scale, 3)
+        else:
+            noise_penalty_ratio = 0.0
 
         substrate.analysis["noise_flag"] = is_noisy
         substrate.analysis["noise_reason"] = "; ".join(noise_reasons) if noise_reasons else ""
+        substrate.analysis["noise_penalty_ratio"] = noise_penalty_ratio
         substrate.analysis["noise_evaluated"] = True
 
         if is_noisy:
-            self._log.info("Noise detected: %s", substrate.analysis["noise_reason"])
+            self._log.info(
+                "Noise detected (penalty=%.2f): %s",
+                noise_penalty_ratio, substrate.analysis["noise_reason"],
+            )
         else:
-            self._log.info("No significant noise detected")
+            self._log.info("No significant noise detected (penalty=%.2f)", noise_penalty_ratio)
 
         return substrate
 
