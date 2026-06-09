@@ -122,14 +122,13 @@ def make_full_config(**overrides) -> dict:
             "tp_exit_pct": 100.0,
         },
         "noise": {
-            "conflict_signal_threshold": 2,
+            "conflict_max_ratio": 0.5,
             "volume_low_ratio": 0.7,
             "volume_very_low_ratio": 0.5,
             "adx_no_trend": 15,
             "adx_overextended": 40,
             "noise_severity_min_reasons": 2,
-            "kill_zone_blocks": False,
-            "kill_zone_hours": [[7, 10], [12, 15]],
+            "liquidity_filter_hours": [[7, 10], [12, 15]],
         },
         "learning": {
             "min_trades_before_adjusting": 30,
@@ -277,34 +276,13 @@ def make_full_config(**overrides) -> dict:
                 "value_ref": "strategy.max_positions",
                 "field_key": "",
             },
-            {
-                "id": "ISC-005",
-                "criterion": "no trade when noise_flag is true",
-                "verification": "analysis.noise_flag == false OR decisions.action == 'wait'",
-                "field": "analysis.noise_flag",
-                "operator": "false_or_action_wait",
-                "value_ref": "decisions.action",
-                "field_key": "",
-            },
-            {
-                "id": "ISC-006",
-                "criterion": "confluence minimum signals aligned",
-                "verification": "best_candidate.indicators_aligned >= strategy.confluence_min_signals",
-                "field": "analysis.candidates",
-                "operator": "best_field_gte",
-                "value_ref": "scoring.confluence_min_signals",
-                "field_key": "indicators_aligned",
-            },
-            {
-                "id": "ISC-007",
-                "criterion": "pre_trade trajectory not sudden coincidence",
-                "verification": "pre_trade_context.coincidence_risk != 'high'",
-                "field": "market.pre_trade_context",
-                "operator": "none_field_eq",
-                "value_ref": "high",
-                "field_key": "coincidence_risk",
-            },
         ],
+        "soft_penalties": {
+            "noise_penalty_ratio": 0.3,
+            "confluence_penalty_ratio": 0.3,
+            "trajectory_penalty_ratio": 0.5,
+            "trajectory_medium_ratio": 0.2,
+        },
     }
     if overrides:
         _deep_update(cfg, overrides)
