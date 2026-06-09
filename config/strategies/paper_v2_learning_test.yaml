@@ -183,13 +183,12 @@ risk:
   min_size_pct_of_equity: 5.0
 
 noise:
-  conflict_signal_threshold: 2
+  conflict_max_ratio: 0.5
   volume_low_ratio: 0.7
   volume_very_low_ratio: 0.5
   adx_no_trend: 15
   adx_overextended: 40
   noise_severity_min_reasons: 2
-  kill_zone_blocks: false
 
 telegram:
   idle_notify_every: 10
