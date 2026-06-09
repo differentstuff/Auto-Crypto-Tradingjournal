@@ -236,19 +236,36 @@ class ConfigLoader:
         """
         Get LLM API keys for a provider from environment variables.
 
+        Reads numbered keys: PROVIDER_API_KEY_1, PROVIDER_API_KEY_2, etc.
+        Also falls back to unnumbered PROVIDER_API_KEY for backward compat.
+
         Env var mapping:
-          ANTHROPIC_API_KEY -> anthropic
-          GEMINI_API_KEY -> google
-          OPENROUTER_API_KEY -> openrouter
-          GROK_API_KEY -> grok
+          ANTHROPIC_API_KEY_1, ANTHROPIC_API_KEY_2 -> anthropic
+          GEMINI_API_KEY_1, GEMINI_API_KEY_2 -> google
+          OPENROUTER_API_KEY_1, OPENROUTER_API_KEY_2 -> openrouter
+          GROK_API_KEY_1, GROK_API_KEY_2 -> grok
 
         Returns list of dicts: [{"key": "...", "label": "..."}]
+        At least one key required; additional keys serve as fallbacks
+        for KeyManager round-robin on rate-limit errors.
         """
-        env_var = self._LLM_ENV_MAP.get(provider, f"{provider.upper()}_API_KEY")
-        key_val = os.environ.get(env_var, "")
-        if key_val:
-            return [{"key": key_val, "label": f"{provider}-env-1"}]
-        return []
+        base_var = self._LLM_ENV_MAP.get(provider, f"{provider.upper()}_API_KEY")
+        keys = []
+
+        # Read numbered keys: _1, _2, _3, ... (up to 10)
+        for i in range(1, 11):
+            env_var = f"{base_var}_{i}"
+            key_val = os.environ.get(env_var, "")
+            if key_val:
+                keys.append({"key": key_val, "label": f"{provider}-env-{i}"})
+
+        # Backward compat: if no numbered keys found, try unnumbered var
+        if not keys:
+            key_val = os.environ.get(base_var, "")
+            if key_val:
+                keys.append({"key": key_val, "label": f"{provider}-env-1"})
+
+        return keys
 
     def get_exchange_creds(self, exchange_name: str) -> dict:
         """
