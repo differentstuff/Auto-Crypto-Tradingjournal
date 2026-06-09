@@ -47,7 +47,7 @@ class TestSubstrateCreation:
         assert sub.analysis["candidates"] == []
         assert sub.decisions["action"] == ""
         assert sub.learning["idle_cycles"] == 0
-        assert len(sub.validity) == 7  # 7 ISC conditions from config
+        assert len(sub.validity) == 4  # 4 hard ISC conditions (001-004); 005/006/007 replaced by soft penalties
 
     def test_creation_without_config_raises(self):
         """Substrate() with no config raises SubstrateConfigError for missing required keys."""
@@ -157,10 +157,16 @@ class TestSubstrateISC:
         sub = Substrate(config=make_full_config())
         assert sub._evaluate_isc(_get_isc(sub, "ISC-004")) is True
 
-    def test_isc_005_vacuously_true(self):
-        """ISC-005 (no trade when noise) is true when action is wait."""
+    def test_soft_penalties_default_zero(self):
+        """Soft penalties default to 0.0 (no penalty)."""
         sub = Substrate(config=make_full_config())
-        assert sub._evaluate_isc(_get_isc(sub, "ISC-005")) is True
+        penalties = sub.soft_penalties()
+        assert all(r == 0.0 for r in penalties.values())
+
+    def test_compute_effective_score_no_penalties(self):
+        """With no penalties, effective_score equals raw_score."""
+        sub = Substrate(config=make_full_config())
+        assert sub.compute_effective_score(7.0) == 7.0
 
     def test_isc_001_fails_no_candidates(self):
         """ISC-001 fails when no candidates exist."""
@@ -204,33 +210,22 @@ class TestSubstrateISC:
         sub.decisions["trade_approved"] = {"size_usdt": 25.0, "sl_price": 100.0}
         assert sub._evaluate_isc(_get_isc(sub, "ISC-003")) is False
 
-    def test_isc_006_best_field_gte_checks_best_candidate(self):
-        """ISC-006 (best_field_gte) checks only the best (first) candidate."""
-        config = make_full_config(scoring={"confluence_min_signals": 4})
-        sub = Substrate(config=config)
-        # Best candidate has 4 aligned (>= 4), second has only 2
-        # With best_field_gte, this should PASS (only best matters)
-        sub.analysis["candidates"] = [
-            {"symbol": "BTCUSDT", "indicators_aligned": 4},
-            {"symbol": "ETHUSDT", "indicators_aligned": 2},
-        ]
-        assert sub._evaluate_isc(_get_isc(sub, "ISC-006")) is True
-
-    def test_isc_006_best_field_gte_fails_when_best_below_threshold(self):
-        """ISC-006 (best_field_gte) fails when best candidate is below threshold."""
-        config = make_full_config(scoring={"confluence_min_signals": 4})
-        sub = Substrate(config=config)
-        # Best candidate has only 3 aligned (< 4)
-        sub.analysis["candidates"] = [
-            {"symbol": "BTCUSDT", "indicators_aligned": 3},
-        ]
-        assert sub._evaluate_isc(_get_isc(sub, "ISC-006")) is False
-
-    def test_isc_006_best_field_gte_empty_candidates(self):
-        """ISC-006 (best_field_gte) fails when no candidates exist."""
+    def test_no_isc_005_006_007_in_validity(self):
+        """ISC-005/006/007 removed — only hard ISCs 001-004 remain."""
         sub = Substrate(config=make_full_config())
-        sub.analysis["candidates"] = []
-        assert sub._evaluate_isc(_get_isc(sub, "ISC-006")) is False
+        isc_ids = [isc.id for isc in sub.validity]
+        assert "ISC-005" not in isc_ids
+        assert "ISC-006" not in isc_ids
+        assert "ISC-007" not in isc_ids
+
+    def test_compute_effective_score_with_penalties(self):
+        """Multiplicative penalties reduce effective_score."""
+        sub = Substrate(config=make_full_config())
+        sub.analysis["noise_penalty_ratio"] = 0.3
+        sub.analysis["confluence_penalty_ratio"] = 0.3
+        sub.analysis["trajectory_penalty_ratio"] = 0.0
+        # 7.0 * 0.7 * 0.7 * 1.0 = 3.43
+        assert abs(sub.compute_effective_score(7.0) - 3.43) < 0.01
 
     def test_isc_004_reads_from_live_config(self):
         """ISC-004 (count_lt) reads max_positions from live config, not stale state."""
@@ -280,9 +275,9 @@ class TestISCBlocksTrade:
         sub = Substrate(config=make_full_config())
         sub.verify_iscs()
         failed = sub.failed_isc_ids()
-        # ISC-001 (no candidates) and ISC-006 (no candidates) should fail
+        # ISC-001 (no candidates) should fail; ISC-006 removed
         assert "ISC-001" in failed
-        assert "ISC-006" in failed
+        assert "ISC-006" not in failed
 
     def test_no_blocks_when_all_pass(self):
         """isc_blocks_trade() returns False when all ISCs pass."""
@@ -400,7 +395,7 @@ class TestSubstrateSerialization:
         d["validity"] = []
         # Should fall back to config's validity
         sub2 = Substrate.from_persistent_dict(d, config=config)
-        assert len(sub2.validity) == 7
+        assert len(sub2.validity) == 4  # Only hard ISCs 001-004
 
     def test_from_persistent_dict_no_validity_no_config_raises(self):
         """from_persistent_dict with no validity and no config raises error.
