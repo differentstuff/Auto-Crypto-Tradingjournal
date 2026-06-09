@@ -47,6 +47,8 @@ Fully operational. All core modules are built and tested:
 | Exchange integration (CCXT, paper mode guard, multi-position tracking) | Working |
 | Strategy YAML (hot-pluggable, per-strategy UID for isolated learning) | Working |
 | Backtester + quality metrics (PBO, Deflated Sharpe, Bootstrap CI) | Working |
+| Soft penalties (noise, confluence, trajectory — replace hard-gate ISCs 005/006/007) | Working |
+| Learning-adjusted thresholds (penalty ratios auto-tuned from trade outcomes) | Working |
 | Setup script, smoke tests, systemd service | Working |
 
 **Not yet implemented** (defined in design docs, not in code):
@@ -74,7 +76,9 @@ SUBSTRATE (shared state)
   └── ISOMERASE enzyme    — Wait (default, fires when nothing else can)
 ```
 
-Each cycle: find activatable enzymes → regulators fire first → highest flux-score enzyme transforms the substrate → verify ISC conditions → repeat until attractor reached or no enzyme can fire.
+Each cycle: find activatable enzymes → regulators fire first → highest flux-score enzyme transforms the substrate → verify ISC conditions → apply soft penalties → repeat until attractor reached or no enzyme can fire.
+
+**Hard ISCs (001–004)** are non-negotiable gates: entry threshold, stop-loss set, risk limit, max positions. **Soft penalties** (noise, confluence, trajectory) reduce the effective score instead of blocking trades entirely, allowing the learning engine to collect data from penalized trades and auto-tune penalty ratios over time.
 
 ---
 
@@ -141,6 +145,7 @@ The learning engine is what makes this more than a rule-based bot.
 4. **Trajectory analysis.** Were indicators aligning gradually over 12 bars, or snapping together by coincidence? The trajectory module scores `coincidence_risk` before entry.
 5. **Rulebook generation.** Auto-generated from findings. Max 10 rules. Sharp, not verbose. Refreshed every retrain cycle.
 6. **Idle cycle tracking.** When no trade was made, the system notes why. This prevents false "high win rate" from simply not trading during bad conditions.
+7. **Soft penalties with learning feedback.** Noise, low confluence, and trajectory coincidence no longer hard-block trades (former ISC-005/006/007). Instead they apply multiplicative penalties: `effective_score = raw_score × (1 - noise) × (1 - confluence) × (1 - trajectory)`. The learning engine adjusts penalty ratios based on trade outcomes — if penalized trades win more than average, penalties are reduced; if they lose more, penalties increase.
 
 Each strategy has a stable UID. Learning data is keyed to that UID, so two strategies can share the same database without collisions. Clear the UID to reset learning from scratch.
 
@@ -184,7 +189,7 @@ enzymes/                  19 enzymes, one file each
 indicators/               Indicator computations + registry
 learning/                 Accuracy, combinations, trajectory, weight adjuster, rulebook
 llm/                      Multi-provider router, key manager, prompt builder
-tools/backtest/           Backtest engine, metrics, optimizer, quality
+tools/                    Utility scripts
 scripts/                  backup_db.sh, migrate_db.py, self_test.py, verify_e2e.sh
 tests/                    Unit + integration tests
 ```
