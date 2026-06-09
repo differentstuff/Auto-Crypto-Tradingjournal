@@ -169,7 +169,42 @@ class UpdateLearning(Enzyme):
         except Exception as e:
             _log.error("Failed to compute adjusted weights: %s", e, exc_info=True)
 
-        # 5. Update trade count in substrate
+        # 5. Compute adjusted soft penalty thresholds based on trade outcomes
+        #    If penalized trades are winning, reduce penalties (they're too aggressive).
+        #    If penalized trades are losing, increase penalties (they're too lenient).
+        try:
+            from learning.weight_adjuster import compute_adjusted_thresholds
+            current_penalties = {
+                "noise_penalty_ratio": substrate.cfg("soft_penalties.noise_penalty_ratio", 0.3),
+                "confluence_penalty_ratio": substrate.cfg("soft_penalties.confluence_penalty_ratio", 0.3),
+                "trajectory_penalty_ratio": substrate.cfg("soft_penalties.trajectory_penalty_ratio", 0.5),
+                "trajectory_medium_ratio": substrate.cfg("soft_penalties.trajectory_medium_ratio", 0.2),
+            }
+
+            adjusted_thresholds = compute_adjusted_thresholds(
+                current_penalties,
+                strategy_name,
+                strategy_uid=strategy_uid,
+                min_trades=min_trades_before_adj,
+            )
+
+            if adjusted_thresholds != current_penalties:
+                substrate.learning["adjusted_thresholds"] = adjusted_thresholds
+                changed_keys = [
+                    k for k in adjusted_thresholds
+                    if adjusted_thresholds.get(k) != current_penalties.get(k)
+                ]
+                _log.info(
+                    "Adjusted penalty thresholds for '%s': %d changed: %s",
+                    strategy_name, len(changed_keys), changed_keys,
+                )
+            else:
+                _log.debug("No penalty threshold adjustments needed for '%s'", strategy_name)
+
+        except Exception as e:
+            _log.error("Failed to compute adjusted thresholds: %s", e, exc_info=True)
+
+        # 6. Update trade count in substrate
         try:
             from core.database import db_conn
             with db_conn() as conn:
