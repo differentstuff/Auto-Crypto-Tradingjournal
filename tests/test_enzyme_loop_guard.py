@@ -6,7 +6,7 @@ Verifies that:
    prevent enzymes from re-firing after producing empty results.
 2. Substrate reset_cycle() properly resets the flags.
 3. Daemon consecutive-fire guard breaks loops after 3 same-enzyme fires.
-4. ISC-001/ISC-006 correctly fail when candidates are empty.
+4. ISC-001 correctly fails when candidates are empty. ISC-005/006/007 replaced by soft penalties.
 """
 
 import pytest
@@ -311,11 +311,27 @@ class TestISCWithEmptyCandidates:
         results = s.verify_iscs()
         assert results["ISC-001"] == "failed"
 
-    def test_isc_006_fails_with_empty_candidates(self):
-        """ISC-006 (all_field_gte) fails when candidates is empty."""
+    def test_soft_penalties_default_to_zero(self):
+        """Soft penalties default to 0.0 when no noise/trajectory issues."""
         s = Substrate(config=make_full_config())
-        results = s.verify_iscs()
-        assert results["ISC-006"] == "failed"
+        penalties = s.soft_penalties()
+        assert penalties["noise"] == 0.0
+        assert penalties["confluence"] == 0.0
+        assert penalties["trajectory"] == 0.0
+
+    def test_compute_effective_score_no_penalties(self):
+        """With no penalties, effective_score equals raw_score."""
+        s = Substrate(config=make_full_config())
+        assert s.compute_effective_score(7.0) == 7.0
+
+    def test_compute_effective_score_with_penalties(self):
+        """Multiplicative penalties reduce effective_score."""
+        s = Substrate(config=make_full_config())
+        s.analysis["noise_penalty_ratio"] = 0.3
+        s.analysis["confluence_penalty_ratio"] = 0.3
+        s.analysis["trajectory_penalty_ratio"] = 0.0
+        # 7.0 * (1-0.3) * (1-0.3) * (1-0.0) = 7.0 * 0.7 * 0.7 = 3.43
+        assert abs(s.compute_effective_score(7.0) - 3.43) < 0.01
 
     def test_isc_002_passes_with_no_trade(self):
         """ISC-002 (sl_set_or_no_trade) passes vacuously when no trade pending."""
@@ -323,11 +339,13 @@ class TestISCWithEmptyCandidates:
         results = s.verify_iscs()
         assert results["ISC-002"] == "verified"
 
-    def test_isc_005_passes_with_wait_action(self):
-        """ISC-005 (false_or_action_wait) passes when action is 'wait'."""
+    def test_no_isc_005_006_007_in_config(self):
+        """ISC-005/006/007 removed from config — only hard ISCs remain."""
         s = Substrate(config=make_full_config())
         results = s.verify_iscs()
-        assert results["ISC-005"] == "verified"
+        assert "ISC-005" not in results
+        assert "ISC-006" not in results
+        assert "ISC-007" not in results
 
     def test_isc_001_passes_with_qualifying_candidate(self, substrate_with_config):
         """ISC-001 passes when a candidate meets the entry threshold."""
@@ -337,13 +355,13 @@ class TestISCWithEmptyCandidates:
         results = substrate_with_config.verify_iscs()
         assert results["ISC-001"] == "verified"
 
-    def test_isc_006_passes_with_aligned_candidates(self, substrate_with_config):
-        """ISC-006 passes when all candidates have sufficient indicators_aligned."""
+    def test_confluence_penalty_zero_with_aligned_candidates(self, substrate_with_config):
+        """Confluence penalty is 0 when candidates have sufficient indicators_aligned."""
         substrate_with_config.analysis["candidates"] = [
             {"symbol": "BTCUSDT", "score": 7.0, "indicators_aligned": 4}
         ]
-        results = substrate_with_config.verify_iscs()
-        assert results["ISC-006"] == "verified"
+        penalties = substrate_with_config.soft_penalties()
+        assert penalties["confluence"] == 0.0
 
 
 # ---------------------------------------------------------------------------
