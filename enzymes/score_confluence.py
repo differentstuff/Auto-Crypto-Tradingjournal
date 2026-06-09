@@ -188,12 +188,13 @@ class ScoreConfluence(Enzyme):
         indicators = substrate.market.get("indicators", {})
         candidates = substrate.analysis.get("candidates", [])
         confluence_scored = substrate.analysis.get("confluence_scored", False)
-        noise_flag = substrate.analysis.get("noise_flag", False)
         # HMM regime filter: skip scoring during Spike regime
         regime_normal = substrate.confluence.get("regime_normal", True)
         if not regime_normal:
             return False
-        return bool(indicators) and not candidates and not confluence_scored and not noise_flag
+        # NOTE: noise_flag no longer blocks scoring. Noise penalty is applied
+        # by ApproveTrade via compute_effective_score() instead.
+        return bool(indicators) and not candidates and not confluence_scored
 
     def transform(self, substrate: Substrate) -> Substrate:
         """Compute confluence scores for all symbols with indicator data."""
@@ -357,6 +358,23 @@ class ScoreConfluence(Enzyme):
             c["symbol"]: c["label"] for c in candidates
         }
         substrate.analysis["confluence_scored"] = True
+
+        # Compute confluence_penalty_ratio: if the best candidate has
+        # indicators_aligned < confluence_min_signals, apply a penalty.
+        # This replaces the former ISC-006 hard gate.
+        confluence_penalty_max = substrate.cfg("soft_penalties.confluence_penalty_ratio", 0.3)
+        if candidates:
+            best_aligned = candidates[0].get("indicators_aligned", 0)
+            if best_aligned < confluence_min:
+                # Scale penalty: 0 aligned = full penalty, confluence_min-1 = small penalty
+                deficit_ratio = 1.0 - (best_aligned / confluence_min)
+                confluence_penalty_ratio = round(confluence_penalty_max * deficit_ratio, 3)
+            else:
+                confluence_penalty_ratio = 0.0
+        else:
+            # No candidates at all — full confluence penalty
+            confluence_penalty_ratio = confluence_penalty_max
+        substrate.analysis["confluence_penalty_ratio"] = confluence_penalty_ratio
 
         n_below_threshold = len(all_scores) - len(candidates)
         n_borderline = sum(1 for c in candidates if c.get("llm_borderline"))
