@@ -133,6 +133,22 @@ llm:
     max_retries: 1                 # Retry once on malformed response
     retry_with_stronger_prompt: true  # Add stronger format instructions on retry
 
+  # ── Fallback routing ────────────────────────────────────────────────────
+  # When a primary provider fails (all keys in cooldown or auth error),
+  # the router can fall back to an alternative provider/role.
+  # This is cross-provider fallback: e.g., if OpenRouter is down,
+  # fall back to Anthropic or Gemini.
+  fallback:
+    enabled: true
+    # Map primary provider → fallback role (from routing section above)
+    # The fallback role may use a different provider entirely.
+    provider_fallback:
+      openrouter: "fallback"     # Uses the "fallback" routing role (minimax via OpenRouter)
+      anthropic: "fallback"      # Same fallback role
+      google: "fallback"         # Same fallback role
+    # Max retries with fallback before giving up
+    max_fallback_retries: 1
+
   # ── Key cooldowns ──────────────────────────────────────────────────────
   # How long a key is paused after an error (seconds).
   # Override per provider if needed in exchange.yaml.
