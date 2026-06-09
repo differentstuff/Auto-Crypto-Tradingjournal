@@ -1,0 +1,132 @@
+# WorkingBrief — substrate for session state
+# Path: /opt/KnowledgeBase/briefs/AutoTraderSoftPenalties.yaml
+
+meta:
+  task_name:        AutoTraderSoftPenalties
+  created:          "2025-07-14T18:00:00Z"
+  updated:          "2026-06-09T12:00:00Z"
+  status:           completed
+  owner_agent:      ProblemClarification
+  brief_version:    2
+
+current_task:
+  goal:             Replace hard-gate ISCs (005/006/007) with soft penalties so the system grades trade quality instead of blocking trades on noisy or low-confluence signals
+  definition_of_done: "All 4 phases implemented and passing tests: (1) LLM error handling with numbered keys and fallback; (2) ISC-005/006/007 removed from substrate, daemon, configs, tests; (3) DetectNoise outputs penalty ratio instead of binary flag; (4) learning thresholds are adjustable via UpdateLearning"
+  scope:            "ISC/penalty/refactor scope + LLM key management. No new indicators, no new enzymes, no LLM prompt changes, no new exchange integrations"
+  deadline:         ""
+
+constraints:
+  hard:
+    - "No ISC-005/006/007 may remain in any file (code, config, test)"
+    - "Hard ISCs (SL, size, max_positions) must still block trades unconditionally"
+    - "All config values must be in YAML — no hardcoded thresholds in Python"
+    - "Existing learning data schema must not break (additive changes only)"
+    - "Paper trading must produce more trades after refactor (the whole point)"
+    - "LLM keys must support numbered env vars (PROVIDER_API_KEY_1, _2, etc.)"
+    - "Fallback key support: if primary key fails, try next available key"
+  soft:
+    - "Prefer relative thresholds (ratios) over absolute ones"
+    - "Keep the daemon ISC gate simple — it only checks hard ISCs now"
+    - "Penalty ratios should be tunable per strategy"
+
+context:
+  background: |
+    The Auto-Crypto-Tradingjournal system uses a reaction-network architecture
+    where enzymes transform a shared Substrate. Previously, ISCs (Invariant Safety
+    Conditions) 005, 006, 007 acted as hard gates that blocked ALL trades when
+    noise_flag=true, confluence_min_signals not met, or trajectory coincidence_risk=high.
+    This caused the system to produce zero trades for extended periods during
+    paper testing, making learning impossible (no data to learn from).
+    The fix: convert these three ISCs from hard gates to soft penalties that
+    reduce the effective score rather than blocking entirely.
+    Additionally, LLM key management needed improvement: .env.example used
+    unnumbered key vars (OPENROUTER_API_KEY) while the code and KeyManager
+    support multiple numbered keys. Phase 1 aligns the env vars, config_loader,
+    and adds fallback key support.
+  key_facts:
+    - "ISC-001 (SL set), ISC-002 (size within risk), ISC-003 (max positions) remain hard gates"
+    - "ISC-004 (score above threshold) is the approval threshold check after penalties"
+    - "DetectNoise writes noise_penalty_ratio (float 0.0-1.0) instead of noise_flag (bool)"
+    - "ScoreConfluence applies confluence_penalty_ratio when indicators_aligned < confluence_min"
+    - "ApproveTrade applies all soft penalties to effective score, checks approval_threshold"
+    - "The daemon ISC gate only checks hard ISCs (001-004)"
+    - "kill_zone renamed to liquidity_filter: outside = lower liquidity, not 'no trade'"
+    - "conflicting_signals uses relative conflict_max_ratio instead of absolute threshold"
+    - "effective_score = raw_score × (1 - noise_penalty) × (1 - confluence_penalty) × (1 - trajectory_penalty)"
+    - "LLM keys use numbered env vars: PROVIDER_API_KEY_1, PROVIDER_API_KEY_2, etc."
+    - "KeyManager supports round-robin with immediate failover on error"
+  assumptions:
+    - "Soft penalties are multiplicative"
+    - "The learning engine can adjust penalty ratios over time based on trade outcomes"
+    - "A trade with soft penalties applied still needs to meet approval_threshold to proceed"
+    - "LLM fallback keys may be from different providers (cross-provider fallback)"
+
+decisions:
+  - date: "2025-07-14"
+    decision: "Convert ISC-005/006/007 from hard gates to soft penalty ratios"
+    rationale: "Hard gates produce zero trades during noisy periods, starving the learning engine of data. Soft penalties allow trades with reduced confidence, producing more training data."
+    made_by: "user + agent"
+  - date: "2025-07-14"
+    decision: "Keep ISC-001/002/003 as hard gates (SL, size, max positions)"
+    rationale: "These are genuine safety constraints — no trade should ever bypass SL validation, oversize risk, or exceed position limits."
+    made_by: "user + agent"
+  - date: "2025-07-14"
+    decision: "Rename kill_zone to liquidity_filter and use relative conflict_max_ratio"
+    rationale: "Kill zone implies 'do not trade here'. Liquidity filter implies 'less favorable conditions'. Relative thresholds adapt to market regime better than absolute ones."
+    made_by: "agent"
+  - date: "2026-06-09"
+    decision: "Use numbered LLM key env vars (PROVIDER_API_KEY_1, _2, etc.)"
+    rationale: "KeyManager already supports multiple keys per provider. Numbered env vars make it explicit and allow fallback keys without YAML config."
+    made_by: "user + agent"
+
+artifacts:
+  - name: "Implementation Plan"
+    path: "docs/AutoTraderSoftPenalties.yaml"
+    status: active
+    description: "This brief — contains the full 4-phase implementation plan"
+
+open_blockers: []
+
+resolved_tasks:
+  - task: "Phase 2: ISC Restructuring"
+    date: "2026-06-09"
+    result: "ISC-005/006/007 removed from substrate.py, config/default.yaml, all strategy YAMLs, all tests. soft_penalties() and compute_effective_score() added to substrate."
+  - task: "Phase 3: DetectNoise + ScoreConfluence + ApproveTrade"
+    date: "2026-06-09"
+    result: "DetectNoise outputs noise_penalty_ratio. ScoreConfluence applies confluence_penalty_ratio. ApproveTrade uses compute_effective_score() with approval_threshold. CollectPreTradeContext applies trajectory_penalty_ratio."
+  - task: "Phase 4: Learning Integration"
+    date: "2026-06-09"
+    result: "compute_adjusted_thresholds() added to weight_adjuster.py. UpdateLearning calls it and writes adjusted_thresholds to substrate. substrate.cfg() checks adjusted_thresholds first for soft_penalties.* keys."
+
+execution_packet:
+  next_action:      "All phases complete. No further action needed."
+  inputs_required:  []
+  output_expected:  "N/A — all phases implemented"
+  validation:       "All 776 tests pass. Soft penalties working. LLM numbered keys working."
+  model_hint:       completed
+
+stale_context: []
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PHASE DETAIL (reference only — not part of brief schema)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# PHASE 1 — LLM Error Handling (DONE ✅)
+# ─────────────────────────────────────────────────────────────────────────
+# File                              Change
+# ─────────────────────────────────────────────────────────────────────────
+# Completed 2026-06-09. Numbered keys (_1, _2, etc.) in config_loader.py.
+# .env.example uses numbered keys. Fallback section added to llm.yaml.
+# Backward compat: unnumbered PROVIDER_API_KEY still works.
+
+# PHASE 2 — ISC Restructuring (DONE ✅)
+# ─────────────────────────────────────────────────────────────────────────
+# Completed 2026-06-09. ISC-005/006/007 removed. soft_penalties() added.
+
+# PHASE 3 — DetectNoise + ScoreConfluence (DONE ✅)
+# ─────────────────────────────────────────────────────────────────────────
+# Completed 2026-06-09. Penalty ratios replace binary flags.
+
+# PHASE 4 — Learning Integration (DONE ✅)
+# ─────────────────────────────────────────────────────────────────────────
+# Completed 2026-06-09. compute_adjusted_thresholds() implemented.
