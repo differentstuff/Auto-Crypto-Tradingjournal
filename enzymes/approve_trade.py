@@ -206,9 +206,9 @@ class ApproveTrade(Enzyme):
     def transform(self, substrate: Substrate) -> Substrate:
         """Evaluate entry zones and approve or block trades.
 
-        Note: ISC enforcement (max positions, noise flag) is handled by the
-        daemon's ISC gate — this enzyme never fires when ISCs block trades.
-        This enzyme focuses on risk sizing and SL validation only.
+        Applies soft penalties to compute effective_score, then checks
+        against approval_threshold. Hard ISCs (SL, size, max positions)
+        are still enforced by the daemon's ISC gate.
         """
         entry_zones = substrate.analysis.get("entry_zones", {})
         if not entry_zones:
@@ -220,7 +220,8 @@ class ApproveTrade(Enzyme):
 
         # Evaluate each entry zone (take the best one)
         best_approved = None
-        best_score = -float("inf")
+        best_effective_score = -float("inf")
+        approval_threshold = substrate.cfg("scoring.approval_threshold", 4.5)
         entry_threshold = substrate.cfg("scoring.entry_threshold")
         llm_enabled = substrate.cfg("llm.enabled", False)
 
@@ -228,28 +229,33 @@ class ApproveTrade(Enzyme):
             direction = zone.get("direction", "")
             entry_price = zone.get("entry_price", 0)
             sl_price = zone.get("sl_price", 0)
-            score = zone.get("score", 0)
+            raw_score = zone.get("score", 0)
             tp1 = zone.get("tp1", 0)
             tp2 = zone.get("tp2", 0)
             atr_value = zone.get("atr_value", 0)
             llm_verdict = zone.get("llm_verdict")
             llm_override = zone.get("llm_override", False)
 
+            # --- Apply soft penalties to compute effective score ---
+            effective_score = substrate.compute_effective_score(raw_score)
+            penalties = substrate.soft_penalties()
+            any_penalty = any(r > 0 for r in penalties.values())
+
             # --- LLM override gate ---
-            # Borderline candidates (score < threshold) need LLM "proceed" to pass.
+            # Borderline candidates (effective_score < approval_threshold) need LLM "proceed" to pass.
             # Above-threshold candidates pass on numeric rules alone.
             # LLM NEVER blocks a trade — it only enables sub-threshold ones.
-            if abs(score) < entry_threshold:
+            if abs(effective_score) < approval_threshold:
                 if llm_verdict == "proceed" and llm_override:
                     self._log.info(
-                        "LLM override: %s approved despite score %.1f < threshold %.1f",
-                        symbol, abs(score), entry_threshold,
+                        "LLM override: %s approved despite effective_score %.1f < threshold %.1f",
+                        symbol, abs(effective_score), approval_threshold,
                     )
                 else:
                     # Sub-threshold without LLM proceed — skip this candidate
                     self._log.debug(
-                        "Skipping %s: score %.1f < threshold %.1f and LLM verdict=%s",
-                        symbol, abs(score), entry_threshold, llm_verdict,
+                        "Skipping %s: effective_score %.1f < approval_threshold %.1f (raw=%.1f, penalties=%s)",
+                        symbol, abs(effective_score), approval_threshold, raw_score, penalties,
                     )
                     continue
 
@@ -261,8 +267,8 @@ class ApproveTrade(Enzyme):
                 self._log.warning("Blocked %s: SL below entry for Short", symbol)
                 continue
 
-            # Kelly sizing
-            kelly = _kelly_fraction(abs(score), substrate)
+            # Kelly sizing (use effective_score for sizing — penalized trades get smaller positions)
+            kelly = _kelly_fraction(abs(effective_score), substrate)
 
             # Compute size (with ATR cap)
             sizing = _compute_size(
@@ -307,7 +313,9 @@ class ApproveTrade(Enzyme):
                 "atr_value": atr_value,
                 "atr_cap_applied": sizing["atr_cap_applied"],
                 "atr_cap_notional": sizing["atr_cap_notional"],
-                "score": score,
+                "score": raw_score,
+                "effective_score": round(effective_score, 2),
+                "penalties": penalties,
                 # LLM tracking fields — recorded in trade_learning for analysis
                 "llm_verdict": llm_verdict,
                 "llm_reason": zone.get("llm_reason"),
@@ -316,21 +324,23 @@ class ApproveTrade(Enzyme):
                 "llm_override": llm_override,
             }
 
-            # Track the best candidate by absolute score
-            if abs(score) > best_score:
+            # Track the best candidate by effective score
+            if abs(effective_score) > best_effective_score:
                 best_approved = approved
-                best_score = abs(score)
+                best_effective_score = abs(effective_score)
 
         if best_approved:
             substrate.decisions["trade_approved"] = best_approved
             atr_cap_msg = " [ATR cap]" if best_approved.get("atr_cap_applied") else ""
             llm_msg = f" [LLM {best_approved.get('llm_verdict', '?')}]" if best_approved.get("llm_verdict") else ""
             llm_override_msg = " [LLM OVERRIDE]" if best_approved.get("llm_override") else ""
+            penalty_msg = " [PENALIZED]" if any(best_approved.get("penalties", {}).values()) else ""
             self._log.info(
-                "Approved: %s %s size=%.2f kelly=%.3f%s%s%s",
+                "Approved: %s %s size=%.2f kelly=%.3f eff_score=%.2f%s%s%s%s",
                 best_approved["direction"], best_approved["symbol"],
                 best_approved["size_usdt"], best_approved["kelly_fraction"],
-                atr_cap_msg, llm_msg, llm_override_msg,
+                best_approved.get("effective_score", 0),
+                atr_cap_msg, llm_msg, llm_override_msg, penalty_msg,
             )
         else:
             substrate.decisions["trade_approved"] = None
