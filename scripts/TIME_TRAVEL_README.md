@@ -142,6 +142,34 @@ Karpathy evaluates: "If I lower the threshold from 6.5 to 4.0, I capture N extra
 
 ---
 
+## Performance & Progress
+
+The script uses a **sliding window** for indicator computation instead of recomputing on a growing slice. This changes complexity from O(n²) to O(n × window), giving a ~10× speedup for long date ranges.
+
+Progress is logged every 15 seconds during scoring:
+
+```
+21:17:53 [INFO] time_travel:   Pre-computing BTCUSDT indicators (1h)...
+21:18:47 [INFO] time_travel:   1h Pre-computed indicators: 5688/5688 bars ok, 0 failed
+21:18:47 [INFO] time_travel:   1h indicators done in 54.2s (105 bars/s)
+21:18:47 [INFO] time_travel:   Pre-computing BTCUSDT indicators (4h)...
+21:19:12 [INFO] time_travel:   4h Pre-computed indicators: 1922/1922 bars ok, 0 failed
+21:19:12 [INFO] time_travel:   4h indicators done in 25.1s
+21:19:12 [INFO] time_travel:   Scoring 5688 bars...
+21:19:27 [INFO] time_travel:   [BTCUSDT] 1410/5688 bars (24.8%) | 3 entries | 1 trades | 94 bars/s | ETA: <1m
+21:19:42 [INFO] time_travel:   [BTCUSDT] 2820/5688 bars (49.6%) | 7 entries | 3 trades | 94 bars/s | ETA: <1m
+21:19:57 [INFO] time_travel:   [BTCUSDT] 4230/5688 bars (74.4%) | 12 entries | 5 trades | 94 bars/s | ETA: <1m
+21:20:12 [INFO] time_travel:   [BTCUSDT] 5687/5688 bars (100.0%) | 18 entries | 8 trades | 94 bars/s | ETA: <1m
+21:20:12 [INFO] time_travel:   BTCUSDT: 8 trades generated (18 entries evaluated) in 60.3s
+```
+
+The output shows:
+- **bars processed / total** — how far through the date range
+- **entries** — how many times a threshold was met (before cooldown filtering)
+- **trades** — how many simulated trades were written to DB
+- **bars/s** — processing speed
+- **ETA** — estimated time remaining
+
 ## Limitations
 
 - **No slippage or latency.** Entries use the bar's close price. Exits use the bar's high/low. Real trading has execution costs.
@@ -149,6 +177,7 @@ Karpathy evaluates: "If I lower the threshold from 6.5 to 4.0, I capture N extra
 - **No LLM validation.** The live daemon can send borderline candidates to an LLM for review. Time travel skips this.
 - **No soft penalties.** Noise, confluence, and trajectory penalties from the live daemon are not applied. `effective_score` equals `confluence_score_at_entry`. This is conservative — it means backtest trades are scored slightly higher than they would be live.
 - **Walk-forward cap.** Trades still open after 200 bars are discarded. For 1h bars, that's ~8.3 days — reasonable for momentum strategies.
+- **Sliding window approximation.** Indicators are computed on the last 400 bars, not the full history. EMA(200) converges within this window, but very long-period indicators may have slight differences from the live daemon (which uses all available data).
 
 ---
 

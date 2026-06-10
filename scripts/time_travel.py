@@ -771,6 +771,59 @@ class TradeCooldown:
         }
 
 
+# ── Indicator pre-computation ──────────────────────────────────────────────
+
+# Sliding window size for indicator computation.
+# Indicators like EMA(200) need ~3× their period to converge (600 bars).
+# A window of 400 bars is enough for EMA(200) + RSI(14) + MACD(26) + ADX(14).
+# This changes complexity from O(n²) to O(n × window), a ~10× speedup.
+_INDICATOR_WINDOW = 400
+
+
+def precompute_indicators(
+    df: pd.DataFrame,
+    compute_configs: List[dict],
+    min_bars: int = 30,
+    window: int = _INDICATOR_WINDOW,
+    label: str = "",
+) -> List[Optional[dict]]:
+    """Pre-compute indicators for every bar using a sliding window.
+
+    Instead of computing on a growing slice (O(n²)), we compute on a
+    fixed-size sliding window (O(n × window)). For each bar, we pass
+    only the last `window` bars to the indicator functions.
+
+    Returns a list of dicts (one per bar). Bars before min_bars are None.
+    """
+    n = len(df)
+    results: List[Optional[dict]] = [None] * n
+    failed_bars = 0
+
+    for bar_idx in range(min_bars, n):
+        start_idx = max(0, bar_idx - window)
+        df_slice = df.iloc[start_idx:bar_idx + 1]
+
+        tf_indicators = {"ok": True, "candles_used": len(df_slice)}
+        for ind_cfg in compute_configs:
+            ind_name = ind_cfg.get("name", "")
+            ind_params = ind_cfg.get("params", {})
+            try:
+                result = compute_indicator(ind_name, df_slice, **ind_params)
+                if result is not None:
+                    tf_indicators[ind_name] = result
+            except Exception:
+                pass
+
+        if len(tf_indicators) > 2:  # ok + candles_used + at least one indicator
+            results[bar_idx] = tf_indicators
+        else:
+            failed_bars += 1
+
+    _log.info("  %sPre-computed indicators: %d/%d bars ok, %d failed",
+              f"{label} " if label else "", n - min_bars - failed_bars, n - min_bars, failed_bars)
+    return results
+
+
 # ── Main time-travel loop ──────────────────────────────────────────────────
 
 
@@ -890,49 +943,77 @@ def time_travel(
 
         # Minimum bars needed for indicator computation
         min_bars = 30  # Most indicators need at least 30 bars
+        total_bars = len(df_primary) - min_bars
 
+        # ── Pre-compute indicators (sliding window, O(n×window) not O(n²)) ──
+        _log.info("  Pre-computing %s indicators (%s)...", symbol, primary_tf)
+        t_precompute_start = _time.time()
+        primary_indicators_all = precompute_indicators(
+            df_primary, compute_configs, min_bars=min_bars,
+            window=_INDICATOR_WINDOW, label=primary_tf,
+        )
+        t_precompute = _time.time() - t_precompute_start
+        _log.info("  %s indicators done in %.1fs (%.0f bars/s)",
+                  primary_tf, t_precompute, total_bars / max(t_precompute, 0.1))
+
+        # Pre-compute confirmation TF indicators (if present)
+        confirm_indicators_all: List[Optional[dict]] = [None] * len(df_primary)
+        if df_confirm is not None and len(df_confirm) > min_bars:
+            _log.info("  Pre-computing %s indicators (%s)...", symbol, confirmation_tf)
+            t_confirm_start = _time.time()
+            confirm_indicators_raw = precompute_indicators(
+                df_confirm, compute_configs, min_bars=min_bars,
+                window=_INDICATOR_WINDOW, label=confirmation_tf,
+            )
+            t_confirm = _time.time() - t_confirm_start
+            _log.info("  %s indicators done in %.1fs", confirmation_tf, t_confirm)
+
+            # Map confirmation indicators to primary bars by timestamp
+            for bar_idx in range(min_bars, len(df_primary)):
+                bar = df_primary.iloc[bar_idx]
+                bar_time = bar.name if hasattr(bar, 'name') else df_primary.index[bar_idx]
+                confirm_idx = _find_confirmation_bar(df_confirm, bar_time, bar_idx)
+                if confirm_idx is not None and confirm_idx < len(confirm_indicators_raw):
+                    confirm_indicators_all[bar_idx] = confirm_indicators_raw[confirm_idx]
+
+        # ── Score and simulate ─────────────────────────────────────────────
+        _log.info("  Scoring %d bars...", total_bars)
+        t_score_start = _time.time()
         symbol_trades = 0
+        entries_found = 0
+        last_progress_log = _time.time()
+        progress_interval_sec = 15  # Log progress every 15 seconds
 
         for bar_idx in range(min_bars, len(df_primary)):
-            # Slice data up to current bar (simulates "what the daemon saw at this point")
-            df_slice = df_primary.iloc[:bar_idx + 1]
+            # Progress logging
+            bars_processed = bar_idx - min_bars
+            if bars_processed > 0 and (_time.time() - last_progress_log >= progress_interval_sec or bar_idx == len(df_primary) - 1):
+                elapsed = _time.time() - t_score_start
+                pct = bars_processed / total_bars * 100
+                bars_per_sec = bars_processed / max(elapsed, 0.01)
+                eta_sec = (total_bars - bars_processed) / max(bars_per_sec, 0.1)
+                _log.info(
+                    "  [%s] %d/%d bars (%.1f%%) | %d entries | %d trades | %.0f bars/s | ETA: %s",
+                    symbol, bars_processed, total_bars, pct,
+                    entries_found, symbol_trades,
+                    bars_per_sec,
+                    "<1m" if eta_sec < 60 else f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s",
+                )
+                last_progress_log = _time.time()
+
+            # Use pre-computed indicators
+            primary_indicators = primary_indicators_all[bar_idx]
+            if primary_indicators is None:
+                continue
+
             bar = df_primary.iloc[bar_idx]
             bar_time = bar.name if hasattr(bar, 'name') else df_primary.index[bar_idx]
 
-            # Compute indicators for primary TF
-            primary_indicators = {"ok": True, "candles_used": len(df_slice)}
-            for ind_cfg in compute_configs:
-                ind_name = ind_cfg.get("name", "")
-                ind_params = ind_cfg.get("params", {})
-                try:
-                    result = compute_indicator(ind_name, df_slice, **ind_params)
-                    if result is not None:
-                        primary_indicators[ind_name] = result
-                except Exception as e:
-                    _log.debug("  Indicator %s failed at bar %d: %s", ind_name, bar_idx, e)
-
-            # Compute indicators for confirmation TF
-            confirm_indicators = {}
-            if df_confirm is not None and len(df_confirm) > min_bars:
-                # Find the last confirmation bar that closed before this primary bar
-                confirm_idx = _find_confirmation_bar(df_confirm, bar_time, bar_idx)
-                if confirm_idx is not None and confirm_idx >= min_bars:
-                    df_confirm_slice = df_confirm.iloc[:confirm_idx + 1]
-                    confirm_indicators = {"ok": True, "candles_used": len(df_confirm_slice)}
-                    for ind_cfg in compute_configs:
-                        ind_name = ind_cfg.get("name", "")
-                        ind_params = ind_cfg.get("params", {})
-                        try:
-                            result = compute_indicator(ind_name, df_confirm_slice, **ind_params)
-                            if result is not None:
-                                confirm_indicators[ind_name] = result
-                        except Exception:
-                            pass
-
             # Build indicator dict for scoring
             indicators = {primary_tf: primary_indicators}
-            if confirm_indicators.get("ok"):
-                indicators[confirmation_tf] = confirm_indicators
+            confirm_data = confirm_indicators_all[bar_idx]
+            if confirm_data is not None and isinstance(confirm_data, dict) and confirm_data.get("ok"):
+                indicators[confirmation_tf] = confirm_data
 
             # Compute confluence score
             total_score, total_max, indicators_aligned, confirmation_misaligned = \
@@ -958,14 +1039,18 @@ def time_travel(
                 if not cooldown.can_enter(symbol, threshold, direction, bar_idx, total_score):
                     continue
 
+                entries_found += 1
+
                 # ENTRY — simulate the trade
                 entry_price = float(bar["close"])
                 atr_result = primary_indicators.get("atr")
                 atr_value = atr_result.get("value", 0) if isinstance(atr_result, dict) else 0
 
-                # Fallback: compute ATR from the slice if not in indicators
+                # Fallback: compute ATR from a slice if not in indicators
                 if atr_value == 0:
                     try:
+                        start_idx = max(0, bar_idx - _INDICATOR_WINDOW)
+                        df_slice = df_primary.iloc[start_idx:bar_idx + 1]
                         atr_result = compute_indicator("atr", df_slice, period=14)
                         atr_value = atr_result.get("value", 0) if isinstance(atr_result, dict) else 0
                     except Exception:
@@ -1042,7 +1127,9 @@ def time_travel(
                 trades_by_symbol[symbol] = trades_by_symbol.get(symbol, 0) + 1
                 symbol_trades += 1
 
-        _log.info("  %s: %d trades generated", symbol, symbol_trades)
+        t_score = _time.time() - t_score_start
+        _log.info("  %s: %d trades generated (%d entries evaluated) in %.1fs",
+                  symbol, symbol_trades, entries_found, t_score)
 
     # Summary
     win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0
