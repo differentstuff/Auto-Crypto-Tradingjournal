@@ -89,7 +89,7 @@ A 3-bar cooldown per symbol/threshold prevents entering the same signal on conse
 | `--start` | *required* | Start date (ISO format, e.g. `2025-01-01`) |
 | `--end` | `now` | End date (ISO format or `now`) |
 | `--symbols` | from strategy config | Symbols to backtest (e.g. `BTCUSDT ETHUSDT`) |
-| `--thresholds` | `3.0,4.0,5.0,6.5` | Comma-separated entry thresholds to sweep |
+| `--thresholds` | derived from config | Comma-separated entry thresholds to sweep (default: 50%/65%/80%/100% of `entry_threshold`) |
 | `--strategy` | `momentum_rising` | Strategy name (loads corresponding YAML) |
 | `--cooldown` | `3` | Bars to wait before re-entering same signal |
 | `--batch-size` | `500` | OHLCV bars per API call (pagination) |
@@ -129,14 +129,16 @@ The script does **not** build a full `Substrate` per bar (too heavy). Instead, i
 
 ## Threshold Sweep Strategy
 
-The default sweep `[3.0, 4.0, 5.0, 6.5]` covers:
+The default sweep is derived from `scoring.entry_threshold` in the strategy config at fractions [50%, 65%, 80%, 100%]. For the default `entry_threshold: 6.5`, this produces `[3.3, 4.2, 5.2, 6.5]`:
 
-| Threshold | Captures | Risk |
-|---|---|---|
-| 3.0 | Almost any directional signal | Many false positives, low PF |
-| 4.0 | Moderate confluence | Balanced discovery zone |
-| 5.0 | Strong confluence | Fewer trades, higher quality |
-| 6.5 | Current production threshold | Baseline — matches live daemon |
+| Threshold | Fraction | Captures | Risk |
+|---|---|---|---|
+| 3.3 | 50% | Almost any directional signal | Many false positives, low PF |
+| 4.2 | 65% | Moderate confluence | Balanced discovery zone |
+| 5.2 | 80% | Strong confluence | Fewer trades, higher quality |
+| 6.5 | 100% | Production threshold | Baseline — matches live daemon |
+
+If `entry_threshold` changes in the strategy config, the sweep adapts automatically. Override with `--thresholds` for manual control.
 
 Karpathy evaluates: "If I lower the threshold from 6.5 to 4.0, I capture N extra trades with a combined PF of X. Is X > baseline PF?" If yes → push to CandidateQueue → Challenger validates.
 
@@ -189,7 +191,7 @@ TIME TRAVEL — Fast-forward daemon
   Strategy: momentum_rising (uid: e600dffb-...)
   Symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
   Period: 2025-01-01 → now
-  Thresholds: [3.0, 4.0, 5.0, 6.5]
+  Thresholds: [3.3, 4.2, 5.2, 6.5]
   Primary TF: 1h, Confirmation TF: 4h
   Weights: {'rsi': 0.25, 'macd': 0.25, 'ema_stack': 0.3, 'adx': 0.2}
   Dry run: False
@@ -212,12 +214,12 @@ Processing SOLUSDT
 TIME TRAVEL COMPLETE
   Total trades: 52
   Wins: 31, Losses: 19, Win rate: 59.6%
-  By threshold: {3.0: 28, 4.0: 15, 5.0: 7, 6.5: 2}
+  By threshold: {3.3: 28, 4.2: 15, 5.2: 7, 6.5: 2}
   By symbol: {'BTCUSDT': 23, 'ETHUSDT': 18, 'SOLUSDT': 11}
 ======================================================================
 ```
 
-The `By threshold` breakdown is the key insight: threshold 3.0 captured 28 trades, threshold 6.5 only 2. Karpathy can now evaluate whether those 26 extra trades at lower thresholds were profitable enough to justify loosening the threshold.
+The `By threshold` breakdown is the key insight: threshold 3.3 captured 28 trades, threshold 6.5 only 2. Karpathy can now evaluate whether those 26 extra trades at lower thresholds were profitable enough to justify loosening the threshold.
 
 ---
 
@@ -232,7 +234,7 @@ Trades are written to `trade_learning` with the same columns as live daemon trad
 | `entry_time`, `exit_time` | Bar timestamps |
 | `outcome` | `win` / `loss` / `breakeven` |
 | `pnl_pct` | Exit simulation |
-| `confluence_score_at_entry` | Raw confluence score (0–10 scale) |
+| `confluence_score_at_entry` | Normalized confluence score (0–10 scale, same as live daemon) |
 | `signals_at_entry_json` | Same format as live daemon |
 | `sl_hit`, `trailing_stop_hit` | Exit reason tracking |
 | `max_favorable_excursion_pct` | MFE from walk-forward |
