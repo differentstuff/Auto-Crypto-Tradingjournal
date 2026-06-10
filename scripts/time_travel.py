@@ -44,8 +44,8 @@ import json
 import logging
 import sys
 import time as _time
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -357,11 +357,13 @@ def score_timeframe(
     momentum_dampening: float,
     modifier_weights: dict,
     formula: dict,
-) -> Tuple[float, float, int]:
+) -> Tuple[float, float]:
     """Score indicators for a single timeframe.
 
     Mirrors ScoreConfluence._score_timeframe() exactly.
-    Returns (score, max_possible, indicators_aligned).
+    Returns (score, max_possible). indicators_aligned is counted separately
+    in compute_confluence_score() using the same signal-string method as
+    the live daemon (ScoreConfluence.transform() lines 282-289).
     """
     vol_weight = modifier_weights.get("volume", 0.15)
     cvd_weight_m = modifier_weights.get("cvd", 0.1)
@@ -371,7 +373,6 @@ def score_timeframe(
 
     score = 0.0
     max_possible = 0.0
-    indicators_aligned = 0
 
     # RSI
     if "rsi" in tf_inds and weight_map.get("rsi", 0) > 0:
@@ -380,10 +381,6 @@ def score_timeframe(
         cfg_weight = weight_map["rsi"]
         score += w * cfg_weight
         max_possible += 1.0 * cfg_weight
-        if w > 0:
-            indicators_aligned += 1
-        elif w < 0:
-            indicators_aligned += 1
 
     # MACD
     if "macd" in tf_inds and weight_map.get("macd", 0) > 0:
@@ -391,8 +388,6 @@ def score_timeframe(
         cfg_weight = weight_map["macd"]
         score += w * cfg_weight
         max_possible += 1.0 * cfg_weight
-        if w != 0:
-            indicators_aligned += 1
 
     # EMA stack
     if "ema_stack" in tf_inds and weight_map.get("ema_stack", 0) > 0:
@@ -400,8 +395,6 @@ def score_timeframe(
         cfg_weight = weight_map["ema_stack"]
         score += w * cfg_weight
         max_possible += 1.0 * cfg_weight
-        if w != 0:
-            indicators_aligned += 1
 
     # ADX
     if "adx" in tf_inds and weight_map.get("adx", 0) > 0:
@@ -409,8 +402,6 @@ def score_timeframe(
         cfg_weight = weight_map["adx"]
         score += w * cfg_weight
         max_possible += 1.0 * cfg_weight
-        if w != 0:
-            indicators_aligned += 1
 
     # WaveTrend (optional)
     if "wavetrend" in tf_inds and weight_map.get("wavetrend", 0) > 0:
@@ -420,8 +411,6 @@ def score_timeframe(
         oscillator = max(-1.0, min(1.0, wt_w + mfi_w))
         score += oscillator * cfg_weight
         max_possible += 1.0 * cfg_weight
-        if wt_w != 0:
-            indicators_aligned += 1
 
     # Volume (confirms direction)
     if "volume" in tf_inds:
@@ -452,7 +441,7 @@ def score_timeframe(
         excess = abs(momentum_raw) - momentum_cap
         score -= (excess * momentum_dampening) * (1 if momentum_raw > 0 else -1)
 
-    return score, max_possible, indicators_aligned
+    return score, max_possible
 
 
 def compute_confluence_score(
@@ -464,6 +453,8 @@ def compute_confluence_score(
 
     Mirrors ScoreConfluence.transform() logic:
       - Score each timeframe independently
+      - Count aligned indicators via signal-string method (same as live daemon)
+      - Normalize score to 0-10 scale (same as live daemon)
       - Check cross-timeframe alignment
       - Neutralize if confirmation TF misaligned
 
@@ -473,7 +464,11 @@ def compute_confluence_score(
         config: full strategy config dict
 
     Returns:
-        (total_score, max_possible, indicators_aligned, confirmation_misaligned)
+        (normalized_score, pct, indicators_aligned, confirmation_misaligned)
+        normalized_score: confluence score on 0-10 scale (same as live daemon)
+        pct: raw score / max_possible (confluence percentage, -1 to +1)
+        indicators_aligned: count of non-neutral indicators (signal-string method)
+        confirmation_misaligned: True if confirmation TF disagrees with primary
     """
     scoring = config.get("scoring", {})
     formula = scoring.get("formula", {})
@@ -489,21 +484,34 @@ def compute_confluence_score(
 
     total_score = 0.0
     total_max = 0.0
-    total_aligned = 0
     tf_scores = {}
 
     for tf, tf_inds in indicators.items():
         if not isinstance(tf_inds, dict) or not tf_inds.get("ok"):
             continue
 
-        s, m, a = score_timeframe(
+        s, m = score_timeframe(
             tf_inds, weight_map, rsi_high, rsi_low,
             momentum_cap, momentum_dampening, modifier_weights, formula,
         )
         tf_scores[tf] = s
         total_score += s
         total_max += m
-        total_aligned += a
+
+    # Count aligned indicators — same as ScoreConfluence.transform() lines 282-289.
+    # Uses signal-string method: checks indicator's signal/bias/level field
+    # rather than computed weight, matching live daemon behavior exactly.
+    total_aligned = 0
+    for tf, tf_inds in indicators.items():
+        if not isinstance(tf_inds, dict) or not tf_inds.get("ok"):
+            continue
+        for name, w in weight_map.items():
+            if w > 0 and name in tf_inds:
+                ind = tf_inds[name]
+                if isinstance(ind, dict):
+                    signal = ind.get("signal", ind.get("bias", ind.get("level", "")))
+                    if signal and signal not in ("neutral", "mixed", ""):
+                        total_aligned += 1
 
     # Cross-timeframe alignment check
     confirmation_misaligned = False
@@ -526,7 +534,14 @@ def compute_confluence_score(
             total_score = 0.0
             total_max = 0.0
 
-    return total_score, total_max, total_aligned, confirmation_misaligned
+    # Normalize to 0-10 scale — same as ScoreConfluence.transform() line 322.
+    # entry_threshold (default 6.5) is on this scale, so threshold comparison
+    # works correctly. Raw scores are typically in [-2, +2] range; normalization
+    # maps them to [-10, +10] based on max_possible weight contribution.
+    normalized_score = (total_score / total_max * 10) if total_max else 0.0
+    pct = (total_score / total_max) if total_max else 0.0
+
+    return normalized_score, pct, total_aligned, confirmation_misaligned
 
 
 # ── Exit simulation ─────────────────────────────────────────────────────────
@@ -574,7 +589,7 @@ def simulate_exit(
 
     # Walk forward
     highest_favorable = entry_price  # for longs: highest price reached
-    lowest_adverse = entry_price     # for longs: lowest price reached
+    lowest_adverse = entry_price     # for shorts: lowest price reached
     trail_activated = False
     trail_price = sl_price  # current trailing stop level
 
@@ -588,7 +603,6 @@ def simulate_exit(
 
         high = float(bar["high"])
         low = float(bar["low"])
-        close = float(bar["close"])
 
         if is_long:
             highest_favorable = max(highest_favorable, high)
@@ -1015,28 +1029,27 @@ def time_travel(
             if confirm_data is not None and isinstance(confirm_data, dict) and confirm_data.get("ok"):
                 indicators[confirmation_tf] = confirm_data
 
-            # Compute confluence score
-            total_score, total_max, indicators_aligned, confirmation_misaligned = \
-                compute_confluence_score(indicators, weight_map, config)
+            # Compute confluence score (normalized to 0-10 scale, same as live daemon)
+            normalized_score, _, indicators_aligned, confirmation_misaligned = compute_confluence_score(indicators, weight_map, config)
 
-            if total_max == 0 or confirmation_misaligned:
+            if confirmation_misaligned:
                 continue
 
-            # Determine direction from score
-            if total_score > 0:
+            # Determine direction from normalized score
+            if normalized_score > 0:
                 direction = "Long"
-            elif total_score < 0:
+            elif normalized_score < 0:
                 direction = "Short"
             else:
                 continue  # Neutral — no entry
 
             # Check each threshold
             for threshold in thresholds:
-                if abs(total_score) < threshold:
+                if abs(normalized_score) < threshold:
                     continue  # Below this threshold
 
                 # Check cooldown
-                if not cooldown.can_enter(symbol, threshold, direction, bar_idx, total_score):
+                if not cooldown.can_enter(symbol, threshold, direction, bar_idx, normalized_score):
                     continue
 
                 entries_found += 1
@@ -1100,8 +1113,8 @@ def time_travel(
                         outcome=outcome,
                         pnl_pct=pnl,
                         duration_minutes=duration_minutes,
-                        confluence_score=round(total_score, 2),
-                        max_score=round(total_max, 2),
+                        confluence_score=round(normalized_score, 2),
+                        max_score=10.0,
                         signals_at_entry=signals,
                         indicators_aligned=indicators_aligned,
                         entry_price=entry_price,
@@ -1328,7 +1341,7 @@ def _write_trade(
                     trailing_stop_hit,
                     mfe_pct,
                     mae_pct,
-                    confluence_score,  # effective_score = raw score (no penalties in backtest)
+                    confluence_score,  # effective_score = normalized score (no penalties in backtest)
                 ),
             )
     except Exception as e:
@@ -1371,8 +1384,8 @@ Examples:
         help="Symbols to backtest (e.g., BTCUSDT ETHUSDT). Default: from strategy config.",
     )
     parser.add_argument(
-        "--thresholds", default="3.0,4.0,5.0,6.5",
-        help="Comma-separated entry thresholds to sweep (default: 3.0,4.0,5.0,6.5)",
+        "--thresholds", default=None,
+        help="Comma-separated entry thresholds to sweep (default: derived from entry_threshold in config at 50%%, 65%%, 80%%, 100%%)",
     )
     parser.add_argument(
         "--strategy", default="momentum_rising",
@@ -1405,14 +1418,23 @@ Examples:
         datefmt="%H:%M:%S",
     )
 
-    # Parse thresholds
-    thresholds = [float(t.strip()) for t in args.thresholds.split(",")]
+    # Load config for threshold derivation and symbol resolution
+    config_loader = ConfigLoader(strategy_name=args.strategy)
+
+    # Parse thresholds or derive from config entry_threshold
+    if args.thresholds is not None:
+        thresholds = [float(t.strip()) for t in args.thresholds.split(",")]
+    else:
+        # Derive from entry_threshold at [50%, 65%, 80%, 100%] — covers
+        # exploration (weak signals) through production (strong signals).
+        entry_threshold = config_loader.config.get("scoring", {}).get("entry_threshold", 6.5)
+        threshold_fractions = [0.50, 0.65, 0.80, 1.00]
+        thresholds = [round(entry_threshold * f, 1) for f in threshold_fractions]
+        _log.info("Derived thresholds from entry_threshold=%.1f: %s", entry_threshold, thresholds)
 
     # Resolve symbols
     symbols = args.symbols
     if symbols is None:
-        # Load from strategy config
-        config_loader = ConfigLoader(strategy_name=args.strategy)
         symbols_cfg = config_loader.config.get("symbols", {})
         always_watch = symbols_cfg.get("always_watch", [])
         if always_watch:
