@@ -268,11 +268,16 @@ class TestUpdateLearningConfigThreading:
 
         with patch("learning.analyzer.update_signal_accuracy") as mock_usa:
             enzyme.transform(sub)
-            mock_usa.assert_called_once()
-            _, kwargs = mock_usa.call_args
-            assert kwargs.get("min_trades_per_signal") == 10, (
-                f"update_signal_accuracy should receive min_trades_per_signal=10, got {kwargs}"
+            # Decision D3: update_signal_accuracy is called 3 times
+            # (default/production-only, bucket="production", bucket="exploration")
+            assert mock_usa.call_count == 3, (
+                f"update_signal_accuracy should be called 3 times, got {mock_usa.call_count}"
             )
+            # Check that all 3 calls pass min_trades_per_signal correctly
+            for i, (args, kwargs) in enumerate(mock_usa.call_args_list):
+                assert kwargs.get("min_trades_per_signal") == 10, (
+                    f"Call {i+1}: update_signal_accuracy should receive min_trades_per_signal=10, got {kwargs}"
+                )
 
     def test_passes_significance_level_to_combination(self):
         """update_combination_accuracy receives significance_level from config."""

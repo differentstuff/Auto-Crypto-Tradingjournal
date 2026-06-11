@@ -285,6 +285,16 @@ hyperopt:
   min_trades_for_eval: 20       # minimum historical trades needed for evaluation
   sharpe_alpha: 0.3             # Sharpe bonus weight in composite score (0 = PF only)
 
+# Threshold evaluator (disabled by default)
+# Compares production vs exploration bucket accuracy.
+# Proposes threshold changes to CandidateQueue when exploration outperforms.
+threshold_evaluator:
+  enabled: false
+  min_trades: 30
+  min_improvement_pct: 20.0
+  min_confidence_gap: 0.10
+  cooldown_hours: 48
+
 # Walk-Forward + PBO validation (disabled by default)
 # Multi-window walk-forward analysis with Probability of Backtest Overfitting.
 # Strategies must survive ALL windows (no negative Sharpe) and pass PBO/WFE thresholds.

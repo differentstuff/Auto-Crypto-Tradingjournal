@@ -200,6 +200,13 @@ def make_full_config(**overrides) -> dict:
             "wfe_threshold": 0.5,
             "pbo_threshold": 0.5,
         },
+        "threshold_evaluator": {
+            "enabled": False,
+            "min_trades": 30,
+            "min_improvement_pct": 20.0,
+            "min_confidence_gap": 0.10,
+            "cooldown_hours": 48,
+        },
         "modules": {
             "macro_context": False,
             "telegram_logs": False,

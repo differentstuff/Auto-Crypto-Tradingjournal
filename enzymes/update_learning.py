@@ -75,8 +75,14 @@ class UpdateLearning(Enzyme):
         contrarian_threshold = substrate.cfg("learning.contrarian_threshold")
 
         # 1. Update signal accuracy (per-indicator win/loss tracking)
+        #    Decision D3: one unified function with optional bucket parameter.
+        #    - bucket=None (default): production-only → signal_accuracy table
+        #    - bucket="production": → signal_accuracy_by_threshold table
+        #    - bucket="exploration": → signal_accuracy_by_threshold table
         try:
             from learning.analyzer import update_signal_accuracy
+
+            # 1a. Default: production-only filter → signal_accuracy (for weight_adjuster)
             update_signal_accuracy(
                 strategy_name,
                 strategy_uid=strategy_uid,
@@ -86,7 +92,32 @@ class UpdateLearning(Enzyme):
                 suppress_range=suppress_range,
                 contrarian_threshold=contrarian_threshold,
             )
-            _log.info("Updated signal accuracy for '%s'", strategy_name)
+
+            # 1b. Production bucket → signal_accuracy_by_threshold
+            update_signal_accuracy(
+                strategy_name,
+                strategy_uid=strategy_uid,
+                min_trades_per_signal=min_trades_per_signal,
+                highlight_threshold=highlight_threshold,
+                monitor_low_threshold=monitor_low_threshold,
+                suppress_range=suppress_range,
+                contrarian_threshold=contrarian_threshold,
+                bucket="production",
+            )
+
+            # 1c. Exploration bucket → signal_accuracy_by_threshold
+            update_signal_accuracy(
+                strategy_name,
+                strategy_uid=strategy_uid,
+                min_trades_per_signal=min_trades_per_signal,
+                highlight_threshold=highlight_threshold,
+                monitor_low_threshold=monitor_low_threshold,
+                suppress_range=suppress_range,
+                contrarian_threshold=contrarian_threshold,
+                bucket="exploration",
+            )
+
+            _log.info("Updated signal accuracy for '%s' (production + both buckets)", strategy_name)
         except Exception as e:
             _log.error("Failed to update signal accuracy: %s", e, exc_info=True)
 
@@ -217,6 +248,26 @@ class UpdateLearning(Enzyme):
                     substrate.learning["total_trades_recorded"] = row["cnt"]
         except Exception as e:
             _log.debug("Could not update trade count: %s", e)
+
+        # 7. Threshold evaluator — compare production vs exploration buckets
+        #    Proposes threshold changes to CandidateQueue when exploration
+        #    outperforms production with statistical significance.
+        try:
+            threshold_eval_enabled = substrate.cfg("threshold_evaluator.enabled", False)
+            if threshold_eval_enabled:
+                from learning.threshold_evaluator import evaluate_thresholds
+                proposal = evaluate_thresholds(
+                    strategy_name, strategy_uid,
+                    entry_threshold=substrate.cfg("scoring.entry_threshold"),
+                    min_trades=substrate.cfg("threshold_evaluator.min_trades", 30),
+                    min_improvement_pct=substrate.cfg("threshold_evaluator.min_improvement_pct", 20.0),
+                    min_confidence_gap=substrate.cfg("threshold_evaluator.min_confidence_gap", 0.10),
+                    substrate=substrate,
+                )
+                if proposal:
+                    _log.info("Threshold evaluator proposal: %s", proposal)
+        except Exception as e:
+            _log.error("Threshold evaluator failed: %s", e, exc_info=True)
 
         _log.info("UpdateLearning complete for '%s'", strategy_name)
         return substrate

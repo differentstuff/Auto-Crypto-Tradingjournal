@@ -850,6 +850,7 @@ def time_travel(
     cooldown_bars: int = 3,
     batch_size: int = 100,
     dry_run: bool = False,
+    min_threshold: Optional[float] = None,
 ) -> dict:
     """Run the time-travel backtest.
 
@@ -862,6 +863,8 @@ def time_travel(
         cooldown_bars: Bars to wait before re-entering same signal
         batch_size: Number of bars to fetch per API call
         dry_run: If True, don't write to DB
+        min_threshold: Skip trades below this threshold (default: 60% of entry_threshold).
+            Trades below min_threshold are skipped BEFORE computing indicators or exits.
 
     Returns:
         Summary dict with trade counts and stats.
@@ -879,6 +882,12 @@ def time_travel(
     scoring = config.get("scoring", {})
     rsi_high = scoring.get("rsi_signal_high", 55)
     rsi_low = scoring.get("rsi_signal_low", 45)
+    entry_threshold = scoring.get("entry_threshold", 6.5)
+
+    # Compute min_threshold: default is 60% of entry_threshold (Decision D2)
+    if min_threshold is None:
+        min_threshold = entry_threshold * 0.60
+    _log.info("  Min threshold: %.1f (trades below this are skipped entirely)", min_threshold)
 
     # Build weight map from config (same as ScoreConfluence)
     indicator_configs = config.get("indicators", [])
@@ -1048,6 +1057,11 @@ def time_travel(
                 if abs(normalized_score) < threshold:
                     continue  # Below this threshold
 
+                # Min-threshold filter (Decision D2): skip trades below min_threshold
+                # BEFORE computing indicators or exits. Don't calculate and discard.
+                if threshold < min_threshold:
+                    continue
+
                 # Check cooldown
                 if not cooldown.can_enter(symbol, threshold, direction, bar_idx, normalized_score):
                     continue
@@ -1125,6 +1139,7 @@ def time_travel(
                         mfe_pct=exit_info.get("mfe_pct", 0),
                         mae_pct=exit_info.get("mae_pct", 0),
                         threshold_used=threshold,
+                        entry_threshold=entry_threshold,
                     )
 
                 # Record entry for cooldown
@@ -1302,6 +1317,7 @@ def _write_trade(
     mfe_pct: float,
     mae_pct: float,
     threshold_used: float,
+    entry_threshold: float = 6.5,
 ) -> None:
     """Write a simulated trade to the trade_learning table.
 
@@ -1324,6 +1340,7 @@ def _write_trade(
     enriched_signals["_effective_score"] = confluence_score  # no soft penalties in backtest
     enriched_signals["_indicators_aligned"] = indicators_aligned
     enriched_signals["_threshold_used"] = threshold_used
+    enriched_signals["_threshold_bucket"] = "production" if threshold_used >= entry_threshold else "exploration"
     enriched_signals["_source"] = "time_travel"  # distinguish from live trades
 
     try:
@@ -1416,6 +1433,10 @@ Examples:
         help="OHLCV bars per API call (default: 500)",
     )
     parser.add_argument(
+        "--min-threshold", type=float, default=None,
+        help="Skip trades below this threshold (default: 60%% of entry_threshold from config)",
+    )
+    parser.add_argument(
         "--log-level", default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Log level (default: INFO)",
@@ -1466,6 +1487,7 @@ Examples:
         cooldown_bars=args.cooldown,
         batch_size=args.batch_size,
         dry_run=args.dry_run,
+        min_threshold=args.min_threshold,
     )
 
     # Exit code

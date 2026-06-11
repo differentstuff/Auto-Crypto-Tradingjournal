@@ -108,11 +108,16 @@ auto-trader/
     structure.py                  # sr_levels, pivots, fib
     registry.py                   # name → function lookup
   learning/
-    analyzer.py                   # Per-signal accuracy with Wilson CI
+    analyzer.py                   # Per-signal accuracy with Wilson CI (supports bucket parameter)
     combination.py                # Pairwise signal combination significance
     trajectory.py                 # Pre-trade trajectory pattern classification
     rulebook.py                   # Auto-generated rules (max 10)
     weight_adjuster.py            # Adjust indicator weights from accuracy verdicts
+    threshold_evaluator.py        # Compare production vs exploration bucket accuracy
+  scripts/
+    time_travel.py                # Fast-forward daemon: replay scoring on historical data
+    verify_learning.py            # Learning verification script
+    self_test.py                  # End-to-end self-test
   llm/
     key_manager.py                # API key rotation (multi-key per provider, auto-switch on 429/529)
     router.py                     # Cost-aware model selection
@@ -219,6 +224,7 @@ The unique selling point. Tracks:
 4. **Idle cycle tracking** — When no trade was made, WHY? Prevents false "high win rate" from cherry-picking.
 5. **Weight adjustment** — Signals with ≥75% accuracy get boosted (+20%). Signals with ≤30% accuracy get NEGATIVE weights (contrarian). Coin-flip signals (45-55%) get suppressed (weight=0).
 6. **Rulebook generation** — Max 10 rules, auto-generated from findings, injected into prompts.
+7. **Threshold-aware learning** — Trades are tagged with `_threshold_bucket` (production or exploration). Per-bucket accuracy is tracked separately in `signal_accuracy_by_threshold`. The threshold evaluator compares production vs exploration buckets and proposes threshold changes to CandidateQueue when exploration outperforms with statistical significance (Wilson interval non-overlap + PF improvement ≥ 20% + min 30 trades). Disabled by default (`threshold_evaluator.enabled: false`).
 
 **Verdict classification:**
 - `valid` (≥75%): highlight, boost weight
@@ -236,13 +242,11 @@ Config-driven hard-to-vary conditions. Cannot be bypassed. All must pass before 
 
 | ISC | Criterion | Operator |
 |-----|-----------|----------|
-| ISC-001 | Entry threshold met before trade | `any_score_gte` |
 | ISC-002 | Stop loss always set | `sl_set_or_no_trade` |
 | ISC-003 | Position size within risk limit | `size_within_risk` |
 | ISC-004 | Max concurrent positions not exceeded | `count_lt` |
-| ISC-005 | No trade when noise_flag is true | `false_or_action_wait` |
-| ISC-006 | Minimum confluence signals aligned | `all_field_gte` |
-| ISC-007 | Pre-trade trajectory not sudden coincidence | `none_field_eq` |
+
+Former ISC-001 (entry threshold) is now enforced by `scoring.approval_threshold` + soft penalties. Former ISC-005/006/007 (noise, confluence signals, trajectory) were converted to **soft penalties** — they reduce the effective score instead of blocking trades entirely. See `soft_penalties` in config.
 
 New ISC conditions can be added in strategy YAML without touching Python code.
 
@@ -255,7 +259,8 @@ New ISC conditions can be added in strategy YAML without touching Python code.
 **Key tables:**
 - `positions`, `orders`, `wallet_snapshots` — legacy trade journal
 - `trade_learning` — per-trade signal recording, trajectory, outcome
-- `signal_accuracy` — per-indicator accuracy with Wilson CI, verdicts
+- `signal_accuracy` — per-indicator accuracy with Wilson CI, verdicts (production bucket only)
+- `signal_accuracy_by_threshold` — per-indicator per-bucket accuracy (production/exploration), with profit_factor and win_rate
 - `combination_accuracy` — pairwise signal combinations with p-values
 - `trajectory_accuracy` — trajectory pattern classification
 - `weight_history` — every weight change with justification

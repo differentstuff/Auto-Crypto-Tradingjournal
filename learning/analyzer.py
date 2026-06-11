@@ -157,6 +157,7 @@ def update_signal_accuracy(
     monitor_low_threshold: float = None,
     suppress_range: Tuple[float, float] = None,
     contrarian_threshold: float = None,
+    bucket: Optional[str] = None,
 ) -> None:
     """
     Recompute signal_accuracy from all closed trades for the given strategy.
@@ -165,12 +166,23 @@ def update_signal_accuracy(
     None of them have hardcoded defaults; the caller must supply values
     read from substrate.cfg().
 
+    Bucket parameter (Decision D3 — unified function):
+      - bucket=None (default): existing behavior — write to signal_accuracy table,
+        but filter to production trades only. This ensures weight_adjuster
+        gets clean production data.
+      - bucket="production": write production-bucket accuracy to
+        signal_accuracy_by_threshold table.
+      - bucket="exploration": write exploration-bucket accuracy to
+        signal_accuracy_by_threshold table.
+      - bucket="all": write all buckets to signal_accuracy_by_threshold table.
+
     For each indicator signal present at trade entry, determines whether
     the signal direction matched the trade outcome. A signal is "correct" if:
       - Trade won AND signal direction matches trade direction (bullish on long win)
       - Trade lost AND signal direction opposes trade direction (bearish on long loss)
 
-    Writes results to the signal_accuracy table using INSERT OR REPLACE
+    Writes results to signal_accuracy (bucket=None) or
+    signal_accuracy_by_threshold (bucket specified) using INSERT OR REPLACE
     (idempotent — safe to call multiple times without double-counting).
 
     Rows with empty or invalid signals_at_entry_json are skipped gracefully.
@@ -188,26 +200,44 @@ def update_signal_accuracy(
 
     from core.database import db_conn
 
+    # Determine target table and bucket filter
+    write_to_threshold_table = bucket is not None
+    target_bucket = bucket if bucket != "all" else None  # None = no filter for "all"
+
     try:
         with db_conn() as conn:
-            # Fetch all closed trades for this strategy
-            rows = conn.execute(
-                """SELECT id, direction, outcome, signals_at_entry_json
+            # Build query with optional bucket filter
+            base_query = """SELECT id, direction, outcome, signals_at_entry_json, pnl_pct
                    FROM trade_learning
                    WHERE strategy_name = ?
                      AND exit_time IS NOT NULL
                      AND outcome IS NOT NULL
                      AND signals_at_entry_json IS NOT NULL
-                     AND signals_at_entry_json != ''""",
-                (strategy_name,),
-            ).fetchall()
+                     AND signals_at_entry_json != ''"""
+
+            query_params: list = [strategy_name]
+
+            if write_to_threshold_table:
+                if target_bucket:
+                    # Filter by specific bucket
+                    base_query += """ AND signals_at_entry_json LIKE ?"""
+                    query_params.append(f'%"_threshold_bucket": "{target_bucket}"%')
+                # bucket="all" → no additional filter
+            else:
+                # Default behavior: production-only filter (Decision D3)
+                # Include trades with production bucket OR old trades without bucket tag
+                base_query += """ AND (signals_at_entry_json LIKE '%"_threshold_bucket": "production"%'
+                                      OR signals_at_entry_json NOT LIKE '%_threshold_bucket%')"""
+
+            rows = conn.execute(base_query, query_params).fetchall()
 
             if not rows:
-                _log.debug("No closed trades with signals for strategy '%s'", strategy_name)
+                _log.debug("No closed trades with signals for strategy '%s' (bucket=%s)", strategy_name, bucket)
                 return
 
             # Aggregate per-indicator stats
-            stats: Dict[str, Dict] = {}  # indicator_name → {total, correct}
+            # For threshold table, also track pnl for profit_factor and win_rate
+            stats: Dict[str, Dict] = {}  # indicator_name → {total, correct, pnl_wins, pnl_losses, win_pnl_sum, loss_pnl_sum}
 
             for row in rows:
                 direction = row["direction"].lower() if row["direction"] else ""
@@ -226,9 +256,17 @@ def update_signal_accuracy(
                     continue
 
                 trade_won = outcome in ("win", "won")
+                pnl_pct = row["pnl_pct"] if row["pnl_pct"] is not None else 0.0
+
+                # Extract threshold metadata for the threshold table
+                threshold_used = signals.get("_threshold_used", 0.0)
+                threshold_bucket = signals.get("_threshold_bucket", "production")
 
                 for indicator_name, signal_data in signals.items():
                     if not isinstance(signal_data, dict):
+                        continue
+                    # Skip metadata keys (prefixed with _)
+                    if indicator_name.startswith("_"):
                         continue
 
                     signal_direction = signal_data.get("signal", "").lower()
@@ -237,7 +275,13 @@ def update_signal_accuracy(
                         continue
 
                     if indicator_name not in stats:
-                        stats[indicator_name] = {"total": 0, "correct": 0}
+                        stats[indicator_name] = {
+                            "total": 0, "correct": 0,
+                            "pnl_wins": 0, "pnl_losses": 0,
+                            "win_pnl_sum": 0.0, "loss_pnl_sum": 0.0,
+                            "threshold_value": threshold_used,
+                            "threshold_bucket": threshold_bucket,
+                        }
 
                     stats[indicator_name]["total"] += 1
 
@@ -245,21 +289,31 @@ def update_signal_accuracy(
                     signal_aligned_with_long = signal_direction in ("bullish", "long")
                     trade_is_long = direction in ("long",)
 
+                    is_correct = False
                     if trade_won:
-                        # Won trade: signal is correct if it aligned with the winning direction
                         if trade_is_long and signal_aligned_with_long:
-                            stats[indicator_name]["correct"] += 1
+                            is_correct = True
                         elif not trade_is_long and not signal_aligned_with_long:
-                            stats[indicator_name]["correct"] += 1
+                            is_correct = True
                     else:
-                        # Lost trade: signal is correct if it OPPOSED the losing direction
-                        # (bearish signal on a losing long = correctly predicted failure)
                         if trade_is_long and not signal_aligned_with_long:
-                            stats[indicator_name]["correct"] += 1
+                            is_correct = True
                         elif not trade_is_long and signal_aligned_with_long:
-                            stats[indicator_name]["correct"] += 1
+                            is_correct = True
 
-            # Write to signal_accuracy table
+                    if is_correct:
+                        stats[indicator_name]["correct"] += 1
+
+                    # Track PnL for profit_factor / win_rate (threshold table only)
+                    if write_to_threshold_table:
+                        if pnl_pct > 0:
+                            stats[indicator_name]["pnl_wins"] += 1
+                            stats[indicator_name]["win_pnl_sum"] += abs(pnl_pct)
+                        elif pnl_pct < 0:
+                            stats[indicator_name]["pnl_losses"] += 1
+                            stats[indicator_name]["loss_pnl_sum"] += abs(pnl_pct)
+
+            # Write results
             for indicator_name, data in stats.items():
                 total = data["total"]
                 correct = data["correct"]
@@ -274,18 +328,46 @@ def update_signal_accuracy(
                     contrarian=contrarian_threshold,
                 )
 
-                conn.execute(
-                    """INSERT OR REPLACE INTO signal_accuracy
-                       (strategy_uid, indicator_name, total_fired, correct, accuracy_pct,
-                        confidence_95_low, confidence_95_high, verdict, sample_size)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (strategy_uid, indicator_name, total, correct, accuracy_pct,
-                     low * 100, high * 100, verdict, total),
-                )
+                if write_to_threshold_table:
+                    # Compute profit_factor and win_rate for threshold table
+                    win_rate = (data["pnl_wins"] / total * 100) if total > 0 else 0.0
+                    profit_factor = (
+                        data["win_pnl_sum"] / data["loss_pnl_sum"]
+                        if data["loss_pnl_sum"] > 0
+                        else (float("inf") if data["win_pnl_sum"] > 0 else 0.0)
+                    )
+                    if profit_factor == float("inf"):
+                        profit_factor = 999.9  # cap for DB storage
 
+                    bucket_label = target_bucket or data["threshold_bucket"]
+
+                    conn.execute(
+                        """INSERT OR REPLACE INTO signal_accuracy_by_threshold
+                           (strategy_uid, indicator_name, threshold_bucket, threshold_value,
+                            total_fired, correct, accuracy_pct,
+                            confidence_95_low, confidence_95_high, verdict, sample_size,
+                            profit_factor, win_rate, trade_count)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (strategy_uid, indicator_name, bucket_label, data["threshold_value"],
+                         total, correct, accuracy_pct,
+                         low * 100, high * 100, verdict, total,
+                         profit_factor, win_rate, total),
+                    )
+                else:
+                    # Default: write to signal_accuracy (production only)
+                    conn.execute(
+                        """INSERT OR REPLACE INTO signal_accuracy
+                           (strategy_uid, indicator_name, total_fired, correct, accuracy_pct,
+                            confidence_95_low, confidence_95_high, verdict, sample_size)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (strategy_uid, indicator_name, total, correct, accuracy_pct,
+                         low * 100, high * 100, verdict, total),
+                    )
+
+            table_name = "signal_accuracy_by_threshold" if write_to_threshold_table else "signal_accuracy"
             _log.info(
-                "Updated signal accuracy for '%s': %d indicators processed",
-                strategy_name, len(stats),
+                "Updated %s for '%s' (bucket=%s): %d indicators processed",
+                table_name, strategy_name, bucket, len(stats),
             )
 
     except Exception as e:

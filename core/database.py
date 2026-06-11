@@ -712,6 +712,28 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # ── Threshold-aware learning: per-bucket accuracy table ────────────────────
+    _apply(51, "signal_accuracy_by_threshold", """
+        CREATE TABLE IF NOT EXISTS signal_accuracy_by_threshold (
+            strategy_uid        TEXT NOT NULL,
+            indicator_name      TEXT NOT NULL,
+            threshold_bucket    TEXT NOT NULL,
+            threshold_value     REAL NOT NULL,
+            total_fired         INTEGER DEFAULT 0,
+            correct             INTEGER DEFAULT 0,
+            accuracy_pct        REAL DEFAULT 0,
+            confidence_95_low   REAL DEFAULT 0,
+            confidence_95_high  REAL DEFAULT 0,
+            verdict             TEXT DEFAULT 'insufficient_data',
+            sample_size         INTEGER DEFAULT 0,
+            profit_factor       REAL,
+            win_rate            REAL,
+            trade_count         INTEGER DEFAULT 0,
+            updated_at          TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, indicator_name, threshold_bucket)
+        )
+    """)
+
     conn.commit()
     _log.info("DB initialized at %s", DB_PATH)
     # Note: connection is closed by init_db()'s finally block, not here.
