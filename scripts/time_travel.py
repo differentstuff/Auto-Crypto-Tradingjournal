@@ -1292,7 +1292,6 @@ def _write_trade(
     pnl_pct: float,
     duration_minutes: int,
     confluence_score: float,
-    max_score: float,
     signals_at_entry: dict,
     indicators_aligned: int,
     entry_price: float,
@@ -1306,42 +1305,55 @@ def _write_trade(
 ) -> None:
     """Write a simulated trade to the trade_learning table.
 
-    Same schema as the live daemon uses, so Karpathy/Hyperopt can read it.
+    Uses the EXACT same columns as the production daemon
+    (record_trade_outcome.py). Extra metadata that production doesn't
+    store (entry_price, exit_price, effective_score, indicators_aligned,
+    threshold_used) is embedded in signals_at_entry_json with a '_'
+    prefix so Karpathy/Hyperopt can access it without schema changes.
+
+    Karpathy reads signals_at_entry_json by iterating over known indicator
+    names (rsi, macd, ema_stack, adx, ...). Keys starting with '_' are
+    ignored by the learning engine — they're metadata for analysis only.
     """
+    # Embed backtest-only metadata into signals_at_entry_json.
+    # Production doesn't store these columns, so they go into the JSON
+    # blob with a '_' prefix to distinguish them from indicator signals.
+    enriched_signals = dict(signals_at_entry)  # shallow copy
+    enriched_signals["_entry_price"] = entry_price
+    enriched_signals["_exit_price"] = exit_price
+    enriched_signals["_effective_score"] = confluence_score  # no soft penalties in backtest
+    enriched_signals["_indicators_aligned"] = indicators_aligned
+    enriched_signals["_threshold_used"] = threshold_used
+    enriched_signals["_source"] = "time_travel"  # distinguish from live trades
+
     try:
         with db_conn() as conn:
             conn.execute(
                 """INSERT INTO trade_learning
-                   (symbol, direction, strategy_name, strategy_uid,
+                   (strategy_name, strategy_uid, symbol, direction,
                     entry_time, exit_time, outcome, pnl_pct,
                     duration_minutes, confluence_score_at_entry,
-                    signals_at_entry_json, indicators_aligned,
-                    entry_price, exit_price, exit_reason,
+                    signals_at_entry_json, exit_reason,
                     sl_hit, trailing_stop_hit,
-                    max_favorable_excursion_pct, max_adverse_excursion_pct,
-                    effective_score)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    max_favorable_excursion_pct, max_adverse_excursion_pct)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    symbol,
-                    direction,
                     strategy_name,
                     strategy_uid,
+                    symbol,
+                    direction,
                     entry_time,
                     exit_time,
                     outcome,
                     pnl_pct,
                     duration_minutes,
                     confluence_score,
-                    json.dumps(signals_at_entry),
-                    indicators_aligned,
-                    entry_price,
-                    exit_price,
+                    json.dumps(enriched_signals),
                     exit_reason,
                     sl_hit,
                     trailing_stop_hit,
                     mfe_pct,
                     mae_pct,
-                    confluence_score,  # effective_score = normalized score (no penalties in backtest)
                 ),
             )
     except Exception as e:

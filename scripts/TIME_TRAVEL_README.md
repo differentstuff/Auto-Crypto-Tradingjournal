@@ -223,22 +223,41 @@ The `By threshold` breakdown is the key insight: threshold 3.3 captured 28 trade
 
 ---
 
-## DB Schema Impact
+## DB Schema
 
-Trades are written to `trade_learning` with the same columns as live daemon trades:
+Time travel writes to `trade_learning` using the **exact same columns** as the production daemon (`record_trade_outcome.py`). No schema changes needed.
 
 | Column | Source |
 |---|---|
+| `strategy_name`, `strategy_uid` | From strategy config |
 | `symbol`, `direction` | From confluence score sign |
-| `strategy_name`, `strategy_uid` | From strategy config (same as live) |
 | `entry_time`, `exit_time` | Bar timestamps |
 | `outcome` | `win` / `loss` / `breakeven` |
 | `pnl_pct` | Exit simulation |
-| `confluence_score_at_entry` | Normalized confluence score (0–10 scale, same as live daemon) |
-| `signals_at_entry_json` | Same format as live daemon |
+| `duration_minutes` | Bars from entry to exit × TF minutes |
+| `confluence_score_at_entry` | Normalized confluence score (0–10 scale) |
+| `signals_at_entry_json` | Same format as live daemon + `_` prefixed metadata |
+| `exit_reason` | `hard_stop` / `trailing_stop` / `take_profit` |
 | `sl_hit`, `trailing_stop_hit` | Exit reason tracking |
 | `max_favorable_excursion_pct` | MFE from walk-forward |
 | `max_adverse_excursion_pct` | MAE from walk-forward |
-| `effective_score` | Equals `confluence_score_at_entry` (no soft penalties in backtest) |
 
-No schema changes required. No new columns. The learning modules read these trades identically to live trades.
+### Metadata in `signals_at_entry_json`
+
+Data that production doesn't store in separate columns (entry_price, exit_price, etc.) is embedded in `signals_at_entry_json` with a `_` prefix:
+
+```json
+{
+  "rsi": {"signal": "bullish", "value": 32.1},
+  "macd": {"signal": "bullish", "bias": "bullish_growing"},
+  "ema_stack": {"signal": "bullish", "alignment": "bullish"},
+  "_entry_price": 94250.0,
+  "_exit_price": 96100.0,
+  "_effective_score": 5.2,
+  "_indicators_aligned": 3,
+  "_threshold_used": 4.0,
+  "_source": "time_travel"
+}
+```
+
+Karpathy and Hyperopt read `signals_at_entry_json` by iterating over known indicator names (`rsi`, `macd`, `ema_stack`, `adx`, ...). Keys starting with `_` are ignored by the learning engine — they're metadata for analysis only.
