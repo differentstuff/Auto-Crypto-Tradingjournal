@@ -1128,7 +1128,6 @@ def time_travel(
                         pnl_pct=pnl,
                         duration_minutes=duration_minutes,
                         confluence_score=round(normalized_score, 2),
-                        max_score=10.0,
                         signals_at_entry=signals,
                         indicators_aligned=indicators_aligned,
                         entry_price=entry_price,
