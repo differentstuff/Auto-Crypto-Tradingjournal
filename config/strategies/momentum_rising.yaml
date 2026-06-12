@@ -177,9 +177,6 @@ noise:
 telegram:
   idle_notify_every: 10
 
-# LLM config is defined in config/default.yaml and shared by all strategies.
-# Do not override llm: here — the router reads from the merged config.
-
 modules:
   macro_context: false
   regime_detection: false

@@ -35,25 +35,10 @@ exchange:
   data_source: "bitget"  # OHLCV data source (public, no API keys needed)
   fallback: "bybit"      # Fallback if data_source fails (public, no API keys needed)
   sync_interval_minutes: 5
-
   # Paper trading mode: all enzymes run, no real orders
   # Set to "paper" to log orders instead of placing them
   # Set to "live" to start trading
   mode: "paper"
-
-# LLM configuration has moved to config/llm.yaml
-# Merge order: default.yaml < llm.yaml < strategy.yaml
-# See config/llm.yaml for all LLM routing, parameters, and prompts.
-#
-# LLM enable/veto defaults (overridden by llm.yaml and strategy YAML):
-#   llm.enabled: true          -- system-wide on/off switch for LLM calls
-#   llm.relax_factor: 0.8      -- candidates scoring above threshold*relax_factor
-#                                 but below threshold are sent to LLM for review.
-#                                 If LLM says "proceed", the trade is allowed.
-#                                 Set to 1.0 to disable override (only above-threshold trades).
-llm:
-  enabled: true
-  relax_factor: 0.8
 
 # Cache TTLs (seconds)
 cache:
@@ -260,7 +245,7 @@ hmm:
 challenger:
   enabled: false
   min_trades: 5                 # minimum hypothetical trades before evaluation
-  min_improvement: 0.1          # minimum profit factor improvement (10%) to promote
+  min_improvement: 0.05          # minimum profit factor improvement (0.05 = 5%) to promote
 
 # Karpathy experiment loop (disabled by default)
 # Proposes one parameter change at a time, backtests, pushes to CandidateQueue.

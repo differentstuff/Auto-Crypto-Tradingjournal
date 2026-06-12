@@ -13,7 +13,7 @@ llm:
   #   as an override. Set to 1.0 to disable overrides (only above-threshold trades).
   #   Example: threshold=5.0, relax_factor=0.8 → candidates scoring 4.0-5.0
   #   get LLM review. LLM "proceed" → trade allowed despite sub-threshold score.
-  enabled: true
+  enabled: false
   relax_factor: 0.8
 
   # ── Daily cost budget ──────────────────────────────────────────────────
