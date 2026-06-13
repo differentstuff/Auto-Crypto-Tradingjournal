@@ -2,7 +2,6 @@
 enzymes/detect_noise.py -- Oxidoreductase enzyme: noise detection.
 
 Checks market conditions for noise and computes a soft penalty ratio:
-  - Liquidity filter (outside high-liquidity windows = lower liquidity)
   - Conflicting signals across indicators (relative ratio)
   - Low volume / spread conditions
   - Extreme ADX (no trend or overextended)
@@ -14,33 +13,17 @@ Writes:
 
 Enzyme class: Oxidoreductase
 Activates when: market.indicators not empty AND analysis.noise_evaluated is False
-
-Port of: scanner_criteria.py (liquidity filter, criteria)
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 
 from core.enzyme import Enzyme, EnzymeClass, register_enzyme
 from core.substrate import Substrate
 
 _log = logging.getLogger(__name__)
-
-
-def _is_in_liquidity_window(utc_hour: int = None, liquidity_hours: list | None = None) -> bool:
-    """
-    Return True if the given UTC hour falls within a high-liquidity window.
-    Default: London 07:00-09:59 UTC | NY AM 12:00-14:59 UTC.
-    Configurable via noise.liquidity_filter_hours in YAML (list of [start, end] pairs).
-    Outside these windows, liquidity is lower and noise penalty increases.
-    """
-    h = utc_hour if utc_hour is not None else datetime.now(timezone.utc).hour
-    if liquidity_hours is None:
-        liquidity_hours = [[7, 10], [12, 15]]
-    return any(start <= h < end for start, end in liquidity_hours)
 
 
 def _check_conflicting_signals(
@@ -178,10 +161,9 @@ class DetectNoise(Enzyme):
     ApproveTrade via substrate.compute_effective_score() instead.
 
     Checks:
-      1. Outside liquidity window (lower liquidity = more noise)
-      2. Conflicting directional signals (relative ratio)
-      3. Low volume
-      4. ADX extremes (no trend or overextended)
+      1. Conflicting directional signals (relative ratio)
+      2. Low volume
+      3. ADX extremes (no trend or overextended)
     """
 
     name = "DetectNoise"
@@ -219,13 +201,7 @@ class DetectNoise(Enzyme):
 
         noise_reasons = []
 
-        # 1. Liquidity filter check (hours from config)
-        utc_hour = datetime.now(timezone.utc).hour
-        liquidity_hours = substrate.cfg("noise.liquidity_filter_hours", [[7, 10], [12, 15]])
-        if not _is_in_liquidity_window(utc_hour, liquidity_hours=liquidity_hours):
-            noise_reasons.append("Outside liquidity window (lower liquidity)")
-
-        # 2. Conflicting signals (relative ratio from config)
+        # 1. Conflicting signals (relative ratio from config)
         conflict_max_ratio = substrate.cfg("noise.conflict_max_ratio", 0.5)
         rsi_high = substrate.cfg("scoring.rsi_signal_high")
         rsi_low = substrate.cfg("scoring.rsi_signal_low")
@@ -235,13 +211,13 @@ class DetectNoise(Enzyme):
         )
         noise_reasons.extend(conflicts)
 
-        # 3. Volume check (thresholds from config)
+        # 2. Volume check (thresholds from config)
         vol_low = substrate.cfg("noise.volume_low_ratio")
         vol_very_low = substrate.cfg("noise.volume_very_low_ratio")
         volume_issues = _check_volume(indicators, vol_low, vol_very_low)
         noise_reasons.extend(volume_issues)
 
-        # 4. ADX extremes (thresholds from config)
+        # 3. ADX extremes (thresholds from config)
         adx_no_trend = substrate.cfg("noise.adx_no_trend")
         adx_overextended = substrate.cfg("noise.adx_overextended")
         adx_issues = _check_adx_extremes(indicators, weight_map, adx_no_trend, adx_overextended)
@@ -281,8 +257,7 @@ class DetectNoise(Enzyme):
         """Dynamic flux: high when noise conditions are present."""
         if not self.can_activate(substrate):
             return 0.0
-        # Outside kill zone with no other noise = less urgent
-        # Inside kill zone or multiple noise signals = more urgent
+        # Multiple noise signals = more urgent
         indicators = substrate.market.get("indicators", {})
         if not indicators:
             return 0.5
