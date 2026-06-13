@@ -21,6 +21,8 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from core.substrate import SubstrateConfigError
+
 _log = logging.getLogger(__name__)
 
 # Resolve paths relative to project root
@@ -100,6 +102,25 @@ class ConfigLoader:
             self.config_dir, "strategies", f"{self.strategy_name}.yaml"
         )
         strategy_cfg = _load_yaml(strategy_path)
+
+        # Validate required strategy keys BEFORE merge.
+        # Without this check, default.yaml's strategy: section would silently
+        # satisfy Substrate's validation, masking misconfiguration.
+        # name and uid are auto-generated below, so they're not checked here.
+        _REQUIRED_STRATEGY_KEYS = (
+            "timeframe", "confirmation_tf",
+            "cycle_interval_minutes", "max_positions",
+        )
+        raw_strategy = strategy_cfg.get("strategy", {})
+        missing = [k for k in _REQUIRED_STRATEGY_KEYS if k not in raw_strategy]
+        if missing:
+            raise SubstrateConfigError(
+                f"Missing required strategy key(s) in {strategy_path}: "
+                f"{', '.join(missing)}. "
+                f"Every strategy YAML must define strategy.timeframe, "
+                f"strategy.confirmation_tf, strategy.cycle_interval_minutes, "
+                f"and strategy.max_positions."
+            )
 
         # Merge: default < llm < strategy (secrets come from .env, not YAML)
         merged = _deep_merge(default_cfg, llm_cfg)
