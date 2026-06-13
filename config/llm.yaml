@@ -28,7 +28,7 @@ llm:
     temperature: 0.3          # Balanced default; override per role
     top_p: 1.0                # Full probability range (temperature controls diversity)
     reasoning: false          # false = model default; "none"/"low"/"medium"/"high" = effort level
-    response_format: false    # false = free text; "json" = enforce JSON output
+    response_format: false    # false = free text; "json" = enforce JSON output. Default is false because analysis and fallback roles need free-form text; JSON-enforced roles (pre_filter, rulebook) override this explicitly in their routing config.
     seed: false               # false = non-deterministic; true = derive from strategy UID
     max_tokens: 1024          # Default output token limit
     transforms: []            # OpenRouter transforms: ["strip_reasoning"]
