@@ -192,3 +192,7 @@ modules:
   model_consensus: false
   telegram_logs: false
   telegram_interaction: false
+  
+  llm:
+  enabled: false
+  relax_factor: 0.8
