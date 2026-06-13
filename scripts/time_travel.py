@@ -939,7 +939,8 @@ def time_travel(
     total_trades = 0
     total_wins = 0
     total_losses = 0
-    trades_by_threshold = {t: 0 for t in thresholds}
+    total_no_exit = 0  # Trades still open at end of data (unresolved)
+    trades_by_threshold = {t: {"wins": 0, "losses": 0, "trades": 0} for t in thresholds}
     trades_by_symbol = {s: 0 for s in symbols}
 
     for symbol in symbols:
@@ -1093,7 +1094,8 @@ def time_travel(
                 )
 
                 if exit_info is None:
-                    # Trade still open at end of data — skip (incomplete)
+                    # Trade still open at end of data — count but don't include in win rate
+                    total_no_exit += 1
                     continue
 
                 # Build signals_at_entry_json
@@ -1148,9 +1150,11 @@ def time_travel(
                 total_trades += 1
                 if outcome == "win":
                     total_wins += 1
+                    trades_by_threshold[threshold]["wins"] += 1
                 elif outcome == "loss":
                     total_losses += 1
-                trades_by_threshold[threshold] = trades_by_threshold.get(threshold, 0) + 1
+                    trades_by_threshold[threshold]["losses"] += 1
+                trades_by_threshold[threshold]["trades"] += 1
                 trades_by_symbol[symbol] = trades_by_symbol.get(symbol, 0) + 1
                 symbol_trades += 1
 
@@ -1158,22 +1162,43 @@ def time_travel(
         _log.info("  %s: %d trades generated (%d entries evaluated) in %.1fs",
                   symbol, symbol_trades, entries_found, t_score)
 
-    # Summary
-    win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0
+    # Summary — win rate uses wins/(wins+losses) to exclude unresolved trades
+    resolved = total_wins + total_losses
+    win_rate = (total_wins / resolved * 100) if resolved > 0 else 0
+
+    # Per-threshold breakdown with win rate
+    by_threshold_summary = {}
+    for t in thresholds:
+        tb = trades_by_threshold[t]
+        t_resolved = tb["wins"] + tb["losses"]
+        t_rate = (tb["wins"] / t_resolved * 100) if t_resolved > 0 else 0
+        by_threshold_summary[t] = {
+            "wins": tb["wins"],
+            "losses": tb["losses"],
+            "no_exit": 0,  # per-threshold no_exit not tracked separately
+            "trades": tb["trades"],
+            "win_rate_pct": round(t_rate, 1),
+        }
+
     summary = {
         "total_trades": total_trades,
         "wins": total_wins,
         "losses": total_losses,
+        "no_exit": total_no_exit,
         "win_rate_pct": round(win_rate, 1),
-        "by_threshold": trades_by_threshold,
+        "by_threshold": by_threshold_summary,
         "by_symbol": trades_by_symbol,
     }
 
     _log.info("=" * 70)
     _log.info("TIME TRAVEL COMPLETE")
-    _log.info("  Total trades: %d", total_trades)
-    _log.info("  Wins: %d, Losses: %d, Win rate: %.1f%%", total_wins, total_losses, win_rate)
-    _log.info("  By threshold: %s", trades_by_threshold)
+    _log.info("  Total trades: %d (resolved: %d, no exit: %d)", total_trades, resolved, total_no_exit)
+    _log.info("  Wins: %d, Losses: %d, Win rate: %.1f%% (wins/(wins+losses))", total_wins, total_losses, win_rate)
+    _log.info("  By threshold:")
+    for t in thresholds:
+        tb = by_threshold_summary[t]
+        _log.info("    %.1f: %d trades, %d wins, %d losses, %.1f%% win rate",
+                  t, tb["trades"], tb["wins"], tb["losses"], tb["win_rate_pct"])
     _log.info("  By symbol: %s", trades_by_symbol)
     if dry_run:
         _log.info("  (DRY RUN — no trades written to DB)")
