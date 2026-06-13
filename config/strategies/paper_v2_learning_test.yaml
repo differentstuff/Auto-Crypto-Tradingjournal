@@ -209,5 +209,5 @@ modules:
 #   If LLM says "proceed", trade is allowed despite sub-threshold score.
 #   Set to 1.0 to disable override (only above-threshold trades).
 llm:
-  enabled: true
+  enabled: false
   relax_factor: 0.8
