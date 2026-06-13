@@ -333,15 +333,30 @@ def config_dir(tmp_path):
     import yaml
 
     # default.yaml — must include ALL keys that Substrate.cfg() requires
+    # NOTE: strategy: section is intentionally ABSENT here, matching production
+    # default.yaml (Fix #3). Required strategy keys must come from the strategy YAML.
     default = make_full_config()
+    del default["strategy"]  # Match production: no strategy defaults in default.yaml
     default["system"] = {"version": "2.0.0", "name": "auto-trader"}
     with open(tmp_path / "default.yaml", "w") as f:
         yaml.dump(default, f)
 
-    # strategies/test_strategy.yaml
+    # strategies/test_strategy.yaml — must include ALL required strategy keys
+    # (timeframe, confirmation_tf, cycle_interval_minutes, max_positions)
+    # because ConfigLoader validates these pre-merge and raises
+    # SubstrateConfigError if any are missing.
     strat_dir = tmp_path / "strategies"
     strat_dir.mkdir()
-    strategy = {"strategy": {"name": "test_strategy"}}
+    strategy = {
+        "strategy": {
+            "name": "test_strategy",
+            "uid": "",
+            "timeframe": "4h",
+            "confirmation_tf": "1d",
+            "cycle_interval_minutes": 15,
+            "max_positions": 3,
+        },
+    }
     with open(strat_dir / "test_strategy.yaml", "w") as f:
         yaml.dump(strategy, f)
 
