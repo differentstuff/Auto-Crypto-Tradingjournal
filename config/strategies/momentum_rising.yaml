@@ -29,7 +29,7 @@ symbols:
     - SHIBUSDT
     - BOMEUSDT
   dynamic_filter:
-    universe_source: "exchange"     # fetch all USDT-M perps from Bitget API
+    universe_source: "exchange"     # Only 'exchange' is supported — do not change
     limit: 15                       # max dynamic symbols to select (ranked by momentum_quality)
     min_volume_24h_usd: 10000000    # minimum 24h volume filter (USD)
     min_open_interest_usd: 2000000  # minimum open interest filter (USD)
@@ -115,15 +115,6 @@ exit_rules:
     urgency: "soft"
   soft_reversal_profit_threshold: 0.5
   near_sl_urgency_pct: 0.5
-
-entry_conditions:
-  - "at least 3 enabled indicators aligned in same direction"
-  - "confluence score above entry_threshold"
-  - "support or resistance level within 1% of entry zone"
-  - "stop loss set below support for long, above resistance for short"
-  - "risk per trade within configured limit"
-  - "soft penalties applied to effective score (noise, confluence, trajectory)"
-  - "effective score above approval_threshold after penalties"
 
 learning:
   min_trades_before_adjusting: 30
