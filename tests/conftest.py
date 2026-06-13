@@ -128,7 +128,6 @@ def make_full_config(**overrides) -> dict:
             "adx_no_trend": 15,
             "adx_overextended": 40,
             "noise_severity_min_reasons": 2,
-            "liquidity_filter_hours": [[7, 10], [12, 15]],
         },
         "learning": {
             "min_trades_before_adjusting": 30,
