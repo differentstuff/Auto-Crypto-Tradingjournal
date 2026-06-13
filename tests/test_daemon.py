@@ -96,10 +96,20 @@ class TestDaemonCycle:
         daemon = Daemon(strategy_name="test_strategy", config_dir=str(config_dir))
         daemon.initialize()
 
-        # Modify the strategy YAML to add max_positions override
+        # Modify the strategy YAML — must include ALL required strategy keys
+        # (ConfigLoader validates these pre-merge; missing keys raise SubstrateConfigError)
         strat_path = config_dir / "strategies" / "test_strategy.yaml"
         with open(strat_path, "w") as f:
-            yaml.dump({"strategy": {"name": "test_strategy", "max_positions": 10}}, f)
+            yaml.dump({
+                "strategy": {
+                    "name": "test_strategy",
+                    "uid": "",
+                    "timeframe": "4h",
+                    "confirmation_tf": "1d",
+                    "cycle_interval_minutes": 15,
+                    "max_positions": 10,
+                },
+            }, f)
 
         # Run a cycle (which triggers reload)
         daemon.run_cycle()
