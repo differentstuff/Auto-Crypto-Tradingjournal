@@ -12,6 +12,7 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config_loader import ConfigLoader, _deep_merge
+from core.substrate import SubstrateConfigError
 
 
 class TestDeepMerge:
@@ -68,15 +69,15 @@ class TestConfigLoader:
         assert loader.get("system.version") == "2.0.0"
 
     def test_strategy_overrides_default(self, config_dir):
-        """Strategy YAML overrides default values."""
+        """Strategy YAML provides strategy keys (no defaults in default.yaml)."""
         loader = ConfigLoader(
             strategy_name="test_strategy",
             config_dir=str(config_dir),
         )
-        # Default max_positions is 3, strategy doesn't override
+        # Strategy YAML defines max_positions=3 (no fallback to default.yaml)
         assert loader.get("strategy.max_positions") == 3
-        # Default timeframe is 4H (from default.yaml)
-        assert loader.get("strategy.timeframe") == "4H"
+        # Strategy YAML defines timeframe="4h"
+        assert loader.get("strategy.timeframe") == "4h"
 
     def test_exchange_keys(self, config_dir, monkeypatch):
         """ConfigLoader can retrieve LLM API keys from environment variables."""
@@ -124,17 +125,21 @@ class TestConfigLoader:
         assert loader.is_module_enabled("macro_context") is False
 
     def test_missing_strategy(self, tmp_path):
-        """ConfigLoader handles missing strategy file gracefully."""
+        """ConfigLoader raises SubstrateConfigError for missing strategy file.
+
+        A missing strategy YAML means required keys (timeframe, etc.) are
+        undefined. ConfigLoader validates these pre-merge and raises
+        SubstrateConfigError naming the missing keys and file path.
+        """
         default = {"system": {"version": "2.0.0"}}
         with open(tmp_path / "default.yaml", "w") as f:
             yaml.dump(default, f)
 
-        loader = ConfigLoader(
-            strategy_name="nonexistent",
-            config_dir=str(tmp_path),
+        with pytest.raises(SubstrateConfigError, match="Missing required strategy key"):
+            ConfigLoader(
+                strategy_name="nonexistent",
+                config_dir=str(tmp_path),
         )
-        assert loader.config is not None
-        assert loader.get("system.version") == "2.0.0"
 
     def test_get_with_default(self, config_dir):
         """get() returns default for missing keys."""
@@ -156,3 +161,29 @@ class TestConfigLoader:
         assert sub.cfg("scoring.entry_threshold") == 6.5
         # portfolio.risk_per_trade_pct comes from default.yaml (1.0)
         assert sub.cfg("portfolio.risk_per_trade_pct") == 1.0
+
+    def test_incomplete_strategy_raises(self, tmp_path):
+        """ConfigLoader raises SubstrateConfigError when strategy YAML is missing
+        required keys (timeframe, confirmation_tf, cycle_interval_minutes,
+        max_positions). This is the pre-merge validation from Fix #3: without
+        it, default.yaml's strategy: section would silently satisfy Substrate's
+        validation, masking misconfiguration.
+        """
+        from core.substrate import SubstrateConfigError
+
+        default = {"system": {"version": "2.0.0"}}
+        with open(tmp_path / "default.yaml", "w") as f:
+            yaml.dump(default, f)
+
+        strat_dir = tmp_path / "strategies"
+        strat_dir.mkdir()
+        # Strategy YAML with only 'name' — missing all other required keys
+        incomplete = {"strategy": {"name": "incomplete_strat"}}
+        with open(strat_dir / "incomplete_strat.yaml", "w") as f:
+            yaml.dump(incomplete, f)
+
+        with pytest.raises(SubstrateConfigError, match="Missing required strategy key"):
+            ConfigLoader(
+                strategy_name="incomplete_strat",
+                config_dir=str(tmp_path),
+        )
