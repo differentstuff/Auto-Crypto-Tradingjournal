@@ -11,8 +11,8 @@ Replay the daemon's scoring logic on historical OHLCV data. Simulate entries at 
 ## Quick Start
 
 ```bash
-# Backtest BTCUSDT from January 2025 (uses strategy config symbols by default)
-python scripts/time_travel.py --start 2025-01-01
+# Backtest BTCUSDT from January 2026 (uses strategy config symbols by default)
+python scripts/time_travel.py --start 2026-01-01 --symbols BTCUSDT
 
 # Multiple symbols, custom date range
 python scripts/time_travel.py --start 2025-06-01 --end 2025-12-01 \
