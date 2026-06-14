@@ -147,10 +147,12 @@ class ConfigLoader:
 
         self._config = merged
         self._last_loaded = datetime.now(timezone.utc)
+        llm_enabled = self._config.get("llm", {}).get("enabled", False)
         _log.info(
-            "Config loaded: strategy=%s, last_loaded=%s",
+            "Config loaded: strategy=%s, last_loaded=%s, llm=%s",
             self.strategy_name,
             self._last_loaded.isoformat(),
+            "enabled" if llm_enabled else "disabled",
         )
 
     def _write_uid_to_yaml(self, strategy_path: str, uid: str) -> None:
