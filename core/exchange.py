@@ -707,63 +707,108 @@ class Exchange:
           - volume_24h_usd: 24h quote volume in USD (0.0 if unavailable)
           - open_interest_usd: open interest in USD (0.0 if unavailable)
 
-        Uses CCXT's fetch_markets() to get the full instrument list, then
-        filters for USDT-settled perpetual swaps. Volume and OI come from
-        the market info dict if available (exchange-dependent).
+        Two-step process:
+          1. fetch_markets() — get instrument list + OI from metadata
+          2. fetch_tickers() — get real-time 24h volume from ticker endpoint
 
-        No authentication required — market metadata is public.
+        fetch_markets() returns instrument metadata (tick size, contract specs)
+        but volume fields are typically 0 or stale. fetch_tickers() provides
+        live quoteVolume which is the actual 24h trading volume in USD.
+
+        No authentication required — both endpoints are public.
         """
         try:
             exchange = self._get_data_exchange()
             markets = exchange.fetch_markets()
 
-            result = []
+            # Step 1: Build symbol list from market metadata
+            usdt_perps = []
+            symbol_map = {}
             for market in markets:
-                # Filter: only USDT-settled perpetual swaps
                 if market.get("type") != "swap":
                     continue
                 settle = market.get("settle", "") or ""
                 if settle.upper() != "USDT":
                     continue
-
-                # Symbol in journal format
                 ccxt_sym = market.get("symbol", "")
                 jour_sym = _to_journal_symbol(ccxt_sym)
+                entry = {
+                    "ccxt_symbol": ccxt_sym,
+                    "symbol": jour_sym,
+                    "volume_24h_usd": 0.0,
+                    "open_interest_usd": 0.0,
+                }
+                usdt_perps.append(entry)
+                symbol_map[ccxt_sym] = entry
 
-                # Extract volume and OI from market info (exchange-dependent fields)
+            # Step 2: Fetch real-time tickers for volume data
+            # Market metadata has stale/zero volume; tickers have live quoteVolume.
+            n_with_volume = 0
+            try:
+                all_tickers = exchange.fetch_tickers()
+                for p in usdt_perps:
+                    ticker = all_tickers.get(p["ccxt_symbol"])
+                    if not ticker:
+                        continue
+                    # Primary: quoteVolume (24h volume in quote currency = USD for USDT pairs)
+                    quote_volume = ticker.get("quoteVolume")
+                    if quote_volume is not None:
+                        try:
+                            p["volume_24h_usd"] = float(quote_volume)
+                            n_with_volume += 1
+                        except (ValueError, TypeError):
+                            pass
+                    # Fallback: baseVolume × last price
+                    if p["volume_24h_usd"] == 0.0:
+                        base_volume = ticker.get("baseVolume")
+                        last_price = ticker.get("last")
+                        if base_volume and last_price:
+                            try:
+                                p["volume_24h_usd"] = float(base_volume) * float(last_price)
+                                n_with_volume += 1
+                            except (ValueError, TypeError):
+                                pass
+            except Exception as te:
+                _log.warning(
+                    "fetch_tickers failed in fetch_usdt_perps: %s — volume data may be incomplete",
+                    te,
+                )
+
+            # Step 3: Extract OI from market info (no bulk live API for OI)
+            for market in markets:
+                if market.get("type") != "swap":
+                    continue
+                settle = market.get("settle", "") or ""
+                if settle.upper() != "USDT":
+                    continue
+                ccxt_sym = market.get("symbol", "")
+                if ccxt_sym not in symbol_map:
+                    continue
                 info = market.get("info", {})
-                volume_24h = 0.0
-                open_interest = 0.0
-
-                # Bitget-specific fields
-                if "volume24h" in info:
-                    try:
-                        volume_24h = float(info["volume24h"]) * float(market.get("last", 0) or 1)
-                    except (ValueError, TypeError):
-                        pass
                 if "openInterest" in info:
                     try:
                         oi_contracts = float(info["openInterest"])
                         contract_size = float(market.get("contractSize", 1) or 1)
                         last_price = float(market.get("last", 0) or 1)
-                        open_interest = oi_contracts * contract_size * last_price
+                        symbol_map[ccxt_sym]["open_interest_usd"] = (
+                            oi_contracts * contract_size * last_price
+                        )
                     except (ValueError, TypeError):
                         pass
 
-                # Generic CCXT fields as fallback
-                if volume_24h == 0.0 and market.get("quoteVolume"):
-                    try:
-                        volume_24h = float(market["quoteVolume"])
-                    except (ValueError, TypeError):
-                        pass
-
+            # Step 4: Build result list (exclude internal ccxt_symbol field)
+            result = []
+            for p in usdt_perps:
                 result.append({
-                    "symbol": jour_sym,
-                    "volume_24h_usd": volume_24h,
-                    "open_interest_usd": open_interest,
+                    "symbol": p["symbol"],
+                    "volume_24h_usd": p["volume_24h_usd"],
+                    "open_interest_usd": p["open_interest_usd"],
                 })
 
-            _log.info("Fetched %d USDT-M perpetual pairs from exchange", len(result))
+            _log.info(
+                "Fetched %d USDT-M perpetual pairs from exchange (volume data for %d)",
+                len(result), n_with_volume,
+            )
             return result
 
         except Exception as e:
