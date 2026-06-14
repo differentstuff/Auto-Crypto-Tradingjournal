@@ -34,17 +34,18 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import datetime, timezone
 from typing import List, Optional
 
 # ── Project path setup ──────────────────────────────────────────────────────
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PROJECT_ROOT)
 
-DB_PATH = os.environ.get(
-    "DB_PATH",
-    os.path.join(_PROJECT_ROOT, "data/trading_journal.db"),
-)
+# Load .env BEFORE importing core.database — same order as time_travel.py.
+# DB_PATH is evaluated at module import time, so the env var must be set first.
+from dotenv import load_dotenv
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
+
+from core.database import DB_PATH
 
 COLUMNS = [
     "id",
@@ -165,17 +166,30 @@ def export_trades(
     from_date: Optional[str],
     to_date: Optional[str],
     source: Optional[str],
+    verbose: bool = False,
 ) -> int:
     """Query, filter, and write trades to CSV. Returns row count."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
 
+    if verbose:
+        total_rows = conn.execute("SELECT COUNT(*) FROM trade_learning").fetchone()[0]
+        print(f"  DB: {DB_PATH}")
+        print(f"  Total rows in trade_learning: {total_rows}")
+
     query, params = _build_query(symbol, outcome, threshold, from_date, to_date, source)
     rows = conn.execute(query, params).fetchall()
     conn.close()
 
+    if verbose:
+        print(f"  SQL matched: {len(rows)} rows")
+
     # Unpack + filter (threshold/source are in JSON)
     csv_rows: List[dict] = []
+    skipped_no_threshold = 0
+    skipped_threshold_mismatch = 0
+    skipped_source = 0
+
     for row in rows:
         meta = _unpack_signals(row["signals_at_entry_json"])
 
@@ -183,16 +197,24 @@ def export_trades(
         if threshold is not None:
             row_threshold = meta.get("threshold")
             if row_threshold == "" or row_threshold is None:
+                skipped_no_threshold += 1
                 continue
             if abs(float(row_threshold) - threshold) > 0.01:
+                skipped_threshold_mismatch += 1
                 continue
 
         if source is not None:
             row_source = meta.get("source", "live")
             if row_source != source:
+                skipped_source += 1
                 continue
 
         csv_rows.append(_row_to_csv_row(row, meta))
+
+    if verbose and (skipped_no_threshold or skipped_threshold_mismatch or skipped_source):
+        print(f"  Filtered out: {skipped_no_threshold} no-threshold, "
+              f"{skipped_threshold_mismatch} threshold-mismatch, "
+              f"{skipped_source} source-mismatch")
 
     # Write CSV
     with open(output_path, "w", newline="", encoding="utf-8") as f:
@@ -226,6 +248,9 @@ Examples:
 
   # Full dump
   python scripts/export_trades.py
+
+  # Debug: show DB path and filter stats
+  python scripts/export_trades.py -v
         """,
     )
     parser.add_argument(
@@ -258,6 +283,10 @@ Examples:
         "-o", "--output", default=None,
         help="Output CSV path (default: auto-generated with filters in name)",
     )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show DB path, row counts, and filter stats",
+    )
 
     args = parser.parse_args()
 
@@ -287,10 +316,11 @@ Examples:
         from_date=args.from_date,
         to_date=args.to_date,
         source=args.source,
+        verbose=args.verbose,
     )
 
     if count == 0:
-        print(f"No trades matched your filters.")
+        print(f"No trades matched your filters. Run with -v to see why.")
     else:
         print(f"Exported {count} trades → {output_path}")
 
