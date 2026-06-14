@@ -35,7 +35,7 @@ description: |
 
 strategy:
   name: momentum_rising_v2
-  uid: ""   # Auto-generated on first load. Remove or clear to reset learning data.
+  uid: "ef681354-8afc-48e5-8302-9a5fc2c23217"   # Auto-generated on first load. Remove or clear to reset learning data.
   timeframe: "1h"
   confirmation_tf: "4h"
   max_positions: 3
