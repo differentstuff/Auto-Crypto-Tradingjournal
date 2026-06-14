@@ -11,12 +11,11 @@ Replay the daemon's scoring logic on historical OHLCV data. Simulate entries at 
 ## Quick Start
 
 ```bash
-# Backtest BTCUSDT from January 2026 (uses strategy config symbols by default)
-python scripts/time_travel.py --start 2026-01-01 --symbols BTCUSDT
+# Backtest any strategy from January 2026 until today
+python scripts/time_travel.py --start 2026-01-01 --strategy momentum_rising_v2
 
 # Multiple symbols, custom date range
-python scripts/time_travel.py --start 2025-06-01 --end 2025-12-01 \
-    --symbols BTCUSDT ETHUSDT SOLUSDT
+python scripts/time_travel.py --start 2025-06-01 --end 2025-12-01 --symbols BTCUSDT ETHUSDT SOLUSDT
 
 # Custom threshold sweep
 python scripts/time_travel.py --start 2025-01-01 --thresholds 2.5,3.5,4.5,6.5
