@@ -115,3 +115,67 @@ def _sharpe(returns: np.ndarray) -> float:
     """Internal Sharpe for PBO computation (non-annualized)."""
     std = returns.std()
     return float(returns.mean() / std) if std > 0 else 0.0
+
+
+# ── Dollar-math metrics (for backtest evaluation) ────────────────────────────
+# These functions operate on lists of P&L values in USD.
+# Used by time_travel backtest and any future dollar-math reporting.
+
+def expectancy(pnls: list) -> float:
+    """Average P&L per trade (expectancy).
+
+    Returns 0.0 for empty lists.
+    """
+    if not pnls:
+        return 0.0
+    return round(float(np.mean(pnls)), 2)
+
+
+def avg_win(pnls: list) -> float:
+    """Average winning P&L.
+
+    Returns 0.0 if no winners.
+    """
+    wins = [p for p in pnls if p > 0]
+    if not wins:
+        return 0.0
+    return round(float(np.mean(wins)), 2)
+
+
+def avg_loss(pnls: list) -> float:
+    """Average losing P&L (negative value).
+
+    Returns 0.0 if no losers.
+    """
+    losses = [p for p in pnls if p < 0]
+    if not losses:
+        return 0.0
+    return round(float(np.mean(losses)), 2)
+
+
+def win_loss_ratio(pnls: list) -> float:
+    """Ratio of avg_win to abs(avg_loss).
+
+    >1.0 = winners bigger than losers (favorable asymmetry).
+    <1.0 = losers bigger than winners (unfavorable).
+    Returns 0.0 if no losses or no wins.
+    """
+    aw = avg_win(pnls)
+    al = avg_loss(pnls)
+    if al == 0 or aw == 0:
+        return 0.0
+    return round(abs(aw / al), 3)
+
+
+def total_return_pct(pnls: list, equity: float) -> float:
+    """Total return as percentage of initial equity.
+
+    Args:
+        pnls: List of net P&L values in USD
+        equity: Initial equity in USDT
+
+    Returns:        Total return percentage (e.g., 12.4 for +12.4%)
+    """
+    if not equity or not pnls:
+        return 0.0
+    return round(sum(pnls) / equity * 100, 2)
