@@ -133,11 +133,42 @@ exit_rules:
     breakeven_at_activation: true # move SL to entry when trailing activates
     distance_pct: 1.0            # trailing distance as % of price
     move_to_breakeven_at_pct: 1.5 # profit % at which SL moves to breakeven
+  # ── Structure-aware exits (A) ────────────────────────────────────────
+  # Exit immediately when market structure breaks, phase shifts to range,
+  # or a counter-structure breakout occurs. Disabled by default for backward
+  # compatibility — enable in strategy config when MarketGeometry enzyme is active.
+  structure_aware_exits: false        # enable A: structure-aware exits (requires MarketGeometry enzyme)
+  structure_break_exit: true          # exit on structure break (only active when structure_aware_exits=true)
+  phase_range_exit: true              # exit when phase shifts to range (was trending)
+  counter_breakout_exit: true         # exit on counter-structure breakout
+  deep_pullback_stop_multiplier: 0.5  # tighten stop to 0.5x ATR on deep pullback
+  shallow_pullback_stop_multiplier: 1.0 # keep stop at 1.0x ATR on shallow pullback
+  # ── Progressive trailing stop (B) ───────────────────────────────────
+  # Trail tightens as profit grows, locking in gains without capping upside.
+  # Disabled by default for backward compatibility.
+  progressive_trail: false            # enable B: progressive trailing stop
+  progressive_trail_schedule:         # profit_atr_level → trail_distance (x ATR)
+    0: 1.0                            # at entry: 1x ATR (same as current)
+    1: 0.75                           # at +1x ATR profit: tighten to 0.75x
+    2: 0.5                            # at +2x ATR profit: tighten to 0.5x
+    3: 0.25                           # at +3x ATR profit: tighten to 0.25x
+  # Structure-aware trail enhancement (only active when progressive_trail=true)
+  pullback_trail_tighten: 0.75        # multiply trail by 0.75 when phase = pullback
+  deep_pullback_trail_tighten: 0.5    # multiply trail by 0.5 when pullback is deep
   soft_exit:
     requires_indicators_reversed: 2  # number of indicators that must reverse for soft exit
     requires_confirmation_tf: true    # confirmation TF must also reverse for soft exit
     urgency: "soft"                  # soft exit urgency level
   soft_reversal_profit_threshold: 0.5  # profit % below which a signal reversal exits immediately; above it, reversal is ignored
+  near_sl_urgency_pct: 0.5           # distance to SL below this % → high urgency
+
+# ── Structure detection config ────────────────────────────────────────────────
+# Parameters for MarketGeometry enzyme (swing detection, trend classification).
+# Only used when MarketGeometry enzyme is registered in the daemon pipeline.
+structure:
+  swing_lookback: 5                     # bars before/after for swing detection
+  min_swing_points: 4                   # minimum swings needed for trend classification
+  trend_violation_tolerance_pct: 0.5    # allow one swing violation < this %
 
 learning:
   min_trades_before_adjusting: 30  # minimum trades before learning adjusts weights
