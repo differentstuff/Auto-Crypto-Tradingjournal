@@ -118,8 +118,9 @@ class TestMaxDrawdownRegression:
     def test_simple_drawdown(self):
         equity_curve = [100, 110, 105, 115, 108]
         dd = max_drawdown(equity_curve)
-        # Peak=110, trough=105 → drawdown = 5/110 ≈ 0.0455
-        assert dd == pytest.approx(0.0455, abs=0.01)
+        # Peak=115, trough=108 → drawdown = 7/115 ≈ 0.0609
+        # (larger than 5/110 ≈ 0.0455 at the earlier dip)
+        assert dd == pytest.approx(0.0609, abs=0.001)
 
     def test_no_drawdown(self):
         equity_curve = [100, 110, 120, 130]
