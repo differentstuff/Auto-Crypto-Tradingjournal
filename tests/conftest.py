@@ -120,6 +120,23 @@ def make_full_config(**overrides) -> dict:
             "near_sl_urgency_pct": 0.5,
             "max_hold_hours": 72,
             "tp_exit_pct": 100.0,
+            # Structure-aware exits
+            "structure_aware_exits": False,
+            "structure_break_exit": True,
+            "phase_range_exit": True,
+            "counter_breakout_exit": True,
+            "deep_pullback_stop_multiplier": 0.5,
+            "shallow_pullback_stop_multiplier": 1.0,
+            # Progressive trailing stop
+            "progressive_trail": False,
+            "progressive_trail_schedule": {0: 1.0, 1: 0.75, 2: 0.5, 3: 0.25},
+            "pullback_trail_tighten": 0.75,
+            "deep_pullback_trail_tighten": 0.5,
+        },
+        "structure": {
+            "swing_lookback": 5,
+            "min_swing_points": 4,
+            "trend_violation_tolerance_pct": 0.5,
         },
         "noise": {
             "conflict_max_ratio": 0.5,
