@@ -6,7 +6,7 @@ Export trades from `trade_learning` to CSV so you can cross-reference entries/ex
 
 ```bash
 # Activate venv from project root
-source .venv/bin/activate
+source venv/bin/activate
 
 # The 207 wins at threshold 5.5
 python -m scripts.time_travel.export_trades --threshold 5.5 --outcome win

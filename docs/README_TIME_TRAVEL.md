@@ -12,7 +12,7 @@ Replay the daemon's scoring logic on historical OHLCV data. Simulate entries at 
 
 ```bash
 # Activate venv from project root
-source .venv/bin/activate
+source venv/bin/activate
 
 # Backtest any strategy from January 2026 until today
 python -m scripts.time_travel --start 2026-01-01 --strategy momentum_rising_v2
