@@ -16,6 +16,13 @@ from core.enzyme import (
 from core.config_loader import ConfigLoader
 from core.database import init_db, get_conn, db_conn, save_substrate, load_latest_substrate
 from core.scheduler import Scheduler
+from core.position_sizing import (
+    kelly_fraction,
+    compute_atr_cap,
+    compute_size,
+    compute_pnl,
+    compute_net_pnl,
+)
 from core.daemon import Daemon
 
 __all__ = [
@@ -35,4 +42,9 @@ __all__ = [
     "load_latest_substrate",
     "Scheduler",
     "Daemon",
+    "kelly_fraction",
+    "compute_atr_cap",
+    "compute_size",
+    "compute_pnl",
+    "compute_net_pnl",
 ]
