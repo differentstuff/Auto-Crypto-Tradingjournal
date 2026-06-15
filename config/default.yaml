@@ -58,6 +58,13 @@ risk:
   max_size_pct_of_equity: 25.0
   min_size_pct_of_equity: 5.0
 
+# Exchange fees (Bitget VIP0 defaults)
+# Used by paper trading and backtest to simulate realistic P&L.
+# Live trading uses actual broker fills — never apply these to live data.
+fees:
+  taker_rate: 0.0006   # 0.06% per side (Bitget VIP0)
+  maker_rate: 0.0002   # 0.02% per side (Bitget VIP0)
+
 # Position sizing defaults
 portfolio:
   risk_per_trade_pct: 1.0
