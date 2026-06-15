@@ -8,12 +8,14 @@ Validates that:
 4. Graceful degradation when ATR or config is missing
 5. Exact validation examples from design YAML
 6. Full enzyme integration with ATR cap
+
+Now uses pure functions from core.position_sizing instead of substrate-based wrappers.
 """
 
 import pytest
 
+from core.position_sizing import compute_atr_cap, compute_size, kelly_fraction
 from core.substrate import Substrate
-from enzymes.approve_trade import _compute_atr_cap, _compute_size, _kelly_fraction
 from conftest import make_full_config
 
 
@@ -40,79 +42,73 @@ def substrate_no_atr_cap():
     return Substrate(config=cfg)
 
 
-# ── 1. _compute_atr_cap pure function ─────────────────────────────────────────
+# ── 1. compute_atr_cap pure function ─────────────────────────────────────────
 
 class TestComputeAtrCap:
-    def test_high_atr_small_cap(self, substrate):
+    def test_high_atr_small_cap(self):
         """High ATR → small cap (volatile asset gets constrained)."""
         # equity=10000, atr_cap_equity_pct=2.0, ATR=100
         # cap = (10000 * 2.0) / 100 = 200
-        cap = _compute_atr_cap(10000, 100, substrate)
+        cap = compute_atr_cap(10000, 100, 2.0)
         assert cap == pytest.approx(200.0, abs=0.01)
 
-    def test_low_atr_large_cap(self, substrate):
+    def test_low_atr_large_cap(self):
         """Low ATR → large cap (calm asset, cap likely won't bind)."""
         # equity=10000, atr_cap_equity_pct=2.0, ATR=10
         # cap = (10000 * 2.0) / 10 = 2000
-        cap = _compute_atr_cap(10000, 10, substrate)
+        cap = compute_atr_cap(10000, 10, 2.0)
         assert cap == pytest.approx(2000.0, abs=0.01)
 
-    def test_zero_atr_returns_zero(self, substrate):
+    def test_zero_atr_returns_zero(self):
         """ATR=0 → cap doesn't apply (graceful degradation)."""
-        cap = _compute_atr_cap(10000, 0, substrate)
+        cap = compute_atr_cap(10000, 0, 2.0)
         assert cap == 0.0
 
-    def test_negative_atr_returns_zero(self, substrate):
+    def test_negative_atr_returns_zero(self):
         """Negative ATR → cap doesn't apply."""
-        cap = _compute_atr_cap(10000, -5, substrate)
+        cap = compute_atr_cap(10000, -5, 2.0)
         assert cap == 0.0
 
-    def test_zero_equity_returns_zero(self, substrate):
+    def test_zero_equity_returns_zero(self):
         """Zero equity → cap doesn't apply."""
-        cap = _compute_atr_cap(0, 100, substrate)
-        assert cap == 0.0
-
-    def test_missing_config_returns_zero(self, substrate_no_atr_cap):
-        """Missing atr_cap_equity_pct → cap doesn't apply."""
-        cap = _compute_atr_cap(10000, 100, substrate_no_atr_cap)
+        cap = compute_atr_cap(0, 100, 2.0)
         assert cap == 0.0
 
     def test_zero_cap_pct_returns_zero(self):
         """atr_cap_equity_pct=0 → cap doesn't apply."""
-        sub = _make_substrate(portfolio={"atr_cap_equity_pct": 0})
-        cap = _compute_atr_cap(10000, 100, sub)
+        cap = compute_atr_cap(10000, 100, 0)
         assert cap == 0.0
 
     def test_negative_cap_pct_returns_zero(self):
         """Negative atr_cap_equity_pct → cap doesn't apply."""
-        sub = _make_substrate(portfolio={"atr_cap_equity_pct": -1})
-        cap = _compute_atr_cap(10000, 100, sub)
+        cap = compute_atr_cap(10000, 100, -1)
         assert cap == 0.0
 
     def test_custom_cap_pct(self):
         """Custom atr_cap_equity_pct changes the cap proportionally."""
-        sub = _make_substrate(portfolio={"atr_cap_equity_pct": 4.0})
         # equity=10000, atr_cap_equity_pct=4.0, ATR=100
         # cap = (10000 * 4.0) / 100 = 400
-        cap = _compute_atr_cap(10000, 100, sub)
+        cap = compute_atr_cap(10000, 100, 4.0)
         assert cap == pytest.approx(400.0, abs=0.01)
 
 
-# ── 2. _compute_size with ATR cap ─────────────────────────────────────────────
+# ── 2. compute_size with ATR cap ─────────────────────────────────────────────
 
 class TestComputeSizeWithAtrCap:
     def test_atr_cap_reduces_high_vol_size(self):
         """High ATR → ATR cap reduces position below Kelly size."""
-        sub = _make_substrate()
-        sizing = _compute_size(
+        sizing = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,  # 2% stop distance
             direction="Long",
-            kelly_fraction=0.25,
+            kelly_frac=0.25,
             leverage=5,
-            substrate=sub,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=100,
+            atr_cap_pct=2.0,
         )
         assert sizing["atr_cap_applied"] is True
         assert sizing["size_usdt"] == 200.0
@@ -120,146 +116,170 @@ class TestComputeSizeWithAtrCap:
 
     def test_atr_cap_overrides_min_size_floor(self):
         """ATR cap is a hard maximum that overrides the min_size_pct floor."""
-        sub = _make_substrate()
         # min_size_pct_of_equity=5.0 → min_notional = 500
         # ATR cap with ATR=100 → atr_cap_notional = 200
         # ATR cap must win: size = 200, not 500
-        sizing = _compute_size(
+        sizing = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,
             direction="Long",
-            kelly_fraction=0.25,
+            kelly_frac=0.25,
             leverage=5,
-            substrate=sub,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=100,
+            atr_cap_pct=2.0,
         )
         assert sizing["atr_cap_applied"] is True
         assert sizing["size_usdt"] == 200.0  # ATR cap, not min floor (500)
 
     def test_min_size_floor_applies_when_atr_cap_does_not_bind(self):
         """min_size_pct floor still applies when ATR cap doesn't bind."""
-        sub = _make_substrate()
         # Very small kelly → notional below min_size_pct floor
         # Low ATR → ATR cap doesn't bind
-        sizing = _compute_size(
+        sizing = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,
             direction="Long",
-            kelly_fraction=0.01,  # tiny kelly → notional well below min floor
+            kelly_frac=0.01,  # tiny kelly → notional well below min floor
             leverage=5,
-            substrate=sub,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=10,  # low ATR → cap = 2000, won't bind
+            atr_cap_pct=2.0,
         )
         assert sizing["atr_cap_applied"] is False
         # min_size_pct_of_equity=5.0 → min_notional = 500
         assert sizing["size_usdt"] == 500.0
 
-    def test_atr_cap_no_effect_low_vol(self, substrate):
+    def test_atr_cap_no_effect_low_vol(self):
         """Low ATR → ATR cap doesn't bind, Kelly size unchanged."""
-        sizing_no_atr = _compute_size(
+        sizing_no_atr = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,
             direction="Long",
-            kelly_fraction=0.25,
+            kelly_frac=0.25,
             leverage=5,
-            substrate=substrate,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=0,  # no ATR cap
+            atr_cap_pct=2.0,
         )
-        sizing_with_atr = _compute_size(
+        sizing_with_atr = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,
             direction="Long",
-            kelly_fraction=0.25,
+            kelly_frac=0.25,
             leverage=5,
-            substrate=substrate,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=10,  # low ATR → large cap
+            atr_cap_pct=2.0,
         )
         assert sizing_with_atr["atr_cap_applied"] is False
         assert sizing_with_atr["size_usdt"] == sizing_no_atr["size_usdt"]
 
-    def test_atr_cap_zero_atr_no_effect(self, substrate):
+    def test_atr_cap_zero_atr_no_effect(self):
         """ATR=0 → cap doesn't apply, same as no ATR."""
-        sizing = _compute_size(
+        sizing = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,
             direction="Long",
-            kelly_fraction=0.25,
+            kelly_frac=0.25,
             leverage=5,
-            substrate=substrate,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=0,
+            atr_cap_pct=2.0,
         )
         assert sizing["atr_cap_applied"] is False
         assert sizing["atr_cap_notional"] == 0.0
 
-    def test_atr_cap_missing_config_no_effect(self, substrate_no_atr_cap):
-        """Missing atr_cap_equity_pct → cap doesn't apply."""
-        sizing = _compute_size(
+    def test_atr_cap_missing_config_no_effect(self):
+        """Missing atr_cap_pct (0) → cap doesn't apply."""
+        sizing = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,
             direction="Long",
-            kelly_fraction=0.25,
+            kelly_frac=0.25,
             leverage=5,
-            substrate=substrate_no_atr_cap,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=100,
+            atr_cap_pct=0,  # No ATR cap
         )
         assert sizing["atr_cap_applied"] is False
 
-    def test_atr_cap_never_increases_size(self, substrate):
+    def test_atr_cap_never_increases_size(self):
         """ATR cap can only reduce position size, never increase it."""
-        sizing_baseline = _compute_size(
+        sizing_baseline = compute_size(
             equity=10000,
             entry_price=50000,
             sl_price=49000,
             direction="Long",
-            kelly_fraction=0.25,
+            kelly_frac=0.25,
             leverage=5,
-            substrate=substrate,
+            risk_per_trade_pct=1.0,
+            max_size_pct=25.0,
+            min_size_pct=5.0,
             atr_value=0,
+            atr_cap_pct=2.0,
         )
         for atr in [1, 5, 10, 50, 100, 500, 1000]:
-            sizing = _compute_size(
+            sizing = compute_size(
                 equity=10000,
                 entry_price=50000,
                 sl_price=49000,
                 direction="Long",
-                kelly_fraction=0.25,
+                kelly_frac=0.25,
                 leverage=5,
-                substrate=substrate,
+                risk_per_trade_pct=1.0,
+                max_size_pct=25.0,
+                min_size_pct=5.0,
                 atr_value=atr,
+                atr_cap_pct=2.0,
             )
             assert sizing["size_usdt"] <= sizing_baseline["size_usdt"], (
                 f"ATR cap increased size with ATR={atr}: "
                 f"{sizing['size_usdt']} > {sizing_baseline['size_usdt']}"
             )
 
-    def test_validation_examples_from_design(self, substrate):
+    def test_validation_examples_from_design(self):
         """Exact validation examples from the design YAML."""
-        cap_high = _compute_atr_cap(10000, 100, substrate)
-        cap_low = _compute_atr_cap(10000, 10, substrate)
+        cap_high = compute_atr_cap(10000, 100, 2.0)
+        cap_low = compute_atr_cap(10000, 10, 2.0)
         assert cap_high == pytest.approx(200.0, abs=0.01)
         assert cap_low == pytest.approx(2000.0, abs=0.01)
 
-    def test_return_dict_has_atr_cap_fields(self, substrate):
+    def test_return_dict_has_atr_cap_fields(self):
         """Return dict always includes atr_cap_applied and atr_cap_notional."""
-        sizing = _compute_size(
+        sizing = compute_size(
             equity=10000, entry_price=50000, sl_price=49000,
-            direction="Long", kelly_fraction=0.25, leverage=5,
-            substrate=substrate, atr_value=100,
+            direction="Long", kelly_frac=0.25, leverage=5,
+            risk_per_trade_pct=1.0, max_size_pct=25.0, min_size_pct=5.0,
+            atr_value=100, atr_cap_pct=2.0,
         )
         assert "atr_cap_applied" in sizing
         assert "atr_cap_notional" in sizing
 
         # Zero equity case
-        sizing_zero = _compute_size(
+        sizing_zero = compute_size(
             equity=0, entry_price=50000, sl_price=49000,
-            direction="Long", kelly_fraction=0.25, leverage=5,
-            substrate=substrate, atr_value=100,
+            direction="Long", kelly_frac=0.25, leverage=5,
+            risk_per_trade_pct=1.0, max_size_pct=25.0, min_size_pct=5.0,
+            atr_value=100, atr_cap_pct=2.0,
         )
         assert "atr_cap_applied" in sizing_zero
         assert "atr_cap_notional" in sizing_zero
