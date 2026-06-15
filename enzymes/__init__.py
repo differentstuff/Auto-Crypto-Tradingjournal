@@ -8,6 +8,7 @@
 # Phase B: Sensors and Evaluators
 from enzymes.dynamic_filter import DynamicFilter
 from enzymes.collect_ohlcv import CollectOHLCV
+from enzymes.market_geometry import MarketGeometry
 from enzymes.score_confluence import ScoreConfluence
 from enzymes.detect_noise import DetectNoise
 from enzymes.validate_entry_zone import ValidateEntryZone
@@ -35,6 +36,7 @@ __all__ = [
     # Phase B
     "DynamicFilter",
     "CollectOHLCV",
+    "MarketGeometry",
     "ScoreConfluence",
     "DetectNoise",
     "ValidateEntryZone",
