@@ -195,6 +195,10 @@ def main() -> None:
     # DetectRegime needs Exchange for hourly data (must fire before ScoreConfluence)
     _register("DetectRegime", exchange=exchange)
 
+    # MarketGeometry computes structure from OHLCV (must fire after DetectRegime, before ScoreConfluence)
+    # Pipeline: CollectOHLCV → DetectRegime → MarketGeometry → ScoreConfluence → ... → RequestExit → ApproveExit → ExecuteExit
+    _register("MarketGeometry")
+
     for name in [
         "ScoreConfluence",
         "DetectNoise",
