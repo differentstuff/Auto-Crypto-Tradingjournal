@@ -67,6 +67,20 @@ class RequestExit(Enzyme):
                 return False
         return True
 
+    @staticmethod
+    def _is_against_position(geometry: dict, direction: str) -> bool:
+        """
+        Check if the market structure breakout direction opposes the position.
+
+        A bearish breakout against a long, or bullish breakout against a short.
+        """
+        trend = geometry.get("trend_direction", "")
+        if direction == "long" and trend == "bearish":
+            return True
+        if direction == "short" and trend == "bullish":
+            return True
+        return False
+
     def transform(self, substrate: Substrate) -> Substrate:
         """Scan open positions and request exit if conditions are met."""
         positions = substrate.portfolio.get("open_positions", [])
@@ -76,6 +90,10 @@ class RequestExit(Enzyme):
         # Use current indicator data if available
         indicators = substrate.market.get("indicators", {})
         soft_exit_requires = substrate.cfg("exit_rules.soft_exit.requires_indicators_reversed")
+
+        # Read structure-aware exit config
+        structure_aware_exits = substrate.cfg("exit_rules.structure_aware_exits", False)
+        geometry_data = substrate.market.get("geometry", {})
 
         for pos in positions:
             symbol = pos.get("symbol", "")
@@ -87,6 +105,57 @@ class RequestExit(Enzyme):
 
             if not mark_price:
                 continue
+
+            # ── Structure-aware exits (highest priority) ──────────────────
+            # Evaluated BEFORE standard SL/TP checks because structure break
+            # is an absolute exit — it overrides all other logic.
+            if structure_aware_exits and geometry_data:
+                geometry = geometry_data.get(symbol, {})
+                if geometry:
+                    # Priority 1: structure break — EXIT immediately
+                    if (geometry.get("structure_break")
+                            and substrate.cfg("exit_rules.structure_break_exit", True)):
+                        substrate.decisions["exit_request"] = {
+                            "symbol": symbol,
+                            "reason": "structure_break",
+                            "urgency": "immediate",
+                        }
+                        self._log.warning(
+                            "STRUCTURE BREAK: %s %s — immediate exit",
+                            symbol, direction,
+                        )
+                        return substrate
+
+                    # Priority 2: phase shifted to range (was trending)
+                    prev_phase = geometry.get("previous_phase", "")
+                    if (geometry.get("phase") == "range"
+                            and prev_phase in ("impulse", "pullback")
+                            and substrate.cfg("exit_rules.phase_range_exit", True)):
+                        substrate.decisions["exit_request"] = {
+                            "symbol": symbol,
+                            "reason": "phase_range",
+                            "urgency": "immediate",
+                        }
+                        self._log.info(
+                            "PHASE RANGE: %s was %s, now range — immediate exit",
+                            symbol, prev_phase,
+                        )
+                        return substrate
+
+                    # Priority 3: counter-structure breakout
+                    if (geometry.get("phase") == "breakout"
+                            and self._is_against_position(geometry, direction)
+                            and substrate.cfg("exit_rules.counter_breakout_exit", True)):
+                        substrate.decisions["exit_request"] = {
+                            "symbol": symbol,
+                            "reason": "counter_breakout",
+                            "urgency": "immediate",
+                        }
+                        self._log.info(
+                            "COUNTER BREAKOUT: %s %s vs %s trend — immediate exit",
+                            symbol, direction, geometry.get("trend_direction", "?"),
+                        )
+                        return substrate
 
             # 1. SL breach — immediate urgency
             if sl_price:
