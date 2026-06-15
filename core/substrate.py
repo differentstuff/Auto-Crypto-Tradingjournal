@@ -206,6 +206,8 @@ class Substrate:
             "indicator_history": {},  # {symbol: [{timestamp, indicators: {...}}, ...]
             "last_candle_close_ts": {},  # {symbol_tf: ISO_timestamp} — survives reset_cycle
             "last_prices": {},         # {symbol: float} — last close price per symbol
+            "ohlcv": {},               # {symbol: {tf: {high: [], low: [], close: []}}} — raw price arrays for MarketGeometry
+            "geometry": {},             # {symbol: {trend_direction, phase, pullback_depth, structure_break, ...}} — from MarketGeometry enzyme
             "pre_trade_context": {},
             "macro": {},
             "liquidations": {},
