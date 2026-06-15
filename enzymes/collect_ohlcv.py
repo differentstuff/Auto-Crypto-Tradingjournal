@@ -273,6 +273,20 @@ class CollectOHLCV(Enzyme):
                 last_candle_close_ts[key] = candle_floor(now, tf).isoformat()
                 symbols_with_new_candle.add(symbol)
 
+                # Store raw OHLCV price arrays for MarketGeometry enzyme.
+                # Lightweight: just high/low/close lists, not full DataFrames.
+                # Only the primary timeframe is needed for structure detection.
+                if tf == timeframe:
+                    existing_ohlcv = dict(substrate.market.get("ohlcv", {}))
+                    sym_ohlcv = dict(existing_ohlcv.get(symbol, {}))
+                    sym_ohlcv[tf] = {
+                        "high":  df["high"].tolist(),
+                        "low":   df["low"].tolist(),
+                        "close": df["close"].tolist(),
+                    }
+                    existing_ohlcv[symbol] = sym_ohlcv
+                    substrate.market["ohlcv"] = existing_ohlcv
+
             if sym_indicators:
                 all_indicators[symbol] = sym_indicators
 
