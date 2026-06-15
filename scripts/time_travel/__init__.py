@@ -16,3 +16,10 @@ Usage:
     python -m scripts.time_travel --start 2025-01-01 --symbols BTCUSDT
     python scripts/time_travel/__main__.py --start 2025-01-01
 """
+
+# Re-export public API for backward compatibility.
+# Existing tests import from `scripts.time_travel` directly.
+from scripts.time_travel.__main__ import (  # noqa: F401
+    time_travel,
+    _write_trade,
+)
