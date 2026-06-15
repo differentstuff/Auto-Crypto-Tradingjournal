@@ -519,26 +519,22 @@ def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
 
 
 def _compute_pnl(position: dict) -> dict:
-    """Compute PnL for a closing position."""
-    entry_price = position.get("entry_price", 0)
-    mark_price = position.get("mark_price", 0)
-    direction = position.get("direction", "Long").lower()
-    size_usdt = position.get("size_usdt", 0)
+    """Compute gross PnL for a closing position.
 
-    if not entry_price or not mark_price or not size_usdt:
-        return {"pnl_pct": 0.0, "pnl_usdt": 0.0}
+    Delegates to core.position_sizing.compute_pnl for the actual calculation.
+    This wrapper extracts position dict fields and maps mark_price to exit_price.
 
-    if direction == "long":
-        pnl_pct = ((mark_price - entry_price) / entry_price) * 100
-    else:
-        pnl_pct = ((entry_price - mark_price) / entry_price) * 100
+    Returns gross P&L (no fees). Live trading uses broker fills which
+    already include actual fees — never apply compute_net_pnl to live data.
+    """
+    from core.position_sizing import compute_pnl
 
-    pnl_usdt = size_usdt * pnl_pct / 100
-
-    return {
-        "pnl_pct": round(pnl_pct, 2),
-        "pnl_usdt": round(pnl_usdt, 2),
-    }
+    return compute_pnl(
+        entry_price=position.get("entry_price", 0),
+        exit_price=position.get("mark_price", 0),
+        direction=position.get("direction", "Long"),
+        size_usdt=position.get("size_usdt", 0),
+    )
 
 
 @register_enzyme
