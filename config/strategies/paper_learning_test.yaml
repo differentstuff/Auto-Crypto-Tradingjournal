@@ -118,11 +118,34 @@ exit_rules:
     breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
+  # ── Structure-aware exits (disabled for learning test) ──
+  structure_aware_exits: false
+  structure_break_exit: true
+  phase_range_exit: true
+  counter_breakout_exit: true
+  deep_pullback_stop_multiplier: 0.5
+  shallow_pullback_stop_multiplier: 1.0
+  # ── Progressive trailing stop (disabled for learning test) ──
+  progressive_trail: false
+  progressive_trail_schedule:
+    0: 1.0
+    1: 0.75
+    2: 0.5
+    3: 0.25
+  pullback_trail_tighten: 0.75
+  deep_pullback_trail_tighten: 0.5
   soft_exit:
     requires_indicators_reversed: 2
     requires_confirmation_tf: false
     urgency: "soft"
   soft_reversal_profit_threshold: 0.5
+  near_sl_urgency_pct: 0.5
+
+# ── Structure detection config ────────────────────────────────────────────────
+structure:
+  swing_lookback: 5
+  min_swing_points: 4
+  trend_violation_tolerance_pct: 0.5
 
 entry_conditions:
   - "at least 3 enabled indicators aligned in same direction"
