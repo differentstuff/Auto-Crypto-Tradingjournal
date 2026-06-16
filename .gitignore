@@ -20,6 +20,9 @@ build/
 # Data files
 data/
 
+# Backtest results
+core/results/
+
 # IDE
 .vscode/
 .idea/
