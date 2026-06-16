@@ -48,17 +48,13 @@ symbols:
   always_watch:
     - BTCUSDT
     - ETHUSDT
-    - SOLUSDT
-    - BNBUSDT
     - XRPUSDT
-    - ADAUSDT
-    - DOGEUSDT
   never_trade: []
   dynamic_filter:
     universe_source: "exchange"     # fetch all USDT-M perps from Bitget API
     limit: 0                        # 0 = no dynamic symbols (static mode)
-    min_volume_24h_usd: 0           # no volume filter
-    min_open_interest_usd: 0        # no OI filter
+    min_volume_24h_usd: 5000000           # no volume filter
+    min_open_interest_usd: 1000000        # no OI filter
     min_r_squared: 0.15             # minimum R² for momentum quality
     refresh_interval_hours: 4       # how often to re-fetch universe and re-rank
 

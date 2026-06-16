@@ -1,0 +1,250 @@
+# paper_v3_learning_test.yaml -- Simplified MACD-primary momentum strategy (4h, no learning)
+# ────────────────────────────────────────────────────────────────────
+# Evolved from momentum_rising_v2, simplified for fast iteration.
+#
+# V2 backtest result (1h, 7 symbols, equal-weight): -310.7%, 26.8% win rate.
+# Root causes: equal-weight indicators (RSI cancels MACD), 1h noise,
+# no structure-aware exits, no progressive trailing, no regime detection.
+#
+# V3 fixes:
+#   - 4h timeframe only (6 bars/day → less noise, more reliable signals)
+#   - MACD-primary (0.50 weight) — the actual momentum signal drives entries
+#   - RSI demoted to safety valve (0.10) — no more conflicting signals
+#   - Structure-aware exits ENABLED — cut losers when structure breaks
+#   - Progressive trailing ENABLED — lock in profits as they grow
+#   - Regime detection ENABLED — avoid ranging markets where momentum fails
+#   - MACD fading penalty 0.3 — only enter when momentum is BUILDING
+#   - 3 static symbols (BTC, ETH, XRP) — focused, fast to backtest
+#   - No dynamic filtering, no momentum_quality — simpler
+#   - Learning DISABLED — establish clean baseline first (v4 = v3 + learning)
+#
+# Target: >55% win rate, positive expectancy
+# Estimated trade volume (2y): ~100-180 trades
+#
+# Run:     python main.py --paper --strategy paper_v3_learning_test
+# Backtest: python main.py --time-travel --strategy paper_v3_learning_test
+
+description: |
+  Simplified MACD-primary momentum strategy on 4h timeframe.
+  No confirmation TF, no learning, 3 static symbols.
+  Designed for fast 2-year backtest iteration with >55% win rate target.
+
+  Entry logic:
+    - MACD crossover + growing histogram = PRIMARY signal (weight 0.50)
+    - EMA stack alignment = directional cofactor (weight 0.25)
+    - ADX > 20 = trend existence filter (weight 0.15)
+    - RSI as extreme safety valve (weight 0.10) — dead-band 45-55 = neutral
+
+  Exit logic:
+    - Structure-aware exits: exit on structure break, phase shift to range,
+      or counter-structure breakout
+    - Progressive trailing: tightens as profit grows (1x → 0.75x → 0.5x → 0.25x ATR)
+    - Hard stop below support at 1.5x ATR
+    - Soft exit when 2+ indicators reverse
+
+strategy:
+  name: paper_v3_learning_test
+  uid: ""                              # Fresh UID — no learning data (learning disabled)
+  timeframe: "4h"
+  confirmation_tf: null                # No confirmation TF — 4h is the primary AND confirmation
+  max_positions: 3
+  cycle_interval_minutes: 30           # 4h candles → check every 30 min is sufficient
+
+symbols:
+  mode: "static"                       # No dynamic filtering — simpler, faster
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - XRPUSDT
+  never_trade: []
+  dynamic_filter:
+    universe_source: "exchange"
+    limit: 0                           # 0 = no dynamic symbols (static mode)
+    min_volume_24h_usd: 5000000
+    min_open_interest_usd: 1000000
+    min_r_squared: 0.15
+    refresh_interval_hours: 4
+
+indicators:
+  # ── PRIMARY signal ──────────────────────────────────────────────
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.50
+    description: "PRIMARY: MACD crossover + growing histogram = momentum building. Dominant signal on 4h. Fading MACD penalized (0.3 multiplier)."
+
+  # ── Directional cofactor ────────────────────────────────────────
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.25
+    description: "COFACTOR: EMA alignment confirms directional bias. Partial alignment still contributes — trend may be forming."
+
+  # ── Trend existence filter ──────────────────────────────────────
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.15
+    description: "COFACTOR: ADX > 20 = trend exists (safe to enter). ADX < 15 = no trend (avoid). Scales contribution by strength."
+
+  # ── Extreme safety valve ────────────────────────────────────────
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.10
+    description: "SAFETY: RSI above 55 contributes bullish, below 45 bearish. Dead-band 45-55 = neutral (no contribution). Prevents entries at extremes — RSI > 70 adds risk to longs."
+
+  # ── Non-scoring indicators (weight 0) ───────────────────────────
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR determines stop loss width and entry zone size. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "Support and resistance levels define entry zones. Require at least 3 touches for validity."
+
+scoring:
+  entry_threshold: 5.5                # Same as momentum_rising_v2 — catches early momentum
+  confluence_min_signals: 2            # MACD + one cofactor is sufficient
+  rr_minimum: 2.0                      # Require 2:1 reward:risk minimum
+  min_candidate_pct: 0.20
+  rsi_signal_high: 55
+  rsi_signal_low: 45
+  momentum_cap: 1.5
+  momentum_dampening: 0.5
+  modifier_weights:
+    volume: 0.15
+    cvd: 0.1
+    order_flow: 0.1
+  label_thresholds:
+    strong: 0.60
+    weak: 0.33
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+  # ── Formula overrides ────────────────────────────────────────────
+  # Fading MACD penalized: only enter when momentum is BUILDING,
+  # not when it's already waning. Growing=1.0, Fading=0.3.
+  formula:
+    macd_aligned_fading: 0.3
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 1.5
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.5
+    trail_atr_multiplier: 1.0
+    breakeven_at_activation: true
+    distance_pct: 1.0
+    move_to_breakeven_at_pct: 1.5
+  # ── Structure-aware exits ─────────────────────────────────────────
+  # Exit immediately when market structure breaks, phase shifts to range,
+  # or a counter-structure breakout occurs. Critical for momentum strategies.
+  structure_aware_exits: true
+  structure_break_exit: true           # exit on structure break
+  phase_range_exit: true               # exit when phase shifts to range
+  counter_breakout_exit: true          # exit on counter-structure breakout
+  deep_pullback_stop_multiplier: 0.5   # tighten stop to 0.5x ATR on deep pullback
+  shallow_pullback_stop_multiplier: 1.0 # keep stop at 1.0x ATR on shallow pullback
+  # ── Progressive trailing stop ─────────────────────────────────────
+  # Trail tightens as profit grows, locking in gains without capping upside.
+  progressive_trail: true
+  progressive_trail_schedule:           # profit_atr_level → trail_distance (x ATR)
+    0: 1.0                              # at entry: 1x ATR
+    1: 0.75                             # at +1x ATR profit: tighten to 0.75x
+    2: 0.5                              # at +2x ATR profit: tighten to 0.5x
+    3: 0.25                             # at +3x ATR profit: tighten to 0.25x
+  pullback_trail_tighten: 0.75          # multiply trail by 0.75 when phase = pullback
+  deep_pullback_trail_tighten: 0.5      # multiply trail by 0.5 when pullback is deep
+  soft_exit:
+    requires_indicators_reversed: 2
+    requires_confirmation_tf: false      # No confirmation TF — only primary TF signals
+    urgency: "soft"
+  soft_reversal_profit_threshold: 0.5
+  near_sl_urgency_pct: 0.5
+
+# ── Structure detection config ────────────────────────────────────────────────
+structure:
+  swing_lookback: 5
+  min_swing_points: 4
+  trend_violation_tolerance_pct: 0.5
+
+# ── Learning: DISABLED ────────────────────────────────────────────────────────
+# v3 establishes a clean baseline. v4 = v3 + learning enabled.
+# High thresholds effectively disable all learning adjustments.
+learning:
+  min_trades_before_adjusting: 999999   # Never adjust weights automatically
+  min_trades_per_signal: 999999          # Never generate verdicts
+  significance_level: 0.05
+  rulebook_max_rules: 0                  # No rulebook entries
+  retrain_every_n_trades: 999999         # Never retrain
+  track_idle_cycles: false
+  trajectory_lookback_hours: 48
+  trajectory_min_hours: 8
+  trajectory_thresholds:
+    stable_consensus: 10
+    gradual_alignment: 8
+    earlier_min: 3
+    recent_min: 2
+    earlier_low: 2
+    min_alignment: 4
+  contrarian_win_rate: 30.0
+  highlight_threshold: 75.0
+  monitor_low_threshold: 55.0
+  suppress_range: [45.0, 55.0]
+  contrarian_threshold: 30.0
+
+portfolio:
+  max_positions: 3
+  risk_per_trade_pct: 1.0
+  leverage: 5
+  max_total_risk_pct: 3.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: true               # BTC+ETH correlated — limit same-direction exposure
+  max_same_direction: 3
+  atr_cap_equity_pct: 2.0
+
+risk:
+  kelly_min: 0.05
+  kelly_max: 0.25
+  kelly_win_rate_base: 0.35
+  kelly_win_rate_range: 0.40
+  kelly_avg_win_r: 2.0
+  max_size_pct_of_equity: 25.0
+  min_size_pct_of_equity: 5.0
+
+noise:
+  conflict_max_ratio: 0.5
+  volume_low_ratio: 0.7
+  volume_very_low_ratio: 0.5
+  adx_no_trend: 15
+  adx_overextended: 40
+  noise_severity_min_reasons: 2
+
+telegram:
+  idle_notify_every: 10
+
+modules:
+  macro_context: false
+  regime_detection: true                # ENABLED — avoid ranging markets
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false
+
+llm:
+  enabled: false
+  relax_factor: 0.8
