@@ -179,7 +179,7 @@ class CollectMacroContext(Enzyme):
             )
             if isinstance(eco_data, list):
                 from datetime import datetime, timezone, timedelta
-                today = datetime.now(timezone.utc).date()
+                today = substrate.now_as_datetime().date()
                 tomorrow = today + timedelta(days=1)
                 events = []
                 for e in eco_data:
