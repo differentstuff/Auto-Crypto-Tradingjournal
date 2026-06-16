@@ -132,7 +132,7 @@ class DetectRegime(Enzyme):
         if refit_interval_days <= 0:
             return False  # Never refit
 
-        elapsed_days = (time.time() - self._last_fit_at) / 86400.0
+        elapsed_days = (substrate.now_timestamp() - self._last_fit_at) / 86400.0
         return elapsed_days >= refit_interval_days
 
     def _fit_model(self, substrate: Substrate) -> None:
@@ -180,7 +180,7 @@ class DetectRegime(Enzyme):
                 self._model
             )
             self._fitted = True
-            self._last_fit_at = time.time()
+            self._last_fit_at = substrate.now_timestamp()
             self._last_returns = returns
 
             self._log.info(
