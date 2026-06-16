@@ -166,7 +166,7 @@ class CollectOHLCV(Enzyme):
         if confirmation_tf and confirmation_tf != timeframe:
             timeframes.append(confirmation_tf)
 
-        now = datetime.now(timezone.utc)
+        now = substrate.now_as_datetime()
         for symbol in symbols:
             for tf in timeframes:
                 key = f"{symbol}_{tf}"
@@ -220,7 +220,7 @@ class CollectOHLCV(Enzyme):
             self.exchange = Exchange(config_loader)
 
         # P7: Check which symbols/timeframes need refresh
-        now = datetime.now(timezone.utc)
+        now = substrate.now_as_datetime()
         existing_indicators = dict(substrate.market.get("indicators", {}))
         last_candle_close_ts = dict(substrate.market.get("last_candle_close_ts", {}))
 
@@ -345,7 +345,7 @@ class CollectOHLCV(Enzyme):
             history[symbol].append(snapshot)
 
             # P2: Trim history by time span, not count
-            self._trim_history_by_time(history, symbol, lookback_hours)
+            self._trim_history_by_time(history, symbol, lookback_hours, now=now)
 
         substrate.market["indicator_history"] = history
 
@@ -362,7 +362,8 @@ class CollectOHLCV(Enzyme):
 
     @staticmethod
     def _trim_history_by_time(
-        history: dict, symbol: str, lookback_hours: float
+        history: dict, symbol: str, lookback_hours: float,
+        now: datetime | None = None,
     ) -> None:
         """
         Trim indicator history to the configured time span.
@@ -370,6 +371,9 @@ class CollectOHLCV(Enzyme):
         P2: History is trimmed by time (trajectory_lookback_hours), not by count.
         This ensures that trajectory analysis covers a consistent time window
         regardless of cycle frequency.
+
+        Args:
+            now: Current datetime. If None, uses real UTC time (backward compat).
         """
         if symbol not in history or not history[symbol]:
             return
@@ -379,7 +383,8 @@ class CollectOHLCV(Enzyme):
             return
 
         # Parse the oldest timestamp and trim from the front
-        now = datetime.now(timezone.utc)
+        if now is None:
+            now = datetime.now(timezone.utc)
         cutoff = now.timestamp() - (lookback_hours * 3600)
 
         # Find the first snapshot within the lookback window
