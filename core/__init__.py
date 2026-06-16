@@ -1,7 +1,8 @@
 """
 core/__init__.py -- Reaction Network core package.
 
-Provides: Substrate, Enzyme, Daemon, Scheduler, ConfigLoader, Database
+Provides: Substrate, Enzyme, Daemon, Scheduler, ConfigLoader, Database,
+          VirtualClock, ReplayExchange, OutcomeRecorder
 """
 
 from core.substrate import Substrate, ISCCheck
@@ -24,6 +25,9 @@ from core.position_sizing import (
     compute_net_pnl,
 )
 from core.daemon import Daemon
+from core.virtual_clock import VirtualClock
+from core.replay_exchange import ReplayExchange
+from core.outcome_recorder import OutcomeRecorder
 
 __all__ = [
     "Substrate",
@@ -47,4 +51,7 @@ __all__ = [
     "compute_size",
     "compute_pnl",
     "compute_net_pnl",
+    "VirtualClock",
+    "ReplayExchange",
+    "OutcomeRecorder",
 ]
