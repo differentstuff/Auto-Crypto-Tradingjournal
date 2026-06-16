@@ -115,7 +115,7 @@ class ExecuteTrade(Enzyme):
                 self._log.warning("No Exchange instance — cannot place live order")
 
         # Add position to portfolio
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = substrate.now_iso()
         new_position = {
             "symbol": symbol,
             "direction": direction,
