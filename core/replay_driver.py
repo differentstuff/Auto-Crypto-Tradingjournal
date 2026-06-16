@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import signal
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -37,6 +38,16 @@ _log = logging.getLogger(__name__)
 # Project root for imports
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
+
+# Global shutdown flag — set by signal handler, checked in cycle loop
+_shutdown_requested = False
+
+
+def _handle_shutdown(signum: int, frame) -> None:
+    """Handle SIGTERM/SIGINT for graceful shutdown."""
+    global _shutdown_requested
+    _log.info("Shutdown signal received (signum=%d) — finishing current cycle", signum)
+    _shutdown_requested = True
 
 
 def build_cycle_timestamps(
@@ -224,6 +235,14 @@ def run_replay(
 
     # 9. Run cycles
     for i, t_cursor in enumerate(cycle_timestamps):
+        # Check for shutdown signal (SIGTERM/SIGINT from systemd)
+        if _shutdown_requested:
+            _log.info(
+                "Shutdown requested after %d/%d cycles — writing partial results",
+                i, len(cycle_timestamps),
+            )
+            break
+
         # Advance virtual clock
         clock.advance(t_cursor)
 
@@ -312,6 +331,10 @@ def main() -> None:
     _log.info("=" * 60)
     _log.info("Replay Driver: %s → %s (strategy: %s)", args.start, args.end, args.strategy)
     _log.info("=" * 60)
+
+    # Register shutdown handlers for clean systemd stop
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
 
     results_path = run_replay(
         strategy_name=args.strategy,
