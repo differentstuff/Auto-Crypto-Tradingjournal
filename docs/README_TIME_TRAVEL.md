@@ -8,7 +8,84 @@ Replay the daemon's scoring logic on historical OHLCV data. Simulate entries at 
 
 ---
 
-## Quick Start
+## Replay Driver (v2)
+
+The **Replay Driver** runs the *exact same enzyme pipeline* as the live daemon on historical data. Unlike the old `scripts/time_travel/` backtester (which reimplements scoring logic), the replay driver replaces only the two external dependencies — **time** and **data** — with controlled substitutes, then runs `daemon.run_cycle()` unchanged.
+
+### Architecture
+
+```
+LIVE:     main.py → Daemon → [CollectOHLCV(now, live_bars) → ... → ExecuteExit]
+REPLAY:   core/replay_driver.py → Daemon → [CollectOHLCV(t_virtual, historical_bars) → ... → ExecuteExit]
+```
+
+### Key Components
+
+| Component | File | Purpose |
+|---|---|---|
+| VirtualClock | `core/virtual_clock.py` | Time virtualization — all time queries flow through substrate.now_as_datetime() |
+| ReplayExchange | `core/replay_exchange.py` | Wraps Exchange, injects `since=` for historical bars, caches tickers |
+| OutcomeRecorder | `core/outcome_recorder.py` | Captures trade decisions per cycle, writes results to JSON |
+| Replay Driver | `core/replay_driver.py` | Main driver — initializes daemon, advances clock, runs cycles |
+
+### Quick Start
+
+```bash
+# Run a 3-month backtest with the default strategy
+python -m core.replay_driver --start 2025-01-01 --end 2025-03-01 --strategy momentum_rising
+
+# Custom config directory
+python -m core.replay_driver --start 2025-06-01 --end 2025-12-01 --strategy momentum_rising --config-dir ./config
+
+# Verbose logging
+python -m core.replay_driver --start 2025-01-01 --end 2025-03-01 --log-level DEBUG
+```
+
+### Enzymes in Replay Mode
+
+8 enzymes are disabled in replay mode (external data, DB writes, notifications):
+
+| Disabled | Reason |
+|---|---|
+| DynamicFilter | Universe is current, not historical — cached at replay start |
+| CollectExternalSignals | External APIs return current data |
+| CollectMacroContext | VIX/DXY/Fear&Greed are current |
+| SendTelegramLog | No notifications during backtest |
+| SyncPositions | Paper mode manages positions internally |
+| RecordTradeOutcome | OutcomeRecorder handles this |
+| UpdateLearning | No learning updates during backtest |
+| UpdateRulebook | No rulebook generation during backtest |
+
+All other enzymes run normally, including CollectOHLCV, DetectRegime, MarketGeometry, ScoreConfluence, and all trade execution enzymes.
+
+### Results Format
+
+Results are written to `core/results/` as JSON files:
+
+```
+backtest_2025-01-01_2025-03-01_momentum_rising_2025-06-15T120000.json
+```
+
+Each file contains:
+- `summary`: total trades, win rate, PnL
+- `trades`: list of entry/exit records with prices, sizes, scores
+- `equity_curve`: equity and position count per cycle
+
+### Design Principles
+
+1. **Parity by Construction.** There is only one pipeline. The replay driver runs the same `daemon.run_cycle()`. No shared functions, no extraction, no duplication.
+2. **Virtual Clock via Substrate.** All time queries flow through `substrate.now_as_datetime()`. When replay mode is active, these return virtual time. When inactive, they return real `datetime.now()`.
+3. **Replay is an ADDON.** The replay driver does not replace the live daemon. Both work independently.
+4. **Small files.** Each concern gets its own file.
+5. **Core, not scripts.** The replay driver, replay exchange, and outcome recorder live in `core/`.
+
+---
+
+## Legacy Time Travel (scripts/time_travel/)
+
+> **Note:** The legacy `scripts/time_travel/` backtester is deprecated in favor of the Replay Driver. It reimplements scoring logic separately from the live daemon, which can diverge. The Replay Driver avoids this by running the exact same enzyme pipeline.
+
+### Legacy Quick Start
 
 ```bash
 # Activate venv from project root
