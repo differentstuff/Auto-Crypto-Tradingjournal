@@ -158,6 +158,7 @@ class Exchange:
         symbol: str,
         timeframe: str = "4h",
         limit: int = 200,
+        since: Optional[int] = None,
     ) -> Optional[pd.DataFrame]:
         """
         Fetch OHLCV candle data and return as pandas DataFrame.
@@ -169,6 +170,7 @@ class Exchange:
             symbol: Journal format symbol (e.g. "BTCUSDT")
             timeframe: Candle timeframe (e.g. "4h", "1h")
             limit: Number of candles to fetch
+            since: Timestamp in ms for historical queries (default: None = most recent)
 
         Returns:
             DataFrame with columns: ts, open, high, low, close, volume
@@ -179,7 +181,7 @@ class Exchange:
         timeframe = timeframe.lower()  # Guarantee lowercase letters for API calls
 
         try:
-            raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
+            raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, since=since, limit=limit)
             if not raw:
                 _log.warning("No OHLCV data returned for %s %s", symbol, timeframe)
                 return None
@@ -196,13 +198,14 @@ class Exchange:
             _log.error("fetch_ohlcv failed for %s %s: %s", symbol, timeframe, e)
             # Try fallback exchange
             timeframe = timeframe.lower()  # Guarantee lowercase letters for API calls
-            return self._fetch_ohlcv_fallback(symbol, timeframe, limit)
+            return self._fetch_ohlcv_fallback(symbol, timeframe, limit, since=since)
 
     def _fetch_ohlcv_fallback(
         self,
         symbol: str,
         timeframe: str = "4h",
         limit: int = 200,
+        since: Optional[int] = None,
     ) -> Optional[pd.DataFrame]:
         """Try fetching OHLCV from the fallback exchange."""
         import ccxt
@@ -218,7 +221,7 @@ class Exchange:
             exchange = exchange_class()
             exchange.enableRateLimit = True
             exchange.options['defaultType'] = 'future'
-            raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
+            raw = exchange.fetch_ohlcv(ccxt_symbol, timeframe, since=since, limit=limit)
             if not raw:
                 return None
 
