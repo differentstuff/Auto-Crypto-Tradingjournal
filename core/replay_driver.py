@@ -89,6 +89,7 @@ def _register_enzymes(daemon, replay_exchange) -> None:
       - UpdateLearning (no learning updates during backtest)
       - UpdateRulebook (no rulebook generation during backtest)
     """
+    import enzymes  # noqa: F401 — triggers @register_enzyme decorators
     from core.enzyme import create_enzyme
 
     def _register(name: str, **kwargs) -> None:
