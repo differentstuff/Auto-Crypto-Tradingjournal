@@ -65,9 +65,11 @@ class Daemon:
         strategy_name: str = "momentum_rising",
         paper_mode: bool = False,
         config_dir: Optional[str] = None,
+        replay_mode: bool = False,
     ):
         self.strategy_name = strategy_name
         self.paper_mode = paper_mode
+        self.replay_mode = replay_mode  # NEW: skip DB/persistence/learning in replay
         self._config_dir = config_dir  # None = use default project config/
         self.config: Optional[ConfigLoader] = None
         self.substrate: Optional[Substrate] = None
@@ -257,14 +259,15 @@ class Daemon:
         self.scheduler.start_cycle()
         cycle_start = time.time()
 
-        # 1. Hot-reload config
-        config_changed = self.config.reload()
-        if config_changed:
-            interval = self.config.get("strategy.cycle_interval_minutes")
-            self.scheduler.update_interval(interval)
-            # Refresh secrets-free config slice in substrate
-            self.substrate._config = _strategy_config_slice(self.config.config)
-            _log.info("Config reloaded, interval updated to %dm", interval)
+        # 1. Hot-reload config — SKIP in replay mode
+        if not self.replay_mode:
+            config_changed = self.config.reload()
+            if config_changed:
+                interval = self.config.get("strategy.cycle_interval_minutes")
+                self.scheduler.update_interval(interval)
+                # Refresh secrets-free config slice in substrate
+                self.substrate._config = _strategy_config_slice(self.config.config)
+                _log.info("Config reloaded, interval updated to %dm", interval)
 
         # 2. Reset per-cycle fields
         self.substrate.reset_cycle()
@@ -407,22 +410,24 @@ class Daemon:
             self._fire_wait("skeleton mode - no enzymes registered")
             isc_results = self.substrate.verify_iscs()
 
-        # Persist substrate (using max_rows from config)
-        max_rows = self.config.get("daemon.substrate_state_max_rows")
-        save_substrate(self.substrate, max_rows=max_rows)
+        # Persist substrate — SKIP in replay mode (no DB writes during backtest)
+        if not self.replay_mode:
+            max_rows = self.config.get("daemon.substrate_state_max_rows")
+            save_substrate(self.substrate, max_rows=max_rows)
 
         # Log cycle
         cycle_end = time.time()
         duration_ms = int((cycle_end - cycle_start) * 1000)
 
-        save_cycle_log(
-            strategy_name=self.strategy_name,
-            cycle_count=self.scheduler.cycle_count,
-            action=self.substrate.decisions.get("action", ""),
-            enzymes_fired=enzymes_fired,
-            isc_results=isc_results,
-            duration_ms=duration_ms,
-        )
+        if not self.replay_mode:
+            save_cycle_log(
+                strategy_name=self.strategy_name,
+                cycle_count=self.scheduler.cycle_count,
+                action=self.substrate.decisions.get("action", ""),
+                enzymes_fired=enzymes_fired,
+                isc_results=isc_results,
+                duration_ms=duration_ms,
+            )
 
         self.scheduler.end_cycle()
 
@@ -435,7 +440,7 @@ class Daemon:
         )
 
         # ── Post-cycle: Challenger branch (non-blocking) ──────────────────
-        if self.config.get("challenger.enabled", False):
+        if not self.replay_mode and self.config.get("challenger.enabled", False):
             try:
                 self._run_challenger_branch()
             except Exception as e:
@@ -445,7 +450,7 @@ class Daemon:
                 )
 
         # ── Post-cycle: Karpathy experiment loop (non-blocking) ───────────
-        if self.config.get("karpathy.enabled", False):
+        if not self.replay_mode and self.config.get("karpathy.enabled", False):
             try:
                 from learning.karpathy_method import KarpathyMethod
                 KarpathyMethod.run_experiment_cycle(self.substrate)
@@ -456,7 +461,7 @@ class Daemon:
                 )
 
         # ── Post-cycle: Hyperopt prefilter (non-blocking) ─────────────────
-        if self.config.get("hyperopt.enabled", False):
+        if not self.replay_mode and self.config.get("hyperopt.enabled", False):
             try:
                 from learning.hyperopt_prefilter import HyperoptPrefilter
                 HyperoptPrefilter.run_search(self.substrate)
