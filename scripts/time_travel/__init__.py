@@ -19,7 +19,10 @@ Usage:
 
 # Re-export public API for backward compatibility.
 # Existing tests import from `scripts.time_travel` directly.
-from scripts.time_travel.__main__ import (  # noqa: F401
-    time_travel,
-    _write_trade,
-)
+# Lazy import to avoid RuntimeWarning when running `python -m scripts.time_travel`
+# (Python finds __main__ in sys.modules before executing it as __main__).
+def __getattr__(name):
+    if name in ("time_travel", "_write_trade"):
+        from scripts.time_travel.__main__ import time_travel, _write_trade
+        return time_travel if name == "time_travel" else _write_trade
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
