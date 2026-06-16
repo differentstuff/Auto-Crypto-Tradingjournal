@@ -270,8 +270,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--end",
-        required=True,
-        help="End date (YYYY-MM-DD)",
+        default=None,
+        help="End date (YYYY-MM-DD, default: today)",
     )
     parser.add_argument(
         "--strategy",
@@ -291,6 +291,10 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Default --end to today
+    if args.end is None:
+        args.end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Setup logging
     logging.basicConfig(
