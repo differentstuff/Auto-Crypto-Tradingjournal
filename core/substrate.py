@@ -32,6 +32,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from core.virtual_clock import VirtualClock
+
 _log = logging.getLogger(__name__)
 
 # Sentinel for "key not found" -- distinguishes missing from None/False/0/""
@@ -138,6 +140,10 @@ class Substrate:
         (no exchange credentials, no LLM keys). The daemon is responsible
         for stripping secrets before passing config to the substrate.
         """
+        # Virtual clock for replay mode — delegates to VirtualClock instance.
+        # In live mode (clock inactive), returns real datetime.now().
+        self._clock = VirtualClock()
+
         now = self._now_iso()
         cfg = config or {}
 
@@ -293,7 +299,33 @@ class Substrate:
 
     @staticmethod
     def _now_iso() -> str:
+        """Static method: return real UTC time as ISO string.
+
+        Kept for backward compatibility. New code should use the
+        instance method now_iso() which respects the virtual clock.
+        """
         return datetime.now(timezone.utc).isoformat()
+
+    def now_iso(self) -> str:
+        """Instance method: return current time as ISO string.
+
+        Uses virtual clock if active (replay mode), otherwise real time.
+        """
+        return self._clock.now_iso()
+
+    def now_as_datetime(self) -> datetime:
+        """Return current time as datetime.
+
+        Uses virtual clock if active (replay mode), otherwise real time.
+        """
+        return self._clock.now()
+
+    def now_timestamp(self) -> float:
+        """Return current time as Unix timestamp.
+
+        Uses virtual clock if active (replay mode), otherwise real time.
+        """
+        return self._clock.now_timestamp()
 
     # --- Config access --------------------------------------------------------
 
@@ -696,6 +728,7 @@ class Substrate:
         """
         new = Substrate.__new__(Substrate)
         new._config = self._config  # config is never mutated by enzymes
+        new._clock = self._clock  # clock is shared — same virtual time for all copies
         new.strategy = self.strategy.copy()
         new.portfolio = self.portfolio.copy()
         new.market = self.market.copy()
