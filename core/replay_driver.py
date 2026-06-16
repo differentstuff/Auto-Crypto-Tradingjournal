@@ -297,10 +297,12 @@ def main() -> None:
     if args.end is None:
         args.end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Setup logging
+    # Setup logging — stdout (not stderr) so systemd captures to stdout.log
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     logging.basicConfig(
         level=getattr(logging, args.log_level),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        format=log_format,
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
 
     # Load .env
