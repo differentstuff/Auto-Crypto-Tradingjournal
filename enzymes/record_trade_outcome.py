@@ -30,7 +30,11 @@ _log = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
-    """Return current UTC time in ISO format."""
+    """Return current UTC time in ISO format.
+
+    Kept for backward compatibility. New code should use substrate.now_iso()
+    which respects the virtual clock in replay mode.
+    """
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -371,7 +375,8 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
                         signal_states: dict = None,
                         trajectory_data: dict = None,
                         indicator_data: dict = None,
-                        indicator_configs: list | None = None) -> None:
+                        indicator_configs: list | None = None,
+                        now_iso: str | None = None) -> None:
     """
     Record a new trade entry in the trade_learning table.
 
@@ -453,7 +458,7 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
                     strategy_uid,
                     trade_approved.get("symbol", ""),
                     trade_approved.get("direction", ""),
-                    _now_iso(),
+                    now_iso or _now_iso(),
                     trade_approved.get("score", 0),
                     signals_json,
                     trajectory_pattern,
@@ -471,7 +476,8 @@ def _record_trade_entry(trade_approved: dict, strategy_name: str,
 
 def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
                        pnl: dict, strategy_name: str,
-                       strategy_uid: str = "legacy") -> None:
+                       strategy_uid: str = "legacy",
+                       now_iso: str | None = None) -> None:
     """
     Update trade_learning table with exit data.
 
@@ -502,7 +508,7 @@ def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
                        LIMIT 1
                    )""",
                 (
-                    datetime.now(timezone.utc).isoformat(),
+                    now_iso or datetime.now(timezone.utc).isoformat(),
                     "win" if pnl["pnl_usdt"] >= 0 else "loss",
                     pnl["pnl_pct"],
                     pnl["pnl_usdt"],
@@ -573,6 +579,7 @@ class RecordTradeOutcome(Enzyme):
         action = substrate.decisions.get("action", "wait")
         strategy_name = substrate.strategy.get("name", "")
         strategy_uid = substrate.strategy.get("uid", "legacy")
+        now_iso = substrate.now_iso()
 
         if action == "trade_open":
             trade_approved = substrate.decisions.get("trade_approved")
@@ -591,6 +598,7 @@ class RecordTradeOutcome(Enzyme):
                     trajectory_data=trajectory_data,
                     indicator_data=indicator_data,
                     indicator_configs=indicator_configs,
+                    now_iso=now_iso,
                 )
                 self._log.info(
                     "Recorded trade entry: %s %s",
@@ -623,7 +631,7 @@ class RecordTradeOutcome(Enzyme):
                     }
 
                 _record_trade_exit(symbol, exit_approved, exit_reason, pnl,
-                                   strategy_name, strategy_uid)
+                                   strategy_name, strategy_uid, now_iso=now_iso)
                 self._log.info(
                     "Recorded trade exit: %s reason=%s pnl=%.2f%%",
                     symbol, exit_reason, pnl["pnl_pct"],
