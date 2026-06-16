@@ -39,12 +39,16 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-def _hours_since(iso_ts: str) -> float:
+def _hours_since(iso_ts: str, now: datetime | None = None) -> float:
     """
     Calculate hours elapsed since an ISO timestamp.
 
     Returns float hours. Returns float('inf') if timestamp is empty
     or unparseable (treats "never run" as infinitely long ago).
+
+    Args:
+        iso_ts: ISO timestamp string.
+        now: Current datetime. If None, uses real UTC time (backward compat).
     """
     if not iso_ts:
         return float("inf")
@@ -52,7 +56,9 @@ def _hours_since(iso_ts: str) -> float:
         dt = datetime.fromisoformat(iso_ts)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        elapsed = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+        if now is None:
+            now = datetime.now(timezone.utc)
+        elapsed = (now - dt).total_seconds() / 3600
         return max(0.0, elapsed)
     except (ValueError, TypeError):
         return float("inf")
@@ -112,7 +118,7 @@ class DynamicFilter(Enzyme):
         # Check refresh interval
         refresh_hours = substrate.cfg("symbols.dynamic_filter.refresh_interval_hours", 4)
         last_run = substrate.market.get("last_dynamic_filter_at", "")
-        hours_since_run = _hours_since(last_run)
+        hours_since_run = _hours_since(last_run, now=substrate.now_as_datetime())
 
         return hours_since_run >= refresh_hours
 
