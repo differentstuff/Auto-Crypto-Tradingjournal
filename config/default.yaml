@@ -57,6 +57,7 @@ risk:
   kelly_avg_win_r: 2.0
   max_size_pct_of_equity: 25.0
   min_size_pct_of_equity: 5.0
+  max_sl_pct: 3.0  # Hard cap: reject trade if SL distance exceeds this % (prevents unrealistic wide-SL trades)
 
 # Exchange fees (Bitget VIP0 defaults)
 # Used by paper trading and backtest to simulate realistic P&L.
@@ -67,14 +68,14 @@ fees:
 
 # Position sizing defaults
 portfolio:
-  risk_per_trade_pct: 1.0
+  risk_per_trade_pct: 2.0
   leverage: 5
   max_positions: 3
   max_total_risk_pct: 3.0
   fallback_equity_usdt: 1000.0
   correlation_check: true
   max_same_direction: 3
-  atr_cap_equity_pct: 2.0  # ATR-based position cap: max % of equity allocated per trade based on volatility
+  atr_cap_equity_pct: 20.0  # ATR backstop: only fires on extreme volatility spikes (normal sizing via risk_per_trade_pct)
 
 # Exit defaults
 exit_rules:
@@ -89,6 +90,7 @@ exit_rules:
     breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
+  desired_tp_pct: 3.0  # Fixed TP target as % from entry (decouples TP from SL width)
   tp2_rr_ratio: 2.5  # TP2 risk-reward multiplier
   soft_exit:
     requires_indicators_reversed: 2
