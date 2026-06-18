@@ -223,6 +223,48 @@ class ApproveTrade(Enzyme):
                 )
                 continue
 
+            # Same-bar duplicate guard: don't open a second position for the
+            # same symbol on the same bar. Prevents position tripling where
+            # consecutive cycles (same OHLCV bar) each open an identical
+            # position until max_positions is reached.
+            #
+            # Two conditions block (either one is sufficient):
+            #   1. Entry price match: identical signal (same OHLCV candle
+            #      produces the same entry_price across multiple cycles)
+            #   2. Time window: opened within the last bar (<= cycle_minutes)
+            #      catches same-bar re-entries even if entry price drifts
+            cycle_minutes = substrate.cfg("strategy.cycle_interval_minutes", 30)
+            now_iso = substrate.now_iso()
+            already_traded_this_bar = False
+            try:
+                now_dt = datetime.fromisoformat(now_iso)
+            except (ValueError, TypeError):
+                now_dt = datetime.now(timezone.utc)
+            for existing in open_positions:
+                if existing.get("symbol") != symbol:
+                    continue
+                # Match 1: same entry price (identical signal, same OHLCV candle)
+                if existing.get("entry_price") == entry_price:
+                    already_traded_this_bar = True
+                    break
+                # Match 2: opened within the last bar (same-bar time window)
+                opened_str = existing.get("opened_at", "")
+                if not opened_str:
+                    continue
+                try:
+                    opened_dt = datetime.fromisoformat(opened_str)
+                    if abs((now_dt - opened_dt).total_seconds()) <= cycle_minutes * 60:
+                        already_traded_this_bar = True
+                        break
+                except (ValueError, TypeError):
+                    continue
+            if already_traded_this_bar:
+                self._log.info(
+                    "Blocked %s: position already opened this bar",
+                    symbol,
+                )
+                continue
+
             # Approved
             approved = {
                 "symbol": symbol,
