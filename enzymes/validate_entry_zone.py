@@ -31,6 +31,8 @@ def _compute_sl_tp(
     rr_minimum: float,
     atr_sl_multiplier: float,
     tp2_rr_ratio: float,
+    desired_tp_pct: float = 0.0,
+    max_sl_pct: float = 0.0,
 ) -> dict:
     """
     Compute stop-loss and take-profit levels.
@@ -39,8 +41,12 @@ def _compute_sl_tp(
     No hardcoded defaults. Config is the single source of truth.
 
     SL: max of (ATR-based) and (nearest S/R level), ensuring minimum distance.
-    TP1: conservative target at rr_minimum R:R.
-    TP2: full target at tp2_rr_ratio R:R.
+        If max_sl_pct > 0 and SL distance exceeds it, the trade is rejected
+        (returns zeroed-out dict) — this prevents entering trades with
+        unrealistically wide stops during high-volatility regimes.
+    TP1: fixed target at desired_tp_pct from entry (when > 0), otherwise
+         falls back to rr_minimum x risk (legacy behaviour).
+    TP2: full target at tp2_rr_ratio x risk (legacy) or desired_tp_pct x 1.5.
 
     Returns {sl_price, tp1, tp2, rr_ratio, sl_atr_multiple, sl_type}
     """
@@ -96,7 +102,20 @@ def _compute_sl_tp(
         sl_price = entry_price + atr_sl
         risk = atr_sl
 
-    # Take-profit levels based on R:R
+    # Hard SL% cap: reject trade if SL distance exceeds max_sl_pct.
+    # This prevents entering trades with unrealistically wide stops
+    # during high-volatility regimes (e.g., ATR spike makes SL 10%+ away).
+    if max_sl_pct > 0:
+        sl_pct_actual = abs(entry_price - sl_price) / entry_price * 100
+        if sl_pct_actual > max_sl_pct:
+            return {
+                "sl_price": 0.0, "tp1": 0.0, "tp2": 0.0,
+                "rr_ratio": 0.0,
+                "sl_atr_multiple": round(atr_sl / (entry_price * atr_pct / 100), 2) if atr_pct else 0,
+                "sl_type": "rejected_sl_too_wide",
+            }
+
+    # Take-profit levels
     if risk <= 0:
         return {
             "sl_price": round(sl_price, 8), "tp1": 0.0, "tp2": 0.0,
@@ -104,13 +123,34 @@ def _compute_sl_tp(
             "sl_type": sl_type,
         }
 
-    rr_ratio = rr_minimum
-    if direction == "Long":
-        tp1 = entry_price + risk * rr_minimum
-        tp2 = entry_price + risk * tp2_rr_ratio
+    # TP calculation: use fixed desired_tp_pct when configured (decouples
+    # TP from SL width). Falls back to rr_minimum x risk (legacy) when 0.
+    if desired_tp_pct > 0:
+        tp1_dist = entry_price * desired_tp_pct / 100
+        tp2_dist = entry_price * desired_tp_pct * 1.5 / 100
+        rr_ratio = desired_tp_pct / (risk / entry_price * 100) if risk > 0 else 0
     else:
-        tp1 = entry_price - risk * rr_minimum
-        tp2 = entry_price - risk * tp2_rr_ratio
+        tp1_dist = risk * rr_minimum
+        tp2_dist = risk * tp2_rr_ratio
+        rr_ratio = rr_minimum
+
+    # Hard R:R rejection: if the actual R:R falls below rr_minimum, reject
+    # the trade. A warning is useless in an automated system — enforce it.
+    # With desired_tp_pct=3.0 and rr_minimum=2.0, any SL > 1.5% is rejected.
+    if rr_ratio < rr_minimum:
+        return {
+            "sl_price": 0.0, "tp1": 0.0, "tp2": 0.0,
+            "rr_ratio": round(rr_ratio, 2),
+            "sl_atr_multiple": round(atr_sl / (entry_price * atr_pct / 100), 2) if atr_pct else 0,
+            "sl_type": "rejected_rr_too_low",
+        }
+
+    if direction == "Long":
+        tp1 = entry_price + tp1_dist
+        tp2 = entry_price + tp2_dist
+    else:
+        tp1 = entry_price - tp1_dist
+        tp2 = entry_price - tp2_dist
 
     return {
         "sl_price": round(sl_price, 8),
@@ -221,6 +261,8 @@ class ValidateEntryZone(Enzyme):
         rr_minimum = substrate.cfg("scoring.rr_minimum")
         atr_sl_multiplier = substrate.cfg("exit_rules.hard_stop.width_atr_multiplier")
         tp2_rr_ratio = substrate.cfg("exit_rules.tp2_rr_ratio")
+        desired_tp_pct = substrate.cfg("exit_rules.desired_tp_pct", 0.0)
+        max_sl_pct = substrate.cfg("risk.max_sl_pct", 0.0)
 
         entry_zones = {}
 
@@ -284,11 +326,25 @@ class ValidateEntryZone(Enzyme):
                 rr_minimum=rr_minimum,
                 atr_sl_multiplier=atr_sl_multiplier,
                 tp2_rr_ratio=tp2_rr_ratio,
+                desired_tp_pct=desired_tp_pct,
+                max_sl_pct=max_sl_pct,
             )
 
-            # Validate R:R
-            if sl_tp["rr_ratio"] < rr_minimum:
-                sl_tp["rr_warning"] = f"R:R {sl_tp['rr_ratio']} below minimum {rr_minimum}"
+            # Skip rejected entries (SL too wide)
+            if sl_tp["sl_price"] == 0.0 and sl_tp.get("sl_type") == "rejected_sl_too_wide":
+                self._log.info(
+                    "Rejected %s: SL too wide (ATR=%.2f, atr_pct=%.2f%%, max_sl_pct=%.2f%%)",
+                    symbol, atr_value, atr_pct, max_sl_pct,
+                )
+                continue
+
+            # Skip rejected entries (R:R too low)
+            if sl_tp["sl_price"] == 0.0 and sl_tp.get("sl_type") == "rejected_rr_too_low":
+                self._log.info(
+                    "Rejected %s: R:R too low (rr=%.2f < min=%.2f, desired_tp=%.1f%%)",
+                    symbol, sl_tp.get("rr_ratio", 0), rr_minimum, desired_tp_pct,
+                )
+                continue
 
             entry_zones[symbol] = {
                 "direction": direction,
@@ -331,10 +387,10 @@ class ValidateEntryZone(Enzyme):
             but below threshold are sent to LLM for review.
 
         Verdict parsing:
-          - VERDICT: proceed  → trade allowed despite sub-threshold score
-          - VERDICT: confirm  → numeric and LLM agree, trade solid
-          - VERDICT: concern  → flag for learning, trade still proceeds
-          - VERDICT: adjust  → SL/TP suggestion, trade still proceeds
+          - VERDICT: proceed  -> trade allowed despite sub-threshold score
+          - VERDICT: confirm  -> numeric and LLM agree, trade solid
+          - VERDICT: concern  -> flag for learning, trade still proceeds
+          - VERDICT: adjust  -> SL/TP suggestion, trade still proceeds
 
         If call_llm returns None or parsing fails, the entry zone keeps its
         numeric verdict only — LLM is additive, never required.
