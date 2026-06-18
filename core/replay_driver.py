@@ -184,6 +184,12 @@ def run_replay(
     )
     daemon.initialize()
 
+    # Re-register OUR signal handlers — daemon.initialize() overwrites them
+    # with its own, which sets daemon._shutdown_requested (not our module-level
+    # _shutdown_requested that the replay loop checks).
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     # 2. Initialize exchange
     exchange = Exchange(daemon.config)
     replay_exchange = ReplayExchange(exchange)
@@ -230,7 +236,9 @@ def run_replay(
         len(cycle_timestamps), start_date, end_date, cycle_interval,
     )
 
-    # 8. Initialize outcome recorder
+    # 8. Initialize outcome recorder with temp/backtest_<datetime>/ output
+    run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S")
+    output_dir = os.path.join(PROJECT_ROOT, "temp", f"backtest_{run_ts}")
     recorder = OutcomeRecorder(strategy_name, start_date, end_date)
 
     # 9. Run cycles
@@ -269,7 +277,7 @@ def run_replay(
             )
 
     # 10. Write results
-    results_path = recorder.write_results()
+    results_path = recorder.write_results(output_dir=output_dir)
 
     # 11. Cleanup
     clock.deactivate()
