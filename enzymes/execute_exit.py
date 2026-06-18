@@ -101,6 +101,14 @@ class ExecuteExit(Enzyme):
                 current_equity, substrate.portfolio["equity"], pnl_usdt,
             )
 
+        # Write PnL back to exit_approved so OutcomeRecorder and
+        # RecordTradeOutcome can capture it. Without this, the JSON
+        # backtest summary shows wins=0, losses=0, total_pnl=0.
+        exit_approved["pnl_pct"] = round(pnl_pct, 4)
+        exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
+        exit_approved["exit_price"] = mark_price
+        substrate.decisions["exit_approved"] = exit_approved
+
         if paper_mode:
             self._log.info(
                 "PAPER CLOSE: %s %s reason=%s pnl=%.2f%% (%.2f USDT)",
