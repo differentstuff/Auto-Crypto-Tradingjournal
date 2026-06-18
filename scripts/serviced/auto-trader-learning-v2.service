@@ -1,0 +1,28 @@
+[Unit]
+Description=Auto Trader — Paper v2 Learning Test (Fast Iteration, 48-72h)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jmh
+Group=jmh
+WorkingDirectory=/opt/Auto-Crypto-Tradingjournal
+ExecStart=/opt/Auto-Crypto-Tradingjournal/venv/bin/python main.py --paper --strategy paper_v2_learning_test
+ExecStopPost=/opt/Auto-Crypto-Tradingjournal/scripts/backup_db.sh
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/Auto-Crypto-Tradingjournal/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/Auto-Crypto-Tradingjournal /opt/Auto-Crypto-Tradingjournal/logs /opt/Auto-Crypto-Tradingjournal/data /opt/Auto-Crypto-Tradingjournal/backups
+
+# Logging
+StandardOutput=append:/opt/Auto-Crypto-Tradingjournal/logs/v2-learning-stdout.log
+StandardError=append:/opt/Auto-Crypto-Tradingjournal/logs/v2-learning-stderr.log
+
+[Install]
+WantedBy=multi-user.target
