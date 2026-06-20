@@ -161,7 +161,7 @@ def run_replay(
     2. Initialize exchange and wrap with ReplayExchange
     3. Register enzymes (excluding replay-incompatible ones)
     4. Set equity from portfolio.fallback_equity_usdt
-    5. Cache DynamicFilter universe at start
+    5. Resolve static symbols for replay (combined mode cannot work backward)
     6. Build cycle timestamps
     7. Run cycles: advance virtual clock, call run_cycle(), capture decisions
     8. Write results via OutcomeRecorder
@@ -203,27 +203,71 @@ def run_replay(
     daemon.substrate.portfolio["equity"] = fallback_equity
     _log.info("Initial equity set to %.2f USDT", fallback_equity)
 
-    # 5. Cache DynamicFilter universe at start
+    # 5. Resolve static symbols for replay (combined mode cannot work backward)
     symbols_mode = daemon.substrate.cfg("symbols.mode", "static")
+    always_watch = daemon.substrate.cfg("symbols.always_watch", [])
+    never_trade = daemon.substrate.cfg("symbols.never_trade", [])
+    static_symbols = [s for s in always_watch if s not in never_trade]
+
     if symbols_mode == "combined":
-        _log.info("Combined mode: caching exchange universe at replay start")
+        _log.warning(
+            "symbols.mode=combined is not supported in replay mode — "
+            "forcing static (always_watch only). Combined mode fetches the "
+            "CURRENT exchange universe, which cannot be replayed backward. "
+            "To use combined mode, run live or paper mode instead."
+        )
+
+    if not static_symbols:
+        _log.error(
+            "No static symbols defined for replay. "
+            "Set symbols.always_watch in your strategy YAML "
+            "(config/strategies/%s.yaml) with symbols that existed during "
+            "the replay period. Example:\n"
+            "  symbols:\n"
+            "    mode: static\n"
+            "    always_watch:\n"
+            "      - BTCUSDT\n"
+            "      - ETHUSDT\n"
+            "      - SOLUSDT",
+            strategy_name,
+        )
+        sys.exit(1)
+
+    # Validate that each symbol has historical data at the replay start date.
+    # This catches symbols that didn't exist during the replay period —
+    # we never mess with that uncertainty and force the user to choose wisely.
+    _log.info(
+        "Validating %d static symbols have historical data at %s...",
+        len(static_symbols), start_date,
+    )
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    since_ms = int(start_dt.timestamp() * 1000)
+    missing_symbols = []
+    for symbol in static_symbols:
         try:
-            universe = replay_exchange.fetch_usdt_perps()
-            daemon.substrate.market["_replay_universe"] = universe
-            # Extract symbols from universe
-            universe_symbols = [u["symbol"] for u in universe]
-            # Merge with always_watch
-            always_watch = daemon.substrate.cfg("symbols.always_watch", [])
-            never_trade = daemon.substrate.cfg("symbols.never_trade", [])
-            merged = list(dict.fromkeys(always_watch + universe_symbols))
-            final = [s for s in merged if s not in never_trade]
-            daemon.substrate.market["symbols_watched"] = final
-            _log.info(
-                "Universe cached: %d symbols (%d from exchange, %d always_watch)",
-                len(final), len(universe_symbols), len(always_watch),
+            df = replay_exchange.fetch_ohlcv(
+                symbol, timeframe="1h", limit=5, since=since_ms,
             )
+            if df is None or df.empty:
+                missing_symbols.append(symbol)
         except Exception as e:
-            _log.warning("Failed to cache universe: %s — using always_watch only", e)
+            _log.warning("Could not validate %s: %s", symbol, e)
+            missing_symbols.append(symbol)
+
+    if missing_symbols:
+        _log.error(
+            "The following symbols have no historical data at %s and cannot "
+            "be replayed: %s. Remove them from symbols.always_watch or choose "
+            "symbols that existed during the replay period.",
+            start_date, ", ".join(missing_symbols),
+        )
+        sys.exit(1)
+
+    daemon.substrate.market["symbols_watched"] = static_symbols
+    _log.info(
+        "Static mode: %d symbols validated: %s",
+        len(static_symbols), static_symbols,
+    )
 
     # 6. Register enzymes
     _register_enzymes(daemon, replay_exchange)
