@@ -70,7 +70,8 @@ def _make_config(overrides: dict | None = None) -> dict:
             "fallback_equity_usdt": 1000.0,     # used in paper mode
             "correlation_check": True,
             "max_same_direction": 3,            # directional concentration limit
-            "atr_cap_equity_pct": 2.0,          # ATR-based position cap
+            "volatility_cap_pct": 20.0,          # Volatility backstop (ATR%-based)
+            "max_notional_exposure_pct": 100.0,  # Hard ceiling on notional exposure
         },
         "scoring": {
             "entry_threshold": 6.5,
@@ -590,13 +591,13 @@ class TestApproveTrade:
             kelly_max = _make_config()["risk"]["kelly_max"]
             assert approved.get("kelly_fraction", 0) <= kelly_max
 
-    def test_size_capped_at_max_pct_of_equity(self):
-        """Position size never exceeds max_size_pct_of_equity (config-driven)."""
+    def test_size_capped_by_exposure_ceiling(self):
+        """Position size is capped by max_notional_exposure_pct (leverage-aware hard ceiling)."""
         enzyme = self._get_enzyme()
         sub = _make_substrate()
         sub.portfolio["equity"] = 10000.0
         sub.portfolio["open_positions"] = []
-        # Very tight SL → huge calculated size → must be capped
+        # Very tight SL → huge calculated size → must be capped by exposure ceiling
         sub.analysis["entry_zones"] = {
             "BTCUSDT": _make_entry_zone(
                 entry_price=50000.0,
@@ -608,8 +609,10 @@ class TestApproveTrade:
         result = enzyme.transform(sub)
         approved = result.decisions.get("trade_approved")
         if approved:
-            max_pct = _make_config()["risk"]["max_size_pct_of_equity"]
-            max_allowed = 10000.0 * max_pct / 100
+            # With leverage-aware max_notional and exposure ceiling:
+            # max_notional_exposure_pct=100% → ceiling = 10000 * 100/100 = 10000
+            exposure_pct = _make_config()["portfolio"]["max_notional_exposure_pct"]
+            max_allowed = 10000.0 * exposure_pct / 100
             assert approved["size_usdt"] <= max_allowed
 
     def test_approved_dict_has_required_fields(self):
