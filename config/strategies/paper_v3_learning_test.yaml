@@ -44,7 +44,7 @@ description: |
 
 strategy:
   name: paper_v3_learning_test
-  uid: ""                              # Fresh UID — no learning data (learning disabled)
+  uid: "271da09a-d2b8-485c-86a5-381eb09553a6"                              # Fresh UID — no learning data (learning disabled)
   timeframe: "4h"
   confirmation_tf: null                # No confirmation TF — 4h is the primary AND confirmation
   max_positions: 3
