@@ -3,8 +3,8 @@ tests/test_position_sizing.py -- Tests for core.position_sizing pure functions.
 
 Validates:
 1. kelly_fraction: maps score to Kelly, respects min/max caps
-2. compute_atr_cap: high ATR → small cap, low ATR → large cap
-3. compute_size: position sizing with Kelly, ATR cap, min/max floor
+2. compute_volatility_cap: high ATR% → small cap, low ATR% → large cap
+3. compute_size: position sizing with Kelly, volatility cap, min/max floor
 4. compute_pnl: gross P&L for long and short
 5. compute_net_pnl: net P&L after simulated fees
 """
@@ -13,7 +13,7 @@ import pytest
 
 from core.position_sizing import (
     kelly_fraction,
-    compute_atr_cap,
+    compute_volatility_cap,
     compute_size,
     compute_pnl,
     compute_net_pnl,
@@ -45,29 +45,31 @@ class TestKellyFraction:
         assert 0.05 <= kf <= 0.25
 
 
-# ── ATR cap ──────────────────────────────────────────────────────────────────
+# ── Volatility cap ──────────────────────────────────────────────────────────
 
-class TestComputeAtrCap:
-    def test_high_atr_small_cap(self):
-        """High ATR → small cap (volatile asset gets constrained)."""
-        cap = compute_atr_cap(10000, 100, 2.0)
-        assert cap == pytest.approx(200.0, abs=0.01)
+class TestComputeVolatilityCap:
+    def test_high_atr_pct_small_cap(self):
+        """High ATR% → small cap (volatile asset gets constrained)."""
+        # equity=10000, volatility_cap_pct=2.0, atr_pct=5.0 → cap = (10000*2)/5 = 4000
+        cap = compute_volatility_cap(10000, 5.0, 2.0)
+        assert cap == pytest.approx(4000.0, abs=0.01)
 
-    def test_low_atr_large_cap(self):
-        """Low ATR → large cap (calm asset, cap likely won't bind)."""
-        cap = compute_atr_cap(10000, 10, 2.0)
-        assert cap == pytest.approx(2000.0, abs=0.01)
+    def test_low_atr_pct_large_cap(self):
+        """Low ATR% → large cap (calm asset, cap likely won't bind)."""
+        # equity=10000, volatility_cap_pct=2.0, atr_pct=0.5 → cap = (10000*2)/0.5 = 40000
+        cap = compute_volatility_cap(10000, 0.5, 2.0)
+        assert cap == pytest.approx(40000.0, abs=0.01)
 
-    def test_zero_atr_returns_zero(self):
-        cap = compute_atr_cap(10000, 0, 2.0)
+    def test_zero_atr_pct_returns_zero(self):
+        cap = compute_volatility_cap(10000, 0, 2.0)
         assert cap == 0.0
 
     def test_zero_equity_returns_zero(self):
-        cap = compute_atr_cap(0, 100, 2.0)
+        cap = compute_volatility_cap(0, 5.0, 2.0)
         assert cap == 0.0
 
     def test_zero_cap_pct_returns_zero(self):
-        cap = compute_atr_cap(10000, 100, 0)
+        cap = compute_volatility_cap(10000, 5.0, 0)
         assert cap == 0.0
 
 
@@ -75,38 +77,45 @@ class TestComputeAtrCap:
 
 class TestComputeSize:
     def test_basic_sizing(self):
-        """Basic position sizing without ATR cap."""
+        """Basic position sizing without volatility cap."""
         sizing = compute_size(
             equity=10000, entry_price=50000, sl_price=49000,
             direction="Long", kelly_frac=0.15, leverage=5,
             risk_per_trade_pct=1.0, max_size_pct=25.0, min_size_pct=5.0,
-            atr_value=0, atr_cap_pct=0,
+            atr_pct=0, volatility_cap_pct=0,
         )
         assert sizing["size_usdt"] > 0
         assert sizing["margin_usdt"] > 0
-        assert sizing["atr_cap_applied"] is False
+        assert sizing["volatility_cap_applied"] is False
 
-    def test_atr_cap_reduces_size(self):
-        """High ATR → ATR cap reduces position below Kelly size."""
+    def test_volatility_cap_reduces_size(self):
+        """High ATR% → volatility cap reduces position below Kelly size."""
+        # equity=10000, atr_pct=5.0, volatility_cap_pct=0.5 → cap = (10000*0.5)/5.0 = 1000
+        # stop_dist=2%, risk_amt=100, base_notional=5000, kelly=0.25 → 1250
+        # 1250 > 1000 → cap binds at 1000
         sizing = compute_size(
             equity=10000, entry_price=50000, sl_price=49000,
             direction="Long", kelly_frac=0.25, leverage=5,
             risk_per_trade_pct=1.0, max_size_pct=25.0, min_size_pct=5.0,
-            atr_value=100, atr_cap_pct=2.0,
+            atr_pct=5.0, volatility_cap_pct=0.5,
         )
-        assert sizing["atr_cap_applied"] is True
-        assert sizing["size_usdt"] == 200.0  # ATR cap = (10000 * 2.0) / 100 = 200
+        assert sizing["volatility_cap_applied"] is True
+        assert sizing["size_usdt"] == 1000.0  # volatility cap = (10000 * 0.5) / 5.0 = 1000
 
-    def test_atr_cap_overrides_min_floor(self):
-        """ATR cap is a hard maximum that overrides min_size floor."""
+    def test_volatility_cap_overrides_min_floor(self):
+        """Volatility cap overrides min_size floor when it binds below it."""
+        # equity=10000, atr_pct=10.0, volatility_cap_pct=0.3 → cap = (10000*0.3)/10 = 300
+        # stop_dist=2%, risk_amt=100, base_notional=5000, kelly=0.25 → 1250
+        # min_size = 10000 * 5/100 = 500
+        # cap=300 < min=500 → cap overrides floor
         sizing = compute_size(
             equity=10000, entry_price=50000, sl_price=49000,
             direction="Long", kelly_frac=0.25, leverage=5,
             risk_per_trade_pct=1.0, max_size_pct=25.0, min_size_pct=5.0,
-            atr_value=100, atr_cap_pct=2.0,
+            atr_pct=10.0, volatility_cap_pct=0.3,
         )
-        assert sizing["atr_cap_applied"] is True
-        assert sizing["size_usdt"] == 200.0  # ATR cap, not min floor (500)
+        assert sizing["volatility_cap_applied"] is True
+        assert sizing["size_usdt"] == 300.0  # volatility cap overrides min floor (500)
 
     def test_zero_equity_returns_empty(self):
         sizing = compute_size(
