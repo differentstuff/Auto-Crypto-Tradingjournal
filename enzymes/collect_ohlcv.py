@@ -568,12 +568,24 @@ class CollectOHLCV(Enzyme):
         return "neutral"
 
     def flux_score(self, substrate: Substrate) -> float:
-        """Dynamic flux: highest priority when indicators are empty (foundational data)."""
+        """Dynamic flux: highest priority when fresh data is available.
+
+        When a candle has closed (or cold start), CollectOHLCV must fire before
+        UpdateMarkPrices — we must not act on stale data when fresh data is
+        available. CollectOHLCV populates the close-price cache that
+        UpdateMarkPrices relies on in replay mode.
+
+        can_activate() returns True only when:
+          - Indicators are empty (cold start), OR
+          - A new candle has closed for some symbol/timeframe
+
+        In both cases, fresh data must be fetched before any price-dependent
+        enzyme fires. When no new candle closed, can_activate() returns False
+        and flux is 0.0 — UpdateMarkPrices fires alone with valid cached prices
+        from the last candle close.
+        """
         if not self.can_activate(substrate):
             return 0.0
-        # Indicators are foundational — without them, no other enzyme can work.
-        # Higher flux when we have positions that need current mark prices.
-        positions = substrate.portfolio.get("open_positions", [])
-        if positions:
-            return 3.0  # Positions exist — need fresh data for risk management
-        return 2.0  # No positions — still important but slightly less urgent
+        # Fresh data available — must fire before UpdateMarkPrices (3.5)
+        # to ensure close-price cache is populated with current candle data.
+        return 5.0
