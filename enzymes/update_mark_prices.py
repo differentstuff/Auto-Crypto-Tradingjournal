@@ -97,6 +97,7 @@ class UpdateMarkPrices(Enzyme):
 
         updated = 0
         failed = 0
+        failed_symbols = set()
         updated_positions = []
 
         for pos in positions:
@@ -118,11 +119,14 @@ class UpdateMarkPrices(Enzyme):
                     # No price available — keep position unchanged
                     updated_positions.append(pos)
                     failed += 1
-                    _log.warning(
-                        "No real price for %s — primary and fallback exchanges failed. "
-                        "Price remains stale. RequestExit will not activate until fresh data arrives.",
-                        symbol,
-                    )
+                    failed_symbols.add(symbol)
+
+        if failed_symbols:
+            _log.warning(
+                "No real price for %d symbol(s): %s — price remains stale. "
+                "RequestExit will not activate until fresh data arrives.",
+                len(failed_symbols), ", ".join(sorted(failed_symbols)),
+            )
 
         # Reassign entire list (shallow-copy safe)
         substrate.portfolio["open_positions"] = updated_positions
