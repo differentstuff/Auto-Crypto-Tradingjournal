@@ -75,7 +75,8 @@ portfolio:
   fallback_equity_usdt: 1000.0
   correlation_check: true
   max_same_direction: 3
-  atr_cap_equity_pct: 20.0  # ATR backstop: only fires on extreme volatility spikes (normal sizing via risk_per_trade_pct)
+  volatility_cap_pct: 20.0           # Volatility backstop: max % of equity per 1% ATR. Uses ATR% (relative) so it's asset-price-agnostic.
+  max_notional_exposure_pct: 100.0   # Hard ceiling on notional as % of equity. Flash crash protection: limits exposure even at high leverage.
 
 # Exit defaults
 exit_rules:
@@ -90,7 +91,7 @@ exit_rules:
     breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
-  desired_tp_pct: 3.0  # Fixed TP target as % from entry (decouples TP from SL width)
+  rr_target: 3.0      # Target R:R ratio for TP1. Dynamic: TP1 = risk × rr_target, adapts to volatility since SL is ATR-based.
   tp2_rr_ratio: 2.5  # TP2 risk-reward multiplier
   soft_exit:
     requires_indicators_reversed: 2
@@ -104,7 +105,8 @@ scoring:
   entry_threshold: 6.5
   approval_threshold: 4.5        # minimum effective_score after soft penalties to approve trade
   confluence_min_signals: 3
-  rr_minimum: 2.0
+  rr_minimum: 2.5                # minimum R:R to approve trade — rejects setups where SL is too wide
+  rr_target: 3.0                 # target R:R for TP1 — goal-oriented, not fixed % (dynamic, adapts to ATR)
   min_candidate_pct: 0.20
   rsi_signal_high: 55
   rsi_signal_low: 45
