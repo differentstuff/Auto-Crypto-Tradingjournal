@@ -19,7 +19,7 @@ from core.database import init_db, get_conn, db_conn, save_substrate, load_lates
 from core.scheduler import Scheduler
 from core.position_sizing import (
     kelly_fraction,
-    compute_atr_cap,
+    compute_volatility_cap,
     compute_size,
     compute_pnl,
     compute_net_pnl,
@@ -47,7 +47,7 @@ __all__ = [
     "Scheduler",
     "Daemon",
     "kelly_fraction",
-    "compute_atr_cap",
+    "compute_volatility_cap",
     "compute_size",
     "compute_pnl",
     "compute_net_pnl",
