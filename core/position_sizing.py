@@ -14,6 +14,17 @@ Fee handling:
   - compute_net_pnl() deducts simulated fees. For paper/backtest ONLY.
     Never call compute_net_pnl() with live trade data — that would
     double-count fees already included in broker fills.
+
+Position sizing philosophy:
+  - Sizing is RISK-%-BASED, not nominal-based. A coin at $0.0000222 can
+    make the same % move as one at $60,000 — we size for % risk, not price.
+  - The volatility cap uses ATR% (relative volatility), not absolute ATR.
+    This makes the cap asset-price-agnostic: BTC at $80k with 1% ATR and
+    SHIB at $0.00001 with 1% ATR get the same cap.
+  - Leverage is accounted for in max_notional: higher leverage enables
+    larger positions while the same risk_per_trade_pct controls loss at SL.
+  - A hard notional exposure ceiling (max_notional_exposure_pct) prevents
+    excessive exposure even at high leverage (flash crash protection).
 """
 
 from __future__ import annotations
@@ -51,21 +62,33 @@ def kelly_fraction(
     return round(max(kelly_min, min(kelly_max, f)), 3)
 
 
-def compute_atr_cap(equity: float, atr_value: float, atr_cap_pct: float) -> float:
-    """ATR-based position size cap.
+def compute_volatility_cap(equity: float, atr_pct: float, volatility_cap_pct: float) -> float:
+    """Volatility-based position size cap using relative ATR%.
 
-    Returns the maximum notional position size based on asset volatility.
-    Formula: atr_cap_notional = (equity * atr_cap_pct) / ATR_value
+    Returns the maximum notional position size based on asset volatility
+    expressed as ATR% (relative to price). This is asset-price-agnostic:
+    a $80,000 asset with 1% ATR and a $0.00001 asset with 1% ATR get
+    the same cap.
 
-    High ATR (volatile) → small cap. Low ATR (calm) → large cap.
+    Formula: volatility_cap_notional = (equity * volatility_cap_pct) / atr_pct
 
-    Returns 0.0 if the cap cannot be computed (missing/zero inputs).
+    High atr_pct (volatile) → small cap. Low atr_pct (calm) → large cap.
+
+    Args:
+        equity: Account equity in USDT
+        atr_pct: ATR as a percentage of price (e.g., 1.0 for 1% ATR)
+        volatility_cap_pct: Max % of equity exposed per 1% of asset volatility
+
+    Returns:
+        Maximum notional position size, or 0.0 if inputs are invalid.
     """
-    if not equity or not atr_value or atr_value <= 0:
+    if not equity or equity <= 0:
         return 0.0
-    if not atr_cap_pct or atr_cap_pct <= 0:
+    if not atr_pct or atr_pct <= 0:
         return 0.0
-    return (equity * atr_cap_pct) / atr_value
+    if not volatility_cap_pct or volatility_cap_pct <= 0:
+        return 0.0
+    return (equity * volatility_cap_pct) / atr_pct
 
 
 def compute_size(
@@ -78,13 +101,27 @@ def compute_size(
     risk_per_trade_pct: float,
     max_size_pct: float,
     min_size_pct: float,
-    atr_value: float = 0.0,
-    atr_cap_pct: float = 0.0,
+    atr_pct: float = 0.0,
+    volatility_cap_pct: float = 0.0,
+    max_notional_exposure_pct: float = 0.0,
 ) -> dict:
     """Compute position size based on risk parameters.
 
-    Applies ATR cap as an additional constraint:
-        position_size = min(kelly_size, atr_cap_size)
+    Sizing cascade:
+        1. Base: risk_amt / stop_dist_pct (risk-%-based, price-agnostic)
+        2. Kelly: multiply by kelly_frac (edge-proportional sizing)
+        3. Max size: equity * max_size_pct / 100 * leverage (leverage-aware)
+        4. Notional exposure ceiling: equity * max_notional_exposure_pct / 100
+        5. Volatility cap: (equity * volatility_cap_pct) / atr_pct (backstop)
+        6. Min size floor: equity * min_size_pct / 100
+
+    Steps 3 and 4 together: leverage enables larger positions (more capital
+    available), but the notional exposure ceiling prevents excessive exposure
+    even at high leverage. This protects against flash crashes where SL fails.
+
+    The volatility cap uses ATR% (relative), not absolute ATR. This makes it
+    asset-price-agnostic: BTC at $80k with 1% ATR and an alt at $0.01 with
+    1% ATR get the same cap.
 
     Args:
         equity: Account equity in USDT
@@ -92,20 +129,21 @@ def compute_size(
         sl_price: Stop-loss price
         direction: "Long" or "Short"
         kelly_frac: Kelly fraction from kelly_fraction()
-        leverage: Leverage multiplier
+        leverage: Leverage multiplier (1 = unleveraged, 5 = 5x, etc.)
         risk_per_trade_pct: Risk per trade as % of equity
-        max_size_pct: Max position size as % of equity
+        max_size_pct: Max position size as % of equity (before leverage)
         min_size_pct: Min position size as % of equity
-        atr_value: ATR value (0 = no ATR cap)
-        atr_cap_pct: ATR cap equity % (0 = no ATR cap)
+        atr_pct: ATR as % of price (0 = no volatility cap)
+        volatility_cap_pct: Max % of equity per 1% ATR (0 = no cap)
+        max_notional_exposure_pct: Hard ceiling on notional as % of equity (0 = no ceiling)
 
     Returns:
         Dict with: size_usdt, margin_usdt, risk_pct, stop_dist_pct,
-                   atr_cap_applied, atr_cap_notional
+                   volatility_cap_applied, volatility_cap_notional
     """
     _empty = {
         "size_usdt": 0, "margin_usdt": 0, "risk_pct": 0,
-        "stop_dist_pct": 0, "atr_cap_applied": False, "atr_cap_notional": 0.0,
+        "stop_dist_pct": 0, "volatility_cap_applied": False, "volatility_cap_notional": 0.0,
     }
     if not equity or not entry_price or not sl_price:
         return _empty
@@ -124,24 +162,36 @@ def compute_size(
     # Apply Kelly fraction
     notional *= kelly_frac
 
-    # Cap at max_size_pct of equity
-    max_notional = equity * max_size_pct / 100
+    # Cap at max_size_pct of equity, leverage-enabled.
+    # Leverage allows taking larger positions with the same risk_per_trade_pct
+    # because the exchange provides the additional capital as margin loan.
+    max_notional = equity * max_size_pct / 100 * leverage
     if notional > max_notional:
         notional = max_notional
 
-    # ATR cap: reduce position for volatile assets
-    atr_cap_applied = False
-    atr_cap_notional = 0.0
-    if atr_value > 0 and atr_cap_pct > 0:
-        atr_cap_notional = compute_atr_cap(equity, atr_value, atr_cap_pct)
-        if atr_cap_notional > 0 and notional > atr_cap_notional:
-            notional = atr_cap_notional
-            atr_cap_applied = True
+    # Hard notional exposure ceiling — prevents excessive exposure at high
+    # leverage. Even with 25x leverage, never expose more than this % of
+    # equity as notional. Flash crash protection: if SL fails, loss is
+    # bounded by notional × move_pct, not the full leveraged position.
+    if max_notional_exposure_pct > 0:
+        exposure_ceiling = equity * max_notional_exposure_pct / 100
+        if notional > exposure_ceiling:
+            notional = exposure_ceiling
 
-    # Floor at min_size_pct of equity (only when ATR cap doesn't bind).
-    # When ATR cap is applied, it's a hard maximum that overrides the soft
-    # floor — the asset is too volatile for a normal-sized position.
-    if not atr_cap_applied:
+    # Volatility cap: reduce position for volatile assets (ATR%-based).
+    # Uses relative ATR% so the cap is asset-price-agnostic.
+    volatility_cap_applied = False
+    volatility_cap_notional = 0.0
+    if atr_pct > 0 and volatility_cap_pct > 0:
+        volatility_cap_notional = compute_volatility_cap(equity, atr_pct, volatility_cap_pct)
+        if volatility_cap_notional > 0 and notional > volatility_cap_notional:
+            notional = volatility_cap_notional
+            volatility_cap_applied = True
+
+    # Floor at min_size_pct of equity (only when volatility cap doesn't bind).
+    # When volatility cap is applied, it's a hard maximum that overrides the
+    # soft floor — the asset is too volatile for a normal-sized position.
+    if not volatility_cap_applied:
         min_notional = equity * min_size_pct / 100
         if notional < min_notional:
             notional = min_notional
@@ -153,8 +203,8 @@ def compute_size(
         "margin_usdt": round(margin, 2),
         "risk_pct": round(risk_per_trade_pct, 2),
         "stop_dist_pct": round(stop_dist_pct * 100, 3),
-        "atr_cap_applied": atr_cap_applied,
-        "atr_cap_notional": round(atr_cap_notional, 2),
+        "volatility_cap_applied": volatility_cap_applied,
+        "volatility_cap_notional": round(volatility_cap_notional, 2),
     }
 
 
