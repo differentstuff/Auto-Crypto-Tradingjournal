@@ -246,7 +246,7 @@ def run_replay(
     for symbol in static_symbols:
         try:
             df = replay_exchange.fetch_ohlcv(
-                symbol, timeframe="1h", limit=5, since=since_ms,
+                symbol, timeframe="1h", limit=30, since=since_ms,
             )
             if df is None or df.empty:
                 missing_symbols.append(symbol)
