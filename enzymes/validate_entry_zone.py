@@ -31,7 +31,7 @@ def _compute_sl_tp(
     rr_minimum: float,
     atr_sl_multiplier: float,
     tp2_rr_ratio: float,
-    desired_tp_pct: float = 0.0,
+    rr_target: float = 0.0,
     max_sl_pct: float = 0.0,
 ) -> dict:
     """
@@ -44,9 +44,10 @@ def _compute_sl_tp(
         If max_sl_pct > 0 and SL distance exceeds it, the trade is rejected
         (returns zeroed-out dict) — this prevents entering trades with
         unrealistically wide stops during high-volatility regimes.
-    TP1: fixed target at desired_tp_pct from entry (when > 0), otherwise
-         falls back to rr_minimum x risk (legacy behaviour).
-    TP2: full target at tp2_rr_ratio x risk (legacy) or desired_tp_pct x 1.5.
+    TP1: target at rr_target × risk from entry. Dynamic: scales with SL width
+         (which is ATR-based), so TP adapts to volatility. rr_target is the
+         goal R:R ratio (e.g., 3.0 means aim for 3:1 reward:risk).
+    TP2: extended target at tp2_rr_ratio × risk.
 
     Returns {sl_price, tp1, tp2, rr_ratio, sl_atr_multiple, sl_type}
     """
@@ -123,20 +124,23 @@ def _compute_sl_tp(
             "sl_type": sl_type,
         }
 
-    # TP calculation: use fixed desired_tp_pct when configured (decouples
-    # TP from SL width). Falls back to rr_minimum x risk (legacy) when 0.
-    if desired_tp_pct > 0:
-        tp1_dist = entry_price * desired_tp_pct / 100
-        tp2_dist = entry_price * desired_tp_pct * 1.5 / 100
-        rr_ratio = desired_tp_pct / (risk / entry_price * 100) if risk > 0 else 0
+    # TP calculation: use rr_target as the goal R:R ratio. TP1 = risk × rr_target.
+    # This is dynamic: since SL is ATR-based, TP inherits ATR awareness.
+    # A tighter SL (low vol) → tighter TP. A wider SL (high vol) → wider TP.
+    # The trailing stop handles actual exits — TP1 is the target the trail works towards.
+    if rr_target > 0:
+        tp1_dist = risk * rr_target
+        tp2_dist = risk * tp2_rr_ratio
+        rr_ratio = rr_target
     else:
+        # Fallback: use rr_minimum as the target (minimum viable R:R)
         tp1_dist = risk * rr_minimum
         tp2_dist = risk * tp2_rr_ratio
         rr_ratio = rr_minimum
 
     # Hard R:R rejection: if the actual R:R falls below rr_minimum, reject
-    # the trade. A warning is useless in an automated system — enforce it.
-    # With desired_tp_pct=3.0 and rr_minimum=2.0, any SL > 1.5% is rejected.
+    # the trade. This filters out setups where the SL is too wide relative
+    # to the expected move, even when rr_target would place TP further out.
     if rr_ratio < rr_minimum:
         return {
             "sl_price": 0.0, "tp1": 0.0, "tp2": 0.0,
@@ -259,9 +263,9 @@ class ValidateEntryZone(Enzyme):
 
         # Config values
         rr_minimum = substrate.cfg("scoring.rr_minimum")
+        rr_target = substrate.cfg("scoring.rr_target", 0.0)
         atr_sl_multiplier = substrate.cfg("exit_rules.hard_stop.width_atr_multiplier")
         tp2_rr_ratio = substrate.cfg("exit_rules.tp2_rr_ratio")
-        desired_tp_pct = substrate.cfg("exit_rules.desired_tp_pct", 0.0)
         max_sl_pct = substrate.cfg("risk.max_sl_pct", 0.0)
 
         entry_zones = {}
@@ -326,7 +330,7 @@ class ValidateEntryZone(Enzyme):
                 rr_minimum=rr_minimum,
                 atr_sl_multiplier=atr_sl_multiplier,
                 tp2_rr_ratio=tp2_rr_ratio,
-                desired_tp_pct=desired_tp_pct,
+                rr_target=rr_target,
                 max_sl_pct=max_sl_pct,
             )
 
@@ -341,8 +345,8 @@ class ValidateEntryZone(Enzyme):
             # Skip rejected entries (R:R too low)
             if sl_tp["sl_price"] == 0.0 and sl_tp.get("sl_type") == "rejected_rr_too_low":
                 self._log.info(
-                    "Rejected %s: R:R too low (rr=%.2f < min=%.2f, desired_tp=%.1f%%)",
-                    symbol, sl_tp.get("rr_ratio", 0), rr_minimum, desired_tp_pct,
+                    "Rejected %s: R:R too low (rr=%.2f < min=%.2f, rr_target=%.1f)",
+                    symbol, sl_tp.get("rr_ratio", 0), rr_minimum, rr_target,
                 )
                 continue
 
