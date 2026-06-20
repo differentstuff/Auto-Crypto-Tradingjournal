@@ -57,12 +57,15 @@ def make_full_config(**overrides) -> dict:
             "fallback_equity_usdt": 1000.0,
             "correlation_check": True,
             "max_same_direction": 3,
-            "atr_cap_equity_pct": 2.0,
+            "volatility_cap_pct": 20.0,
+            "max_notional_exposure_pct": 100.0,
         },
         "scoring": {
             "entry_threshold": 6.5,
             "confluence_min_signals": 3,
-            "rr_minimum": 2.0,
+            "rr_minimum": 2.5,
+            "rr_target": 3.0,
+            "approval_threshold": 4.5,
             "min_candidate_pct": 0.20,
             "rsi_signal_high": 55,
             "rsi_signal_low": 45,
@@ -261,6 +264,7 @@ def make_full_config(**overrides) -> dict:
             "kelly_avg_win_r": 2.0,
             "max_size_pct_of_equity": 25.0,
             "min_size_pct_of_equity": 5.0,
+            "max_sl_pct": 3.0,
         },
         "validity": [
             {
