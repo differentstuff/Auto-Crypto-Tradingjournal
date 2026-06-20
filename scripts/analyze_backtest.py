@@ -58,7 +58,7 @@ RE_TRAIL_ACTIVATED = re.compile(
     r"Progressive trail activated for (\S+) at profit=([\d.]+)% .*"
 )
 RE_ISC_BLOCK = re.compile(r"ISC gate: blocking trade enzymes \[([^\]]*)\] — failed ISCs: \[([^\]]*)\]")
-RE_ATR_CAP = re.compile(r"ATR cap applied: notional ([\d.]+) → ([\d.]+) \(ATR=([\d.]+), cap_pct=([\d.]+)%\)")
+RE_VOL_CAP = re.compile(r"Volatility cap applied: notional ([\d.]+) → ([\d.]+) \(ATR%=([\d.]+)%, cap_pct=([\d.]+)%\)")
 RE_CONFLUENCE = re.compile(r"Scored confluence: (\d+)/(\d+) symbols above relaxed_threshold=([\d.]+), top=(\S+)")
 RE_MARK_PRICES = re.compile(r"Updated mark prices for (\d+)/(\d+) positions")
 
@@ -172,9 +172,9 @@ def _extract_trade_info(lines: list[str]) -> dict:
         info["kelly"] = float(m.group(4))
         info["eff_score"] = float(m.group(5))
 
-    if m := RE_ATR_CAP.search(text):
-        info["atr"] = float(m.group(3))
-        info["atr_cap_pct"] = float(m.group(4))
+    if m := RE_VOL_CAP.search(text):
+        info["atr_pct"] = float(m.group(3))
+        info["volatility_cap_pct"] = float(m.group(4))
 
     if m := RE_CONFLUENCE.search(text):
         info["confluence_above"] = int(m.group(1))
@@ -280,8 +280,8 @@ def _print_cycle_detail(cycle_num: int, action: str, lines: list[str]):
             print(f"    Eff. score:    {info['eff_score']}")
         if "kelly" in info:
             print(f"    Kelly:         {info['kelly']}")
-        if "atr" in info:
-            print(f"    ATR:           {info['atr']:.2f}  (cap {info['atr_cap_pct']}%)")
+        if "atr_pct" in info:
+            print(f"    ATR%:          {info['atr_pct']:.2f}%  (vol cap {info['volatility_cap_pct']}%)")
         if "confluence_top" in info:
             print(f"    Confluence:    {info['confluence_above']}/{info['confluence_total']} above threshold "
                   f"(top={info['confluence_top']}, thresh={info['confluence_threshold']})")
