@@ -217,7 +217,8 @@ portfolio:
   fallback_equity_usdt: 1000.0   # equity used in paper mode when no real equity available
   correlation_check: true        # check correlation between positions
   max_same_direction: 3           # maximum positions in the same direction
-  atr_cap_equity_pct: 2.0        # ATR-based position cap: max % of equity allocated per trade based on volatility
+  volatility_cap_pct: 20.0              # Volatility backstop (ATR%-based, asset-price-agnostic)
+  max_notional_exposure_pct: 100.0      # Hard ceiling on notional exposure (flash crash protection)
 
 noise:
   conflict_max_ratio: 0.5          # max ratio of conflicting signals (relative threshold)
