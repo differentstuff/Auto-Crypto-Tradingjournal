@@ -5,9 +5,10 @@ Validates entry zones from substrate.analysis.entry_zones and decides
 whether to approve the trade. Enforces:
   - SL placement correctness (below entry for long, above for short)
   - Position size via Kelly criterion (config-driven)
-  - ATR-based volatility cap on position size
+  - Volatility cap on position size (ATR%-based, asset-price-agnostic)
+  - Notional exposure ceiling (flash crash protection)
   - Directional concentration risk
-  - Size caps (min/max % of equity)
+  - Size caps (min/max % of equity, leverage-aware)
 
 ISC enforcement (max positions, noise flag) is handled by the daemon's
 ISC gate — this enzyme never fires when ISCs block trades.
@@ -18,10 +19,12 @@ Enzyme class: Regulator (priority 10)
 Activates when: analysis.entry_zones not empty AND trade_approved not yet set
 
 Port of: agent_risk_mgmt.py (Kelly sizing, SL validation, concentration checks)
-ATR cap: position size = min(kelly_size, atr_cap_size) where
-    atr_cap_size = (equity * atr_cap_equity_pct) / ATR_value
+Volatility cap: position_size = min(kelly_size, volatility_cap_size) where
+    volatility_cap_size = (equity * volatility_cap_pct) / atr_pct
 This ensures volatile assets never risk more than a configurable
-percentage of equity per trade.
+percentage of equity per trade. Uses ATR% (relative) so the cap is
+asset-price-agnostic — BTC at $80k and SHIB at $0.00001 with the
+same ATR% get the same cap.
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ from core.enzyme import Enzyme, EnzymeClass, register_enzyme
 from core.substrate import Substrate
 from core.position_sizing import (
     kelly_fraction as _kelly_fraction_pure,
-    compute_atr_cap as _compute_atr_cap_pure,
+    compute_volatility_cap as _compute_volatility_cap_pure,
     compute_size as _compute_size_pure,
 )
 
@@ -53,10 +56,10 @@ def _kelly_fraction(score: float, substrate: Substrate) -> float:
     )
 
 
-def _compute_atr_cap(equity: float, atr_value: float, substrate: Substrate) -> float:
-    """ATR cap wrapper — reads config from substrate, delegates to pure function."""
-    atr_cap_pct = substrate.cfg("portfolio.atr_cap_equity_pct", None)
-    return _compute_atr_cap_pure(equity, atr_value, atr_cap_pct or 0)
+def _compute_volatility_cap(equity: float, atr_pct: float, substrate: Substrate) -> float:
+    """Volatility cap wrapper — reads config from substrate, delegates to pure function."""
+    volatility_cap_pct = substrate.cfg("portfolio.volatility_cap_pct", None)
+    return _compute_volatility_cap_pure(equity, atr_pct, volatility_cap_pct or 0)
 
 
 def _compute_size(
@@ -67,7 +70,7 @@ def _compute_size(
     kelly_fraction: float,
     leverage: int,
     substrate: Substrate,
-    atr_value: float = 0.0,
+    atr_pct: float = 0.0,
 ) -> dict:
     """Position sizing wrapper — reads config from substrate, delegates to pure function."""
     result = _compute_size_pure(
@@ -80,14 +83,15 @@ def _compute_size(
         risk_per_trade_pct=substrate.cfg("portfolio.risk_per_trade_pct"),
         max_size_pct=substrate.cfg("risk.max_size_pct_of_equity"),
         min_size_pct=substrate.cfg("risk.min_size_pct_of_equity"),
-        atr_value=atr_value,
-        atr_cap_pct=substrate.cfg("portfolio.atr_cap_equity_pct", 0),
+        atr_pct=atr_pct,
+        volatility_cap_pct=substrate.cfg("portfolio.volatility_cap_pct", 0),
+        max_notional_exposure_pct=substrate.cfg("portfolio.max_notional_exposure_pct", 0),
     )
-    if result["atr_cap_applied"]:
+    if result["volatility_cap_applied"]:
         _log.info(
-            "ATR cap applied: notional %.2f → %.2f (ATR=%.4f, cap_pct=%.1f%%)",
-            result["size_usdt"], result["atr_cap_notional"], atr_value,
-            substrate.cfg("portfolio.atr_cap_equity_pct", 0),
+            "Volatility cap applied: notional %.2f → %.2f (ATR%%=%.2f%%, cap_pct=%.1f%%)",
+            result["size_usdt"], result["volatility_cap_notional"], atr_pct,
+            substrate.cfg("portfolio.volatility_cap_pct", 0),
         )
     return result
 
@@ -194,7 +198,8 @@ class ApproveTrade(Enzyme):
             # Kelly sizing (use effective_score for sizing — penalized trades get smaller positions)
             kelly = _kelly_fraction(abs(effective_score), substrate)
 
-            # Compute size (with ATR cap)
+            # Compute size (with volatility cap)
+            atr_pct = zone.get("atr_pct", 0)
             sizing = _compute_size(
                 equity=equity,
                 entry_price=entry_price,
@@ -203,7 +208,7 @@ class ApproveTrade(Enzyme):
                 kelly_fraction=kelly,
                 leverage=leverage,
                 substrate=substrate,
-                atr_value=atr_value,
+                atr_pct=atr_pct,
             )
 
             if sizing["size_usdt"] <= 0:
@@ -277,8 +282,9 @@ class ApproveTrade(Enzyme):
                 "kelly_fraction": kelly,
                 "approved_at": datetime.now(timezone.utc).isoformat(),
                 "atr_value": atr_value,
-                "atr_cap_applied": sizing["atr_cap_applied"],
-                "atr_cap_notional": sizing["atr_cap_notional"],
+                "atr_pct": atr_pct,
+                "volatility_cap_applied": sizing["volatility_cap_applied"],
+                "volatility_cap_notional": sizing["volatility_cap_notional"],
                 "score": raw_score,
                 "effective_score": round(effective_score, 2),
                 "penalties": penalties,
@@ -297,7 +303,7 @@ class ApproveTrade(Enzyme):
 
         if best_approved:
             substrate.decisions["trade_approved"] = best_approved
-            atr_cap_msg = " [ATR cap]" if best_approved.get("atr_cap_applied") else ""
+            vol_cap_msg = " [VOL CAP]" if best_approved.get("volatility_cap_applied") else ""
             llm_msg = f" [LLM {best_approved.get('llm_verdict', '?')}]" if best_approved.get("llm_verdict") else ""
             llm_override_msg = " [LLM OVERRIDE]" if best_approved.get("llm_override") else ""
             penalty_msg = " [PENALIZED]" if any(best_approved.get("penalties", {}).values()) else ""
@@ -306,7 +312,7 @@ class ApproveTrade(Enzyme):
                 best_approved["direction"], best_approved["symbol"],
                 best_approved["size_usdt"], best_approved["kelly_fraction"],
                 best_approved.get("effective_score", 0),
-                atr_cap_msg, llm_msg, llm_override_msg, penalty_msg,
+                vol_cap_msg, llm_msg, llm_override_msg, penalty_msg,
             )
         else:
             substrate.decisions["trade_approved"] = None
