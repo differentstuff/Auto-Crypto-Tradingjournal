@@ -2,18 +2,18 @@
 """
 main.py -- Single entrypoint for the Auto-Trader daemon (v2 Reaction Network).
 
+Exchange-as-truth architecture:
+  - Substrate is ALWAYS fresh — never loaded from DB
+  - Live mode: positions reconciled from exchange on startup AND every cycle
+  - Paper mode: positions are runtime-only, no exchange calls
+  - Daemon aborts if exchange is unreachable on startup (live mode)
+
 Usage:
     python3 main.py                           # Paper mode with default strategy
     python3 main.py --paper                   # Paper trading mode (explicit)
     python3 main.py --strategy breakout       # Use a different strategy
     python3 main.py --cycle-once              # Run a single cycle and exit
     python3 main.py --log-level DEBUG         # Verbose logging
-
-The daemon runs 24/7, loading config on every cycle for hot-reload.
-No restart needed to adjust strategy, risk limits, or indicator selection.
-
-All logic lives in subdirectories: core/, enzymes/, indicators/, learning/, llm/.
-No imports from legacy root-level files.
 """
 
 import argparse
@@ -37,24 +37,17 @@ import enzymes  # noqa: F401 — triggers @register_enzyme decorators
 
 
 def setup_logging(level: str = "INFO") -> None:
-    """
-    Configure logging for the daemon.
-
-    Outputs to both stdout and a rotating log file.
-    Log file path is read from LOG_FILE env var (default: logs/auto-trader.log).
-    """
+    """Configure logging for the daemon."""
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     log_level = getattr(logging, level.upper(), logging.INFO)
 
     handlers = [logging.StreamHandler(sys.stdout)]
 
-    # File logging — read path from .env / environment
     log_file = os.environ.get("LOG_FILE", "")
     if not log_file:
         log_dir = os.environ.get("LOG_DIR", os.path.join(PROJECT_ROOT, "logs"))
         log_file = os.path.join(log_dir, "auto-trader.log")
 
-    # Ensure log directory exists
     log_dir = os.path.dirname(log_file)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
@@ -78,7 +71,6 @@ def setup_logging(level: str = "INFO") -> None:
         handlers=handlers,
     )
 
-    # Reduce noise from third-party libraries
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("ccxt").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -113,13 +105,13 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Setup logging (stdout + rotating file)
     log_level = args.log_level or os.environ.get("LOG_LEVEL", "INFO")
     setup_logging(log_level)
     log = logging.getLogger("main")
 
     log.info("=" * 60)
     log.info("Auto-Trader v2.0 -- Reaction Network Architecture")
+    log.info("Exchange-as-truth: substrate is ephemeral, positions from exchange")
     log.info("=" * 60)
     log.info("Strategy:  %s", args.strategy)
     log.info("Paper mode: %s", args.paper)
@@ -140,9 +132,6 @@ def main() -> None:
         sys.exit(1)
 
     # ── Initialize LLM router ──────────────────────────────────────────────────
-    # The router provides call_llm() to all enzymes via llm.call_llm().
-    # API keys come from .env (environment variables). Without keys, call_llm()
-    # returns None and enzymes fall back to rule-based logic — the system still runs.
     try:
         merged_config = daemon.config.config
         keys_config = _build_llm_keys_from_env()
@@ -150,12 +139,8 @@ def main() -> None:
         log.info("LLM router initialized: %d roles configured", len(router._routing))
     except Exception as e:
         log.warning("LLM router initialization failed (non-fatal): %s", e)
-        log.warning("Enzymes using LLM will fall back to rule-based logic")
 
     # ── Initialize Exchange ─────────────────────────────────────────────────────
-    # The Exchange provides OHLCV data (public, no auth) and trade execution
-    # (authenticated, paper-mode guarded). Even without API keys, data fetching
-    # works via Binance public endpoints.
     exchange = None
     try:
         exchange = Exchange(daemon.config)
@@ -165,19 +150,30 @@ def main() -> None:
         )
     except Exception as e:
         log.warning("Exchange initialization failed (non-fatal): %s", e)
-        log.warning("OHLCV data fetching may not work")
+
+    # ── Exchange reachability check (live mode only) ────────────────────────────
+    # If exchange is unreachable in live mode, abort daemon.
+    # Paper mode doesn't need exchange connectivity.
+    daemon.exchange = exchange
+    if not args.paper:
+        daemon.check_exchange_reachable()
+
+    # ── Initial reconciliation from exchange (live mode only) ───────────────────
+    if not args.paper:
+        try:
+            daemon.reconcile_from_exchange()
+            log.info("Initial reconciliation from exchange complete")
+        except Exception as e:
+            log.error("Initial reconciliation failed: %s", e, exc_info=True)
+            log.error("Cannot start daemon without exchange reconciliation. Fix connectivity and restart.")
+            sys.exit(1)
 
     # ── Register enzymes ────────────────────────────────────────────────────────
-    # Each enzyme is created via the registry (no direct class imports).
-    # The enzymes package was imported above, triggering @register_enzyme.
-
     def _register(name: str, **kwargs) -> None:
-        """Register an enzyme by name, with optional keyword injection."""
         enz = create_enzyme(name, config=daemon.substrate._config)
         if enz is None:
             log.warning("Enzyme %s not found in registry (available: %s)", name, list_enzymes())
             return
-        # Inject extra dependencies via keyword args
         for k, v in kwargs.items():
             if hasattr(enz, k):
                 setattr(enz, k, v)
@@ -186,17 +182,9 @@ def main() -> None:
         daemon.register_enzyme(enz)
 
     # Phase B: Sensors and Evaluators
-    # DynamicFilter needs the Exchange instance for universe fetching
-    # Must run before CollectOHLCV so symbol list is set first
     _register("DynamicFilter", exchange=exchange)
-    # CollectOHLCV needs the Exchange instance for OHLCV fetching
     _register("CollectOHLCV", exchange=exchange)
-
-    # DetectRegime needs Exchange for hourly data (must fire before ScoreConfluence)
     _register("DetectRegime", exchange=exchange)
-
-    # MarketGeometry computes structure from OHLCV (must fire after DetectRegime, before ScoreConfluence)
-    # Pipeline: CollectOHLCV → DetectRegime → MarketGeometry → ScoreConfluence → ... → RequestExit → ApproveExit → ExecuteExit
     _register("MarketGeometry")
 
     for name in [
@@ -209,7 +197,6 @@ def main() -> None:
         _register(name)
 
     # Phase C: Regulators and Transporters
-    # Trade enzymes need the Exchange instance for order placement / data fetching
     for name in ["ApproveTrade", "ApproveExit", "RequestExit"]:
         _register(name)
 
@@ -229,60 +216,42 @@ def main() -> None:
     # Wait enzyme (always available, lowest priority)
     _register("Wait")
 
-    # Log registered enzymes
     log.info("Registered %d enzymes: %s", len(daemon.enzymes), [e.name for e in daemon.enzymes])
 
     # ── Run ─────────────────────────────────────────────────────────────────────
     if args.cycle_once:
-        # Single cycle mode (for testing / debugging)
         log.info("Running single cycle...")
         result = daemon.run_cycle()
         log.info("Cycle result: %s", result)
         if log.isEnabledFor(logging.DEBUG):
             log.debug("Substrate: %s", daemon.substrate)
     else:
-        # Continuous daemon mode
         log.info("Starting daemon loop (Ctrl+C or SIGTERM to stop)...")
         daemon.run()
 
 
 def _build_llm_keys_from_env() -> dict:
-    """
-    Build LLM keys config from environment variables.
-    
-    Maps env vars to the KeyManager format:
-      ANTHROPIC_API_KEY -> llm_keys.anthropic
-      GEMINI_API_KEY    -> llm_keys.google
-      OPENROUTER_API_KEY -> llm_keys.openrouter
-      GROK_API_KEY      -> llm_keys.grok
-    
-    Multiple keys per provider are supported via numbered env vars:
-      OPENROUTER_API_KEY_2, OPENROUTER_API_KEY_3, etc.
-    """
-    # Provider name -> env var prefix mapping
-    # Note: GEMINI_API_KEY maps to "google" provider (Gemini is Google's AI)
+    """Build LLM keys config from environment variables."""
     provider_env_map = {
         "anthropic":  "ANTHROPIC_API_KEY",
         "google":     "GEMINI_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "grok":       "GROK_API_KEY",
     }
-    
+
     keys_config = {}
     for provider, env_prefix in provider_env_map.items():
         keys = []
-        # Primary key
         primary_key = os.environ.get(env_prefix, "")
         if primary_key:
             keys.append({"key": primary_key, "label": f"{provider}-env-1"})
-        # Additional keys: PROVIDER_API_KEY_2, PROVIDER_API_KEY_3, etc.
-        for i in range(2, 6):  # support up to 5 keys per provider
+        for i in range(2, 6):
             extra_key = os.environ.get(f"{env_prefix}_{i}", "")
             if extra_key:
                 keys.append({"key": extra_key, "label": f"{provider}-env-{i}"})
         if keys:
             keys_config[provider] = keys
-    
+
     return keys_config
 
 
