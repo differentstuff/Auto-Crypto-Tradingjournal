@@ -1,19 +1,20 @@
 """
 enzymes/sync_positions.py -- Sensor enzyme: position synchronization.
 
-Periodically reconciles portfolio state with the exchange:
-  - Updates equity and available margin
-  - Removes positions closed externally (manual close, liquidation)
-  - Updates mark_price for open positions
+Exchange-as-truth architecture:
+  - LIVE mode: reconciliation is handled by daemon.reconcile_from_exchange()
+    which runs every cycle. This enzyme still fetches balance data.
+  - PAPER mode: preserves rolling equity (updated by ExecuteExit PnL)
+    and falls back to fallback_equity_usdt only on first cycle or reset.
+  - REPLAY mode: no exchange calls.
 
-In paper mode, preserves rolling equity (updated by ExecuteExit PnL) and falls back
-to fallback_equity_usdt only on first cycle or reset. Skips exchange calls.
+The reconciliation logic (rebuilding positions from exchange data) has been
+moved to daemon.reconcile_from_exchange() to centralize it and ensure it
+runs at the right point in the cycle (after all enzymes have fired).
 
 Enzyme class: Sensor
 Activates when: cycle_count % position_sync_every_n_cycles == 0
-Writes to: portfolio.equity, portfolio.available_margin, portfolio.open_positions
-
-Port of: bitget_sync.py, blofin_sync.py, sync_base.py
+Writes to: portfolio.equity, portfolio.available_margin
 """
 
 from __future__ import annotations
@@ -30,13 +31,14 @@ _log = logging.getLogger(__name__)
 @register_enzyme
 class SyncPositions(Enzyme):
     """
-    Sensor enzyme: reconciles portfolio state with exchange.
+    Sensor enzyme: syncs balance from exchange.
 
-    Activates every N cycles (config-driven: sync.position_sync_every_n_cycles).
-    In paper mode, uses fallback_equity_usdt and skips all exchange calls.
+    In live mode: fetches balance and triggers reconciliation
+    (handled by daemon.reconcile_from_exchange() after this enzyme runs).
+    In paper mode: preserves rolling equity.
 
     The Exchange instance must be injected via the constructor or by
-    setting self.exchange before the enzyme runs. No getattr fallbacks.
+    setting self.exchange before the enzyme runs.
     """
 
     name = "SyncPositions"
@@ -44,14 +46,6 @@ class SyncPositions(Enzyme):
     priority = 0
 
     def __init__(self, config: Optional[dict] = None, exchange=None):
-        """
-        Initialize SyncPositions.
-
-        Args:
-            config: Strategy config dict (same as all enzymes).
-            exchange: core.exchange.Exchange instance for live mode.
-                      In paper mode, this can be None.
-        """
         super().__init__(config=config)
         self.exchange = exchange
 
@@ -60,32 +54,12 @@ class SyncPositions(Enzyme):
         cycle = substrate._cycle_count
         return cycle % sync_every == 0
 
-    def _fetch_exchange_data(self, substrate: Substrate) -> tuple[list, dict]:
-        """
-        Fetch positions and balance from exchange.
-
-        Returns (positions_list, balance_dict).
-        Requires self.exchange to be set (injected via __init__ or main.py).
-        """
-        if self.exchange is None:
-            self._log.warning("No Exchange instance — cannot fetch live data")
-            return [], {}
-
-        try:
-            positions = self.exchange.fetch_positions()
-            balance = self.exchange.fetch_balance()
-            return positions, balance
-        except Exception as e:
-            self._log.error("Exchange fetch failed: %s", e)
-            return [], {}
-
     def transform(self, substrate: Substrate) -> Substrate:
         paper_mode = substrate.cfg("daemon.paper_mode")
 
         if paper_mode:
             # Paper mode: preserve rolling equity (updated by ExecuteExit PnL),
             # fall back to configured value only on first cycle or reset.
-            # This gives paper trading a realistic compounding equity curve.
             fallback = substrate.cfg("portfolio.fallback_equity_usdt")
             current_equity = substrate.portfolio.get("equity", 0)
             if current_equity <= 0:
@@ -100,46 +74,24 @@ class SyncPositions(Enzyme):
             substrate.portfolio["available_margin"] = substrate.portfolio["equity"]
             return substrate
 
-        # Live mode: fetch from exchange
-        try:
-            exchange_positions, balance = self._fetch_exchange_data(substrate)
+        # Live mode: fetch balance from exchange
+        # Position reconciliation is handled by daemon.reconcile_from_exchange()
+        # which runs after all enzymes have fired in the cycle.
+        if self.exchange is None:
+            self._log.warning("No Exchange instance — cannot fetch live data")
+            return substrate
 
-            # Update equity
+        try:
+            balance = self.exchange.fetch_balance()
             if balance:
                 substrate.portfolio["equity"] = balance.get("equity", 0)
                 substrate.portfolio["available_margin"] = balance.get("available", 0)
-
-            # Reconcile positions (shallow-copy safe: new position dicts, no nested mutation)
-            current_positions = substrate.portfolio.get("open_positions", [])
-            exchange_symbols = {p.get("symbol") for p in exchange_positions}
-
-            # Remove positions no longer on exchange (closed externally)
-            reconciled = []
-            for pos in current_positions:
-                symbol = pos.get("symbol", "")
-                if symbol in exchange_symbols:
-                    # Update mark_price from exchange data — create new position dict
-                    for ex_pos in exchange_positions:
-                        if ex_pos.get("symbol") == symbol:
-                            new_pos = {**pos, "mark_price": ex_pos.get("mark_price", pos.get("mark_price"))}
-                            reconciled.append(new_pos)
-                            break
-                else:
-                    self._log.info(
-                        "Position %s removed: no longer on exchange (closed externally)",
-                        symbol,
-                    )
-
-            substrate.portfolio["open_positions"] = reconciled
-
-            self._log.info(
-                "Sync complete: equity=%.2f, positions=%d",
-                substrate.portfolio.get("equity", 0),
-                len(reconciled),
-            )
-
+                self._log.info(
+                    "Live sync: equity=%.2f, available=%.2f",
+                    balance.get("equity", 0), balance.get("available", 0),
+                )
         except Exception as e:
-            self._log.warning("Position sync failed: %s", e)
+            self._log.warning("Balance sync failed: %s", e)
 
         return substrate
 
