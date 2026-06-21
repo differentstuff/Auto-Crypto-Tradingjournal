@@ -91,8 +91,10 @@ exit_rules:
     breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
-  rr_target: 3.0      # Target R:R ratio for TP1. Dynamic: TP1 = risk × rr_target, adapts to volatility since SL is ATR-based.
-  tp2_rr_ratio: 2.5  # TP2 risk-reward multiplier
+  tp1_rr: 3.0        # TP1 R:R ratio — TP1 price = entry + risk × tp1_rr
+  tp2_rr: 5.0        # TP2 R:R ratio — TP2 price = entry + risk × tp2_rr (must be > tp1_rr)
+  tp1_sell_pct: 40.0  # % of total position to sell at TP1 (remainder keeps running with trailing stop)
+  tp2_sell_pct: 40.0  # % of REMAINING position to sell at TP2 (100 = close all remaining)
   soft_exit:
     requires_indicators_reversed: 2
     requires_confirmation_tf: true

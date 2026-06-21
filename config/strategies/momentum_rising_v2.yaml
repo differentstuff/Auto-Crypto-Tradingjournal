@@ -179,6 +179,8 @@ exit_rules:
     urgency: "soft"
   soft_reversal_profit_threshold: 0.5
   near_sl_urgency_pct: 0.5
+  tp1_sell_pct: 40.0              # % of total position to sell at TP1 (remainder runs with trailing stop)
+  tp2_sell_pct: 40.0              # % of REMAINING position to sell at TP2 (100 = close all remaining)
 
 # ── Structure detection config ────────────────────────────────────────────────
 # Parameters for MarketGeometry enzyme (swing detection, trend classification)

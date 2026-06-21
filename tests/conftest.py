@@ -64,7 +64,7 @@ def make_full_config(**overrides) -> dict:
             "entry_threshold": 6.5,
             "confluence_min_signals": 3,
             "rr_minimum": 2.5,
-            "rr_target": 3.0,
+            "tp1_rr": 3.0,
             "approval_threshold": 4.5,
             "min_candidate_pct": 0.20,
             "rsi_signal_high": 55,
@@ -113,7 +113,7 @@ def make_full_config(**overrides) -> dict:
                 "trail_atr_multiplier": 1.0,
                 "breakeven_at_activation": True,
             },
-            "tp2_rr_ratio": 2.5,
+            "tp2_rr": 5.0,
             "soft_exit": {
                 "requires_indicators_reversed": 2,
                 "requires_confirmation_tf": True,

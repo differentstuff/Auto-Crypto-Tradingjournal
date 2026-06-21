@@ -30,8 +30,8 @@ def _compute_sl_tp(
     sr_levels: list[dict],
     rr_minimum: float,
     atr_sl_multiplier: float,
-    tp2_rr_ratio: float,
-    rr_target: float = 0.0,
+    tp2_rr: float,
+    tp1_rr: float = 0.0,
     max_sl_pct: float = 0.0,
 ) -> dict:
     """
@@ -44,10 +44,10 @@ def _compute_sl_tp(
         If max_sl_pct > 0 and SL distance exceeds it, the trade is rejected
         (returns zeroed-out dict) — this prevents entering trades with
         unrealistically wide stops during high-volatility regimes.
-    TP1: target at rr_target × risk from entry. Dynamic: scales with SL width
-         (which is ATR-based), so TP adapts to volatility. rr_target is the
+    TP1: target at tp1_rr × risk from entry. Dynamic: scales with SL width
+         (which is ATR-based), so TP adapts to volatility. tp1_rr is the
          goal R:R ratio (e.g., 3.0 means aim for 3:1 reward:risk).
-    TP2: extended target at tp2_rr_ratio × risk.
+    TP2: extended target at tp2_rr × risk (must be > tp1_rr).
 
     Returns {sl_price, tp1, tp2, rr_ratio, sl_atr_multiple, sl_type}
     """
@@ -124,18 +124,18 @@ def _compute_sl_tp(
             "sl_type": sl_type,
         }
 
-    # TP calculation: use rr_target as the goal R:R ratio. TP1 = risk × rr_target.
+    # TP calculation: use tp1_rr as the goal R:R ratio. TP1 = risk × tp1_rr.
     # This is dynamic: since SL is ATR-based, TP inherits ATR awareness.
     # A tighter SL (low vol) → tighter TP. A wider SL (high vol) → wider TP.
     # The trailing stop handles actual exits — TP1 is the target the trail works towards.
-    if rr_target > 0:
-        tp1_dist = risk * rr_target
-        tp2_dist = risk * tp2_rr_ratio
-        rr_ratio = rr_target
+    if tp1_rr > 0:
+        tp1_dist = risk * tp1_rr
+        tp2_dist = risk * tp2_rr
+        rr_ratio = tp1_rr
     else:
         # Fallback: use rr_minimum as the target (minimum viable R:R)
         tp1_dist = risk * rr_minimum
-        tp2_dist = risk * tp2_rr_ratio
+        tp2_dist = risk * tp2_rr
         rr_ratio = rr_minimum
 
     # Hard R:R rejection: if the actual R:R falls below rr_minimum, reject
@@ -263,9 +263,9 @@ class ValidateEntryZone(Enzyme):
 
         # Config values
         rr_minimum = substrate.cfg("scoring.rr_minimum")
-        rr_target = substrate.cfg("scoring.rr_target", 0.0)
+        tp1_rr = substrate.cfg("scoring.tp1_rr", 0.0)
         atr_sl_multiplier = substrate.cfg("exit_rules.hard_stop.width_atr_multiplier")
-        tp2_rr_ratio = substrate.cfg("exit_rules.tp2_rr_ratio")
+        tp2_rr = substrate.cfg("exit_rules.tp2_rr")
         max_sl_pct = substrate.cfg("risk.max_sl_pct", 0.0)
 
         entry_zones = {}
@@ -329,8 +329,8 @@ class ValidateEntryZone(Enzyme):
                 sr_levels=sr_levels,
                 rr_minimum=rr_minimum,
                 atr_sl_multiplier=atr_sl_multiplier,
-                tp2_rr_ratio=tp2_rr_ratio,
-                rr_target=rr_target,
+                tp2_rr=tp2_rr,
+                tp1_rr=tp1_rr,
                 max_sl_pct=max_sl_pct,
             )
 
@@ -345,8 +345,8 @@ class ValidateEntryZone(Enzyme):
             # Skip rejected entries (R:R too low)
             if sl_tp["sl_price"] == 0.0 and sl_tp.get("sl_type") == "rejected_rr_too_low":
                 self._log.info(
-                    "Rejected %s: R:R too low (rr=%.2f < min=%.2f, rr_target=%.1f)",
-                    symbol, sl_tp.get("rr_ratio", 0), rr_minimum, rr_target,
+                    "Rejected %s: R:R too low (rr=%.2f < min=%.2f, tp1_rr=%.1f)",
+                    symbol, sl_tp.get("rr_ratio", 0), rr_minimum, tp1_rr,
                 )
                 continue
 
