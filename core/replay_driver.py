@@ -184,6 +184,10 @@ def run_replay(
     )
     daemon.initialize()
 
+    # Exchange-as-truth: substrate is always fresh in replay mode.
+    # No load_latest_substrate() call — phantom trades eliminated.
+    _log.info("Replay mode: fresh substrate (exchange-as-truth)")
+
     # Re-register OUR signal handlers — daemon.initialize() overwrites them
     # with its own, which sets daemon._shutdown_requested (not our module-level
     # _shutdown_requested that the replay loop checks).
