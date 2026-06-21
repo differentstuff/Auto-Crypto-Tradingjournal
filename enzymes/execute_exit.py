@@ -57,6 +57,8 @@ class ExecuteExit(Enzyme):
         symbol = exit_approved.get("symbol", "?")
         exit_reason = exit_approved.get("reason", "unknown")
         paper_mode = substrate.cfg("daemon.paper_mode")
+        is_partial = exit_approved.get("partial", False)
+        sell_pct = exit_approved.get("sell_pct", 0.0)
 
         # Find the position
         positions = substrate.portfolio.get("open_positions", [])
@@ -77,65 +79,127 @@ class ExecuteExit(Enzyme):
             substrate.decisions["action"] = "trade_closed"
             return substrate
 
-        # Compute PnL for logging
+        # Compute PnL for the portion being sold
         entry_price = target_pos.get("entry_price", 0)
         mark_price = target_pos.get("mark_price", 0)
         direction = target_pos.get("direction", "Long").lower()
-        size_usdt = target_pos.get("size_usdt", 0)
+        full_size_usdt = target_pos.get("size_usdt", 0)
+
         pnl_pct = 0.0
         if entry_price and mark_price:
             if direction == "long":
                 pnl_pct = ((mark_price - entry_price) / entry_price) * 100
             else:
                 pnl_pct = ((entry_price - mark_price) / entry_price) * 100
-        pnl_usdt = size_usdt * pnl_pct / 100
 
-        # Apply PnL to portfolio equity (both paper and live)
-        # In paper mode this is the only equity update path.
-        # In live mode SyncPositions overwrites with real exchange equity next cycle.
-        current_equity = substrate.portfolio.get("equity", 0)
-        if current_equity > 0:
-            substrate.portfolio["equity"] = round(current_equity + pnl_usdt, 2)
+        if is_partial:
+            # ── Partial close: sell a % of the position, keep the rest ──
+            sold_usdt = full_size_usdt * (sell_pct / 100.0)
+            remaining_usdt = round(full_size_usdt - sold_usdt, 2)
+            pnl_usdt = sold_usdt * pnl_pct / 100
+
+            # Apply PnL from sold portion to equity
+            current_equity = substrate.portfolio.get("equity", 0)
+            if current_equity > 0:
+                substrate.portfolio["equity"] = round(current_equity + pnl_usdt, 2)
+                self._log.info(
+                    "Equity updated: %.2f → %.2f (partial PnL: %+.2f USDT)",
+                    current_equity, substrate.portfolio["equity"], pnl_usdt,
+                )
+
+            # Write PnL back to exit_approved for outcome recording
+            exit_approved["pnl_pct"] = round(pnl_pct, 4)
+            exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
+            exit_approved["exit_price"] = mark_price
+            exit_approved["sold_usdt"] = round(sold_usdt, 2)
+            exit_approved["remaining_usdt"] = remaining_usdt
+            substrate.decisions["exit_approved"] = exit_approved
+
+            # Update position: reduce size, mark TP as taken
+            updated_pos = {**target_pos, "size_usdt": remaining_usdt}
+            if exit_reason == "tp1_partial":
+                updated_pos["tp1_taken"] = True
+            elif exit_reason == "tp2_partial":
+                updated_pos["tp2_taken"] = True
+
+            if paper_mode:
+                self._log.info(
+                    "PAPER PARTIAL CLOSE: %s %s reason=%s sold=%.2f USDT (%.1f%%) "
+                    "remaining=%.2f USDT pnl=%.2f%% (%.2f USDT)",
+                    direction, symbol, exit_reason, sold_usdt, sell_pct,
+                    remaining_usdt, pnl_pct, pnl_usdt,
+                )
+            else:
+                self._log.info(
+                    "LIVE PARTIAL CLOSE: %s %s reason=%s sold=%.2f USDT (%.1f%%) "
+                    "remaining=%.2f USDT pnl=%.2f%% (%.2f USDT)",
+                    direction, symbol, exit_reason, sold_usdt, sell_pct,
+                    remaining_usdt, pnl_pct, pnl_usdt,
+                )
+
+            # Reassign position in list (shallow-copy safe)
+            updated_positions = list(positions)
+            updated_positions[target_idx] = updated_pos
+            substrate.portfolio["open_positions"] = updated_positions
+
+            # Partial close is NOT 'trade_closed' — position still open
+            substrate.decisions["action"] = "trade_managed"
+
             self._log.info(
-                "Equity updated: %.2f → %.2f (PnL: %+.2f USDT)",
-                current_equity, substrate.portfolio["equity"], pnl_usdt,
+                "Partial close: %s — reason=%s, sold=%.1f%%, remaining=%.2f USDT",
+                symbol, exit_reason, sell_pct, remaining_usdt,
             )
 
-        # Write PnL back to exit_approved so OutcomeRecorder and
-        # RecordTradeOutcome can capture it. Without this, the JSON
-        # backtest summary shows wins=0, losses=0, total_pnl=0.
-        exit_approved["pnl_pct"] = round(pnl_pct, 4)
-        exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
-        exit_approved["exit_price"] = mark_price
-        substrate.decisions["exit_approved"] = exit_approved
+            return substrate
 
-        if paper_mode:
-            self._log.info(
-                "PAPER CLOSE: %s %s reason=%s pnl=%.2f%% (%.2f USDT)",
-                target_pos.get("direction", "?"), symbol, exit_reason,
-                pnl_pct, pnl_usdt,
-            )
         else:
+            # ── Full close: remove position entirely ──
+            pnl_usdt = full_size_usdt * pnl_pct / 100
+
+            # Apply PnL to portfolio equity (both paper and live)
+            current_equity = substrate.portfolio.get("equity", 0)
+            if current_equity > 0:
+                substrate.portfolio["equity"] = round(current_equity + pnl_usdt, 2)
+                self._log.info(
+                    "Equity updated: %.2f → %.2f (PnL: %+.2f USDT)",
+                    current_equity, substrate.portfolio["equity"], pnl_usdt,
+                )
+
+            # Write PnL back to exit_approved so OutcomeRecorder and
+            # RecordTradeOutcome can capture it. Without this, the JSON
+            # backtest summary shows wins=0, losses=0, total_pnl=0.
+            exit_approved["pnl_pct"] = round(pnl_pct, 4)
+            exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
+            exit_approved["exit_price"] = mark_price
+            substrate.decisions["exit_approved"] = exit_approved
+
+            if paper_mode:
+                self._log.info(
+                    "PAPER CLOSE: %s %s reason=%s pnl=%.2f%% (%.2f USDT)",
+                    target_pos.get("direction", "?"), symbol, exit_reason,
+                    pnl_pct, pnl_usdt,
+                )
+            else:
+                self._log.info(
+                    "LIVE CLOSE: %s %s reason=%s pnl=%.2f%% (%.2f USDT)",
+                    target_pos.get("direction", "?"), symbol, exit_reason,
+                    pnl_pct, pnl_usdt,
+                )
+
+            # Remove position from portfolio (shallow-copy safe: new list, no mutation of shared reference)
+            substrate.portfolio["open_positions"] = [
+                p for i, p in enumerate(positions) if i != target_idx
+            ]
+
+            # Update decisions
+            substrate.decisions["action"] = "trade_closed"
+
             self._log.info(
-                "LIVE CLOSE: %s %s reason=%s pnl=%.2f%% (%.2f USDT)",
-                target_pos.get("direction", "?"), symbol, exit_reason,
-                pnl_pct, pnl_usdt,
+                "Position closed: %s — reason=%s, pnl=%.2f%%",
+                symbol, exit_reason, pnl_pct,
             )
 
-        # Remove position from portfolio (shallow-copy safe: new list, no mutation of shared reference)
-        substrate.portfolio["open_positions"] = [
-            p for i, p in enumerate(positions) if i != target_idx
-        ]
-
-        # Update decisions
-        substrate.decisions["action"] = "trade_closed"
-
-        self._log.info(
-            "Position closed: %s — reason=%s, pnl=%.2f%%",
-            symbol, exit_reason, pnl_pct,
-        )
-
-        return substrate
+            return substrate
 
     def flux_score(self, substrate: Substrate) -> float:
         """Dynamic flux: high when exit is approved — close position promptly."""
