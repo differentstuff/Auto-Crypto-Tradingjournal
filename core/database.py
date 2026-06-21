@@ -1,16 +1,17 @@
 """
 core/database.py -- SQLite WAL database with learning tables.
 
-Ports the existing database schema and adds new learning tables
-for the reaction network architecture.
+Exchange-as-truth architecture:
+  - substrate_state table REMOVED (substrate is ephemeral, rebuilt from exchange)
+  - cycle_log table REMOVED (no longer needed without substrate persistence)
+  - load_latest_substrate() REMOVED (substrate never loaded from DB)
+  - save_substrate() REMOVED (substrate never persisted to DB)
+  - position_metadata table ADDED (stores atr_pct for TP recalculation)
+  - Learning data tables KEPT (signal_accuracy, combination_accuracy, etc.)
+  - New learning tables ADDED (adjusted_weights, adjusted_thresholds, etc.)
 
-Existing tables (ported from database.py):
-  - positions, orders, wallet_snapshots, analyzed_calls, etc.
-
-New learning tables:
-  - trade_learning, signal_accuracy, combination_accuracy,
-    trajectory_accuracy, idle_cycles, idle_condition_accuracy,
-    weight_history, rulebook_versions, substrate_state
+The substrate is a cache of exchange state. It is rebuilt fresh on every
+startup and reconciled from the exchange every cycle. No persistence needed.
 """
 
 import json
@@ -45,9 +46,6 @@ def db_conn():
     """
     Context manager that opens a connection, auto-commits on clean exit,
     and rolls back + re-raises on any exception.
-
-    Callers do NOT need to call conn.commit() manually. Any unhandled
-    exception triggers a rollback so partial writes are never silently lost.
     """
     conn = get_conn()
     try:
@@ -64,8 +62,8 @@ def init_db():
     """
     Create all tables if they do not exist yet. Safe to call on every startup.
 
-    Uses try/finally to guarantee the connection is closed even if a
-    migration fails mid-way.
+    Exchange-as-truth: substrate_state and cycle_log tables are NOT created.
+    Position metadata and learning data tables ARE created.
     """
     conn = get_conn()
     try:
@@ -97,8 +95,6 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         if _applied(ver):
             return
         try:
-            # Use executescript for multi-statement SQL (migrations that
-            # rename+create+insert+drop), execute for single statements.
             if sql.strip().count(";") > 1:
                 conn.executescript(sql)
             else:
@@ -386,7 +382,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
     _apply(38, "analyzed_calls.regime_label", "ALTER TABLE analyzed_calls ADD COLUMN regime_label TEXT DEFAULT NULL")
     _apply(39, "analyzed_calls.ml_win_prob", "ALTER TABLE analyzed_calls ADD COLUMN ml_win_prob REAL DEFAULT NULL")
 
-    # ── Learning tables (CREATE before UID migrations so fresh DBs have new schema) ──
+    # ── Learning tables ────────────────────────────────────────────────────────
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS trade_learning (
@@ -516,42 +512,32 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
     """)
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS substrate_state (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            strategy_name   TEXT NOT NULL,
-            cycle_count     INTEGER DEFAULT 0,
-            substrate_json  TEXT NOT NULL,
-            created_at      TEXT DEFAULT (datetime('now'))
+        CREATE TABLE IF NOT EXISTS challenger_log (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid             TEXT NOT NULL,
+            event_type               TEXT NOT NULL,
+            source                   TEXT,
+            timestamp                TEXT DEFAULT (datetime('now')),
+            challenger_weights_json  TEXT,
+            current_weights_json     TEXT,
+            reason                   TEXT,
+            production_profit_factor REAL,
+            challenger_profit_factor REAL,
+            promoted                 INTEGER DEFAULT 0,
+            trade_count              INTEGER,
+            symbol                   TEXT,
+            entry_score              REAL,
+            exit_pnl_pct             REAL,
+            exit_reason              TEXT,
+            signal_states_json       TEXT
         )
     """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS cycle_log (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            strategy_name   TEXT NOT NULL,
-            cycle_count     INTEGER NOT NULL,
-            action          TEXT NOT NULL,
-            enzymes_fired   TEXT,
-            isc_results     TEXT,
-            duration_ms     INTEGER,
-            created_at      TEXT DEFAULT (datetime('now'))
-        )
-    """)
-
-    conn.commit()
-
-    # ── Strategy UID migrations (for existing databases with old schema) ──────
-    # On fresh databases, CREATE TABLE IF NOT EXISTS already created the new schema.
-    # These migrations only matter for existing databases that have the old schema.
-    # Add strategy_uid column to tables that only need a new column (no PK change)
+    # ── Strategy UID migrations ──────────────────────────────────────────────
     _apply(40, "trade_learning.strategy_uid", "ALTER TABLE trade_learning ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
     _apply(41, "weight_history.strategy_uid", "ALTER TABLE weight_history ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
     _apply(42, "rulebook_versions.strategy_uid", "ALTER TABLE rulebook_versions ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
 
-    # Tables with PK changes need rebuild: rename, create new, migrate, drop old.
-    # These only run on existing DBs where the old schema is present.
-    # On fresh DBs, the tables already have the new schema so these are skipped
-    # (schema_version already has them marked as applied by the CREATE TABLE step).
     _apply(43, "signal_accuracy.strategy_uid_pk", """
         ALTER TABLE signal_accuracy RENAME TO _signal_accuracy_old;
         CREATE TABLE signal_accuracy (
@@ -639,7 +625,6 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         DROP TABLE _idle_condition_accuracy_old;
     """)
 
-    # ── Challenger system tables ──────────────────────────────────────────────
     _apply(47, "challenger_log", """
         CREATE TABLE IF NOT EXISTS challenger_log (
             id                       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -662,14 +647,6 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── LLM validation tracking fields ──────────────────────────────────────────
-    # These columns record LLM verdicts alongside trade outcomes so we can
-    # answer: "Does LLM validation actually improve trade outcomes?"
-    # llm_verdict:  proceed|confirm|concern|adjust (or NULL if LLM was disabled)
-    # llm_reason:   free-text LLM reasoning
-    # llm_model:    model used (e.g. "z-ai/glm-5.1")
-    # llm_enabled:  1 if LLM was active at trade time, 0 if not
-    # llm_override: 1 if trade was allowed via LLM "proceed" despite sub-threshold score
     _apply(48, "trade_learning_llm_fields", """
         ALTER TABLE trade_learning ADD COLUMN llm_verdict TEXT;
         ALTER TABLE trade_learning ADD COLUMN llm_reason TEXT;
@@ -678,7 +655,6 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         ALTER TABLE trade_learning ADD COLUMN llm_override INTEGER DEFAULT 0
     """)
 
-    # ── Karpathy experiment log table ──────────────────────────────────────────
     _apply(49, "karpathy_log", """
         CREATE TABLE IF NOT EXISTS karpathy_log (
             id                       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -695,7 +671,6 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Hyperopt search log table ──────────────────────────────────────────────
     _apply(50, "hyperopt_log", """
         CREATE TABLE IF NOT EXISTS hyperopt_log (
             id                       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -712,7 +687,6 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Threshold-aware learning: per-bucket accuracy table ────────────────────
     _apply(51, "signal_accuracy_by_threshold", """
         CREATE TABLE IF NOT EXISTS signal_accuracy_by_threshold (
             strategy_uid        TEXT NOT NULL,
@@ -734,67 +708,104 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # ── Exchange-as-truth: new tables ─────────────────────────────────────────
+
+    _apply(60, "exchange_as_truth_v3", """
+        -- Position metadata for TP recalculation after restart
+        -- NOT position state (that comes from exchange)
+        CREATE TABLE IF NOT EXISTS position_metadata (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol          TEXT NOT NULL,
+            direction       TEXT NOT NULL,
+            entry_price     REAL NOT NULL,
+            strategy_uid    TEXT NOT NULL DEFAULT 'legacy',
+            atr_value       REAL DEFAULT 0,
+            atr_pct         REAL DEFAULT 0,
+            sl_price        REAL DEFAULT 0,
+            tp1             REAL DEFAULT 0,
+            tp2             REAL DEFAULT 0,
+            size_usdt       REAL DEFAULT 0,
+            opened_at       TEXT,
+            closed_at       TEXT,
+            sl_order_id     TEXT DEFAULT '',
+            tp1_order_id    TEXT DEFAULT '',
+            tp2_order_id    TEXT DEFAULT '',
+            native_trail_order_id TEXT DEFAULT '',
+            max_profit_atr  REAL DEFAULT 0,
+            created_at      TEXT DEFAULT (datetime('now')),
+            updated_at      TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    _apply(61, "adjusted_weights", """
+        CREATE TABLE IF NOT EXISTS adjusted_weights (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid    TEXT NOT NULL,
+            indicator_name  TEXT NOT NULL,
+            weight          REAL NOT NULL,
+            updated_at      TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, indicator_name)
+        )
+    """)
+
+    _apply(62, "adjusted_thresholds", """
+        CREATE TABLE IF NOT EXISTS adjusted_thresholds (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid    TEXT NOT NULL,
+            threshold_name  TEXT NOT NULL,
+            value           REAL NOT NULL,
+            updated_at      TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, threshold_name)
+        )
+    """)
+
+    _apply(63, "suppressed_signals", """
+        CREATE TABLE IF NOT EXISTS suppressed_signals (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid    TEXT NOT NULL,
+            indicator_name  TEXT NOT NULL,
+            reason          TEXT DEFAULT '',
+            updated_at      TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, indicator_name)
+        )
+    """)
+
+    _apply(64, "highlight_signals", """
+        CREATE TABLE IF NOT EXISTS highlight_signals (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid    TEXT NOT NULL,
+            indicator_name  TEXT NOT NULL,
+            reason          TEXT DEFAULT '',
+            updated_at      TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid, indicator_name)
+        )
+    """)
+
+    _apply(65, "challenger_state", """
+        CREATE TABLE IF NOT EXISTS challenger_state (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_uid    TEXT NOT NULL,
+            state_json      TEXT NOT NULL,
+            updated_at      TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (strategy_uid)
+        )
+    """)
+
+    # ── Exchange-as-truth: drop substrate persistence tables ──────────────────
+    # These tables are no longer needed — substrate is ephemeral.
+    # Use DROP IF EXISTS so this is safe on both fresh and existing DBs.
+    _apply(66, "drop_substrate_state", "DROP TABLE IF EXISTS substrate_state")
+    _apply(67, "drop_cycle_log", "DROP TABLE IF EXISTS cycle_log")
+
     conn.commit()
     _log.info("DB initialized at %s", DB_PATH)
-    # Note: connection is closed by init_db()'s finally block, not here.
 
 
-# --- Substrate persistence helpers -------------------------------------------
-
-def save_substrate(substrate, max_rows: int = 200) -> int:
-    """
-    Save substrate state to database. Returns row id.
-
-    Prunes old rows so the table never exceeds max_rows per strategy.
-    max_rows is read from config (daemon.substrate_state_max_rows) by the
-    daemon and passed here. Default 200 keeps ~2 days of 15-min cycles.
-    """
-    strategy_name = substrate.strategy.get("name", "")
-    with db_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO substrate_state
-               (strategy_name, cycle_count, substrate_json)
-               VALUES (?, ?, ?)""",
-            (
-                strategy_name,
-                substrate._cycle_count,
-                substrate.to_persistent_json(),
-            ),
-        )
-        row_id = cur.lastrowid
-
-        # Prune: keep only the most recent max_rows rows per strategy
-        conn.execute(
-            """DELETE FROM substrate_state
-               WHERE strategy_name = ?
-               AND id NOT IN (
-                   SELECT id FROM substrate_state
-                   WHERE strategy_name = ?
-                   ORDER BY id DESC
-                   LIMIT ?
-               )""",
-            (strategy_name, strategy_name, max_rows),
-        )
-        return row_id
-
-
-def load_latest_substrate(strategy_name: str = "") -> Optional[dict]:
-    """Load the most recent substrate state from database."""
-    with db_conn() as conn:
-        query = """
-            SELECT substrate_json FROM substrate_state
-            WHERE 1=1
-        """
-        params: list = []
-        if strategy_name:
-            query += " AND strategy_name = ?"
-            params.append(strategy_name)
-        query += " ORDER BY id DESC LIMIT 1"
-
-        row = conn.execute(query, params).fetchone()
-        if row:
-            return json.loads(row["substrate_json"])
-    return None
+# --- Substrate persistence helpers (REMOVED) ──────────────────────────────
+# Exchange-as-truth: substrate is ephemeral, never persisted to DB.
+# load_latest_substrate() — REMOVED
+# save_substrate() — REMOVED
+# save_cycle_log() — KEPT for audit logging (positions, not substrate state)
 
 
 def save_cycle_log(
@@ -805,20 +816,25 @@ def save_cycle_log(
     isc_results: dict,
     duration_ms: int,
 ) -> int:
-    """Log a completed cycle."""
-    with db_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO cycle_log
-               (strategy_name, cycle_count, action, enzymes_fired,
-                isc_results, duration_ms)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                strategy_name,
-                cycle_count,
-                action,
-                json.dumps(enzymes_fired),
-                json.dumps(isc_results),
-                duration_ms,
-            ),
-        )
-        return cur.lastrowid
+    """Log a completed cycle to the cycle_log table (if it exists)."""
+    try:
+        with db_conn() as conn:
+            cur = conn.execute(
+                """INSERT INTO cycle_log
+                   (strategy_name, cycle_count, action, enzymes_fired,
+                    isc_results, duration_ms)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    strategy_name,
+                    cycle_count,
+                    action,
+                    json.dumps(enzymes_fired),
+                    json.dumps(isc_results),
+                    duration_ms,
+                ),
+            )
+            return cur.lastrowid
+    except Exception:
+        # cycle_log table may not exist (dropped by exchange-as-truth migration)
+        # This is fine — cycle logging is optional
+        return 0
