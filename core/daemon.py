@@ -183,8 +183,8 @@ class Daemon:
             "terminal_actions": {"trade_open"},
         },
         "trade_managed": {
-            "description": "Position monitored, exit request evaluated",
-            "terminal_actions": {"manage"},
+            "description": "Position monitored, exit request evaluated, or partial close executed",
+            "terminal_actions": {"manage", "trade_managed"},
         },
         "trade_closed": {
             "description": "Position closed, outcome recorded",
@@ -411,6 +411,14 @@ class Daemon:
             _log.info("No enzymes registered yet (skeleton mode)")
             self._fire_wait("skeleton mode - no enzymes registered")
             isc_results = self.substrate.verify_iscs()
+
+        # ── Post-enzyme: trailing stop maintenance ─────────────────────
+        # Update trailing stops for ALL open positions every cycle.
+        # This must run AFTER all enzymes have fired (mark prices are current)
+        # and ensures trailing stops continue tracking even when no exit_request
+        # exists (e.g., after TP1 partial exit when tp1_taken=True).
+        from core.trailing_stop import maintain_trailing_stops
+        maintain_trailing_stops(self.substrate)
 
         # Persist substrate — SKIP in replay mode (no DB writes during backtest)
         if not self.replay_mode:
