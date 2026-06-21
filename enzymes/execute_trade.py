@@ -131,6 +131,9 @@ class ExecuteTrade(Enzyme):
             "trailing_active": False,
             "trailing_sl": None,
             "peak_price": entry_price,
+            # Partial exit tracking — each TP can only fire once
+            "tp1_taken": False,
+            "tp2_taken": False,
         }
 
         # Add position to portfolio (shallow-copy safe: new list, no mutation of shared reference)
