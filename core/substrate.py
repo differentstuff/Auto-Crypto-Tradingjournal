@@ -3,31 +3,22 @@ core/substrate.py -- Shared state container for the reaction network.
 
 All enzymes read from and write to this single substrate.
 Each enzyme modifies only its designated output fields.
-The substrate persists across cycles and is stored in the database.
 
-Based on: docs/reaction-design/substrate-schema.yaml
+Exchange-as-truth architecture:
+    The substrate is ephemeral — rebuilt fresh on every startup.
+    Positions are reconciled from the exchange (live mode) or are
+    runtime-only (paper/backtest mode). No persistence to DB.
+    Learning data is stored in dedicated DB tables, not in substrate.
 
 Security note:
     The substrate stores only strategy config (thresholds, risk limits,
     ISC definitions). Exchange credentials and LLM API keys are NEVER
     stored on the substrate. Those are handled by KeyManager and accessed
     directly from ConfigLoader by enzymes that need them.
-
-Serialization:
-    to_persistent_dict() -- durable state (survives restart). Stored in DB.
-        Contains: strategy, portfolio, learning, validity, cycle metadata.
-        Does NOT contain: market (stale on restart), analysis (recomputed),
-        per-cycle decisions (cleared on reset).
-    to_cycle_snapshot() -- full cycle state for debugging/audit.
-        Can be pruned aggressively (last 50 cycles).
-    from_persistent_dict() -- restore from DB on daemon restart.
-        Market and analysis start empty; sensors repopulate on first cycle.
 """
 
 from __future__ import annotations
 
-import copy
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -742,123 +733,6 @@ class Substrate:
         new._created_at = self._created_at
         new._updated_at = self._updated_at
         return new
-
-    def to_persistent_dict(self) -> dict:
-        """
-        Serialize durable substrate state for database storage.
-
-        Contains only what must survive a daemon restart:
-          - strategy: which strategy is running
-          - portfolio: open positions, equity (critical for restart recovery)
-          - learning: accumulated accuracy data, rulebook, suppressed signals
-          - validity: ISC definitions and last-known statuses
-          - cycle metadata
-
-        Does NOT contain:
-          - market: stale on restart; sensors repopulate on first cycle
-          - analysis: stale on restart; evaluators recompute on first cycle
-          - per-cycle decisions: cleared by reset_cycle() anyway
-        """
-        return {
-            "strategy": copy.deepcopy(self.strategy),
-            "portfolio": copy.deepcopy(self.portfolio),
-            "learning": copy.deepcopy(self.learning),
-            "validity": [isc.to_dict() for isc in self.validity],
-            "pending": list(self.pending),
-            "_cycle_count": self._cycle_count,
-            "_created_at": self._created_at,
-            "_updated_at": self._updated_at,
-        }
-
-    def to_cycle_snapshot(self) -> dict:
-        """
-        Full cycle snapshot for debugging and audit trail.
-
-        Includes market and analysis data. Pruned aggressively in DB
-        (last N cycles only, configured by substrate_state_max_rows).
-        """
-        return {
-            "strategy": copy.deepcopy(self.strategy),
-            "portfolio": copy.deepcopy(self.portfolio),
-            "market": copy.deepcopy(self.market),
-            "confluence": copy.deepcopy(self.confluence),
-            "analysis": copy.deepcopy(self.analysis),
-            "decisions": copy.deepcopy(self.decisions),
-            "learning": copy.deepcopy(self.learning),
-            "validity": [isc.to_dict() for isc in self.validity],
-            "pending": list(self.pending),
-            "_cycle_count": self._cycle_count,
-            "_created_at": self._created_at,
-            "_updated_at": self._updated_at,
-        }
-
-    def to_dict(self) -> dict:
-        """Alias for to_cycle_snapshot() -- full state for compatibility."""
-        return self.to_cycle_snapshot()
-
-    def to_json(self) -> str:
-        """Serialize substrate to JSON string (full cycle snapshot)."""
-        return json.dumps(self.to_cycle_snapshot(), default=str, indent=2)
-
-    def to_persistent_json(self) -> str:
-        """Serialize durable substrate state to JSON string."""
-        return json.dumps(self.to_persistent_dict(), default=str, indent=2)
-
-    @classmethod
-    def from_persistent_dict(cls, d: dict, config: Optional[Dict] = None) -> "Substrate":
-        """
-        Reconstruct substrate from persistent dict (e.g. from database on restart).
-
-        Market and analysis sections start empty -- sensors and evaluators
-        will repopulate them on the first cycle. This is correct: you never
-        want to trade on stale market data from before a restart.
-        """
-        sub = cls(config=config)
-        sub.strategy = d.get("strategy", sub.strategy)
-        sub.portfolio = d.get("portfolio", sub.portfolio)
-        sub.learning = d.get("learning", sub.learning)
-        validity_data = d.get("validity", [])
-        if validity_data:
-            sub.validity = [ISCCheck.from_dict(isc) for isc in validity_data]
-        else:
-            # DB has no ISCs — use live config (hot-reload may have changed them)
-            isc_defs = (config or {}).get("validity")
-            if not isc_defs:
-                raise SubstrateConfigError(
-                    "No ISC definitions in DB or config — cannot restore safely. "
-                    "Add a validity section to config/default.yaml."
-                )
-            sub.validity = [ISCCheck.from_dict(isc) for isc in isc_defs]
-        sub.pending = d.get("pending", [])
-        sub._cycle_count = d.get("_cycle_count", 0)
-        sub._created_at = d.get("_created_at", sub._created_at)
-        sub._updated_at = d.get("_updated_at", sub._updated_at)
-        return sub
-
-    @classmethod
-    def from_dict(cls, d: dict, config: Optional[Dict] = None) -> "Substrate":
-        """
-        Reconstruct substrate from dict.
-
-        Handles both persistent dicts (from DB) and full cycle snapshots.
-        If market/analysis are present, they are restored (used in tests).
-        """
-        sub = cls.from_persistent_dict(d, config=config)
-        # Restore transient sections if present (e.g. in test roundtrips)
-        if "market" in d:
-            sub.market = d["market"]
-        if "confluence" in d:
-            sub.confluence = d["confluence"]
-        if "analysis" in d:
-            sub.analysis = d["analysis"]
-        if "decisions" in d:
-            sub.decisions = d["decisions"]
-        return sub
-
-    @classmethod
-    def from_json(cls, json_str: str, config: Optional[Dict] = None) -> "Substrate":
-        """Reconstruct substrate from JSON string."""
-        return cls.from_dict(json.loads(json_str), config=config)
 
     def __repr__(self) -> str:
         action = self.decisions.get("action", "")
