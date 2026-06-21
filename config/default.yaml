@@ -22,11 +22,8 @@ daemon:
   paper_mode: true  # safe default; exchange.yaml overrides to false when credentials present
   # If true, orders are written to log files instead of exchange
   substrate_state_max_rows: 200
-  # How many substrate snapshots to keep per strategy in the database.
-  # Each row is a full persistent state blob (~5-20KB). At 15-min cycles,
-  # 200 rows = ~2 days of history. Older rows are pruned automatically
-  # on every save. Increase if you want longer restart-recovery history;
-  # decrease to save disk space on low-storage devices (e.g. Raspberry Pi).
+  # Substrate state max rows removed — substrate is ephemeral (exchange-as-truth).
+  # No persistence needed. Positions come from exchange, learning from DB tables.
 
 exchange:
   primary: "bitget"      # Trading exchange (needs API keys for live mode only)
@@ -95,6 +92,13 @@ exit_rules:
   tp2_rr: 5.0        # TP2 R:R ratio — TP2 price = entry + risk × tp2_rr (must be > tp1_rr)
   tp1_sell_pct: 40.0  # % of total position to sell at TP1 (remainder keeps running with trailing stop)
   tp2_sell_pct: 40.0  # % of REMAINING position to sell at TP2 (100 = close all remaining)
+  # ── Native trailing stop (daemon-offline backup) ────────────────────
+  # Activates on exchange after TP1 hit. Wider than ATR-based stop.
+  # Percentage = atr_multiplier × ATR / current_price × 100 at TP1 time.
+  # Fallback to default_pct if ATR unavailable.
+  native_trail:
+    atr_multiplier: 2.0          # multiplier for native trail (must be > trail_atr_multiplier)
+    default_pct: 5.0             # fallback if ATR unavailable
   soft_exit:
     requires_indicators_reversed: 2
     requires_confirmation_tf: true
