@@ -40,8 +40,10 @@ class RequestExit(Enzyme):
 
     Checks for each open position:
       1. SL breach (immediate urgency)
-      2. TP1 hit (normal urgency)
-      3. Signal reversal from current indicators (low urgency)
+      2. TP1 hit (normal urgency) — only if tp1_taken is False
+      3. TP2 hit (normal urgency) — only if tp2_taken is False
+      4. Trailing stop hit (immediate urgency)
+      5. Signal reversal from current indicators (low urgency)
     """
 
     name = "RequestExit"
@@ -101,48 +103,23 @@ class RequestExit(Enzyme):
             entry_price = pos.get("entry_price", 0)
             sl_price = pos.get("sl_price", 0)
             tp1 = pos.get("tp1", 0)
+            tp2 = pos.get("tp2", 0)
+            tp1_taken = pos.get("tp1_taken", False)
+            tp2_taken = pos.get("tp2_taken", False)
             mark_price = pos.get("mark_price", 0)
 
             if not mark_price:
                 continue
 
-            # ── Structure-aware exits (highest priority) ──────────────────
-            # Evaluated BEFORE standard SL/TP checks because structure break
-            # is an absolute exit — it overrides all other logic.
+            # ── Structure-aware signals (NOT exits — tighten trailing stop) ──
+            # structure_break and phase_range are NOT exit signals.
+            # They tighten the trailing stop via core/trailing_stop.py
+            # (apply_structure_tightening). Only counter_breakout is an exit.
             if structure_aware_exits and geometry_data:
                 geometry = geometry_data.get(symbol, {})
                 if geometry:
-                    # Priority 1: structure break — EXIT immediately
-                    if (geometry.get("structure_break")
-                            and substrate.cfg("exit_rules.structure_break_exit", True)):
-                        substrate.decisions["exit_request"] = {
-                            "symbol": symbol,
-                            "reason": "structure_break",
-                            "urgency": "immediate",
-                        }
-                        self._log.warning(
-                            "STRUCTURE BREAK: %s %s — immediate exit",
-                            symbol, direction,
-                        )
-                        return substrate
-
-                    # Priority 2: phase shifted to range (was trending)
-                    prev_phase = geometry.get("previous_phase", "")
-                    if (geometry.get("phase") == "range"
-                            and prev_phase in ("impulse", "pullback")
-                            and substrate.cfg("exit_rules.phase_range_exit", True)):
-                        substrate.decisions["exit_request"] = {
-                            "symbol": symbol,
-                            "reason": "phase_range",
-                            "urgency": "immediate",
-                        }
-                        self._log.info(
-                            "PHASE RANGE: %s was %s, now range — immediate exit",
-                            symbol, prev_phase,
-                        )
-                        return substrate
-
-                    # Priority 3: counter-structure breakout
+                    # Counter-structure breakout — the ONLY structure exit signal.
+                    # The market is actively breaking against the position.
                     if (geometry.get("phase") == "breakout"
                             and self._is_against_position(geometry, direction)
                             and substrate.cfg("exit_rules.counter_breakout_exit", True)):
@@ -183,8 +160,8 @@ class RequestExit(Enzyme):
                     )
                     return substrate
 
-            # 2. TP1 hit — normal urgency
-            if tp1:
+            # 2. TP1 hit — normal urgency (only if not already taken)
+            if tp1 and not tp1_taken:
                 if direction == "long" and mark_price >= tp1:
                     substrate.decisions["exit_request"] = {
                         "symbol": symbol,
@@ -209,7 +186,33 @@ class RequestExit(Enzyme):
                     )
                     return substrate
 
-            # 3. Trailing stop check (if active)
+            # 3. TP2 hit — normal urgency (only if not already taken)
+            if tp2 and not tp2_taken:
+                if direction == "long" and mark_price >= tp2:
+                    substrate.decisions["exit_request"] = {
+                        "symbol": symbol,
+                        "reason": "tp2_hit",
+                        "urgency": "normal",
+                    }
+                    self._log.info(
+                        "TP2 HIT: %s long mark=%.2f tp2=%.2f",
+                        symbol, mark_price, tp2,
+                    )
+                    return substrate
+
+                if direction == "short" and mark_price <= tp2:
+                    substrate.decisions["exit_request"] = {
+                        "symbol": symbol,
+                        "reason": "tp2_hit",
+                        "urgency": "normal",
+                    }
+                    self._log.info(
+                        "TP2 HIT: %s short mark=%.2f tp2=%.2f",
+                        symbol, mark_price, tp2,
+                    )
+                    return substrate
+
+            # 4. Trailing stop check (if active)
             trailing_active = pos.get("trailing_active", False)
             trailing_sl = pos.get("trailing_sl")
             if trailing_active and trailing_sl and mark_price:
@@ -357,12 +360,22 @@ class RequestExit(Enzyme):
                 if dist_pct < near_sl_threshold:
                     return 4.0
 
-            # TP hit — important
+            # TP1 hit — important (only if not already taken)
             tp1 = pos.get("tp1", 0)
-            if tp1 and mark_price:
+            tp1_taken = pos.get("tp1_taken", False)
+            if tp1 and mark_price and not tp1_taken:
                 if direction == "long" and mark_price >= tp1:
                     return 3.0
                 if direction == "short" and mark_price <= tp1:
+                    return 3.0
+
+            # TP2 hit — important (only if not already taken)
+            tp2 = pos.get("tp2", 0)
+            tp2_taken = pos.get("tp2_taken", False)
+            if tp2 and mark_price and not tp2_taken:
+                if direction == "long" and mark_price >= tp2:
+                    return 3.0
+                if direction == "short" and mark_price <= tp2:
                     return 3.0
 
         # Default: position monitoring is important but not urgent
