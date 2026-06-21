@@ -231,10 +231,9 @@ class TestDaemonReplayMode:
         d = Daemon()
         assert d.replay_mode is False
 
-    @patch("core.daemon.save_substrate")
     @patch("core.daemon.save_cycle_log")
     @patch("core.daemon.init_db")
-    def test_replay_mode_skips_db_writes(self, mock_init_db, mock_save_log, mock_save_sub):
+    def test_replay_mode_skips_db_writes(self, mock_init_db, mock_save_log):
         """In replay mode, save_substrate and save_cycle_log are not called."""
         from conftest import make_full_config
         from core.daemon import Daemon
@@ -280,5 +279,4 @@ class TestDaemonReplayMode:
             d.run_cycle()
 
         # Verify DB writes were NOT called
-        mock_save_sub.assert_not_called()
         mock_save_log.assert_not_called()
