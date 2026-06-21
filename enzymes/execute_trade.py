@@ -3,14 +3,19 @@ enzymes/execute_trade.py -- Transporter enzyme: execute approved trades.
 
 Places orders (paper or live) and records them to the database.
 In paper mode: adds position to portfolio.open_positions, sets action = 'trade_open'.
-In live mode: calls exchange API, then records to database.
+In live mode: calls exchange API with preset SL/TP, then records to database.
+
+Exchange-as-truth architecture:
+  - SL + TP2 are pushed to exchange via presetStopLossPrice/presetStopSurplusPrice
+  - TP1 partial order is placed via place_tpsl_order (40% of position)
+  - Exchange order IDs are stored in the position dict for modify-tpsl-order
+  - atr_pct is stored for TP1/TP2 recalculation after daemon restart
+  - Position metadata is saved to position_metadata DB table
 
 Writes: portfolio.open_positions (adds position), decisions.action = 'trade_open'
 
 Enzyme class: Transporter
 Activates when: decisions.trade_approved is set AND action != 'trade_open'
-
-Port of: bitget_client.py (order functions), database.py (insert)
 """
 
 from __future__ import annotations
@@ -35,7 +40,8 @@ class ExecuteTrade(Enzyme):
       - Sets decisions.action = 'trade_open'
 
     In live mode:
-      - Calls exchange API via core.exchange.Exchange
+      - Calls exchange API with preset SL/TP
+      - Places TP1 partial order via place_tpsl_order
       - Sets decisions.action = 'trade_open'
 
     The Exchange instance must be injected via the constructor or
@@ -47,13 +53,6 @@ class ExecuteTrade(Enzyme):
     priority = 0
 
     def __init__(self, config: Optional[dict] = None, exchange=None):
-        """
-        Initialize ExecuteTrade.
-
-        Args:
-            config: Strategy config dict (same as all enzymes).
-            exchange: core.exchange.Exchange instance for live mode.
-        """
         super().__init__(config=config)
         self.exchange = exchange
 
@@ -66,7 +65,6 @@ class ExecuteTrade(Enzyme):
     def can_activate(self, substrate: Substrate) -> bool:
         trade_approved = substrate.decisions.get("trade_approved")
         action = substrate.decisions.get("action", "wait")
-        # Activate when trade is approved and not yet executed
         return trade_approved is not None and action != "trade_open"
 
     def transform(self, substrate: Substrate) -> Substrate:
@@ -83,34 +81,66 @@ class ExecuteTrade(Enzyme):
         tp2 = trade_approved.get("tp2", 0)
         size_usdt = trade_approved.get("size_usdt", 0)
         atr_value = trade_approved.get("atr_value", 0)
+        atr_pct = trade_approved.get("atr_pct", 0)
         paper_mode = substrate.cfg("daemon.paper_mode")
         leverage = substrate.cfg("portfolio.leverage")
 
+        # Exchange order IDs (populated in live mode)
+        sl_order_id = ""
+        tp1_order_id = ""
+        tp2_order_id = ""
+
         if paper_mode:
             self._log.info(
-                "PAPER ENTRY: %s %s entry=%.2f sl=%.2f tp1=%.2f size=%.2f",
-                direction, symbol, entry_price, sl_price, tp1, size_usdt,
+                "PAPER ENTRY: %s %s entry=%.2f sl=%.2f tp1=%.2f tp2=%.2f size=%.2f atr_pct=%.4f",
+                direction, symbol, entry_price, sl_price, tp1, tp2, size_usdt, atr_pct,
             )
         else:
-            # Live mode: call exchange
+            # Live mode: place order with preset SL/TP
             if self.exchange is not None:
+                # Step 1: Place main order with preset SL + TP2
+                # SL and TP2 are set on the order itself (single API call)
                 result = self.exchange.place_order(
                     symbol=symbol,
                     direction=direction,
                     size_usdt=size_usdt,
                     entry_price=entry_price,
                     sl_price=sl_price,
-                    tp_price=tp1,
+                    tp_price=tp2,  # TP2 is the full exit target
                     leverage=leverage,
                 )
                 if result is None:
                     self._log.error("Live order failed for %s — skipping", symbol)
                     substrate.decisions["trade_approved"] = None
                     return substrate
+
                 self._log.info(
-                    "LIVE ENTRY: %s %s order_id=%s",
-                    direction, symbol, result.get("order_id", "?"),
+                    "LIVE ENTRY: %s %s order_id=%s sl=%.2f tp2=%.2f",
+                    direction, symbol, result.get("order_id", "?"), sl_price, tp2,
                 )
+
+                # Step 2: Place TP1 partial order (40% of position)
+                if tp1:
+                    tp1_result = self.exchange.place_tpsl_order(
+                        symbol=symbol,
+                        direction=direction,
+                        trigger_price=tp1,
+                        size_pct=substrate.cfg("exit_rules.tp1_sell_pct", 40.0),
+                        size_usdt=size_usdt,
+                        order_type="tp",
+                        reduce_only=True,
+                    )
+                    if tp1_result:
+                        tp1_order_id = tp1_result.get("order_id", "")
+                        self._log.info(
+                            "TP1 partial order placed: %s tp1=%.2f order_id=%s",
+                            symbol, tp1, tp1_order_id,
+                        )
+                    else:
+                        self._log.error(
+                            "TP1 partial order FAILED for %s — position open but TP1 not on exchange",
+                            symbol,
+                        )
             else:
                 self._log.warning("No Exchange instance — cannot place live order")
 
@@ -126,6 +156,7 @@ class ExecuteTrade(Enzyme):
             "tp2": tp2,
             "size_usdt": size_usdt,
             "atr_value": atr_value,
+            "atr_pct": atr_pct,  # Store for TP recalculation after restart
             "opened_at": now_iso,
             # Trailing stop state — always present on every position
             "trailing_active": False,
@@ -134,6 +165,13 @@ class ExecuteTrade(Enzyme):
             # Partial exit tracking — each TP can only fire once
             "tp1_taken": False,
             "tp2_taken": False,
+            # Exchange order IDs (for modify-tpsl-order and reconciliation)
+            "pos_id": "",  # Populated by reconcile_from_exchange on next cycle
+            "sl_order_id": sl_order_id,
+            "tp1_order_id": tp1_order_id,
+            "tp2_order_id": tp2_order_id,
+            "native_trail_order_id": "",
+            "max_profit_atr": 0.0,
         }
 
         # Add position to portfolio (shallow-copy safe: new list, no mutation of shared reference)
@@ -144,8 +182,8 @@ class ExecuteTrade(Enzyme):
         substrate.decisions["action"] = "trade_open"
 
         self._log.info(
-            "Trade executed: %s %s size=%.2f action=%s",
-            direction, symbol, size_usdt, "paper" if paper_mode else "live",
+            "Trade executed: %s %s size=%.2f action=%s atr_pct=%.4f",
+            direction, symbol, size_usdt, "paper" if paper_mode else "live", atr_pct,
         )
 
         return substrate
