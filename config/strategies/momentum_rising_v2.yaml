@@ -118,6 +118,7 @@ scoring:
   entry_threshold: 5.5
   confluence_min_signals: 2          # MACD + one cofactor is sufficient (was 3)
   rr_minimum: 2.0
+  # tp1_rr and tp2_rr are in exit_rules (they define take-profit levels, not scoring)
   min_candidate_pct: 0.20
   rsi_signal_high: 55
   rsi_signal_low: 45

@@ -110,6 +110,8 @@ def _base_config() -> dict:
         exit_rules={
             "hard_stop": {"width_atr_multiplier": 1.5, "always_active": True},
             "trailing_stop": {"enabled": True, "activation_profit_pct": 0.5, "trail_atr_multiplier": 1.0, "breakeven_at_activation": True},
+            "tp1_rr": 3.0,
+            "tp2_rr": 5.0,
         },
         portfolio={
             "leverage": 5,

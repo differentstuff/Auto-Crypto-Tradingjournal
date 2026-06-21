@@ -74,7 +74,8 @@ def _make_config(overrides: dict | None = None) -> dict:
                     "trailing_stop": {"enabled": True, "activation_profit_pct": 0.5,
                                       "trail_atr_multiplier": 1.0, "breakeven_at_activation": True,
                                       "distance_pct": 1.0, "move_to_breakeven_at_pct": 1.5},
-                    "tp2_rr_ratio": 2.5,
+                    "tp1_rr": 3.0,
+                    "tp2_rr": 5.0,
                     "soft_exit": {"requires_indicators_reversed": 2, "urgency": "soft"},
                     "soft_reversal_profit_threshold": 0.5},
     )

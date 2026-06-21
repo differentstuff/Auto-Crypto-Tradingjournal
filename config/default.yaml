@@ -108,7 +108,6 @@ scoring:
   approval_threshold: 4.5        # minimum effective_score after soft penalties to approve trade
   confluence_min_signals: 3
   rr_minimum: 2.5                # minimum R:R to approve trade — rejects setups where SL is too wide
-  rr_target: 3.0                 # target R:R for TP1 — goal-oriented, not fixed % (dynamic, adapts to ATR)
   min_candidate_pct: 0.20
   rsi_signal_high: 55
   rsi_signal_low: 45

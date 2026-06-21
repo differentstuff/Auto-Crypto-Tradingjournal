@@ -114,7 +114,7 @@ scoring:
   entry_threshold: 5.5                # Same as momentum_rising_v2 — catches early momentum
   confluence_min_signals: 2            # MACD + one cofactor is sufficient
   rr_minimum: 2.5                      # Reject setups where SL is too wide relative to expected move
-  tp1_rr: 3.0                       # TP1 R:R ratio (must be < tp2_rr)
+  # tp1_rr and tp2_rr are in exit_rules (they define take-profit levels, not scoring)
   min_candidate_pct: 0.20
   rsi_signal_high: 55
   rsi_signal_low: 45

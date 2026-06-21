@@ -101,6 +101,8 @@ def _make_config(overrides: dict | None = None) -> dict:
             },
             "max_hold_hours": 72,               # exit if held longer than this
             "tp_exit_pct": 100.0,               # close 100% at TP (vs partial)
+            "tp1_rr": 3.0,                     # TP1 R:R ratio
+            "tp2_rr": 5.0,                     # TP2 R:R ratio
             "soft_exit": {
                 "requires_indicators_reversed": 2,
                 "requires_confirmation_tf": True,
@@ -108,7 +110,8 @@ def _make_config(overrides: dict | None = None) -> dict:
             },
             "soft_reversal_profit_threshold": 0.5,
             "near_sl_urgency_pct": 0.5,
-            "tp2_rr_ratio": 2.5,
+            "tp1_rr": 3.0,
+            "tp2_rr": 5.0,
         },
         "noise": {
             "conflict_signal_threshold": 2,
