@@ -5,10 +5,18 @@ Provides a single interface for all exchange operations:
   - OHLCV data fetching (public, no auth required)
   - Account balance and position queries (authenticated)
   - Order placement and closing (authenticated, guarded in paper mode)
+  - SL/TP order management (place-tpsl-order, modify-tpsl-order)
+  - Native trailing stop (track_plan)
 
 Credentials come from ConfigLoader (which reads exchange.yaml).
 The daemon strips secrets before passing config to the substrate;
 enzymes that need exchange access receive the Exchange instance directly.
+
+Exchange-as-truth architecture:
+  - fetch_positions() returns ALL fields needed for reconciliation
+  - SL/TP are pushed to exchange at trade open
+  - Trailing stop updates are pushed via modify-tpsl-order
+  - Native trailing stop (track_plan) activates after TP1
 
 Port of: ccxt_client.py, bitget_client.py (unified into one wrapper)
 """
@@ -47,8 +55,11 @@ class Exchange:
     Reads credentials from ConfigLoader and provides methods for:
       - fetch_ohlcv(): OHLCV candle data (DataFrame)
       - fetch_balance(): account equity and margin
-      - fetch_positions(): open positions from exchange
-      - place_order(): create a new order (paper mode guarded)
+      - fetch_positions(): open positions from exchange (with reconciliation fields)
+      - place_order(): create a new order with preset SL/TP (paper mode guarded)
+      - place_tpsl_order(): place TP/SL order (partial TP1, native trailing)
+      - modify_tpsl_order(): modify existing TP/SL order (trailing stop updates)
+      - place_trailing_stop(): place native trailing stop (daemon-offline backup)
       - close_position(): close an existing position (paper mode guarded)
 
     In paper mode, order methods log and return mock data instead of
@@ -263,9 +274,17 @@ class Exchange:
         """
         Fetch open positions from the primary exchange.
 
-        Returns list of dicts with normalized fields:
+        Returns list of dicts with ALL fields needed for reconciliation:
           symbol, direction, entry_price, mark_price, size_usdt,
-          unrealized_pnl, unrealized_pct, leverage, sl_price, tp_price
+          unrealized_pnl, unrealized_pct, leverage,
+          pos_id (exchange position ID for modify-tpsl-order),
+          achieved_profits (> 0 means TP1 hit),
+          sl_price (current SL on exchange),
+          tp_price (current TP on exchange),
+          sl_order_id (stopLossId for modify-tpsl-order),
+          tp_order_id (takeProfitId for modify-tpsl-order)
+
+        Paper mode: returns [] (no exchange positions — paper positions are runtime-only).
         """
         if self._paper_mode:
             _log.info("Paper mode: skipping fetch_positions")
@@ -294,6 +313,23 @@ class Exchange:
                 if notional and entry_price:
                     unrealized_pct = (unrealized_pnl / notional) * 100
 
+                # Raw fields from Bitget for reconciliation and order management
+                info = p.get("info", {})
+                pos_id = info.get("posId", "") or str(p.get("id", ""))
+                achieved_profits = float(info.get("achievedProfits", 0) or 0)
+
+                # Current SL/TP on exchange
+                sl_price = float(info.get("stopLoss", 0) or 0)
+                tp_price = float(info.get("takeProfit", 0) or 0)
+
+                # Order IDs for modify-tpsl-order
+                sl_order_id = info.get("stopLossId", "") or ""
+                tp_order_id = info.get("takeProfitId", "") or ""
+
+                # Position size fields
+                total_contracts = float(info.get("total", contracts) or contracts)
+                available_contracts = float(info.get("available", contracts) or contracts)
+
                 result.append({
                     "symbol": symbol,
                     "direction": direction,
@@ -303,8 +339,15 @@ class Exchange:
                     "unrealized_pnl": round(unrealized_pnl, 4),
                     "unrealized_pct": round(unrealized_pct, 2),
                     "leverage": leverage,
-                    "sl_price": 0.0,
-                    "tp_price": 0.0,
+                    # Reconciliation fields (exchange-as-truth)
+                    "pos_id": pos_id,
+                    "achieved_profits": achieved_profits,
+                    "sl_price": sl_price,
+                    "tp_price": tp_price,
+                    "sl_order_id": sl_order_id,
+                    "tp_order_id": tp_order_id,
+                    "total_contracts": total_contracts,
+                    "available_contracts": available_contracts,
                 })
 
             return result
@@ -326,10 +369,11 @@ class Exchange:
         leverage: int = None,
     ) -> Optional[dict]:
         """
-        Place a market or limit order.
+        Place a market or limit order with preset SL/TP.
 
         In paper mode: logs the order and returns mock data.
-        In live mode: calls the exchange API.
+        In live mode: calls the exchange API with presetStopLossPrice
+        and presetStopSurplusPrice for SL/TP in a single call.
 
         leverage defaults to portfolio.leverage from config if not passed.
 
@@ -364,16 +408,25 @@ class Exchange:
             except Exception as e:
                 _log.warning("Could not set leverage for %s: %s", symbol, e)
 
-            # Place market order
+            # Build params with preset SL/TP (exchange-as-truth: SL/TP on exchange from trade open)
+            params = {}
+            if sl_price:
+                params["stopLossPrice"] = sl_price
+            if tp_price:
+                params["takeProfitPrice"] = tp_price
+
+            # Place market order with preset SL/TP
             order = exchange.create_market_order(
                 symbol=ccxt_symbol,
                 side=side,
                 amount=size_usdt / (entry_price or 1),
+                params=params if params else None,
             )
 
             _log.info(
-                "LIVE ORDER placed: %s %s size=%.2f order_id=%s",
+                "LIVE ORDER placed: %s %s size=%.2f order_id=%s sl=%s tp=%s",
                 direction, symbol, size_usdt, order.get("id", "?"),
+                sl_price, tp_price,
             )
 
             return {
@@ -462,6 +515,243 @@ class Exchange:
         except Exception as e:
             _log.error("place_market_order failed for %s: %s", symbol, e)
             raise ExchangeError(f"Market order failed for {symbol}: {e}")
+
+    def place_tpsl_order(
+        self,
+        symbol: str,
+        direction: str,
+        trigger_price: float,
+        size_pct: float = 100.0,
+        size_usdt: float = 0.0,
+        order_type: str = "tp",
+        reduce_only: bool = True,
+    ) -> Optional[dict]:
+        """
+        Place a TP/SL order via place-tpsl-order endpoint.
+
+        Used for:
+          - Partial TP1 exit (order_type="tp", size_pct=40, reduce_only=True)
+          - Full TP2 exit (order_type="tp", size_pct=100)
+          - Separate SL order (order_type="sl")
+
+        In paper mode: logs and returns mock data.
+        In live mode: calls the exchange API.
+
+        Args:
+            symbol: Journal format symbol (e.g. "BTCUSDT")
+            direction: "Long" or "Short"
+            trigger_price: Price at which the order triggers
+            size_pct: Percentage of position to close (0-100)
+            size_usdt: Position size in USDT (for computing contract amount)
+            order_type: "tp" for take-profit, "sl" for stop-loss
+            reduce_only: True for partial exits
+
+        Returns dict with: order_id, symbol, status, paper
+        """
+        if self._paper_mode:
+            _log.info(
+                "PAPER TPSL ORDER: %s %s type=%s trigger=%.2f size_pct=%.1f%%",
+                direction, symbol, order_type, trigger_price, size_pct,
+            )
+            return {
+                "order_id": f"paper-tpsl-{symbol}-{order_type}",
+                "symbol": symbol,
+                "direction": direction,
+                "order_type": order_type,
+                "trigger_price": trigger_price,
+                "size_pct": size_pct,
+                "status": "paper_pending",
+                "paper": True,
+            }
+
+        try:
+            exchange = self._get_trade_exchange()
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+            side = "sell" if direction.lower() == "long" else "buy"
+
+            params = {
+                "holdSide": direction.lower(),
+                "reduceOnly": reduce_only,
+            }
+
+            if order_type == "tp":
+                params["stopSurplusTriggerPrice"] = str(trigger_price)
+                if size_pct < 100 and size_usdt > 0:
+                    # Compute contract amount for partial close
+                    # size_pct of total position
+                    params["stopSurplusSize"] = str(size_pct)
+            elif order_type == "sl":
+                params["stopLossTriggerPrice"] = str(trigger_price)
+
+            order = exchange.create_order(
+                symbol=ccxt_symbol,
+                type="market",
+                side=side,
+                amount=size_usdt * (size_pct / 100.0) if size_usdt > 0 else 0,
+                params=params,
+            )
+
+            _log.info(
+                "LIVE TPSL ORDER placed: %s %s type=%s trigger=%.2f order_id=%s",
+                direction, symbol, order_type, trigger_price, order.get("id", "?"),
+            )
+
+            return {
+                "order_id": order.get("id", ""),
+                "symbol": symbol,
+                "direction": direction,
+                "order_type": order_type,
+                "trigger_price": trigger_price,
+                "status": order.get("status", "unknown"),
+                "paper": False,
+            }
+
+        except Exception as e:
+            _log.error("place_tpsl_order failed for %s: %s", symbol, e)
+            return None
+
+    def modify_tpsl_order(
+        self,
+        symbol: str,
+        order_id: str,
+        new_sl_price: float = None,
+        new_tp_price: float = None,
+    ) -> bool:
+        """
+        Modify an existing TP/SL order via modify-tpsl-order endpoint.
+
+        Used for trailing stop updates — push new SL to exchange when
+        trailing_sl actually changes.
+
+        In paper mode: logs and returns True.
+        In live mode: calls the exchange API.
+
+        Args:
+            symbol: Journal format symbol (e.g. "BTCUSDT")
+            order_id: Exchange order ID of the SL/TP order to modify
+            new_sl_price: New stop-loss price (None = don't change)
+            new_tp_price: New take-profit price (None = don't change)
+
+        Returns: True if successful, False otherwise.
+        """
+        if self._paper_mode:
+            _log.info(
+                "PAPER MODIFY TPSL: %s order_id=%s sl=%s tp=%s",
+                symbol, order_id, new_sl_price, new_tp_price,
+            )
+            return True
+
+        try:
+            exchange = self._get_trade_exchange()
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+
+            params = {}
+            if new_sl_price is not None:
+                params["stopLossPrice"] = str(new_sl_price)
+            if new_tp_price is not None:
+                params["stopSurplusPrice"] = str(new_tp_price)
+
+            # Use CCXT's edit_order to modify the TP/SL order
+            exchange.edit_order(
+                id=order_id,
+                symbol=ccxt_symbol,
+                type="market",
+                side="sell",  # TP/SL orders are always closing
+                amount=None,
+                price=None,
+                params=params,
+            )
+
+            _log.info(
+                "LIVE MODIFY TPSL: %s order_id=%s sl=%s tp=%s",
+                symbol, order_id, new_sl_price, new_tp_price,
+            )
+            return True
+
+        except Exception as e:
+            _log.error("modify_tpsl_order failed for %s order_id=%s: %s", symbol, order_id, e)
+            return False
+
+    def place_trailing_stop(
+        self,
+        symbol: str,
+        direction: str,
+        trigger_price: float,
+        trail_pct: float,
+    ) -> Optional[dict]:
+        """
+        Place a native trailing stop order (daemon-offline backup).
+
+        Activates after TP1 hit. The native trail is WIDER than the
+        daemon's ATR-based trailing stop — it's a safety net, not a sniper.
+
+        Percentage formula: (2 × ATR / current_price) × 100
+
+        In paper mode: logs and returns mock data.
+        In live mode: calls the exchange API with planType="trailing".
+
+        Args:
+            symbol: Journal format symbol (e.g. "BTCUSDT")
+            direction: "Long" or "Short"
+            trigger_price: Activation price (TP1 price — trail activates after TP1)
+            trail_pct: Trailing percentage (e.g. 3.0 for 3%)
+
+        Returns dict with: order_id, symbol, status, paper
+        """
+        if self._paper_mode:
+            _log.info(
+                "PAPER TRAILING STOP: %s %s trigger=%.2f trail_pct=%.2f%%",
+                direction, symbol, trigger_price, trail_pct,
+            )
+            return {
+                "order_id": f"paper-trail-{symbol}",
+                "symbol": symbol,
+                "direction": direction,
+                "trigger_price": trigger_price,
+                "trail_pct": trail_pct,
+                "status": "paper_pending",
+                "paper": True,
+            }
+
+        try:
+            exchange = self._get_trade_exchange()
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+            side = "sell" if direction.lower() == "long" else "buy"
+
+            params = {
+                "planType": "trailing",
+                "holdSide": direction.lower(),
+                "triggerPrice": str(trigger_price),
+                "trailPercentage": str(trail_pct),
+                "reduceOnly": True,
+            }
+
+            order = exchange.create_order(
+                symbol=ccxt_symbol,
+                type="market",
+                side=side,
+                amount=0,  # trailing stop closes entire remaining position
+                params=params,
+            )
+
+            _log.info(
+                "LIVE TRAILING STOP placed: %s %s trigger=%.2f trail=%.2f%% order_id=%s",
+                direction, symbol, trigger_price, trail_pct, order.get("id", "?"),
+            )
+
+            return {
+                "order_id": order.get("id", ""),
+                "symbol": symbol,
+                "direction": direction,
+                "trigger_price": trigger_price,
+                "trail_pct": trail_pct,
+                "status": order.get("status", "unknown"),
+                "paper": False,
+            }
+
+        except Exception as e:
+            _log.error("place_trailing_stop failed for %s: %s", symbol, e)
+            return None
 
     def place_stop_order(
         self,
@@ -558,88 +848,85 @@ class Exchange:
             orders = exchange.cancel_all_orders(ccxt_symbol)
             return {
                 "symbol": symbol,
-                "cancelled_count": len(orders) if isinstance(orders, list) else 0,
+                "cancelled": True,
             }
         except Exception as e:
             _log.error("cancel_orders failed for %s: %s", symbol, e)
-            return {"symbol": symbol, "cancelled_count": 0}
+            return False
 
     def close_position(
         self,
         symbol: str,
-        direction: str,
-        size: float = None,
-        size_usdt: float = None,
-    ) -> bool:
+        direction: str = None,
+        size_usdt: float = 0,
+        reduce_only: bool = True,
+    ) -> Optional[dict]:
         """
-        Close an open position.
+        Close an existing position at market.
 
-        In paper mode: logs and returns True.
-        In live mode: calls the exchange API, returns True on success.
+        In paper mode: logs and returns mock data.
+        In live mode: calls the exchange API.
 
-        Returns: True if successful
+        Returns dict with: order_id, symbol, status, paper
         """
         if self._paper_mode:
-            _log.info("PAPER CLOSE: %s %s", direction, symbol)
-            return True
+            _log.info("PAPER CLOSE: %s %s size=%.2f", direction, symbol, size_usdt)
+            return {
+                "order_id": f"paper-close-{symbol}",
+                "symbol": symbol,
+                "direction": direction,
+                "status": "paper_closed",
+                "paper": True,
+            }
 
         try:
             exchange = self._get_trade_exchange()
             ccxt_symbol = _to_ccxt_symbol(symbol)
             side = "sell" if direction.lower() == "long" else "buy"
 
-            # Close by placing opposite market order
-            positions = exchange.fetch_positions([ccxt_symbol])
-            for p in positions:
-                if float(p.get("contracts", 0) or 0) > 0:
-                    amount = float(p["contracts"])
-                    order = exchange.create_market_order(
-                        symbol=ccxt_symbol,
-                        side=side,
-                        amount=amount,
-                        params={"reduceOnly": True},
-                    )
-                    _log.info("LIVE CLOSE: %s %s order_id=%s", direction, symbol, order.get("id", "?"))
-                    return {
-                        "order_id": order.get("id", ""),
-                        "symbol": symbol,
-                        "status": order.get("status", "unknown"),
-                    }
+            params = {"reduceOnly": reduce_only}
 
-            _log.warning("No open position found to close for %s", symbol)
-            return None
+            order = exchange.create_market_order(
+                symbol=ccxt_symbol,
+                side=side,
+                amount=size_usdt,
+                params=params,
+            )
+
+            _log.info("LIVE CLOSE: %s %s size=%.2f order_id=%s",
+                       direction, symbol, size_usdt, order.get("id", "?"))
+
+            return {
+                "order_id": order.get("id", ""),
+                "symbol": symbol,
+                "direction": direction,
+                "size_usdt": size_usdt,
+                "status": order.get("status", "unknown"),
+                "paper": False,
+            }
 
         except Exception as e:
             _log.error("close_position failed for %s: %s", symbol, e)
             return None
 
-    # --- Utility ---------------------------------------------------------------
+    # --- Ticker Data -----------------------------------------------------------
 
-    def fetch_tickers(self, symbols: list) -> dict:
+    def fetch_tickers_bulk(self, symbols: list[str]) -> dict:
         """
-        Fetch current ticker prices for multiple symbols in one call.
+        Fetch current ticker prices for multiple symbols.
 
-        Uses CCXT's fetch_tickers() for bulk fetching, which is more efficient
-        than calling fetch_ticker() for each symbol individually.
-        Falls back to individual fetch_ticker() calls if bulk fetch fails.
-
-        NEVER returns stale or imaginary data — only real market prices.
-        If both primary and fallback exchanges fail for a symbol, that symbol
-        will not appear in the result dict.
+        Uses the data_source exchange (public, no auth required).
+        Returns dict of {journal_symbol: {symbol, last, bid, ask, timestamp}}.
 
         Args:
             symbols: List of journal format symbols (e.g. ["BTCUSDT", "ETHUSDT"])
-
-        Returns:
-            Dict of {symbol: {"last": float, "bid": float, "ask": float, "timestamp": int}}
-            Only includes symbols for which real data was obtained.
         """
         if not symbols:
             return {}
 
-        results = {}
         ccxt_symbols = [_to_ccxt_symbol(s) for s in symbols]
         symbol_map = {ccxt: jour for ccxt, jour in zip(ccxt_symbols, symbols)}
+        results = {}
 
         # Try bulk fetch on primary exchange
         try:
@@ -714,10 +1001,6 @@ class Exchange:
           1. fetch_markets() — get instrument list + OI from metadata
           2. fetch_tickers() — get real-time 24h volume from ticker endpoint
 
-        fetch_markets() returns instrument metadata (tick size, contract specs)
-        but volume fields are typically 0 or stale. fetch_tickers() provides
-        live quoteVolume which is the actual 24h trading volume in USD.
-
         No authentication required — both endpoints are public.
         """
         try:
@@ -745,7 +1028,6 @@ class Exchange:
                 symbol_map[ccxt_sym] = entry
 
             # Step 2: Fetch real-time tickers for volume data
-            # Market metadata has stale/zero volume; tickers have live quoteVolume.
             n_with_volume = 0
             try:
                 all_tickers = exchange.fetch_tickers()
@@ -777,7 +1059,7 @@ class Exchange:
                     te,
                 )
 
-            # Step 3: Extract OI from market info (no bulk live API for OI)
+            # Step 3: Extract OI from market info
             for market in markets:
                 if market.get("type") != "swap":
                     continue
