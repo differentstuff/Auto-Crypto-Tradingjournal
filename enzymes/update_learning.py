@@ -190,6 +190,20 @@ class UpdateLearning(Enzyme):
                         k for k in adjusted
                         if adjusted.get(k) != weight_map.get(k)
                     ]
+                    # Write adjusted weights to DB (exchange-as-truth: learning data in DB, not substrate)
+                    try:
+                        from core.database import db_conn
+                        strategy_uid = substrate.strategy.get("uid", "legacy")
+                        with db_conn() as conn:
+                            for indicator_name, weight in adjusted.items():
+                                conn.execute(
+                                    """INSERT OR REPLACE INTO adjusted_weights
+                                       (strategy_uid, indicator_name, weight, updated_at)
+                                       VALUES (?, ?, ?, datetime('now'))""",
+                                    (strategy_uid, indicator_name, weight),
+                                )
+                    except Exception as db_err:
+                        _log.error("Failed to write adjusted weights to DB: %s", db_err)
                     _log.info(
                         "Adjusted weights for '%s': %d indicators changed: %s",
                         strategy_name, len(changed), changed,
@@ -225,6 +239,20 @@ class UpdateLearning(Enzyme):
                     k for k in adjusted_thresholds
                     if adjusted_thresholds.get(k) != current_penalties.get(k)
                 ]
+                # Write adjusted thresholds to DB (exchange-as-truth: learning data in DB, not substrate)
+                try:
+                    from core.database import db_conn
+                    strategy_uid = substrate.strategy.get("uid", "legacy")
+                    with db_conn() as conn:
+                        for threshold_name, value in adjusted_thresholds.items():
+                            conn.execute(
+                                """INSERT OR REPLACE INTO adjusted_thresholds
+                                   (strategy_uid, threshold_name, value, updated_at)
+                                   VALUES (?, ?, ?, datetime('now'))""",
+                                (strategy_uid, threshold_name, value),
+                            )
+                except Exception as db_err:
+                    _log.error("Failed to write adjusted thresholds to DB: %s", db_err)
                 _log.info(
                     "Adjusted penalty thresholds for '%s': %d changed: %s",
                     strategy_name, len(changed_keys), changed_keys,
