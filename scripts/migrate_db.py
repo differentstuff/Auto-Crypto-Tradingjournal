@@ -59,6 +59,41 @@ def migrate_db(db_path: str = DEFAULT_DB_PATH) -> list[str]:
         if not column_exists(cur, "trade_learning", "strategy_uid"):
             cur.execute("ALTER TABLE trade_learning ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
             applied.append("49: trade_learning.strategy_uid")
+
+        # Migration 50: Add tp1_taken and tp2_taken to position dicts in substrate_json
+        # Positions restored from pre-Layer-2 databases lack these fields.
+        # Without them, pos.get('tp1_taken', False) defaults to False, which
+        # would trigger an unexpected partial exit on the first cycle after upgrade.
+        # This migration patches the stored substrate_json to include the fields.
+        cur.execute("""
+            SELECT id, substrate_json FROM substrate_state
+            WHERE substrate_json LIKE '%open_positions%'
+        """)
+        rows = cur.fetchall()
+        patched = 0
+        for row in rows:
+            import json
+            try:
+                state = json.loads(row["substrate_json"])
+                positions = state.get("portfolio", {}).get("open_positions", [])
+                changed = False
+                for pos in positions:
+                    if "tp1_taken" not in pos:
+                        pos["tp1_taken"] = False
+                        changed = True
+                    if "tp2_taken" not in pos:
+                        pos["tp2_taken"] = False
+                        changed = True
+                if changed:
+                    cur.execute(
+                        "UPDATE substrate_state SET substrate_json = ? WHERE id = ?",
+                        (json.dumps(state), row["id"]),
+                    )
+                    patched += 1
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+        if patched > 0:
+            applied.append(f"50: substrate_state positions patched with tp1_taken/tp2_taken ({patched} rows)")
         
         # Ensure schema_version table exists
         cur.execute("""
