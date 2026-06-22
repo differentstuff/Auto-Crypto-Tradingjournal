@@ -15,7 +15,7 @@ from core.enzyme import (
     create_enzyme,
 )
 from core.config_loader import ConfigLoader
-from core.database import init_db, get_conn, db_conn, save_cycle_log
+from core.database import init_db, get_conn, db_conn
 from core.scheduler import Scheduler
 from core.position_sizing import (
     kelly_fraction,
@@ -42,7 +42,6 @@ __all__ = [
     "init_db",
     "get_conn",
     "db_conn",
-    "save_cycle_log",
     "Scheduler",
     "Daemon",
     "kelly_fraction",
