@@ -1362,10 +1362,11 @@ class TestExchangeOrderMethods:
         assert result is True
 
     def test_close_position_paper_mode_returns_true(self):
-        """close_position in paper mode returns True without API call."""
+        """close_position in paper mode returns a dict without API call."""
         ex = self._get_exchange(paper_mode=True)
         result = ex.close_position(symbol="BTCUSDT", direction="Long")
-        assert result is True
+        assert isinstance(result, dict)
+        assert result.get("paper") is True
 
     def test_place_market_order_handles_exchange_error(self):
         """place_market_order raises ExchangeError (not crashes) when exchange unavailable."""
