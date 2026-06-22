@@ -502,27 +502,15 @@ class TestSubstrateConfluence:
         copy = substrate.shallow_copy()
         assert copy.confluence["regime_normal"] is False
 
-    def test_confluence_in_cycle_snapshot(self):
-        """confluence should appear in cycle snapshots."""
+    def test_confluence_accessible_after_cycle_reset(self):
+        """confluence persists across reset_cycle (not a per-cycle field)."""
         from core.substrate import Substrate
         config = make_full_config()
         substrate = Substrate(config=config)
         substrate.confluence["regime_normal"] = False
 
-        snapshot = substrate.to_cycle_snapshot()
-        assert "confluence" in snapshot
-        assert snapshot["confluence"]["regime_normal"] is False
-
-    def test_confluence_restored_from_dict(self):
-        """confluence should be restored from dict via from_dict()."""
-        from core.substrate import Substrate
-        config = make_full_config()
-        substrate = Substrate(config=config)
-        substrate.confluence["regime_normal"] = False
-
-        d = substrate.to_cycle_snapshot()
-        restored = Substrate.from_dict(d, config=config)
-        assert restored.confluence["regime_normal"] is False
+        substrate.reset_cycle()
+        assert substrate.confluence["regime_normal"] is False
 
 
 # ── Tests: Flux score ───────────────────────────────────────────────────────

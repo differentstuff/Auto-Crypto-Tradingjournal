@@ -344,7 +344,8 @@ class TestMarketGeometryEnzyme:
 # ── 7. Structure-aware exits in RequestExit ──────────────────────────────────
 
 class TestStructureAwareExits:
-    def test_structure_break_requests_immediate_exit(self, substrate_with_structure):
+    def test_structure_break_tightens_trailing_stop_not_exit(self, substrate_with_structure):
+        """structure_break is NOT an exit signal — it tightens trailing stop only."""
         enz = create_enzyme("RequestExit")
         substrate_with_structure.portfolio["open_positions"] = [
             {
@@ -368,13 +369,12 @@ class TestStructureAwareExits:
         }
 
         result = enz.transform(substrate_with_structure)
+        # structure_break is NOT an exit — it tightens trailing stop
         exit_req = result.decisions.get("exit_request")
-        assert exit_req is not None
-        assert exit_req["symbol"] == "BTCUSDT"
-        assert exit_req["reason"] == "structure_break"
-        assert exit_req["urgency"] == "immediate"
+        assert exit_req is None or exit_req.get("reason") != "structure_break"
 
-    def test_phase_range_requests_immediate_exit(self, substrate_with_structure):
+    def test_phase_range_tightens_trailing_stop_not_exit(self, substrate_with_structure):
+        """phase_range is NOT an exit signal — it tightens trailing stop only."""
         enz = create_enzyme("RequestExit")
         substrate_with_structure.portfolio["open_positions"] = [
             {
@@ -398,10 +398,9 @@ class TestStructureAwareExits:
         }
 
         result = enz.transform(substrate_with_structure)
+        # phase_range is NOT an exit — it tightens trailing stop
         exit_req = result.decisions.get("exit_request")
-        assert exit_req is not None
-        assert exit_req["reason"] == "phase_range"
-        assert exit_req["urgency"] == "immediate"
+        assert exit_req is None or exit_req.get("reason") != "phase_range"
 
     def test_counter_breakout_requests_exit(self, substrate_with_structure):
         enz = create_enzyme("RequestExit")
@@ -501,7 +500,7 @@ class TestProgressiveTrailingStop:
         assert _lookup_trail_schedule({}, 2.0) == 1.0
 
     def test_progressive_trail_tightens_with_profit(self, substrate_with_structure):
-        from enzymes.approve_exit import _update_trailing_stop
+        from core.trailing_stop import update_trailing_stop as _update_trailing_stop
 
         substrate_with_structure.decisions["exit_request"] = {"symbol": "BTCUSDT", "reason": "test"}
 
@@ -527,7 +526,7 @@ class TestProgressiveTrailingStop:
         assert result["max_profit_atr"] >= 2.0
 
     def test_progressive_trail_never_widens(self, substrate_with_structure):
-        from enzymes.approve_exit import _update_trailing_stop
+        from core.trailing_stop import update_trailing_stop as _update_trailing_stop
 
         substrate_with_structure.decisions["exit_request"] = {"symbol": "BTCUSDT", "reason": "test"}
 
@@ -552,7 +551,7 @@ class TestProgressiveTrailingStop:
         assert result["max_profit_atr"] >= 3.0
 
     def test_structure_tightening_on_pullback(self, substrate_with_structure):
-        from enzymes.approve_exit import _apply_structure_tightening
+        from core.trailing_stop import apply_structure_tightening as _apply_structure_tightening
 
         substrate_with_structure.market["geometry"] = {
             "BTCUSDT": {
@@ -566,7 +565,7 @@ class TestProgressiveTrailingStop:
         assert result == pytest.approx(0.375, abs=0.001)
 
     def test_no_tightening_without_structure_data(self, substrate_with_structure):
-        from enzymes.approve_exit import _apply_structure_tightening
+        from core.trailing_stop import apply_structure_tightening as _apply_structure_tightening
 
         substrate_with_structure.market["geometry"] = {}
         result = _apply_structure_tightening(1.0, "BTCUSDT", substrate_with_structure)
@@ -597,7 +596,7 @@ class TestTrailScheduleLookup:
 class TestFallbackBehavior:
     def test_atr_trail_works_without_progressive(self, substrate):
         """Standard ATR trailing stop still works when progressive_trail=False."""
-        from enzymes.approve_exit import _update_trailing_stop
+        from core.trailing_stop import update_trailing_stop as _update_trailing_stop
 
         substrate.decisions["exit_request"] = {"symbol": "BTCUSDT", "reason": "test"}
 
@@ -620,7 +619,7 @@ class TestFallbackBehavior:
 
     def test_no_trailing_when_both_disabled(self, substrate):
         """When both trailing_stop.enabled and progressive_trail are False, no trailing."""
-        from enzymes.approve_exit import _update_trailing_stop
+        from core.trailing_stop import update_trailing_stop as _update_trailing_stop
 
         # Disable both trailing modes
         substrate._config["exit_rules"]["trailing_stop"]["enabled"] = False

@@ -155,14 +155,15 @@ class TestDBConnectionSafety:
         with pytest.raises(RuntimeError):
             with db_conn() as conn:
                 conn.execute(
-                    "INSERT INTO cycle_log (strategy_name, cycle_count, action, duration_ms) "
-                    "VALUES ('rollback_test', 999, 'test', 1)"
+                    "INSERT INTO signal_accuracy "
+                    "(strategy_uid, indicator_name, total_fired, correct, accuracy_pct, verdict) "
+                    "VALUES ('rollback_test', 'rsi', 10, 8, 80.0, 'valid')"
                 )
                 raise RuntimeError("force rollback")
 
         with get_conn() as conn:
             row = conn.execute(
-                "SELECT 1 FROM cycle_log WHERE strategy_name='rollback_test' AND cycle_count=999"
+                "SELECT 1 FROM signal_accuracy WHERE strategy_uid='rollback_test' AND indicator_name='rsi'"
             ).fetchone()
         assert row is None
 

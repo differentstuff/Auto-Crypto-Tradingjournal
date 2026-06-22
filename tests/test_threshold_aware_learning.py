@@ -106,16 +106,27 @@ class TestMigration51:
             assert row["profit_factor"] == 2.5
             assert row["win_rate"] == 75.0
 
-    def test_migration_51_in_schema_version(self, temp_db):
-        """Migration 51 is recorded in schema_version table."""
+    def test_signal_accuracy_by_threshold_exists_in_baseline(self, temp_db):
+        """signal_accuracy_by_threshold table exists in the baseline schema."""
+        from core.database import db_conn
+
+        with db_conn() as conn:
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()
+            table_names = [t["name"] for t in tables]
+            assert "signal_accuracy_by_threshold" in table_names
+
+    def test_baseline_version_in_schema(self, temp_db):
+        """Baseline version 0 is recorded in schema_version table."""
         from core.database import db_conn
 
         with db_conn() as conn:
             row = conn.execute(
-                "SELECT name FROM schema_version WHERE version = 51"
+                "SELECT name FROM schema_version WHERE version = 0"
             ).fetchone()
             assert row is not None
-            assert row["name"] == "signal_accuracy_by_threshold"
+            assert row["name"] == "baseline_v1"
 
 
 # ── Step 2: time_travel.py changes ────────────────────────────────────────
