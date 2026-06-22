@@ -39,7 +39,7 @@ from typing import Dict, List, Optional
 from core.config_loader import ConfigLoader
 from core.enzyme import Enzyme
 from core.substrate import Substrate
-from core.database import init_db, db_conn, save_cycle_log
+from core.database import init_db, db_conn
 
 _log = logging.getLogger(__name__)
 
@@ -627,16 +627,6 @@ class Daemon:
         # Log cycle
         cycle_end = time.time()
         duration_ms = int((cycle_end - cycle_start) * 1000)
-
-        if not self.replay_mode:
-            save_cycle_log(
-                strategy_name=self.strategy_name,
-                cycle_count=self.scheduler.cycle_count,
-                action=self.substrate.decisions.get("action", ""),
-                enzymes_fired=enzymes_fired,
-                isc_results=isc_results,
-                duration_ms=duration_ms,
-            )
 
         self.scheduler.end_cycle()
 
