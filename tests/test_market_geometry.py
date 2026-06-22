@@ -31,7 +31,7 @@ from enzymes.market_geometry import (
     compute_pullback_depth,
     detect_structure_break,
 )
-from enzymes.approve_exit import _lookup_trail_schedule
+from core.trailing_stop import lookup_trail_schedule as _lookup_trail_schedule
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

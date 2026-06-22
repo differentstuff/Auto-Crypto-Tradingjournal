@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.substrate import Substrate
 from core.enzyme import EnzymeClass
-from enzymes.approve_exit import _update_trailing_stop
+from core.trailing_stop import update_trailing_stop as _update_trailing_stop, apply_structure_tightening as _apply_structure_tightening
 from enzymes.record_trade_outcome import _extract_indicator_signals
 
 
