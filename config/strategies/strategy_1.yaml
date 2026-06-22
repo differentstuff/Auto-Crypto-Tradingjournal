@@ -45,7 +45,7 @@ description: |
 
 strategy:
   name: strategy_1
-  uid: ""                              # Fresh UID — no prior learning data
+  uid: "dab9f8dd-32b1-4c0a-a9d7-441f07dd24f0"                              # Fresh UID — no prior learning data
   timeframe: "4h"
   confirmation_tf: "1d"                # daily confirmation for macro trend alignment
   max_positions: 5                      # diversification across multiple trends
