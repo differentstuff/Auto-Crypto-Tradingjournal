@@ -29,6 +29,8 @@ DB_PATH = os.environ.get(
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "data/trading_journal.db"),
 )
 
+SCHEMA_VERSION = 1  # Bump when adding new migrations
+
 
 def get_conn():
     """Return a sqlite3 connection with row_factory set to dict-like Row."""
@@ -73,7 +75,7 @@ def init_db():
 
 
 def _init_db_inner(conn: sqlite3.Connection) -> None:
-    """Internal: run all DDL and migrations on an open connection."""
+    """Internal: create all tables in their final form, then run any pending migrations."""
     cur = conn.cursor()
 
     # ── schema_version ─────────────────────────────────────────────────────────
@@ -84,58 +86,53 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             applied_at TEXT    DEFAULT (datetime('now'))
         )
     """)
-    conn.commit()
 
-    def _applied(ver: int) -> bool:
-        return conn.execute(
-            "SELECT 1 FROM schema_version WHERE version=?", (ver,)
-        ).fetchone() is not None
-
-    def _apply(ver: int, name: str, sql: str):
-        if _applied(ver):
-            return
-        try:
-            if sql.strip().count(";") > 1:
-                conn.executescript(sql)
-            else:
-                conn.execute(sql)
-        except sqlite3.OperationalError as e:
-            if "duplicate column" not in str(e).lower():
-                _log.error("Migration %d (%s) failed: %s", ver, name, e, exc_info=True)
-                raise
-            _log.debug("Migration %d: column already exists (%s)", ver, name)
-        conn.execute(
-            "INSERT INTO schema_version (version, name) VALUES (?,?)", (ver, name)
-        )
-        conn.commit()
-        _log.info("Applied migration %d: %s", ver, name)
-
-    # ── Legacy tables (ported from original database.py) ──────────────────────
+    # ── Baseline: all tables in their FINAL form ───────────────────────────────
+    # If the DB is fresh, CREATE IF NOT EXISTS creates everything.
+    # If the DB is existing, IF NOT EXISTS skips already-present tables,
+    # and _apply_migration handles ALTERs for columns added later.
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS positions (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol           TEXT    NOT NULL,
-            base_asset       TEXT    NOT NULL,
-            direction        TEXT    NOT NULL,
-            margin_mode      TEXT,
-            open_time        TEXT    NOT NULL,
-            close_time       TEXT    NOT NULL,
-            duration_minutes INTEGER,
-            entry_price      REAL,
-            close_price      REAL,
-            size_contracts   TEXT,
-            size_usdt        REAL,
-            position_pnl     REAL,
-            realized_pnl     REAL,
-            opening_fee      REAL,
-            closing_fee      REAL,
-            total_fees       REAL,
-            notes            TEXT    DEFAULT '',
-            tags             TEXT    DEFAULT '',
-            is_manual        INTEGER DEFAULT 0,
-            created_at       TEXT    DEFAULT (datetime('now')),
-            updated_at       TEXT    DEFAULT (datetime('now'))
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol                 TEXT    NOT NULL,
+            base_asset             TEXT    NOT NULL,
+            direction              TEXT    NOT NULL,
+            margin_mode            TEXT,
+            open_time              TEXT    NOT NULL,
+            close_time             TEXT    NOT NULL,
+            duration_minutes       INTEGER,
+            entry_price            REAL,
+            close_price            REAL,
+            size_contracts         TEXT,
+            size_usdt              REAL,
+            position_pnl           REAL,
+            realized_pnl           REAL,
+            opening_fee            REAL,
+            closing_fee            REAL,
+            total_fees             REAL,
+            notes                  TEXT    DEFAULT '',
+            tags                   TEXT    DEFAULT '',
+            is_manual              INTEGER DEFAULT 0,
+            analyst                TEXT    DEFAULT '',
+            execution_grade        TEXT,
+            execution_grade_reason TEXT,
+            setup_type             TEXT    DEFAULT '',
+            call_id                INTEGER,
+            external_id            TEXT,
+            exchange               TEXT    DEFAULT 'bitget',
+            leverage               INTEGER,
+            market_regime          TEXT,
+            mfe_price              REAL,
+            mae_price              REAL,
+            mfe_pct                REAL,
+            mae_pct                REAL,
+            setup_score            INTEGER,
+            funding_pnl            REAL,
+            signal_price           REAL,
+            execution_lag_minutes  INTEGER,
+            created_at             TEXT    DEFAULT (datetime('now')),
+            updated_at             TEXT    DEFAULT (datetime('now'))
         )
     """)
 
@@ -177,33 +174,51 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS analyzed_calls (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol           TEXT NOT NULL,
-            direction        TEXT NOT NULL,
-            call_text        TEXT,
-            entry_price      REAL,
-            dca_price        REAL,
-            sl_price         REAL,
-            tp1_price        REAL,
-            tp2_price        REAL,
-            avg_entry        REAL,
-            total_notional   REAL,
-            margin_needed    REAL,
-            risk_pct         REAL,
-            risk_amount      REAL,
-            leverage         INTEGER,
-            has_dca          INTEGER DEFAULT 0,
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol              TEXT    NOT NULL,
+            direction           TEXT    NOT NULL,
+            call_text           TEXT,
+            entry_price         REAL,
+            dca_price           REAL,
+            sl_price            REAL,
+            tp1_price           REAL,
+            tp2_price           REAL,
+            avg_entry           REAL,
+            total_notional      REAL,
+            margin_needed       REAL,
+            risk_pct            REAL,
+            risk_amount         REAL,
+            leverage            INTEGER,
+            has_dca             INTEGER DEFAULT 0,
             has_candle_close_sl INTEGER DEFAULT 0,
-            setup_score      INTEGER,
-            setup_label      TEXT,
-            rr_ratio         TEXT,
-            trade_type       TEXT,
-            sl_warning       TEXT,
-            entry_timing     TEXT,
-            analysis_json    TEXT,
-            status           TEXT DEFAULT 'saved',
-            matched_at       TEXT,
-            created_at       TEXT DEFAULT (datetime('now'))
+            setup_score         INTEGER,
+            setup_label         TEXT,
+            rr_ratio            TEXT,
+            trade_type          TEXT,
+            sl_warning          TEXT,
+            entry_timing        TEXT,
+            analysis_json       TEXT,
+            status              TEXT    DEFAULT 'saved',
+            matched_at          TEXT,
+            exchange            TEXT    DEFAULT 'bitget',
+            cot_reasoning       TEXT,
+            analyst             TEXT    DEFAULT '',
+            notes               TEXT    DEFAULT '',
+            outcome             TEXT,
+            outcome_pnl         REAL,
+            hit_tp1             INTEGER DEFAULT 0,
+            hit_tp2             INTEGER DEFAULT 0,
+            hit_sl              INTEGER DEFAULT 0,
+            outcome_at          TEXT,
+            gemini_score        INTEGER,
+            consensus_score     REAL,
+            consensus_flag      TEXT,
+            risk_verdict_json   TEXT,
+            monitor_alert       INTEGER DEFAULT 0,
+            chart_png_b64       TEXT,
+            regime_label        TEXT,
+            ml_win_prob         REAL,
+            created_at          TEXT    DEFAULT (datetime('now'))
         )
     """)
 
@@ -238,6 +253,16 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             confidence   TEXT DEFAULT 'medium',
             data_points  INTEGER DEFAULT 0,
             generated_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trader_rulebook_history (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            version     INTEGER NOT NULL,
+            rules_json  TEXT    NOT NULL,
+            trade_count INTEGER,
+            saved_at    TEXT    DEFAULT (datetime('now'))
         )
     """)
 
@@ -280,7 +305,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS import_log (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             filename       TEXT,
-            file_type      TEXT,
+            file_type       TEXT,
             rows_imported  INTEGER,
             imported_at    TEXT DEFAULT (datetime('now'))
         )
@@ -298,47 +323,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Legacy column migrations ──────────────────────────────────────────────
-    _apply(1, "analyzed_calls.exchange", "ALTER TABLE analyzed_calls ADD COLUMN exchange TEXT DEFAULT 'bitget'")
-    _apply(2, "analyzed_calls.cot_reasoning", "ALTER TABLE analyzed_calls ADD COLUMN cot_reasoning TEXT DEFAULT NULL")
-    _apply(17, "analyzed_calls.analyst", "ALTER TABLE analyzed_calls ADD COLUMN analyst TEXT DEFAULT ''")
-    _apply(18, "analyzed_calls.notes", "ALTER TABLE analyzed_calls ADD COLUMN notes TEXT DEFAULT ''")
-    _apply(19, "analyzed_calls.outcome", "ALTER TABLE analyzed_calls ADD COLUMN outcome TEXT DEFAULT NULL")
-    _apply(20, "analyzed_calls.outcome_pnl", "ALTER TABLE analyzed_calls ADD COLUMN outcome_pnl REAL DEFAULT NULL")
-    _apply(21, "analyzed_calls.hit_tp1", "ALTER TABLE analyzed_calls ADD COLUMN hit_tp1 INTEGER DEFAULT 0")
-    _apply(22, "analyzed_calls.hit_tp2", "ALTER TABLE analyzed_calls ADD COLUMN hit_tp2 INTEGER DEFAULT 0")
-    _apply(23, "analyzed_calls.hit_sl", "ALTER TABLE analyzed_calls ADD COLUMN hit_sl INTEGER DEFAULT 0")
-    _apply(24, "analyzed_calls.outcome_at", "ALTER TABLE analyzed_calls ADD COLUMN outcome_at TEXT DEFAULT NULL")
-    _apply(25, "trader_rulebook_history", """
-        CREATE TABLE IF NOT EXISTS trader_rulebook_history (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            version     INTEGER NOT NULL,
-            rules_json  TEXT    NOT NULL,
-            trade_count INTEGER,
-            saved_at    TEXT    DEFAULT (datetime('now'))
-        )
-    """)
-    _apply(26, "analyzed_calls.gemini_score", "ALTER TABLE analyzed_calls ADD COLUMN gemini_score INTEGER DEFAULT NULL")
-    _apply(27, "analyzed_calls.consensus_score", "ALTER TABLE analyzed_calls ADD COLUMN consensus_score REAL DEFAULT NULL")
-    _apply(28, "analyzed_calls.consensus_flag", "ALTER TABLE analyzed_calls ADD COLUMN consensus_flag TEXT DEFAULT NULL")
-    _apply(29, "analyzed_calls.risk_verdict_json", "ALTER TABLE analyzed_calls ADD COLUMN risk_verdict_json TEXT DEFAULT NULL")
-    _apply(30, "analyzed_calls.monitor_alert", "ALTER TABLE analyzed_calls ADD COLUMN monitor_alert INTEGER DEFAULT 0")
-    _apply(31, "analyzed_calls.chart_png_b64", "ALTER TABLE analyzed_calls ADD COLUMN chart_png_b64 TEXT DEFAULT NULL")
-    _apply(3, "pending_limits.bitget_order_id", "ALTER TABLE pending_limits ADD COLUMN bitget_order_id TEXT")
-    _apply(4, "positions.analyst", "ALTER TABLE positions ADD COLUMN analyst TEXT DEFAULT ''")
-    _apply(5, "positions.execution_grade", "ALTER TABLE positions ADD COLUMN execution_grade TEXT DEFAULT NULL")
-    _apply(6, "positions.execution_grade_reason", "ALTER TABLE positions ADD COLUMN execution_grade_reason TEXT DEFAULT NULL")
-    _apply(7, "positions.setup_type", "ALTER TABLE positions ADD COLUMN setup_type TEXT DEFAULT ''")
-    _apply(8, "positions.call_id", "ALTER TABLE positions ADD COLUMN call_id INTEGER DEFAULT NULL")
-    _apply(9, "positions.external_id", "ALTER TABLE positions ADD COLUMN external_id TEXT DEFAULT NULL")
-    _apply(10, "positions.exchange", "ALTER TABLE positions ADD COLUMN exchange TEXT DEFAULT 'bitget'")
-    _apply(11, "positions.leverage", "ALTER TABLE positions ADD COLUMN leverage INTEGER DEFAULT NULL")
-    _apply(12, "positions.market_regime", "ALTER TABLE positions ADD COLUMN market_regime TEXT DEFAULT NULL")
-    _apply(13, "positions.mfe_price", "ALTER TABLE positions ADD COLUMN mfe_price REAL DEFAULT NULL")
-    _apply(14, "positions.mae_price", "ALTER TABLE positions ADD COLUMN mae_price REAL DEFAULT NULL")
-    _apply(15, "positions.mfe_pct", "ALTER TABLE positions ADD COLUMN mfe_pct REAL DEFAULT NULL")
-    _apply(16, "positions.mae_pct", "ALTER TABLE positions ADD COLUMN mae_pct REAL DEFAULT NULL")
-    _apply(32, "optimizer_runs", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS optimizer_runs (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             ts          TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -351,7 +336,8 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             duration_sec REAL
         )
     """)
-    _apply(33, "entry_watcher_recs", """
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS entry_watcher_recs (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol            TEXT NOT NULL,
@@ -375,14 +361,8 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             analysis_json     TEXT
         )
     """)
-    _apply(34, "positions.setup_score", "ALTER TABLE positions ADD COLUMN setup_score INTEGER DEFAULT NULL")
-    _apply(35, "positions.funding_pnl", "ALTER TABLE positions ADD COLUMN funding_pnl REAL DEFAULT NULL")
-    _apply(36, "positions.signal_price", "ALTER TABLE positions ADD COLUMN signal_price REAL DEFAULT NULL")
-    _apply(37, "positions.execution_lag_minutes", "ALTER TABLE positions ADD COLUMN execution_lag_minutes INTEGER DEFAULT NULL")
-    _apply(38, "analyzed_calls.regime_label", "ALTER TABLE analyzed_calls ADD COLUMN regime_label TEXT DEFAULT NULL")
-    _apply(39, "analyzed_calls.ml_win_prob", "ALTER TABLE analyzed_calls ADD COLUMN ml_win_prob REAL DEFAULT NULL")
 
-    # ── Learning tables ────────────────────────────────────────────────────────
+    # ── Learning tables (final form) ────────────────────────────────────────────
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS trade_learning (
@@ -391,6 +371,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             symbol                      TEXT NOT NULL,
             direction                   TEXT NOT NULL,
             strategy_name               TEXT NOT NULL,
+            strategy_uid                TEXT    DEFAULT 'legacy',
             entry_time                  TEXT NOT NULL,
             exit_time                   TEXT,
             outcome                     TEXT,
@@ -407,6 +388,11 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
             trailing_stop_hit           INTEGER DEFAULT 0,
             exit_reason                 TEXT,
             rulebook_version            TEXT,
+            llm_verdict                 TEXT,
+            llm_reason                  TEXT,
+            llm_model                   TEXT,
+            llm_enabled                 INTEGER DEFAULT 0,
+            llm_override                INTEGER DEFAULT 0,
             analyzed_at                 TEXT DEFAULT (datetime('now'))
         )
     """)
@@ -533,129 +519,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Strategy UID migrations ──────────────────────────────────────────────
-    _apply(40, "trade_learning.strategy_uid", "ALTER TABLE trade_learning ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
-    _apply(41, "weight_history.strategy_uid", "ALTER TABLE weight_history ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
-    _apply(42, "rulebook_versions.strategy_uid", "ALTER TABLE rulebook_versions ADD COLUMN strategy_uid TEXT DEFAULT 'legacy'")
-
-    _apply(43, "signal_accuracy.strategy_uid_pk", """
-        ALTER TABLE signal_accuracy RENAME TO _signal_accuracy_old;
-        CREATE TABLE signal_accuracy (
-            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
-            indicator_name      TEXT NOT NULL,
-            total_fired         INTEGER DEFAULT 0,
-            correct             INTEGER DEFAULT 0,
-            accuracy_pct        REAL DEFAULT 0,
-            confidence_95_low   REAL,
-            confidence_95_high  REAL,
-            verdict             TEXT DEFAULT 'insufficient_data',
-            sample_size         INTEGER DEFAULT 0,
-            updated_at          TEXT DEFAULT (datetime('now')),
-            PRIMARY KEY (strategy_uid, indicator_name)
-        );
-        INSERT INTO signal_accuracy (strategy_uid, indicator_name, total_fired, correct,
-            accuracy_pct, confidence_95_low, confidence_95_high, verdict, sample_size, updated_at)
-            SELECT 'legacy', indicator_name, total_fired, correct,
-            accuracy_pct, confidence_95_low, confidence_95_high, verdict, sample_size, updated_at
-            FROM _signal_accuracy_old;
-        DROP TABLE _signal_accuracy_old;
-    """)
-
-    _apply(44, "combination_accuracy.strategy_uid_pk", """
-        ALTER TABLE combination_accuracy RENAME TO _combination_accuracy_old;
-        CREATE TABLE combination_accuracy (
-            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
-            combination_name    TEXT NOT NULL,
-            direction_state     TEXT NOT NULL,
-            trades              INTEGER DEFAULT 0,
-            won                 INTEGER DEFAULT 0,
-            win_rate_pct        REAL DEFAULT 0,
-            avg_pnl_pct         REAL DEFAULT 0,
-            p_value             REAL,
-            significance        TEXT DEFAULT 'insufficient_data',
-            updated_at          TEXT DEFAULT (datetime('now')),
-            PRIMARY KEY (strategy_uid, combination_name, direction_state)
-        );
-        INSERT INTO combination_accuracy (strategy_uid, combination_name, direction_state,
-            trades, won, win_rate_pct, avg_pnl_pct, p_value, significance, updated_at)
-            SELECT 'legacy', combination_name, direction_state,
-            trades, won, win_rate_pct, avg_pnl_pct, p_value, significance, updated_at
-            FROM _combination_accuracy_old;
-        DROP TABLE _combination_accuracy_old;
-    """)
-
-    _apply(45, "trajectory_accuracy.strategy_uid_pk", """
-        ALTER TABLE trajectory_accuracy RENAME TO _trajectory_accuracy_old;
-        CREATE TABLE trajectory_accuracy (
-            strategy_uid        TEXT NOT NULL DEFAULT 'legacy',
-            trajectory_pattern  TEXT NOT NULL,
-            trades              INTEGER DEFAULT 0,
-            won                 INTEGER DEFAULT 0,
-            win_rate_pct        REAL DEFAULT 0,
-            avg_pnl_pct         REAL DEFAULT 0,
-            verdict             TEXT DEFAULT 'insufficient_data',
-            updated_at          TEXT DEFAULT (datetime('now')),
-            PRIMARY KEY (strategy_uid, trajectory_pattern)
-        );
-        INSERT INTO trajectory_accuracy (strategy_uid, trajectory_pattern,
-            trades, won, win_rate_pct, avg_pnl_pct, verdict, updated_at)
-            SELECT 'legacy', trajectory_pattern,
-            trades, won, win_rate_pct, avg_pnl_pct, verdict, updated_at
-            FROM _trajectory_accuracy_old;
-        DROP TABLE _trajectory_accuracy_old;
-    """)
-
-    _apply(46, "idle_condition_accuracy.strategy_uid_pk", """
-        ALTER TABLE idle_condition_accuracy RENAME TO _idle_condition_accuracy_old;
-        CREATE TABLE idle_condition_accuracy (
-            strategy_uid                TEXT NOT NULL DEFAULT 'legacy',
-            condition_description       TEXT NOT NULL,
-            idle_cycles                 INTEGER DEFAULT 0,
-            hypothetical_avg_loss_pct   REAL DEFAULT 0,
-            waiting_was_correct_pct     REAL DEFAULT 0,
-            verdict                     TEXT DEFAULT 'insufficient_data',
-            updated_at                  TEXT DEFAULT (datetime('now')),
-            PRIMARY KEY (strategy_uid, condition_description)
-        );
-        INSERT INTO idle_condition_accuracy (strategy_uid, condition_description,
-            idle_cycles, hypothetical_avg_loss_pct, waiting_was_correct_pct, verdict, updated_at)
-            SELECT 'legacy', condition_description,
-            idle_cycles, hypothetical_avg_loss_pct, waiting_was_correct_pct, verdict, updated_at
-            FROM _idle_condition_accuracy_old;
-        DROP TABLE _idle_condition_accuracy_old;
-    """)
-
-    _apply(47, "challenger_log", """
-        CREATE TABLE IF NOT EXISTS challenger_log (
-            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-            strategy_uid             TEXT NOT NULL,
-            event_type               TEXT NOT NULL,
-            source                   TEXT,
-            timestamp                TEXT DEFAULT (datetime('now')),
-            challenger_weights_json  TEXT,
-            current_weights_json     TEXT,
-            reason                   TEXT,
-            production_profit_factor REAL,
-            challenger_profit_factor REAL,
-            promoted                 INTEGER DEFAULT 0,
-            trade_count              INTEGER,
-            symbol                   TEXT,
-            entry_score              REAL,
-            exit_pnl_pct             REAL,
-            exit_reason              TEXT,
-            signal_states_json       TEXT
-        )
-    """)
-
-    _apply(48, "trade_learning_llm_fields", """
-        ALTER TABLE trade_learning ADD COLUMN llm_verdict TEXT;
-        ALTER TABLE trade_learning ADD COLUMN llm_reason TEXT;
-        ALTER TABLE trade_learning ADD COLUMN llm_model TEXT;
-        ALTER TABLE trade_learning ADD COLUMN llm_enabled INTEGER DEFAULT 0;
-        ALTER TABLE trade_learning ADD COLUMN llm_override INTEGER DEFAULT 0
-    """)
-
-    _apply(49, "karpathy_log", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS karpathy_log (
             id                       INTEGER PRIMARY KEY AUTOINCREMENT,
             strategy_uid             TEXT NOT NULL,
@@ -671,7 +535,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    _apply(50, "hyperopt_log", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS hyperopt_log (
             id                       INTEGER PRIMARY KEY AUTOINCREMENT,
             strategy_uid             TEXT NOT NULL,
@@ -687,7 +551,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    _apply(51, "signal_accuracy_by_threshold", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS signal_accuracy_by_threshold (
             strategy_uid        TEXT NOT NULL,
             indicator_name      TEXT NOT NULL,
@@ -708,38 +572,35 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Exchange-as-truth: new tables ─────────────────────────────────────────
+    # ── Exchange-as-truth tables ────────────────────────────────────────────────
 
-    _apply(60, "exchange_as_truth_v3", """
-        -- Position metadata for TP recalculation after restart
-        -- NOT position state (that comes from exchange)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS position_metadata (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol          TEXT NOT NULL,
-            direction       TEXT NOT NULL,
-            entry_price     REAL NOT NULL,
-            strategy_uid    TEXT NOT NULL DEFAULT 'legacy',
-            atr_value       REAL DEFAULT 0,
-            atr_pct         REAL DEFAULT 0,
-            sl_price        REAL DEFAULT 0,
-            tp1             REAL DEFAULT 0,
-            tp2             REAL DEFAULT 0,
-            size_usdt       REAL DEFAULT 0,
-            opened_at       TEXT,
-            closed_at       TEXT,
-            sl_order_id     TEXT DEFAULT '',
-            tp1_order_id    TEXT DEFAULT '',
-            tp2_order_id    TEXT DEFAULT '',
-            native_trail_order_id TEXT DEFAULT '',
-            max_profit_atr  REAL DEFAULT 0,
-            created_at      TEXT DEFAULT (datetime('now')),
-            updated_at      TEXT DEFAULT (datetime('now'))
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol                  TEXT NOT NULL,
+            direction               TEXT NOT NULL,
+            entry_price             REAL NOT NULL,
+            strategy_uid            TEXT NOT NULL DEFAULT 'legacy',
+            atr_value               REAL DEFAULT 0,
+            atr_pct                 REAL DEFAULT 0,
+            sl_price                REAL DEFAULT 0,
+            tp1                     REAL DEFAULT 0,
+            tp2                     REAL DEFAULT 0,
+            size_usdt               REAL DEFAULT 0,
+            opened_at               TEXT,
+            closed_at               TEXT,
+            sl_order_id             TEXT DEFAULT '',
+            tp1_order_id            TEXT DEFAULT '',
+            tp2_order_id           TEXT DEFAULT '',
+            native_trail_order_id   TEXT DEFAULT '',
+            max_profit_atr          REAL DEFAULT 0,
+            created_at              TEXT DEFAULT (datetime('now')),
+            updated_at              TEXT DEFAULT (datetime('now'))
         )
     """)
 
-    _apply(61, "adjusted_weights", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS adjusted_weights (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
             strategy_uid    TEXT NOT NULL,
             indicator_name  TEXT NOT NULL,
             weight          REAL NOT NULL,
@@ -748,9 +609,8 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    _apply(62, "adjusted_thresholds", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS adjusted_thresholds (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
             strategy_uid    TEXT NOT NULL,
             threshold_name  TEXT NOT NULL,
             value           REAL NOT NULL,
@@ -759,9 +619,8 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    _apply(63, "suppressed_signals", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS suppressed_signals (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
             strategy_uid    TEXT NOT NULL,
             indicator_name  TEXT NOT NULL,
             reason          TEXT DEFAULT '',
@@ -770,9 +629,8 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    _apply(64, "highlight_signals", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS highlight_signals (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
             strategy_uid    TEXT NOT NULL,
             indicator_name  TEXT NOT NULL,
             reason          TEXT DEFAULT '',
@@ -781,60 +639,69 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    _apply(65, "challenger_state", """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS challenger_state (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            strategy_uid    TEXT NOT NULL,
+            strategy_uid    TEXT NOT NULL PRIMARY KEY,
             state_json      TEXT NOT NULL,
-            updated_at      TEXT DEFAULT (datetime('now')),
-            PRIMARY KEY (strategy_uid)
+            updated_at      TEXT DEFAULT (datetime('now'))
         )
     """)
 
-    # ── Exchange-as-truth: drop substrate persistence tables ──────────────────
-    # These tables are no longer needed — substrate is ephemeral.
-    # Use DROP IF EXISTS so this is safe on both fresh and existing DBs.
-    _apply(66, "drop_substrate_state", "DROP TABLE IF EXISTS substrate_state")
-    _apply(67, "drop_cycle_log", "DROP TABLE IF EXISTS cycle_log")
+    # ── Drop obsolete tables (exchange-as-truth) ──────────────────────────────
+    cur.execute("DROP TABLE IF EXISTS substrate_state")
+    cur.execute("DROP TABLE IF EXISTS cycle_log")
 
     conn.commit()
+
+    # ── Mark baseline as applied ───────────────────────────────────────────────
+    # Record baseline version so future _apply_migration calls know we're past 0
+    baseline = conn.execute(
+        "SELECT 1 FROM schema_version WHERE version=0"
+    ).fetchone()
+    if not baseline:
+        conn.execute(
+            "INSERT INTO schema_version (version, name) VALUES (0, 'baseline_v1')"
+        )
+        conn.commit()
+        _log.info("Applied baseline schema v1")
+
+    # ── Future migrations ──────────────────────────────────────────────────────
+    # Add new migrations here using _apply_migration().
+    # The baseline (version 0) covers everything up to the exchange-as-truth rewrite.
+    # Version numbers start at 100 for post-rewrite migrations.
+
     _log.info("DB initialized at %s", DB_PATH)
+
+
+def _apply_migration(conn, ver: int, name: str, sql: str):
+    """Apply a single migration if not already applied."""
+    applied = conn.execute(
+        "SELECT 1 FROM schema_version WHERE version=?", (ver,)
+    ).fetchone() is not None
+
+    if applied:
+        return
+
+    try:
+        if sql.strip().count(";") > 1:
+            conn.executescript(sql)
+        else:
+            conn.execute(sql)
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            _log.error("Migration %d (%s) failed: %s", ver, name, e, exc_info=True)
+            raise
+        _log.debug("Migration %d: column already exists (%s)", ver, name)
+
+    conn.execute(
+        "INSERT INTO schema_version (version, name) VALUES (?,?)", (ver, name)
+    )
+    conn.commit()
+    _log.info("Applied migration %d: %s", ver, name)
 
 
 # --- Substrate persistence helpers (REMOVED) ──────────────────────────────
 # Exchange-as-truth: substrate is ephemeral, never persisted to DB.
 # load_latest_substrate() — REMOVED
 # save_substrate() — REMOVED
-# save_cycle_log() — KEPT for audit logging (positions, not substrate state)
-
-
-def save_cycle_log(
-    strategy_name: str,
-    cycle_count: int,
-    action: str,
-    enzymes_fired: list,
-    isc_results: dict,
-    duration_ms: int,
-) -> int:
-    """Log a completed cycle to the cycle_log table (if it exists)."""
-    try:
-        with db_conn() as conn:
-            cur = conn.execute(
-                """INSERT INTO cycle_log
-                   (strategy_name, cycle_count, action, enzymes_fired,
-                    isc_results, duration_ms)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (
-                    strategy_name,
-                    cycle_count,
-                    action,
-                    json.dumps(enzymes_fired),
-                    json.dumps(isc_results),
-                    duration_ms,
-                ),
-            )
-            return cur.lastrowid
-    except Exception:
-        # cycle_log table may not exist (dropped by exchange-as-truth migration)
-        # This is fine — cycle logging is optional
-        return 0
+# save_cycle_log() — REMOVED (cycle_log table dropped)
