@@ -1,0 +1,340 @@
+# strategy_3.yaml -- ADX-Quality-Filter strategy (long + short)
+# ────────────────────────────────────────────────────────────────────
+# ADX is the PRIMARY signal — trend quality drives entries, not momentum direction.
+# Key differences from momentum_rising_v2:
+#   - ADX is primary (weight 0.35) — only enter when trend is STRONG
+#   - EMA stack is strong cofactor (weight 0.30) — directional confirmation
+#   - MACD is secondary (weight 0.20) — momentum confirmation
+#   - RSI is safety (weight 0.15) — avoid extremes
+#   - HIGHEST entry threshold (7.0) — very selective, fewer but better trades
+#   - Wider stops (2.0x ATR) — strong trends have deep pullbacks
+#   - Higher R:R minimum (3.0) — fewer trades need bigger winners to compensate
+#   - 4h primary, no confirmation TF — simpler, fewer API calls
+#   - Aggressive progressive trailing — lock in profits from strong trends
+#   - Higher confluence requirement (3 signals) — quality over quantity
+#   - Higher adx_no_trend (20) and adx_overextended (45) — stricter ADX bands
+#
+# Enzyme analogy: ADX is the substrate (trend quality = the signal
+# transformed into a trade). Without a strong trend, nothing happens.
+# EMA stack confirms direction. MACD confirms momentum. RSI prevents
+# chasing. This is the most conservative strategy — fewest trades,
+# highest conviction.
+
+description: |
+  ADX-primary trend-quality strategy for both long and short entries.
+
+  Philosophy: Only trade when the trend is REAL and STRONG.
+  ADX measures trend quality regardless of direction. ADX > 25 = the
+  trend has genuine strength. EMA stack confirms direction. MACD
+  confirms momentum. RSI prevents exhaustion entries.
+
+  This is the most SELECTIVE strategy — highest entry threshold,
+  fewest trades, highest conviction. Quality over quantity.
+
+  Entry logic:
+    - ADX trend quality = PRIMARY signal (weight 0.35)
+      ADX > 25 = strong trend (high conviction entry).
+      ADX 20-25 = moderate trend (reduced contribution).
+      ADX < 20 = no trend (no entry — safety).
+      ADX scales contribution — stronger trend = higher score.
+    - EMA stack = directional confirmation (weight 0.30)
+      EMA alignment confirms the direction of the strong trend.
+      Full alignment = high conviction. Partial = reduced.
+    - MACD = momentum confirmation (weight 0.20)
+      MACD must align with EMA direction. Growing histogram
+      confirms the strong trend is accelerating.
+    - RSI = safety valve (weight 0.15)
+      Avoid longs above 70, shorts below 30.
+
+  Timeframe: 4h primary, no confirmation TF — fewer API calls.
+  Highest entry threshold (7.0) — only the best setups pass.
+  Widest stops (2.0x ATR) — strong trends have deep pullbacks.
+  Highest R:R minimum (3.0) — fewer trades need bigger winners.
+
+strategy:
+  name: strategy_3
+  uid: ""                              # Fresh UID — no prior learning data
+  timeframe: "4h"
+  confirmation_tf: null                # No confirmation TF — 4h is primary AND confirmation
+  max_positions: 3
+  cycle_interval_minutes: 30           # 4h candles → 30 min is sufficient
+
+daemon:
+  jitter_seconds: 45             # wider jitter for slower cycle
+
+symbols:
+  mode: "combined"                     # always_watch + dynamic top-N
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+  never_trade:
+    - SHIBUSDT
+    - BOMEUSDT
+  dynamic_filter:
+    universe_source: "exchange"
+    limit: 10                           # fewer dynamic symbols — quality over quantity
+    min_volume_24h_usd: 15000000        # higher volume — only liquid, trending assets
+    min_open_interest_usd: 3000000      # higher OI — institutional presence
+    min_r_squared: 0.25                 # stricter R² — only clean, strong trends
+    refresh_interval_hours: 6           # refresh less often — 4h candles change slowly
+
+indicators:
+  # ── PRIMARY signal ──────────────────────────────────────────────
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.35
+    description: "PRIMARY: ADX measures trend quality regardless of direction. ADX > 25 = strong trend (high conviction). ADX 20-25 = moderate trend (reduced contribution). ADX < 20 = no trend (no entry). Scales contribution — stronger trend = higher score."
+
+  # ── Directional confirmation ──────────────────────────────────────
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.30
+    description: "COFACTOR: EMA alignment confirms the direction of the strong trend. Full alignment (21 > 55 > 200) = high conviction. Partial alignment = trend may be forming. Without EMA direction, ADX alone is insufficient."
+
+  # ── Momentum confirmation ───────────────────────────────────────
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.20
+    description: "CONFIRMATION: MACD must align with EMA direction. Growing histogram confirms the strong trend is accelerating. Fading histogram heavily penalized (0.2 multiplier) — trend may be exhausting."
+
+  # ── Safety valve ────────────────────────────────────────────────
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.15
+    description: "SAFETY: RSI above 55 contributes bullish, below 45 bearish. Dead-band 45-55 = neutral. Prevents entries at exhaustion — RSI > 70 adds risk to longs, RSI < 30 adds risk to shorts."
+
+  # ── Non-scoring indicators (weight 0) ───────────────────────────
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR determines stop loss width and entry zone size. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "Support and resistance levels define entry zones. Require at least 3 touches for validity."
+
+  - name: "momentum_quality"
+    params:
+      ranking_window: 90
+      min_r_squared: 0.25
+      lookback_short: 30
+      lookback_long: 90
+      r_squared_high: 0.5
+      r_squared_low: 0.35
+    weight: 0.0
+    description: "Momentum quality ranking (slope × R²) for dynamic symbol filter. Higher min_r_squared = only clean, strong trends."
+
+scoring:
+  entry_threshold: 7.0                # HIGHEST threshold — only the best setups pass
+  confluence_min_signals: 3            # ADX + EMA + one more — need full alignment
+  rr_minimum: 3.0                      # HIGHEST R:R — fewer trades need bigger winners
+  min_candidate_pct: 0.30              # highest bar — very few, very high quality candidates
+  rsi_signal_high: 55
+  rsi_signal_low: 45
+  momentum_cap: 1.5
+  momentum_dampening: 0.5
+  modifier_weights:
+    volume: 0.20                        # volume confirms trend quality
+    cvd: 0.1
+    order_flow: 0.1
+  label_thresholds:
+    strong: 0.60
+    weak: 0.33
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+  # ── Formula overrides ────────────────────────────────────────────
+  # ADX-driven: scale ADX contribution more aggressively.
+  # Fading MACD heavily penalized — trend must be confirmed by momentum.
+  # EMA full alignment boosted — direction is critical with ADX-primary.
+  formula:
+    adx_scale: 40.0                    # tighter ADX scale — more contribution per ADX point
+    macd_aligned_fading: 0.2           # heavy penalty — fading MACD means trend is exhausting
+    ema_full_alignment: 1.2            # boost full alignment — direction is critical
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 2.0           # WIDEST stops — strong trends have deep pullbacks
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.75        # activate moderately — let the trend prove itself
+    trail_atr_multiplier: 1.2          # wider trail — strong trends have wider swings
+    breakeven_at_activation: true
+    distance_pct: 1.2                  # wider trailing distance
+    move_to_breakeven_at_pct: 1.5
+  # ── Structure-aware exits ─────────────────────────────────────────
+  structure_aware_exits: true
+  structure_break_exit: true           # exit on structure break — critical for trend quality
+  phase_range_exit: true               # exit when phase shifts to range — trend is over
+  counter_breakout_exit: true          # exit on counter-structure breakout
+  deep_pullback_stop_multiplier: 0.6   # moderately tighten on deep pullback
+  shallow_pullback_stop_multiplier: 1.0
+  # ── Progressive trailing stop ─────────────────────────────────────
+  progressive_trail: true
+  progressive_trail_schedule:           # aggressive tightening — lock in profits from strong trends
+    0: 1.2                              # at entry: 1.2x ATR
+    1: 0.8                              # at +1x ATR profit: 0.8x
+    2: 0.5                              # at +2x ATR profit: 0.5x
+    3: 0.3                              # at +3x ATR profit: 0.3x
+    4: 0.15                             # at +4x ATR profit: 0.15x
+  pullback_trail_tighten: 0.75
+  deep_pullback_trail_tighten: 0.5
+  soft_exit:
+    requires_indicators_reversed: 3      # need 3 indicators reversed — trend changes are gradual
+    requires_confirmation_tf: false      # no confirmation TF — only primary signals
+    urgency: "soft"
+  soft_reversal_profit_threshold: 0.75  # ignore reversals when profit > 0.75%
+  near_sl_urgency_pct: 0.5
+  # ── Take-profit partials ──────────────────────────────────────────
+  tp1_sell_pct: 35.0              # moderate TP1 — balance between taking profit and riding
+  tp2_sell_pct: 35.0              # moderate TP2
+
+# ── Structure detection config ────────────────────────────────────────────────
+structure:
+  swing_lookback: 6                     # more bars — cleaner swing detection on 4h
+  min_swing_points: 5                   # more swings — stronger structure confirmation
+  trend_violation_tolerance_pct: 0.6    # moderate tolerance — 4h candles have wider ranges
+
+learning:
+  min_trades_before_adjusting: 40     # need more trades — this strategy trades infrequently
+  min_trades_per_signal: 20           # more trades per indicator — slower learning
+  significance_level: 0.05
+  rulebook_max_rules: 8               # fewer rules — simpler model for fewer trades
+  retrain_every_n_trades: 15           # retrain less often — fewer trades = slower data accumulation
+  track_idle_cycles: true
+  trajectory_lookback_hours: 96         # longer lookback — 4h candles need more history
+  trajectory_min_hours: 16
+  trajectory_thresholds:
+    stable_consensus: 10
+    gradual_alignment: 8
+    earlier_min: 3
+    recent_min: 2
+    earlier_low: 2
+    min_alignment: 4
+  contrarian_win_rate: 30.0
+  highlight_threshold: 75.0
+  monitor_low_threshold: 55.0
+  suppress_range: [45.0, 55.0]
+  contrarian_threshold: 30.0
+  adjustment_boost: 1.3               # larger boost — high conviction signals deserve more weight
+  adjustment_review_reduce: 0.85       # larger reduce — low accuracy signals are more suspect
+
+portfolio:
+  max_positions: 3
+  risk_per_trade_pct: 1.5             # higher risk per trade — fewer trades = each one matters more
+  leverage: 5
+  max_total_risk_pct: 4.0             # slightly higher — fewer positions means lower total risk
+  fallback_equity_usdt: 1000.0
+  correlation_check: true
+  max_same_direction: 3
+  volatility_cap_pct: 20.0
+  max_notional_exposure_pct: 100.0
+
+risk:
+  kelly_min: 0.05
+  kelly_max: 0.30                       # higher Kelly max — high conviction trades justify more sizing
+  kelly_win_rate_base: 0.40             # higher base — selective entries have better win rate
+  kelly_win_rate_range: 0.35
+  kelly_avg_win_r: 3.0                 # higher avg R:R — quality trades produce bigger winners
+  max_size_pct_of_equity: 25.0
+  min_size_pct_of_equity: 5.0
+
+noise:
+  conflict_max_ratio: 0.4              # stricter — conflicting signals are unacceptable for quality
+  volume_low_ratio: 0.7
+  volume_very_low_ratio: 0.5
+  adx_no_trend: 20                      # HIGHER — ADX < 20 = no trend (stricter than default 15)
+  adx_overextended: 45                  # HIGHER — strong trends can sustain higher ADX
+  noise_severity_min_reasons: 2
+
+telegram:
+  idle_notify_every: 10
+
+macro:
+  vix_risk_off: 28                      # slightly lower — quality trades are more VIX-sensitive
+  vix_neutral: 18
+  yfinance_period: "5d"                # longer period — macro context matters for 4h trades
+  yfinance_interval: "1h"
+
+exchange:
+  ohlcv_limit: 300                      # more candles — 4h needs longer history
+
+validity:
+  - id: ISC-001
+    criterion: "entry_threshold met before any trade opens"
+    verification: "analysis.candidates not empty AND score >= threshold"
+    field: "analysis.candidates"
+    operator: "any_score_gte"
+    value_ref: "scoring.entry_threshold"
+    field_key: "score"
+  - id: ISC-002
+    criterion: "stop loss always set before position opens"
+    verification: "decisions.trade_approved.sl_price > 0"
+    field: "decisions.trade_approved"
+    operator: "sl_set_or_no_trade"
+    value_ref: ""
+    field_key: "sl_price"
+  - id: ISC-003
+    criterion: "position size within risk limit"
+    verification: "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100"
+    field: "decisions.trade_approved"
+    operator: "size_within_risk"
+    value_ref: ""
+    field_key: "size_usdt"
+  - id: ISC-004
+    criterion: "max concurrent positions not exceeded"
+    verification: "portfolio.open_positions count < strategy.max_positions"
+    field: "portfolio.open_positions"
+    operator: "count_lt"
+    value_ref: "strategy.max_positions"
+    field_key: ""
+
+soft_penalties:
+  noise_penalty_ratio: 0.4              # heavier noise penalty — quality strategy hates noise
+  confluence_penalty_ratio: 0.4        # heavier confluence penalty — need full alignment
+  trajectory_penalty_ratio: 0.5
+  trajectory_medium_ratio: 0.2
+
+challenger:
+  enabled: false
+  min_trades: 5
+  min_improvement: 0.1
+
+karpathy:
+  enabled: false
+  step_size: 0.05
+  max_experiments_per_cycle: 1
+
+hyperopt:
+  enabled: false
+  n_trials: 100
+  top_n_candidates: 3
+  search_interval_hours: 24
+
+modules:
+  macro_context: true                   # ENABLED — macro context matters for quality trades
+  regime_detection: true                # ENABLED — avoid ranging markets at all costs
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false
+
+llm:
+  enabled: false
+  relax_factor: 0.8

@@ -1,94 +1,142 @@
-# paper_learning_test.yaml -- Strategy for testing the learning system in paper mode.
+# paper_learning_test.yaml -- General-purpose paper learning test strategy
+# ────────────────────────────────────────────────────────────────────
+# Consolidates former paper_learning_test (v1), paper_v2_learning_test,
+# and paper_v3_learning_test into a single canonical test file.
 #
-# Purpose: Generate enough trades in 24-48h for the learning engine to produce
-# signal accuracy data, weight adjustments, and rulebook entries.
+# Purpose: validate the full trading pipeline end-to-end on paper,
+# including learning, structure-aware exits, progressive trailing,
+# and regime detection — without risking real capital.
 #
-# Differences from momentum_rising:
-#   - 5 symbols (more opportunities)
-#   - Lower entry threshold (5.5 vs 6.5, more trades)
-#   - Fixed UID (learning data persists across restarts)
-#   - Lower min_trades_before_adjusting (15, start learning sooner)
-#   - 10-minute cycle interval (more frequent checks)
-#   - Trailing stop enabled (exits generate learning data)
-#
-# Run: python main.py --paper --strategy paper_learning_test
+# Design choices:
+#   - 1h primary TF + 4h confirmation = balanced signal quality vs speed
+#   - MACD-primary weights (proven in v2/v3 testing)
+#   - Structure-aware exits + progressive trailing ENABLED
+#   - Regime detection ENABLED (avoid ranging markets)
+#   - Learning ENABLED with moderate thresholds (not too aggressive)
+#   - 5 static symbols across major + alt for diversity
+#   - 10 min cycle = fast iteration without API spam
+#   - All keys from _template.yaml present (no missing keys)
 
 description: |
-  Paper trading strategy for learning system validation.
-  Uses the same indicators as momentum_rising but with relaxed thresholds
-  to generate more trades. The learning engine tracks per-signal accuracy
-  and adjusts weights after 15+ closed trades per signal.
-  Designed for 24-48h continuous paper testing.
+  General paper trading test strategy with learning enabled.
+
+  Validates the full pipeline: indicators → scoring → entries → exits → learning.
+  MACD-primary momentum approach with structure-aware exits and progressive trailing.
+  Both long and short entries supported.
+
+  Use this for:
+    - End-to-end system validation
+    - Learning weight adjustment testing
+    - New feature integration testing
+    - Pre-production confidence building
+
+  Entry logic:
+    - MACD crossover + growing histogram = primary signal (weight 0.45)
+    - EMA stack alignment = directional cofactor (weight 0.25)
+    - ADX > 20 = trend existence filter (weight 0.15)
+    - RSI as extreme safety valve (weight 0.15)
+
+  Exit logic:
+    - Structure-aware exits: exit on structure break, phase shift to range,
+      or counter-structure breakout
+    - Progressive trailing: tightens as profit grows (1x → 0.75x → 0.5x → 0.25x ATR)
+    - Hard stop below support at 1.5x ATR
+    - Soft exit when 2+ indicators reverse
+
+  Learning:
+    - Adjusts weights after 20 trades
+    - Retrains rulebook every 8 new trades
+    - Suppresses signals with accuracy 45-55%
+    - Highlights signals with accuracy >75%
 
 strategy:
   name: paper_learning_test
-  uid: "a1b2c3d4-5678-9abc-def0-1234567890ab"   # Fixed UID — learning data keyed to this
-  timeframe: "4h"
-  confirmation_tf: null                             # Skip 2nd timeframe, fewer API calls
+  uid: ""                              # Fresh UID — clear to reset learning data at any time
+  timeframe: "1h"
+  confirmation_tf: "4h"
   max_positions: 3
   cycle_interval_minutes: 10
 
+daemon:
+  jitter_seconds: 15             # shorter jitter for test — faster iteration
+
 symbols:
-  mode: "static"                    # "static" = always_watch only (no dynamic filtering)
+  mode: "static"                       # static for simplicity and repeatability
   always_watch:
     - BTCUSDT
     - ETHUSDT
     - SOLUSDT
-    - DOGEUSDT
+    - XRPUSDT
     - AVAXUSDT
   never_trade: []
   dynamic_filter:
-    universe_source: "exchange"     # fetch all USDT-M perps from Bitget API
-    limit: 0                        # 0 = no dynamic symbols (static mode)
-    min_volume_24h_usd: 0           # no volume filter
-    min_open_interest_usd: 0        # no OI filter
-    min_r_squared: 0.15             # minimum R² for momentum quality
-    refresh_interval_hours: 4       # how often to re-fetch universe and re-rank
+    universe_source: "exchange"
+    limit: 0                           # 0 = no dynamic symbols (static mode)
+    min_volume_24h_usd: 5000000
+    min_open_interest_usd: 1000000
+    min_r_squared: 0.15
+    refresh_interval_hours: 4
 
 indicators:
-  - name: "rsi"
-    params:
-      period: 14
-    weight: 0.25
-    description: "RSI oversold/overbought. Look for bullish divergence at support."
-
+  # ── PRIMARY signal ──────────────────────────────────────────────
   - name: "macd"
     params:
       fast: 12
       slow: 26
       signal: 9
-    weight: 0.25
-    description: "MACD histogram rising = momentum building. Cross above signal = bullish."
+    weight: 0.45
+    description: "PRIMARY: MACD crossover + growing histogram = momentum building. Fading MACD penalized (0.3 multiplier)."
 
+  # ── Directional cofactor ────────────────────────────────────────
   - name: "ema_stack"
     params:
       periods: [21, 55, 200]
-    weight: 0.30
-    description: "EMA stack alignment confirms trend direction."
+    weight: 0.25
+    description: "COFACTOR: EMA alignment confirms directional bias. Partial alignment still contributes — trend may be forming."
 
+  # ── Trend existence filter ──────────────────────────────────────
   - name: "adx"
     params:
       period: 14
-    weight: 0.20
-    description: "ADX confirms trend strength. Avoid entries when ADX < 15."
+    weight: 0.15
+    description: "COFACTOR: ADX > 20 = trend exists (safe to enter). ADX < 15 = no trend (avoid). Scales contribution by strength."
 
+  # ── Extreme safety valve ────────────────────────────────────────
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.15
+    description: "SAFETY: RSI above 55 contributes bullish, below 45 bearish. Dead-band 45-55 = neutral (no contribution). Prevents entries at extremes."
+
+  # ── Non-scoring indicators (weight 0) ───────────────────────────
   - name: "atr"
     params:
       period: 14
     weight: 0.0
-    description: "ATR for SL sizing. Not a directional signal."
+    description: "ATR determines stop loss width and entry zone size. Not a directional signal."
 
   - name: "sr_levels"
     params:
       tolerance: 0.004
       min_touches: 3
     weight: 0.0
-    description: "S/R levels for entry zone validation. Not a directional signal."
+    description: "Support and resistance levels define entry zones. Require at least 3 touches for validity."
+
+  - name: "momentum_quality"
+    params:
+      ranking_window: 90
+      min_r_squared: 0.15
+      lookback_short: 30
+      lookback_long: 90
+      r_squared_high: 0.5
+      r_squared_low: 0.3
+    weight: 0.0
+    description: "Momentum quality ranking (slope × R²). Not a scoring indicator — available if dynamic mode is enabled later."
 
 scoring:
-  entry_threshold: 5.5
-  confluence_min_signals: 3
-  rr_minimum: 1.5
+  entry_threshold: 5.5                # catches early momentum (same as momentum_rising_v2)
+  confluence_min_signals: 2            # MACD + one cofactor is sufficient
+  rr_minimum: 2.0
   min_candidate_pct: 0.20
   rsi_signal_high: 55
   rsi_signal_low: 45
@@ -105,6 +153,9 @@ scoring:
     suppress_below_pct: 55
     highlight_above_pct: 75
     review_range_pct: [55, 60]
+  # ── Formula overrides ────────────────────────────────────────────
+  formula:
+    macd_aligned_fading: 0.3           # penalize fading MACD — only enter when momentum builds
 
 exit_rules:
   hard_stop:
@@ -118,28 +169,31 @@ exit_rules:
     breakeven_at_activation: true
     distance_pct: 1.0
     move_to_breakeven_at_pct: 1.5
-  # ── Structure-aware exits (disabled for learning test) ──
-  structure_aware_exits: false
-  structure_break_exit: true
-  phase_range_exit: true
-  counter_breakout_exit: true
-  deep_pullback_stop_multiplier: 0.5
-  shallow_pullback_stop_multiplier: 1.0
-  # ── Progressive trailing stop (disabled for learning test) ──
-  progressive_trail: false
+  # ── Structure-aware exits ─────────────────────────────────────────
+  structure_aware_exits: true
+  structure_break_exit: true           # exit on structure break
+  phase_range_exit: true               # exit when phase shifts to range
+  counter_breakout_exit: true          # exit on counter-structure breakout
+  deep_pullback_stop_multiplier: 0.5   # tighten stop to 0.5x ATR on deep pullback
+  shallow_pullback_stop_multiplier: 1.0 # keep stop at 1.0x ATR on shallow pullback
+  # ── Progressive trailing stop ─────────────────────────────────────
+  progressive_trail: true
   progressive_trail_schedule:
-    0: 1.0
-    1: 0.75
-    2: 0.5
-    3: 0.25
-  pullback_trail_tighten: 0.75
-  deep_pullback_trail_tighten: 0.5
+    0: 1.0                              # at entry: 1x ATR
+    1: 0.75                             # at +1x ATR profit: tighten to 0.75x
+    2: 0.5                              # at +2x ATR profit: tighten to 0.5x
+    3: 0.25                             # at +3x ATR profit: tighten to 0.25x
+  pullback_trail_tighten: 0.75          # multiply trail by 0.75 when phase = pullback
+  deep_pullback_trail_tighten: 0.5      # multiply trail by 0.5 when pullback is deep
   soft_exit:
     requires_indicators_reversed: 2
-    requires_confirmation_tf: false
+    requires_confirmation_tf: true       # confirmation TF must also reverse
     urgency: "soft"
   soft_reversal_profit_threshold: 0.5
   near_sl_urgency_pct: 0.5
+  # ── Take-profit partials ──────────────────────────────────────────
+  tp1_sell_pct: 40.0              # % of total position to sell at TP1
+  tp2_sell_pct: 40.0              # % of REMAINING position to sell at TP2
 
 # ── Structure detection config ────────────────────────────────────────────────
 structure:
@@ -147,22 +201,18 @@ structure:
   min_swing_points: 4
   trend_violation_tolerance_pct: 0.5
 
-entry_conditions:
-  - "at least 3 enabled indicators aligned in same direction"
-  - "confluence score above entry_threshold"
-  - "support or resistance level within 1% of entry zone"
-  - "stop loss set below support for long, above resistance for short"
-  - "risk per trade within configured limit"
-
+# ── Learning: ENABLED (moderate thresholds) ────────────────────────────────────
+# Balances between v1's fast learning and v3's disabled learning.
+# Adjusts after 20 trades, retrains every 8 — responsive but not erratic.
 learning:
-  min_trades_before_adjusting: 15
-  min_trades_per_signal: 10
+  min_trades_before_adjusting: 20     # start adjusting after 20 trades
+  min_trades_per_signal: 10           # need 10 trades per indicator before accuracy tracking
   significance_level: 0.05
   rulebook_max_rules: 10
-  retrain_every_n_trades: 5
+  retrain_every_n_trades: 8           # retrain rulebook every 8 new trades
   track_idle_cycles: true
-  trajectory_lookback_hours: 24
-  trajectory_min_hours: 4
+  trajectory_lookback_hours: 48
+  trajectory_min_hours: 8
   trajectory_thresholds:
     stable_consensus: 10
     gradual_alignment: 8
@@ -175,17 +225,19 @@ learning:
   monitor_low_threshold: 55.0
   suppress_range: [45.0, 55.0]
   contrarian_threshold: 30.0
+  adjustment_boost: 1.2               # +20% for signals with ≥75% accuracy
+  adjustment_review_reduce: 0.9       # -10% for borderline signals
 
 portfolio:
   max_positions: 3
-  risk_per_trade_pct: 1.0
+  risk_per_trade_pct: 1.5             # slightly higher risk for test — more trades = faster learning
   leverage: 5
   max_total_risk_pct: 3.0
   fallback_equity_usdt: 1000.0
-  correlation_check: false
+  correlation_check: true
   max_same_direction: 3
-  volatility_cap_pct: 20.0              # Volatility backstop (ATR%-based, asset-price-agnostic)
-  max_notional_exposure_pct: 100.0      # Hard ceiling on notional exposure (flash crash protection)
+  volatility_cap_pct: 20.0
+  max_notional_exposure_pct: 100.0
 
 risk:
   kelly_min: 0.05
@@ -207,16 +259,77 @@ noise:
 telegram:
   idle_notify_every: 10
 
+macro:
+  vix_risk_off: 30
+  vix_neutral: 20
+  yfinance_period: "2d"
+  yfinance_interval: "1h"
+
+exchange:
+  ohlcv_limit: 200
+
+validity:
+  - id: ISC-001
+    criterion: "entry_threshold met before any trade opens"
+    verification: "analysis.candidates not empty AND score >= threshold"
+    field: "analysis.candidates"
+    operator: "any_score_gte"
+    value_ref: "scoring.entry_threshold"
+    field_key: "score"
+  - id: ISC-002
+    criterion: "stop loss always set before position opens"
+    verification: "decisions.trade_approved.sl_price > 0"
+    field: "decisions.trade_approved"
+    operator: "sl_set_or_no_trade"
+    value_ref: ""
+    field_key: "sl_price"
+  - id: ISC-003
+    criterion: "position size within risk limit"
+    verification: "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100"
+    field: "decisions.trade_approved"
+    operator: "size_within_risk"
+    value_ref: ""
+    field_key: "size_usdt"
+  - id: ISC-004
+    criterion: "max concurrent positions not exceeded"
+    verification: "portfolio.open_positions count < strategy.max_positions"
+    field: "portfolio.open_positions"
+    operator: "count_lt"
+    value_ref: "strategy.max_positions"
+    field_key: ""
+
+soft_penalties:
+  noise_penalty_ratio: 0.3
+  confluence_penalty_ratio: 0.3
+  trajectory_penalty_ratio: 0.5
+  trajectory_medium_ratio: 0.2
+
+challenger:
+  enabled: false
+  min_trades: 5
+  min_improvement: 0.1
+
+karpathy:
+  enabled: false
+  step_size: 0.05
+  max_experiments_per_cycle: 1
+
+hyperopt:
+  enabled: false
+  n_trials: 100
+  top_n_candidates: 3
+  search_interval_hours: 24
+
 modules:
   macro_context: false
-  regime_detection: false
+  regime_detection: true                # ENABLED — avoid ranging markets
   sentiment: false
   onchain: false
   liquidation: false
   model_consensus: false
   telegram_logs: false
   telegram_interaction: false
-  
-  llm:
+
+llm:
   enabled: false
   relax_factor: 0.8

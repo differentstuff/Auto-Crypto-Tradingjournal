@@ -1,0 +1,331 @@
+# strategy_2.yaml -- RSI-Momentum strategy (long + short)
+# ────────────────────────────────────────────────────────────────────
+# RSI is the PRIMARY signal — directional momentum drives entries.
+# Key differences from momentum_rising_v2:
+#   - RSI is primary (weight 0.35), not MACD — RSI directionality over momentum crossover
+#   - MACD is strong cofactor (weight 0.30) — confirms RSI direction with momentum
+#   - EMA stack is directional filter (weight 0.20) — confirms structural bias
+#   - ADX is trend filter (weight 0.15) — ensures some trend exists
+#   - Tighter entry threshold (5.0) — more trades, faster iteration
+#   - Tighter stops (1.2x ATR) — RSI signals are faster, need tighter risk
+#   - Lower R:R minimum (1.5) — accepts smaller wins for higher frequency
+#   - Faster cycle (10 min) — RSI changes faster than MACD
+#   - More aggressive momentum dampening (0.7) — prevents RSI overextension
+#
+# Enzyme analogy: RSI directionality is the substrate (the signal
+# transformed into a trade). MACD is the cofactor — it must confirm
+# the RSI's directional reading with actual momentum. EMA stack
+# confirms structural alignment. ADX ensures the market is trending.
+
+description: |
+  RSI-primary momentum strategy for both long and short entries.
+
+  Philosophy: RSI directionality is the earliest momentum signal.
+  RSI moving above 55 = bullish momentum building. RSI moving below 45
+  = bearish momentum building. MACD confirms with crossover momentum.
+  EMA confirms structural alignment. ADX ensures trend exists.
+
+  Entry logic:
+    - RSI directionality = PRIMARY signal (weight 0.35)
+      RSI above 55 = bullish momentum. RSI below 45 = bearish momentum.
+      Dead-band 45-55 = neutral (no contribution). RSI is the fastest
+      momentum indicator — catches moves before MACD crossover.
+    - MACD momentum = cofactor (weight 0.30)
+      MACD crossover + growing histogram confirms RSI direction.
+      Fading MACD penalized — RSI may be a false signal without MACD.
+    - EMA stack = directional filter (weight 0.20)
+      EMA alignment confirms the structural trend supports RSI direction.
+    - ADX = trend existence (weight 0.15)
+      ADX > 20 = trend exists. Prevents entries in ranging markets.
+
+  Timeframe: 1h primary + 4h confirmation — fast signals, confirmed structure.
+  Tighter stops (1.2x ATR) — RSI signals are faster, need tighter risk.
+  Lower R:R minimum (1.5) — higher frequency, smaller wins.
+  More aggressive momentum dampening — prevents RSI overextension.
+
+strategy:
+  name: strategy_2
+  uid: ""                              # Fresh UID — no prior learning data
+  timeframe: "1h"
+  confirmation_tf: "4h"
+  max_positions: 3
+  cycle_interval_minutes: 10           # faster cycle — RSI changes quickly
+
+daemon:
+  jitter_seconds: 15             # shorter jitter — faster iteration
+
+symbols:
+  mode: "combined"                     # always_watch + dynamic top-N
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+  never_trade:
+    - SHIBUSDT
+    - BOMEUSDT
+  dynamic_filter:
+    universe_source: "exchange"
+    limit: 15
+    min_volume_24h_usd: 10000000
+    min_open_interest_usd: 2000000
+    min_r_squared: 0.15
+    refresh_interval_hours: 4
+
+indicators:
+  # ── PRIMARY signal ──────────────────────────────────────────────
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.35
+    description: "PRIMARY: RSI directionality is the earliest momentum signal. RSI above 55 = bullish momentum building. RSI below 45 = bearish momentum building. Dead-band 45-55 = neutral. Catches moves before MACD crossover."
+
+  # ── Momentum cofactor ────────────────────────────────────────────
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.30
+    description: "COFACTOR: MACD crossover + growing histogram confirms RSI direction. Without MACD confirmation, RSI may be a false signal. Fading MACD penalized heavily (0.2 multiplier) — RSI needs momentum backing."
+
+  # ── Directional filter ──────────────────────────────────────────
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.20
+    description: "FILTER: EMA alignment confirms structural trend supports RSI direction. Partial alignment still contributes — trend may be forming. Without EMA support, RSI signal is weaker."
+
+  # ── Trend existence filter ──────────────────────────────────────
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.15
+    description: "FILTER: ADX > 20 = trend exists. Prevents entries in ranging markets where RSI oscillates without direction. Scales contribution by trend strength."
+
+  # ── Non-scoring indicators (weight 0) ───────────────────────────
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR determines stop loss width and entry zone size. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "Support and resistance levels define entry zones. Require at least 3 touches for validity."
+
+  - name: "momentum_quality"
+    params:
+      ranking_window: 90
+      min_r_squared: 0.15
+      lookback_short: 30
+      lookback_long: 90
+      r_squared_high: 0.5
+      r_squared_low: 0.3
+    weight: 0.0
+    description: "Momentum quality ranking (slope × R²) for dynamic symbol filter."
+
+scoring:
+  entry_threshold: 5.0                # LOWER threshold — more trades, faster iteration
+  confluence_min_signals: 2            # RSI + one cofactor is sufficient
+  rr_minimum: 1.5                      # LOWER R:R — accept smaller wins for higher frequency
+  min_candidate_pct: 0.15              # lower bar — more candidates, more trades
+  rsi_signal_high: 55
+  rsi_signal_low: 45
+  momentum_cap: 1.2                    # LOWER cap — RSI can overextend faster
+  momentum_dampening: 0.7              # HIGHER dampening — prevent RSI overextension
+  modifier_weights:
+    volume: 0.20                        # volume more important — confirms RSI direction
+    cvd: 0.15                          # CVD more important — confirms buying/selling pressure
+    order_flow: 0.1
+  label_thresholds:
+    strong: 0.60
+    weak: 0.33
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+  # ── Formula overrides ────────────────────────────────────────────
+  # RSI-driven: heavier fading MACD penalty — RSI needs momentum backing.
+  # Wider RSI scale for more granular signal — RSI is the primary.
+  formula:
+    macd_aligned_fading: 0.2            # heavy penalty — RSI without MACD is suspect
+    rsi_scale: 25.0                     # tighter scale — more granular RSI contribution
+    volume_confirm: 0.6                # volume confirmation more important
+    cvd_trend: 0.5                     # CVD trend more important
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 1.2           # TIGHTER stops — RSI signals are faster
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.3          # activate EARLIER — RSI trades are shorter
+    trail_atr_multiplier: 0.8          # tighter trail — lock in profits faster
+    breakeven_at_activation: true
+    distance_pct: 0.8                  # tighter trailing distance
+    move_to_breakeven_at_pct: 1.0      # move to BE sooner
+  # ── Structure-aware exits ─────────────────────────────────────────
+  structure_aware_exits: true
+  structure_break_exit: true           # exit on structure break
+  phase_range_exit: true               # exit when phase shifts to range
+  counter_breakout_exit: true          # exit on counter-structure breakout
+  deep_pullback_stop_multiplier: 0.5  # tighten aggressively on deep pullback
+  shallow_pullback_stop_multiplier: 1.0
+  # ── Progressive trailing stop ─────────────────────────────────────
+  progressive_trail: true
+  progressive_trail_schedule:           # faster tightening — RSI trades are shorter
+    0: 0.8                              # at entry: 0.8x ATR (tighter)
+    1: 0.5                              # at +1x ATR profit: 0.5x
+    2: 0.3                              # at +2x ATR profit: 0.3x
+    3: 0.15                             # at +3x ATR profit: 0.15x
+  pullback_trail_tighten: 0.7          # aggressive pullback tightening
+  deep_pullback_trail_tighten: 0.4      # very aggressive deep pullback tightening
+  soft_exit:
+    requires_indicators_reversed: 2     # 2 indicators reversed = exit
+    requires_confirmation_tf: false      # faster exit — don't wait for 4h confirmation
+    urgency: "soft"
+  soft_reversal_profit_threshold: 0.3   # lower threshold — exit on reversal sooner
+  near_sl_urgency_pct: 0.5
+  # ── Take-profit partials ──────────────────────────────────────────
+  tp1_sell_pct: 50.0              # larger TP1 — take half profit early (RSI trades are shorter)
+  tp2_sell_pct: 50.0              # larger TP2 — take remaining at TP2
+
+# ── Structure detection config ────────────────────────────────────────────────
+structure:
+  swing_lookback: 5
+  min_swing_points: 4
+  trend_violation_tolerance_pct: 0.5
+
+learning:
+  min_trades_before_adjusting: 25     # adjust after 25 trades
+  min_trades_per_signal: 12           # need 12 trades per indicator
+  significance_level: 0.05
+  rulebook_max_rules: 10
+  retrain_every_n_trades: 8           # retrain every 8 new trades
+  track_idle_cycles: true
+  trajectory_lookback_hours: 36       # shorter lookback — RSI trades are shorter
+  trajectory_min_hours: 6             # minimum 6h before trajectory is valid
+  trajectory_thresholds:
+    stable_consensus: 8               # slightly lower — faster signals
+    gradual_alignment: 6
+    earlier_min: 3
+    recent_min: 2
+    earlier_low: 2
+    min_alignment: 4
+  contrarian_win_rate: 30.0
+  highlight_threshold: 75.0
+  monitor_low_threshold: 55.0
+  suppress_range: [45.0, 55.0]
+  contrarian_threshold: 30.0
+  adjustment_boost: 1.2
+  adjustment_review_reduce: 0.9
+
+portfolio:
+  max_positions: 3
+  risk_per_trade_pct: 1.2             # slightly higher — more trades = more data
+  leverage: 5
+  max_total_risk_pct: 3.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: true
+  max_same_direction: 3
+  volatility_cap_pct: 20.0
+  max_notional_exposure_pct: 100.0
+
+risk:
+  kelly_min: 0.05
+  kelly_max: 0.30                       # higher Kelly max — more trades justify more sizing
+  kelly_win_rate_base: 0.35
+  kelly_win_rate_range: 0.40
+  kelly_avg_win_r: 1.8                # lower avg R:R — smaller wins but more frequent
+  max_size_pct_of_equity: 25.0
+  min_size_pct_of_equity: 5.0
+
+noise:
+  conflict_max_ratio: 0.5
+  volume_low_ratio: 0.7
+  volume_very_low_ratio: 0.5
+  adx_no_trend: 15
+  adx_overextended: 40
+  noise_severity_min_reasons: 2
+
+telegram:
+  idle_notify_every: 10
+
+macro:
+  vix_risk_off: 30
+  vix_neutral: 20
+  yfinance_period: "2d"
+  yfinance_interval: "1h"
+
+exchange:
+  ohlcv_limit: 200
+
+validity:
+  - id: ISC-001
+    criterion: "entry_threshold met before any trade opens"
+    verification: "analysis.candidates not empty AND score >= threshold"
+    field: "analysis.candidates"
+    operator: "any_score_gte"
+    value_ref: "scoring.entry_threshold"
+    field_key: "score"
+  - id: ISC-002
+    criterion: "stop loss always set before position opens"
+    verification: "decisions.trade_approved.sl_price > 0"
+    field: "decisions.trade_approved"
+    operator: "sl_set_or_no_trade"
+    value_ref: ""
+    field_key: "sl_price"
+  - id: ISC-003
+    criterion: "position size within risk limit"
+    verification: "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100"
+    field: "decisions.trade_approved"
+    operator: "size_within_risk"
+    value_ref: ""
+    field_key: "size_usdt"
+  - id: ISC-004
+    criterion: "max concurrent positions not exceeded"
+    verification: "portfolio.open_positions count < strategy.max_positions"
+    field: "portfolio.open_positions"
+    operator: "count_lt"
+    value_ref: "strategy.max_positions"
+    field_key: ""
+
+soft_penalties:
+  noise_penalty_ratio: 0.3
+  confluence_penalty_ratio: 0.25       # lighter confluence penalty — fewer required signals
+  trajectory_penalty_ratio: 0.5
+  trajectory_medium_ratio: 0.2
+
+challenger:
+  enabled: false
+  min_trades: 5
+  min_improvement: 0.1
+
+karpathy:
+  enabled: false
+  step_size: 0.05
+  max_experiments_per_cycle: 1
+
+hyperopt:
+  enabled: false
+  n_trials: 100
+  top_n_candidates: 3
+  search_interval_hours: 24
+
+modules:
+  macro_context: false
+  regime_detection: true                # ENABLED — avoid ranging markets (RSI whipsaws)
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false
+
+llm:
+  enabled: false
+  relax_factor: 0.8

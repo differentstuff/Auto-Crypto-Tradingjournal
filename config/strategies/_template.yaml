@@ -4,6 +4,8 @@
 # If a key is missing from a strategy, the system fails — not falls back.
 # Copy this file to create a new strategy, then customize values.
 
+description: ""                  # human-readable strategy description (multi-line | supported)
+
 strategy:
   name: ""                       # strategy identifier (must match filename without .yaml)
   uid: ""                        # stable UID for learning data isolation (auto-generated on first load, clear to reset)
@@ -161,6 +163,9 @@ exit_rules:
     urgency: "soft"                  # soft exit urgency level
   soft_reversal_profit_threshold: 0.5  # profit % below which a signal reversal exits immediately; above it, reversal is ignored
   near_sl_urgency_pct: 0.5           # distance to SL below this % → high urgency
+  # ── Take-profit partials ──────────────────────────────────────────────
+  tp1_sell_pct: 40.0              # % of total position to sell at TP1 (remainder runs with trailing stop)
+  tp2_sell_pct: 40.0              # % of REMAINING position to sell at TP2 (100 = close all remaining)
 
 # ── Structure detection config ────────────────────────────────────────────────
 # Parameters for MarketGeometry enzyme (swing detection, trend classification).
@@ -309,7 +314,7 @@ hyperopt:
 # Detailed routing, providers, and prompts live in config/llm.yaml.
 # Do not override llm: here — the router reads from the merged config.
 llm:
-  enabled: true
+  enabled: false
   relax_factor: 0.8
 
 modules:
