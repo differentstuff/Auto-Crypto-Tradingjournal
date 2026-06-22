@@ -10,16 +10,16 @@ Backtest logs are enormous (4M+ lines) and 99.9%+ of cycles are `action=wait`. T
 
 ```bash
 # See all non-wait cycles with full detail (trade entries, SL, TP, confluence, ISC blocks)
-python scripts/analyze_backtest.py --log temp/backtest-stdout.log
+python scripts/analyze_backtest.py --log logs/backtest-stdout.log
 
 # One-line summary per interesting cycle
-python scripts/analyze_backtest.py --log temp/backtest-stdout.log --summary
+python scripts/analyze_backtest.py --log logs/backtest-stdout.log --summary
 
 # Analyze the latest JSON result
 python scripts/analyze_backtest.py --results temp/results/
 
 # Both at once
-python scripts/analyze_backtest.py --log temp/backtest-stdout.log --results temp/results/
+python scripts/analyze_backtest.py --log logs/backtest-stdout.log --results temp/results/
 ```
 
 ## Log Mode (`--log`)
@@ -51,13 +51,13 @@ For each shown cycle, the tool extracts and highlights:
 
 ```bash
 # Just the trade-open cycles, one line each
-python scripts/analyze_backtest.py --log temp/backtest-stdout.log --summary --action trade_open
+python scripts/analyze_backtest.py --log logs/backtest-stdout.log --summary --action trade_open
 
 # See cycle 66 in full (first trade)
-python scripts/analyze_backtest.py --log temp/backtest-stdout.log --cycle 66
+python scripts/analyze_backtest.py --log logs/backtest-stdout.log --cycle 66
 
 # Show trades AND cycles where exits were signalled but maybe not executed
-python scripts/analyze_backtest.py --log temp/backtest-stdout.log --include-exits --summary
+python scripts/analyze_backtest.py --log logs/backtest-stdout.log --include-exits --summary
 ```
 
 ### Sample summary output
