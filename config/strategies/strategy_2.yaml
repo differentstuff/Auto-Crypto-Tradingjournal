@@ -47,9 +47,14 @@ strategy:
   name: strategy_2
   uid: ""                              # Fresh UID — no prior learning data
   timeframe: "1h"
-  confirmation_tf: "4h"
+  confirmation_tf: null                # neutralized (Fix 3) — code stays, kill-switch no-ops when null
   max_positions: 3
-  cycle_interval_minutes: 10           # faster cycle — RSI changes quickly
+  cycle_interval_minutes: 30           # 1h/2 = 30 min (Fix 5)
+  direction_mode: "both"               # Fix 4: allow both long and short
+  long_weight: 1.0                     # Fix 4: no weight penalty for longs
+  short_weight: 1.0                    # Fix 4: no weight penalty for shorts
+  reentry_cooldown_candles: 2          # Fix 2: wait 2 candles after close before re-entry
+  reentry_require_signal_confirm: true # Fix 2: require fresh signal after cooldown
 
 daemon:
   jitter_seconds: 15             # shorter jitter — faster iteration
@@ -133,7 +138,7 @@ scoring:
   rr_minimum: 1.5                      # LOWER R:R — accept smaller wins for higher frequency
   min_candidate_pct: 0.15              # lower bar — more candidates, more trades
   rsi_signal_high: 55
-  rsi_signal_low: 45
+  rsi_signal_low: 40                    # Fix 4: wider bearish signal band (was 45)
   momentum_cap: 1.2                    # LOWER cap — RSI can overextend faster
   momentum_dampening: 0.7              # HIGHER dampening — prevent RSI overextension
   modifier_weights:
@@ -232,6 +237,8 @@ portfolio:
   fallback_equity_usdt: 1000.0
   correlation_check: true
   max_same_direction: 3
+  max_same_direction_long: 3           # Fix 4: per-direction cap for longs
+  max_same_direction_short: 3          # Fix 4: per-direction cap for shorts
   volatility_cap_pct: 20.0
   max_notional_exposure_pct: 100.0
 
