@@ -163,6 +163,11 @@ class Substrate:
             "confirmation_tf": strategy_cfg["confirmation_tf"],
             "cycle_interval_minutes": strategy_cfg["cycle_interval_minutes"],
             "max_positions": strategy_cfg["max_positions"],
+            "direction_mode": strategy_cfg.get("direction_mode"),
+            "long_weight": strategy_cfg.get("long_weight"),
+            "short_weight": strategy_cfg.get("short_weight"),
+            "reentry_cooldown_candles": strategy_cfg.get("reentry_cooldown_candles"),
+            "reentry_require_signal_confirm": strategy_cfg.get("reentry_require_signal_confirm"),
             "last_loaded_at": now,
         }
 
@@ -180,6 +185,8 @@ class Substrate:
             "fallback_equity_usdt": portfolio_cfg["fallback_equity_usdt"],
             "correlation_check": portfolio_cfg["correlation_check"],
             "max_same_direction": portfolio_cfg["max_same_direction"],
+            "max_same_direction_long": portfolio_cfg.get("max_same_direction_long"),
+            "max_same_direction_short": portfolio_cfg.get("max_same_direction_short"),
             "total_risk_exposure_pct": 0.0,
             "correlation_matrix": {},
         }
@@ -202,6 +209,8 @@ class Substrate:
             "indicators": {},
             "indicator_history": {},  # {symbol: [{timestamp, indicators: {...}}, ...]
             "last_candle_close_ts": {},  # {symbol_tf: ISO_timestamp} — survives reset_cycle
+            "recently_closed": {},        # {symbol: candle_ts} — survives reset_cycle (re-entry guard)
+            "last_traded_candle_idx": {},  # {symbol: candle_ts} — survives reset_cycle (re-entry guard)
             "last_prices": {},         # {symbol: float} — last close price per symbol
             "ohlcv": {},               # {symbol: {tf: {high: [], low: [], close: []}}} — raw price arrays for MarketGeometry
             "geometry": {},             # {symbol: {trend_direction, phase, pullback_depth, structure_break, ...}} — from MarketGeometry enzyme
@@ -653,7 +662,8 @@ class Substrate:
         self.market["last_scan_at"] = ""
         self.market["macro"] = {}
         self.market["pre_trade_context"] = {}
-        # NOTE: indicator_history and last_candle_close_ts are NOT cleared.
+        # NOTE: indicator_history, last_candle_close_ts, recently_closed, and
+    # last_traded_candle_idx are NOT cleared. They accumulate across cycles.
         # They accumulate across cycles and survive reset_cycle().
         # indicator_history is trimmed by CollectOHLCV to the configured time span.
         # last_candle_close_ts tracks when each symbol/tf last had a candle close.
