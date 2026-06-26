@@ -330,6 +330,21 @@ class ScoreConfluence(Enzyme):
                 "confirmation_tf_misaligned": confirmation_misaligned,
             }
 
+            # Fix 4: Direction mode filter — drop candidates that don't match
+            direction_mode = substrate.strategy.get("direction_mode", "both")
+            if direction_mode == "long_only" and normalized_score < 0:
+                continue  # Drop short candidates in long_only mode
+            if direction_mode == "short_only" and normalized_score > 0:
+                continue  # Drop long candidates in short_only mode
+
+            # Fix 4: Apply direction weights to final score
+            long_weight = substrate.strategy.get("long_weight", 1.0)
+            short_weight = substrate.strategy.get("short_weight", 1.0)
+            if normalized_score > 0:
+                normalized_score *= long_weight
+            elif normalized_score < 0:
+                normalized_score *= short_weight
+
             # Only include as candidate if above relaxed threshold.
             # Candidates between relaxed_threshold and entry_threshold are "borderline"
             # — they need LLM "proceed" to be approved by ApproveTrade.
