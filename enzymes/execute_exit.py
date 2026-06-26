@@ -36,7 +36,7 @@ class ExecuteExit(Enzyme):
     Transporter enzyme: closes approved positions.
 
     In paper mode: removes position from portfolio, records outcome to DB.
-    In live mode: cancels exchange orders, closes position, records outcome to DB.
+    In live mode: cancels exchange orders, closes position on exchange, records outcome to DB.
 
     Handles gracefully when the position is already gone (closed externally).
     """
@@ -44,6 +44,10 @@ class ExecuteExit(Enzyme):
     name = "ExecuteExit"
     enzyme_class = EnzymeClass.TRANSPORTER
     priority = 0
+
+    def __init__(self, config: Optional[dict] = None, exchange=None):
+        super().__init__(config=config)
+        self.exchange = exchange
 
     def can_activate(self, substrate: Substrate) -> bool:
         exit_approved = substrate.decisions.get("exit_approved")
@@ -191,6 +195,7 @@ class ExecuteExit(Enzyme):
             # Cancel exchange orders and close position (live mode)
             if not paper_mode:
                 self._cancel_exchange_orders(substrate, target_pos)
+                self._close_position_on_exchange(substrate, target_pos)
 
             if paper_mode:
                 self._log.info(
@@ -240,48 +245,88 @@ class ExecuteExit(Enzyme):
 
     def _cancel_exchange_orders(self, substrate: Substrate, position: dict) -> None:
         """Cancel remaining exchange orders for a position being closed."""
-        # Try to get exchange from the daemon (injected via main.py)
-        # This is a best-effort operation — failures are logged but don't block the close
+        if self.exchange is None:
+            self._log.warning("No Exchange instance — cannot cancel orders for %s", position.get("symbol", "?"))
+            return
+
+        symbol = position.get("symbol", "")
         try:
-            # The exchange is not directly available to ExecuteExit.
-            # We rely on the daemon's reconcile_from_exchange() to detect
-            # the closed position on the next cycle and clean up.
-            # For now, we cancel all orders for the symbol via the exchange.
-            symbol = position.get("symbol", "")
-            self._log.info("Exchange order cleanup for %s (handled by next cycle reconciliation)", symbol)
+            self.exchange.cancel_orders(symbol)
+            self._log.info("Cancelled exchange orders for %s", symbol)
         except Exception as e:
-            self._log.warning("Could not cancel exchange orders for %s: %s", position.get("symbol", "?"), e)
+            self._log.warning("Could not cancel exchange orders for %s: %s", symbol, e)
+
+    def _close_position_on_exchange(self, substrate: Substrate, position: dict) -> None:
+        """Close position on the exchange in live mode."""
+        if self.exchange is None:
+            self._log.warning("No Exchange instance — cannot close position on exchange for %s", position.get("symbol", "?"))
+            return
+
+        symbol = position.get("symbol", "")
+        direction = position.get("direction", "Long")
+        size_usdt = position.get("size_usdt", 0)
+
+        try:
+            result = self.exchange.close_position(
+                symbol=symbol,
+                direction=direction,
+                size_usdt=size_usdt,
+                reduce_only=False,
+            )
+            if result:
+                self._log.info(
+                    "Position closed on exchange: %s %s size=%.2f order_id=%s",
+                    direction, symbol, size_usdt, result.get("order_id", "?"),
+                )
+            else:
+                self._log.warning("Exchange close_position returned None for %s", symbol)
+        except Exception as e:
+            self._log.warning("Could not close position on exchange for %s: %s", symbol, e)
 
     def _activate_native_trailing_stop(self, substrate: Substrate, position: dict) -> None:
         """
         Activate native trailing stop on exchange after TP1 hit.
 
         The native trail is a daemon-offline backup — wider than ATR-based stop.
-        Percentage = (2 × ATR / current_price) × 100
+        Percentage = (atr_multiplier × ATR / current_price) × 100
         Fallback: configurable default from strategy YAML.
         """
-        # This requires the exchange instance, which is not directly available
-        # to ExecuteExit. The daemon's post-cycle reconciliation will detect
-        # TP1 from achievedProfits and activate the native trail.
-        # For now, log the intent.
+        if self.exchange is None:
+            self._log.warning("No Exchange instance — cannot place native trailing stop for %s", position.get("symbol", ""))
+            return
+
         symbol = position.get("symbol", "")
+        direction = position.get("direction", "Long")
         atr_value = position.get("atr_value", 0)
         mark_price = position.get("mark_price", 0)
+        tp1 = position.get("tp1", 0)
+
+        atr_multiplier = substrate.cfg("exit_rules.native_trail.atr_multiplier", 2.0)
 
         if atr_value and mark_price:
-            trail_pct = (2.0 * atr_value / mark_price) * 100
-            self._log.info(
-                "Native trailing stop should activate for %s: trail_pct=%.2f%% "
-                "(will be activated by daemon reconciliation on next cycle)",
-                symbol, trail_pct,
-            )
+            trail_pct = (atr_multiplier * atr_value / mark_price) * 100
         else:
-            default_pct = substrate.cfg("exit_rules.native_trail.default_pct", 5.0)
-            self._log.info(
-                "Native trailing stop should activate for %s: default_pct=%.2f%% "
-                "(ATR unavailable, will be activated by daemon reconciliation)",
-                symbol, default_pct,
+            trail_pct = substrate.cfg("exit_rules.native_trail.default_pct", 5.0)
+
+        trigger_price = tp1 if tp1 else mark_price
+
+        try:
+            result = self.exchange.place_trailing_stop(
+                symbol=symbol,
+                direction=direction,
+                trigger_price=trigger_price,
+                trail_pct=trail_pct,
             )
+            if result:
+                position["native_trail_order_id"] = result.get("order_id", "")
+                self._log.info(
+                    "Native trailing stop placed on exchange: %s trail_pct=%.2f%% trigger=%.2f order_id=%s",
+                    symbol, trail_pct, trigger_price, result.get("order_id", "?"),
+                )
+            else:
+                self._log.warning("Native trailing stop placement returned None for %s", symbol)
+        except Exception as e:
+            self._log.warning("Could not place native trailing stop for %s: %s", symbol, e)
 
     def _mark_position_closed(self, substrate: Substrate, position: dict) -> None:
         """Mark position as closed in the position_metadata DB table."""

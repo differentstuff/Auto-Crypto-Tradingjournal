@@ -201,7 +201,7 @@ def main() -> None:
         _register(name)
 
     _register("ExecuteTrade", exchange=exchange)
-    _register("ExecuteExit")
+    _register("ExecuteExit", exchange=exchange)
     _register("SyncPositions", exchange=exchange)
     _register("SendTelegramLog")
 
