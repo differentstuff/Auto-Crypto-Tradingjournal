@@ -147,6 +147,36 @@ class ConfigLoader:
 
         self._config = merged
         self._last_loaded = datetime.now(timezone.utc)
+
+        # Fix 5: Validate cycle_interval_minutes against timeframe.
+        # cycle must be in [1, timeframe_minutes/2] to ensure at least
+        # 2 cycles per candle (catches intra-candle changes).
+        strategy_timeframe = merged.get("strategy", {}).get("timeframe", "")
+        cycle_minutes = merged.get("strategy", {}).get("cycle_interval_minutes", 0)
+        if strategy_timeframe and cycle_minutes:
+            tf = strategy_timeframe.strip().upper()
+            if tf.endswith("H"):
+                tf_minutes = int(tf[:-1]) * 60
+            elif tf.endswith("M"):
+                tf_minutes = int(tf[:-1])
+            elif tf.endswith("D"):
+                tf_minutes = int(tf[:-1]) * 1440
+            elif tf.endswith("W"):
+                tf_minutes = int(tf[:-1]) * 10080
+            else:
+                tf_minutes = 60  # unknown format — use 1h default
+            max_cycle = tf_minutes // 2
+            if cycle_minutes < 1:
+                raise SubstrateConfigError(
+                    f"strategy.cycle_interval_minutes must be >= 1, got {cycle_minutes}"
+                )
+            if cycle_minutes > max_cycle:
+                raise SubstrateConfigError(
+                    f"strategy.cycle_interval_minutes ({cycle_minutes}) exceeds "
+                    f"timeframe/2 ({max_cycle} min for {strategy_timeframe} timeframe). "
+                    f"Set cycle_interval_minutes <= {max_cycle}."
+                )
+
         llm_enabled = self._config.get("llm", {}).get("enabled", False)
         _log.info(
             "Config loaded: strategy=%s, last_loaded=%s, llm=%s",
