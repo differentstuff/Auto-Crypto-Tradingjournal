@@ -85,12 +85,24 @@ class ExecuteExit(Enzyme):
         direction = target_pos.get("direction", "Long").lower()
         full_size_usdt = target_pos.get("size_usdt", 0)
 
+        # Fix 1: SL/trailing fills use stop price, not mark_price.
+        # In live mode, the exchange fills at the stop price (stop-loss order).
+        # In replay mode, mark_price is the candle close, which can be far
+        # below the stop — inflating SL losses 5-25x. Using the stop price
+        # matches real exchange fill behavior.
+        if exit_reason == "hard_sl_breach":
+            exit_price = target_pos.get("sl_price", mark_price)
+        elif exit_reason == "trailing_stop_hit":
+            exit_price = target_pos.get("trailing_sl", mark_price)
+        else:
+            exit_price = mark_price
+
         pnl_pct = 0.0
-        if entry_price and mark_price:
+        if entry_price and exit_price:
             if direction == "long":
-                pnl_pct = ((mark_price - entry_price) / entry_price) * 100
+                pnl_pct = ((exit_price - entry_price) / entry_price) * 100
             else:
-                pnl_pct = ((entry_price - mark_price) / entry_price) * 100
+                pnl_pct = ((entry_price - exit_price) / entry_price) * 100
 
         if is_partial:
             # ── Partial close: sell a % of the position, keep the rest ──
@@ -110,7 +122,7 @@ class ExecuteExit(Enzyme):
             # Write PnL back to exit_approved for outcome recording
             exit_approved["pnl_pct"] = round(pnl_pct, 4)
             exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
-            exit_approved["exit_price"] = mark_price
+            exit_approved["exit_price"] = exit_price
             exit_approved["sold_usdt"] = round(sold_usdt, 2)
             exit_approved["remaining_usdt"] = remaining_usdt
             substrate.decisions["exit_approved"] = exit_approved
@@ -173,7 +185,7 @@ class ExecuteExit(Enzyme):
             # Write PnL back to exit_approved
             exit_approved["pnl_pct"] = round(pnl_pct, 4)
             exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
-            exit_approved["exit_price"] = mark_price
+            exit_approved["exit_price"] = exit_price
             substrate.decisions["exit_approved"] = exit_approved
 
             # Cancel exchange orders and close position (live mode)
@@ -197,6 +209,21 @@ class ExecuteExit(Enzyme):
             substrate.portfolio["open_positions"] = [
                 p for i, p in enumerate(positions) if i != target_idx
             ]
+
+            # Fix 2: Record position close for re-entry guard.
+            # Stores the candle timestamp at close time so the three-layer
+            # guard in ApproveTrade can enforce cooldown and bar confirmation.
+            primary_tf = substrate.strategy.get("timeframe", "4H")
+            candle_key = f"{symbol}_{primary_tf}"
+            last_close_ts = substrate.market.get("last_candle_close_ts", {}).get(candle_key, "")
+
+            rc = dict(substrate.market.get("recently_closed", {}))
+            rc[symbol] = last_close_ts
+            substrate.market["recently_closed"] = rc
+
+            ltci = dict(substrate.market.get("last_traded_candle_idx", {}))
+            ltci[symbol] = last_close_ts
+            substrate.market["last_traded_candle_idx"] = ltci
 
             # Mark position as closed in metadata DB
             self._mark_position_closed(substrate, target_pos)
