@@ -171,7 +171,15 @@ class ApproveExit(Enzyme):
         # 5. TP1 hit — partial exit. Sell tp1_sell_pct of total position,
         #    trailing stop already active on remainder (daemon maintains it).
         #    Position stays open with reduced size.
+        #    Exchange-as-truth: if position was reconciled from exchange,
+        #    prefer tp1_taken flag (derived from achievedProfits > 0).
         if not should_exit and reason == "tp1_hit":
+            tp1_taken_from_exchange = target_pos.get("tp1_taken", False)
+            if tp1_taken_from_exchange and not paper_mode:
+                self._log.info(
+                    "TP1 already taken on exchange for %s (achievedProfits > 0) — re-approval for substrate cleanup",
+                    symbol,
+                )
             tp1_sell_pct = substrate.cfg("exit_rules.tp1_sell_pct", 40.0)
             if tp1_sell_pct >= 100.0:
                 should_exit = True
