@@ -4,7 +4,9 @@
 #
 # IMPORTANT: strategy: section is intentionally ABSENT here.
 # Required strategy keys (timeframe, confirmation_tf, max_positions,
-# cycle_interval_minutes) MUST be defined in every strategy YAML.
+# cycle_interval_minutes, direction_mode, long_weight, short_weight,
+# reentry_cooldown_candles, reentry_require_signal_confirm) MUST be defined
+# in every strategy YAML.
 # If missing, ConfigLoader raises SubstrateConfigError naming the key and file.
 # This prevents silent fallback to defaults that may be wrong for the strategy.
 
@@ -72,6 +74,8 @@ portfolio:
   fallback_equity_usdt: 1000.0
   correlation_check: true
   max_same_direction: 3
+  max_same_direction_long: 3           # Fix 4: per-direction cap for longs
+  max_same_direction_short: 3          # Fix 4: per-direction cap for shorts
   volatility_cap_pct: 20.0           # Volatility backstop: max % of equity per 1% ATR. Uses ATR% (relative) so it's asset-price-agnostic.
   max_notional_exposure_pct: 100.0   # Hard ceiling on notional as % of equity. Flash crash protection: limits exposure even at high leverage.
 
@@ -114,7 +118,7 @@ scoring:
   rr_minimum: 2.5                # minimum R:R to approve trade — rejects setups where SL is too wide
   min_candidate_pct: 0.20
   rsi_signal_high: 55
-  rsi_signal_low: 45
+  rsi_signal_low: 40                    # Fix 4: wider bearish signal band (was 45)
   momentum_cap: 1.5
   momentum_dampening: 0.5
   modifier_weights:
