@@ -258,7 +258,6 @@ def make_full_config(**overrides) -> dict:
         "daemon": {
             "paper_mode": True,
             "max_cycle_steps": 20,
-            "substrate_state_max_rows": 200,
         },
         "llm": {
             "enabled": True,

@@ -141,7 +141,6 @@ def _make_config(overrides: dict | None = None) -> dict:
         "daemon": {
             "paper_mode": True,
             "max_cycle_steps": 20,
-            "substrate_state_max_rows": 200,
         },
         "learning": {
             "min_trades_before_adjusting": 30,
