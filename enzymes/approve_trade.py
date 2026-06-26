@@ -215,60 +215,84 @@ class ApproveTrade(Enzyme):
                 self._log.warning("Blocked %s: size computed as 0", symbol)
                 continue
 
-            # Directional concentration check
-            max_same = substrate.cfg("portfolio.max_same_direction")
+            # Fix 4: Per-direction concentration check
+            max_same_long = substrate.cfg("portfolio.max_same_direction_long", None)
+            max_same_short = substrate.cfg("portfolio.max_same_direction_short", None)
+            if direction.lower() == "long":
+                max_same = max_same_long if max_same_long is not None else substrate.cfg("portfolio.max_same_direction")
+            else:
+                max_same = max_same_short if max_same_short is not None else substrate.cfg("portfolio.max_same_direction")
             same_dir_count = sum(
                 1 for p in open_positions
                 if p.get("direction", "").lower() == direction.lower()
             )
             if same_dir_count >= max_same:
                 self._log.warning(
-                    "Blocked %s: directional concentration (%d %s positions)",
-                    symbol, same_dir_count, direction,
+                    "Blocked %s: directional concentration (%d %s positions, max %d)",
+                    symbol, same_dir_count, direction, max_same,
                 )
                 continue
 
-            # Same-bar duplicate guard: don't open a second position for the
-            # same symbol on the same bar. Prevents position tripling where
-            # consecutive cycles (same OHLCV bar) each open an identical
-            # position until max_positions is reached.
-            #
-            # Two conditions block (either one is sufficient):
-            #   1. Entry price match: identical signal (same OHLCV candle
-            #      produces the same entry_price across multiple cycles)
-            #   2. Time window: opened within the last bar (<= cycle_minutes)
-            #      catches same-bar re-entries even if entry price drifts
-            cycle_minutes = substrate.cfg("strategy.cycle_interval_minutes", 30)
-            now_iso = substrate.now_iso()
-            already_traded_this_bar = False
-            try:
-                now_dt = datetime.fromisoformat(now_iso)
-            except (ValueError, TypeError):
-                now_dt = datetime.now(timezone.utc)
-            for existing in open_positions:
-                if existing.get("symbol") != symbol:
-                    continue
-                # Match 1: same entry price (identical signal, same OHLCV candle)
-                if existing.get("entry_price") == entry_price:
-                    already_traded_this_bar = True
-                    break
-                # Match 2: opened within the last bar (same-bar time window)
-                opened_str = existing.get("opened_at", "")
-                if not opened_str:
-                    continue
-                try:
-                    opened_dt = datetime.fromisoformat(opened_str)
-                    if abs((now_dt - opened_dt).total_seconds()) <= cycle_minutes * 60:
-                        already_traded_this_bar = True
-                        break
-                except (ValueError, TypeError):
-                    continue
-            if already_traded_this_bar:
-                self._log.info(
-                    "Blocked %s: position already opened this bar",
-                    symbol,
-                )
+            # Fix 2: Three-layer re-entry guard
+            # Layer 0: No duplicate positions for the same symbol
+            if any(p.get("symbol") == symbol for p in open_positions):
+                self._log.info("Blocked %s: position already open", symbol)
                 continue
+
+            # Layer 2A: Cooldown — N candles must have closed since last close
+            cooldown_candles = substrate.cfg("strategy.reentry_cooldown_candles", None)
+            recently_closed = substrate.market.get("recently_closed", {})
+            if cooldown_candles and symbol in recently_closed and recently_closed[symbol]:
+                try:
+                    from enzymes.collect_ohlcv import timeframe_to_minutes, candle_floor
+                    primary_tf = substrate.strategy.get("timeframe", "4H")
+                    tf_mins = timeframe_to_minutes(primary_tf)
+                    closed_dt = datetime.fromisoformat(recently_closed[symbol])
+                    if closed_dt.tzinfo is None:
+                        closed_dt = closed_dt.replace(tzinfo=timezone.utc)
+                    now_dt = datetime.now(timezone.utc)
+                    current_candle = candle_floor(now_dt, primary_tf)
+                    candles_elapsed = int((current_candle - closed_dt).total_seconds() / (tf_mins * 60))
+                    if candles_elapsed < cooldown_candles:
+                        self._log.info(
+                            "Blocked %s: re-entry cooldown (%d/%d candles elapsed)",
+                            symbol, candles_elapsed, cooldown_candles,
+                        )
+                        continue
+                except (ValueError, TypeError, ImportError):
+                    pass  # Invalid timestamp or import — skip cooldown
+
+            # Layer 2B: Bar confirmation — at least 1 new candle since last trade
+            last_traded = substrate.market.get("last_traded_candle_idx", {})
+            if symbol in last_traded and last_traded[symbol]:
+                try:
+                    from enzymes.collect_ohlcv import timeframe_to_minutes, candle_floor
+                    primary_tf = substrate.strategy.get("timeframe", "4H")
+                    last_traded_dt = datetime.fromisoformat(last_traded[symbol])
+                    if last_traded_dt.tzinfo is None:
+                        last_traded_dt = last_traded_dt.replace(tzinfo=timezone.utc)
+                    now_dt = datetime.now(timezone.utc)
+                    current_candle = candle_floor(now_dt, primary_tf)
+                    if current_candle <= last_traded_dt:
+                        self._log.info(
+                            "Blocked %s: no new candle since last trade (bar confirmation)",
+                            symbol,
+                        )
+                        continue
+                except (ValueError, TypeError, ImportError):
+                    pass  # Invalid timestamp or import — skip bar confirmation
+
+            # Layer 2C: Signal re-confirmation — candidate must exist in current cycle
+            require_signal_confirm = substrate.cfg("strategy.reentry_require_signal_confirm", None)
+            if require_signal_confirm and symbol in recently_closed:
+                candidates = substrate.analysis.get("candidates", [])
+                symbol_candidate = next((c for c in candidates if c.get("symbol") == symbol), None)
+                if not symbol_candidate:
+                    self._log.info(
+                        "Blocked %s: no valid candidate after cooldown (signal re-confirmation)",
+                        symbol,
+                    )
+                    continue
 
             # Approved
             approved = {
