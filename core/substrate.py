@@ -146,7 +146,7 @@ class Substrate:
         # If a key is missing from config, cfg() raises ValueError immediately.
         strategy_cfg = cfg.get("strategy", {})
         _REQUIRED_STRATEGY_KEYS = (
-            "name", "uid", "timeframe", "confirmation_tf",
+            "name", "uid", "timeframe",
             "cycle_interval_minutes", "max_positions",
         )
         missing = [k for k in _REQUIRED_STRATEGY_KEYS if k not in strategy_cfg]
@@ -160,7 +160,7 @@ class Substrate:
             "uid": strategy_cfg["uid"],
             "description": cfg.get("description", ""),
             "timeframe": strategy_cfg["timeframe"],
-            "confirmation_tf": strategy_cfg["confirmation_tf"],
+            "confirmation_tf": strategy_cfg.get("confirmation_tf"),
             "cycle_interval_minutes": strategy_cfg["cycle_interval_minutes"],
             "max_positions": strategy_cfg["max_positions"],
             "direction_mode": strategy_cfg.get("direction_mode"),
