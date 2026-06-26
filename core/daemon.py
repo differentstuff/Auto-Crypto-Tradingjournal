@@ -109,6 +109,9 @@ class Daemon:
         # Initialize substrate — ALWAYS fresh (exchange-as-truth)
         self._init_substrate()
 
+        # Load learning data from DB into substrate cache
+        self._load_learning_from_db()
+
         # Initialize scheduler
         interval = self.config.get("strategy.cycle_interval_minutes")
         jitter = self.config.get("daemon.jitter_seconds")
@@ -143,6 +146,99 @@ class Daemon:
         self.substrate = Substrate(config=safe_config)
 
         _log.info("Substrate: %s", self.substrate)
+
+    def _load_learning_from_db(self) -> None:
+        """
+        Load learning data from DB into substrate.learning cache.
+
+        Exchange-as-truth: substrate is ephemeral (rebuilt fresh every startup).
+        Learning data persists in dedicated DB tables, not in substrate.
+        On startup, we load from DB into substrate.learning so that
+        ScoreConfluence and other enzymes can use adjusted weights/thresholds
+        immediately, without waiting for the first trade close to trigger UpdateLearning.
+        """
+        if self.replay_mode:
+            return
+
+        try:
+            from core.database import db_conn
+            strategy_uid = self.substrate.strategy.get("uid", "legacy")
+
+            with db_conn() as conn:
+                # Load adjusted_weights
+                rows = conn.execute(
+                    "SELECT indicator_name, weight FROM adjusted_weights WHERE strategy_uid = ?",
+                    (strategy_uid,),
+                ).fetchall()
+                if rows:
+                    self.substrate.learning["adjusted_weights"] = {
+                        r["indicator_name"]: r["weight"] for r in rows
+                    }
+                    _log.info("Loaded %d adjusted weights from DB", len(rows))
+
+                # Load adjusted_thresholds
+                rows = conn.execute(
+                    "SELECT threshold_name, value FROM adjusted_thresholds WHERE strategy_uid = ?",
+                    (strategy_uid,),
+                ).fetchall()
+                if rows:
+                    self.substrate.learning["adjusted_thresholds"] = {
+                        r["threshold_name"]: r["value"] for r in rows
+                    }
+                    _log.info("Loaded %d adjusted thresholds from DB", len(rows))
+
+                # Load suppressed_signals
+                rows = conn.execute(
+                    "SELECT indicator_name, reason FROM suppressed_signals WHERE strategy_uid = ?",
+                    (strategy_uid,),
+                ).fetchall()
+                if rows:
+                    self.substrate.learning["suppressed_signals"] = [
+                        {"name": r["indicator_name"], "reason": r["reason"]} for r in rows
+                    ]
+                    _log.info("Loaded %d suppressed signals from DB", len(rows))
+
+                # Load highlight_signals
+                rows = conn.execute(
+                    "SELECT indicator_name, reason FROM highlight_signals WHERE strategy_uid = ?",
+                    (strategy_uid,),
+                ).fetchall()
+                if rows:
+                    self.substrate.learning["highlight_signals"] = [
+                        {"name": r["indicator_name"], "reason": r["reason"]} for r in rows
+                    ]
+                    _log.info("Loaded %d highlight signals from DB", len(rows))
+
+                # Load challenger_state
+                row = conn.execute(
+                    "SELECT state_json FROM challenger_state WHERE strategy_uid = ?",
+                    (strategy_uid,),
+                ).fetchone()
+                if row:
+                    import json
+                    challenger_state = json.loads(row["state_json"])
+                    self.substrate.learning["challenger"] = challenger_state
+                    _log.info("Loaded challenger state from DB")
+
+                # Load trade count
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM trade_learning WHERE strategy_uid = ? AND exit_time IS NOT NULL",
+                    (strategy_uid,),
+                ).fetchone()
+                if row:
+                    self.substrate.learning["total_trades_recorded"] = row["cnt"]
+
+                # Load latest rulebook
+                row = conn.execute(
+                    "SELECT rulebook_text, version FROM rulebook_versions WHERE strategy_uid = ? ORDER BY id DESC LIMIT 1",
+                    (strategy_uid,),
+                ).fetchone()
+                if row:
+                    self.substrate.learning["rulebook"] = row["rulebook_text"]
+                    self.substrate.learning["rulebook_version"] = row["version"]
+
+        except Exception as e:
+            _log.warning("Could not load learning data from DB: %s (starting with empty cache)", e)
 
     def reconcile_from_exchange(self) -> None:
         """
@@ -230,6 +326,13 @@ class Daemon:
             # Determine TP1 status from exchange (system is sole actor)
             tp1_taken = achieved_profits > 0
 
+            # Activate native trailing stop on exchange if TP1 just detected
+            native_trail_order_id = meta.get("native_trail_order_id", "")
+            if tp1_taken and not native_trail_order_id and self.exchange is not None:
+                native_trail_order_id = self._place_native_trailing_stop(
+                    symbol, direction, atr_value, mark_price, tp1
+                )
+
             # Determine trailing state from exchange SL
             trailing_active = False
             trailing_sl = None
@@ -277,22 +380,24 @@ class Daemon:
                 "tp_order_id": tp_order_id,
                 "tp1_order_id": meta.get("tp1_order_id", ""),
                 "tp2_order_id": meta.get("tp2_order_id", ""),
-                "native_trail_order_id": meta.get("native_trail_order_id", ""),
+                "native_trail_order_id": native_trail_order_id,
                 "max_profit_atr": meta.get("max_profit_atr", 0.0),
             }
 
             rebuilt_positions.append(rebuilt)
 
-        # Log reconciliation results
-        old_count = len(self.substrate.portfolio.get("open_positions", []))
-        new_count = len(rebuilt_positions)
-        if old_count != new_count:
-            _log.info(
-                "Reconciliation: %d → %d positions (exchange is truth)",
-                old_count, new_count,
-            )
-        else:
-            _log.debug("Reconciliation: %d positions confirmed from exchange", new_count)
+        # Log reconciliation results with orphan distinction
+        old_positions = self.substrate.portfolio.get("open_positions", [])
+        old_symbols = {p.get("symbol") + ":" + p.get("direction", "Long") for p in old_positions}
+        new_symbols = {p.get("symbol") + ":" + p.get("direction", "Long") for p in rebuilt_positions}
+        confirmed = len(old_symbols & new_symbols)
+        orphans = len(new_symbols - old_symbols)
+        removed = len(old_symbols - new_symbols)
+
+        _log.info(
+            "Reconciliation: %d confirmed, %d new (orphan), %d removed (total: %d → %d)",
+            confirmed, orphans, removed, len(old_positions), len(rebuilt_positions),
+        )
 
         # Replace substrate positions with exchange data
         self.substrate.portfolio["open_positions"] = rebuilt_positions
@@ -332,6 +437,51 @@ class Daemon:
         except Exception as e:
             _log.warning("TP recalculation failed for %s: %s", direction, e)
             return 0, 0, 0
+
+    def _place_native_trailing_stop(
+        self, symbol: str, direction: str, atr_value: float,
+        mark_price: float, tp1: float,
+    ) -> str:
+        """
+        Place native trailing stop on exchange after TP1 detection.
+
+        Called during reconciliation when achievedProfits > 0 indicates TP1 hit
+        but no native_trail_order_id exists (trail not yet placed on exchange).
+
+        Percentage = atr_multiplier × ATR / current_price × 100
+        Fallback: configurable default_pct if ATR unavailable.
+
+        Returns: native_trail_order_id (empty string on failure)
+        """
+        atr_multiplier = self.substrate.cfg("exit_rules.native_trail.atr_multiplier", 2.0)
+
+        if atr_value and mark_price:
+            trail_pct = (atr_multiplier * atr_value / mark_price) * 100
+        else:
+            trail_pct = self.substrate.cfg("exit_rules.native_trail.default_pct", 5.0)
+
+        trigger_price = tp1 if tp1 else mark_price
+
+        try:
+            result = self.exchange.place_trailing_stop(
+                symbol=symbol,
+                direction=direction,
+                trigger_price=trigger_price,
+                trail_pct=trail_pct,
+            )
+            if result:
+                order_id = result.get("order_id", "")
+                _log.info(
+                    "Native trailing stop placed during reconciliation: %s trail_pct=%.2f%% trigger=%.2f order_id=%s",
+                    symbol, trail_pct, trigger_price, order_id,
+                )
+                return order_id
+            else:
+                _log.warning("Native trailing stop placement returned None for %s", symbol)
+                return ""
+        except Exception as e:
+            _log.warning("Could not place native trailing stop during reconciliation for %s: %s", symbol, e)
+            return ""
 
     def _load_position_metadata(self) -> dict:
         """
@@ -686,6 +836,9 @@ class Daemon:
         (avoid API spam). Uses modify_tpsl_order with the sl_order_id
         from the position dict.
         """
+        if self.paper_mode or self.replay_mode:
+            return
+
         if self.exchange is None:
             return
 
