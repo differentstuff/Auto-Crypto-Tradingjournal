@@ -108,8 +108,9 @@ class ConfigLoader:
         # satisfy Substrate's validation, masking misconfiguration.
         # name and uid are auto-generated below, so they're not checked here.
         _REQUIRED_STRATEGY_KEYS = (
-            "timeframe", "confirmation_tf",
-            "cycle_interval_minutes", "max_positions",
+            "timeframe",
+            "cycle_interval_minutes",
+            "max_positions",
         )
         raw_strategy = strategy_cfg.get("strategy", {})
         missing = [k for k in _REQUIRED_STRATEGY_KEYS if k not in raw_strategy]
@@ -118,8 +119,7 @@ class ConfigLoader:
                 f"Missing required strategy key(s) in {strategy_path}: "
                 f"{', '.join(missing)}. "
                 f"Every strategy YAML must define strategy.timeframe, "
-                f"strategy.confirmation_tf, strategy.cycle_interval_minutes, "
-                f"and strategy.max_positions."
+                f"strategy.cycle_interval_minutes, and strategy.max_positions."
             )
 
         # Merge: default < llm < strategy (secrets come from .env, not YAML)
