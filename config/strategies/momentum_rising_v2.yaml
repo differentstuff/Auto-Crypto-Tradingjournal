@@ -37,9 +37,14 @@ strategy:
   name: momentum_rising_v2
   uid: "ef681354-8afc-48e5-8302-9a5fc2c23217"   # Auto-generated on first load. Remove or clear to reset learning data.
   timeframe: "1h"
-  confirmation_tf: "4h"
+  confirmation_tf: null                # neutralized (Fix 3) — code stays, kill-switch no-ops when null
   max_positions: 3
-  cycle_interval_minutes: 15
+  cycle_interval_minutes: 30           # 1h/2 = 30 min (Fix 5)
+  direction_mode: "both"               # Fix 4: allow both long and short
+  long_weight: 1.0                     # Fix 4: no weight penalty for longs
+  short_weight: 1.0                    # Fix 4: no weight penalty for shorts
+  reentry_cooldown_candles: 2          # Fix 2: wait 2 candles after close before re-entry
+  reentry_require_signal_confirm: true # Fix 2: require fresh signal after cooldown
 
 symbols:
   mode: "combined"                  # "combined" = always_watch + dynamic top-N from exchange
@@ -121,7 +126,7 @@ scoring:
   # tp1_rr and tp2_rr are in exit_rules (they define take-profit levels, not scoring)
   min_candidate_pct: 0.20
   rsi_signal_high: 55
-  rsi_signal_low: 45
+  rsi_signal_low: 40                    # Fix 4: wider bearish signal band (was 45)
   momentum_cap: 1.5
   momentum_dampening: 0.5
   modifier_weights:
@@ -220,6 +225,8 @@ portfolio:
   fallback_equity_usdt: 1000.0
   correlation_check: true
   max_same_direction: 3
+  max_same_direction_long: 3           # Fix 4: per-direction cap for longs
+  max_same_direction_short: 3          # Fix 4: per-direction cap for shorts
   volatility_cap_pct: 20.0              # Volatility backstop (ATR%-based, asset-price-agnostic)
   max_notional_exposure_pct: 100.0      # Hard ceiling on notional exposure (flash crash protection)
 
