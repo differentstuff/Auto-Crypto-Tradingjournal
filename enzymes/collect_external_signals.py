@@ -210,7 +210,7 @@ class CollectExternalSignals(Enzyme):
         # Initialize confluence dict (preserve existing keys)
         confluence = substrate.analysis.get("confluence", {})
 
-        # ── 1. Funding Rate ──────────────────────────────────────────────
+        # -- 1. Funding Rate ----------------------------------------------
         # Use the first watched symbol for funding rate (typically BTCUSDT)
         funding_symbol = symbols[0] if symbols else "BTCUSDT"
         funding_rate = _fetch_funding_rate(funding_symbol, ttl)
@@ -231,7 +231,7 @@ class CollectExternalSignals(Enzyme):
             substrate.market["funding_rate"] = {"ok": False}
             # Do not set confluence key on failure — graceful degradation
 
-        # ── 2. Fear & Greed Index (contrarian) ───────────────────────────
+        # -- 2. Fear & Greed Index (contrarian) ---------------------------
         # Re-use FGI from macro context if already fetched, otherwise fetch
         existing_fgi = substrate.market.get("macro", {}).get("fear_greed", {})
         if isinstance(existing_fgi, dict) and existing_fgi.get("ok"):
@@ -258,7 +258,7 @@ class CollectExternalSignals(Enzyme):
                 fgi_value, confluence["fgi_contrarian"], fgi_threshold,
             )
 
-        # ── 3. Liquidation Cascade ───────────────────────────────────────
+        # -- 3. Liquidation Cascade ---------------------------------------
         # Fetch liquidations for the primary symbol
         liq_symbol = funding_symbol
         liquidations = _fetch_liquidations(liq_symbol, ttl)
@@ -283,7 +283,7 @@ class CollectExternalSignals(Enzyme):
         else:
             substrate.market["liquidations"] = {"ok": False}
 
-        # ── Write confluence signals to substrate ────────────────────────
+        # -- Write confluence signals to substrate ------------------------
         substrate.analysis["confluence"] = confluence
         substrate.analysis["external_signals_evaluated"] = True
 

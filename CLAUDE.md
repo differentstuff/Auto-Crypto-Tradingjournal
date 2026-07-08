@@ -80,6 +80,8 @@ auto-trader/
     config_loader.py              # YAML config merge (default < strategy < exchange)
     exchange.py                   # CCXT wrapper (Bitget primary, Binance/Bybit fallback)
     scheduler.py                  # Cycle timing with jitter
+    replay_driver.py              # Historical replay driver (runs full enzyme pipeline)
+    fees.py                       # Fee simulation for paper/backtest (entry + exit fees)
   enzymes/                        # Each enzyme = one file
     collect_ohlcv.py              # Sensor: fetch OHLCV, compute indicators
     collect_pre_trade_context.py  # Sensor: trajectory analysis, coincidence risk
@@ -114,9 +116,8 @@ auto-trader/
     rulebook.py                   # Auto-generated rules (max 10)
     weight_adjuster.py            # Adjust indicator weights from accuracy verdicts
     threshold_evaluator.py        # Compare production vs exploration bucket accuracy
-  scripts/
-    time_travel.py                # Fast-forward daemon: replay scoring on historical data
-    verify_learning.py            # Learning verification script
+   scripts/
+     verify_learning.py            # Learning verification script
   llm/
     key_manager.py                # API key rotation (multi-key per provider, auto-switch on 429/529)
     router.py                     # Cost-aware model selection

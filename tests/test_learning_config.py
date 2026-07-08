@@ -28,7 +28,7 @@ from core.substrate import Substrate
 from conftest import make_full_config
 
 
-# ── Standard config for tests (mirrors default.yaml learning.*) ────────────
+# -- Standard config for tests (mirrors default.yaml learning.*) ------------
 
 _STANDARD_LEARNING = {
     "min_trades_before_adjusting": 30,

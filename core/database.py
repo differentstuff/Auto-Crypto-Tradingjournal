@@ -86,7 +86,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
     """Internal: create all tables in their final form, then run any pending migrations."""
     cur = conn.cursor()
 
-    # ── schema_version ─────────────────────────────────────────────────────────
+    # -- schema_version ---------------------------------------------------------
     cur.execute("""
         CREATE TABLE IF NOT EXISTS schema_version (
             version    INTEGER PRIMARY KEY,
@@ -95,12 +95,12 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Baseline: all tables in their FINAL form ───────────────────────────────
+    # -- Baseline: all tables in their FINAL form -------------------------------
     # If the DB is fresh, CREATE IF NOT EXISTS creates everything.
     # If the DB is existing, IF NOT EXISTS skips already-present tables,
     # and _apply_migration handles ALTERs for columns added later.
 
-    # ── token_usage ─────────────────────────────────────────────────────
+    # -- token_usage -----------------------------------------------------
 
 
 
@@ -118,7 +118,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
 
 
 
-    # ── Learning tables (final form) ────────────────────────────────────────────
+    # -- Learning tables (final form) --------------------------------------------
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS trade_learning (
@@ -327,7 +327,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Exchange-as-truth tables ────────────────────────────────────────────────
+    # -- Exchange-as-truth tables ------------------------------------------------
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS position_metadata (
@@ -402,13 +402,13 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── Drop obsolete tables (exchange-as-truth) ──────────────────────────────
+    # -- Drop obsolete tables (exchange-as-truth) ------------------------------
     cur.execute("DROP TABLE IF EXISTS substrate_state")
     cur.execute("DROP TABLE IF EXISTS cycle_log")
 
     conn.commit()
 
-    # ── Mark baseline as applied ───────────────────────────────────────────────
+    # -- Mark baseline as applied -----------------------------------------------
     # Record baseline version so future _apply_migration calls know we're past 0
     baseline = conn.execute(
         "SELECT 1 FROM schema_version WHERE version=0"
@@ -420,7 +420,7 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         conn.commit()
         _log.info("Applied baseline schema v1")
 
-    # ── Future migrations ──────────────────────────────────────────────────────
+    # -- Future migrations ------------------------------------------------------
     # Add new migrations here using _apply_migration().
     # The baseline (version 0) covers everything up to the exchange-as-truth rewrite.
     # Version numbers start at 100 for post-rewrite migrations.
@@ -455,7 +455,7 @@ def _apply_migration(conn, ver: int, name: str, sql: str):
     _log.info("Applied migration %d: %s", ver, name)
 
 
-# --- Substrate persistence helpers (REMOVED) ──────────────────────────────
+# --- Substrate persistence helpers (REMOVED) ------------------------------
 # Exchange-as-truth: substrate is ephemeral, never persisted to DB.
 # load_latest_substrate() — REMOVED
 # save_substrate() — REMOVED

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-# ── Dynamic discovery ──────────────────────────────────────────────────────────
+# -- Dynamic discovery ----------------------------------------------------------
 
 BASE_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CONFIG_DIR = BASE_DIR / "config"
@@ -38,7 +38,7 @@ def _load_yaml(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
-# ── Strategy YAML consistency ──────────────────────────────────────────────────
+# -- Strategy YAML consistency --------------------------------------------------
 
 @pytest.mark.parametrize("yaml_path", STRATEGY_FILES, ids=lambda p: p.name)
 class TestStrategyYamlConsistency:
@@ -77,7 +77,7 @@ class TestStrategyYamlConsistency:
         )
 
 
-# ── default.yaml consistency ───────────────────────────────────────────────────
+# -- default.yaml consistency ---------------------------------------------------
 
 class TestDefaultYamlConsistency:
     """Checks for default.yaml (not a strategy file, but still needs consistency)."""
@@ -96,7 +96,7 @@ class TestDefaultYamlConsistency:
         assert "retrain_every_hours" not in config.get("learning", {})
 
 
-# ── All config files: no retrain_every_hours anywhere ──────────────────────────
+# -- All config files: no retrain_every_hours anywhere --------------------------
 
 class TestAllConfigNoRetrainEveryHours:
     """Broad check: retrain_every_hours must not appear in any config YAML."""

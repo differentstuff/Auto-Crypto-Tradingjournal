@@ -116,7 +116,7 @@ def evaluate_thresholds(
         expl_thresholds = [r["threshold_value"] for r in expl_rows if r["threshold_value"] > 0]
         avg_expl_threshold = sum(expl_thresholds) / len(expl_thresholds) if expl_thresholds else entry_threshold
 
-        # ── Condition 1: exploration PF > production PF * (1 + min_improvement_pct/100)
+        # -- Condition 1: exploration PF > production PF * (1 + min_improvement_pct/100)
         if prod_pf <= 0:
             _log.debug("Threshold evaluator: production PF is 0, cannot compare")
             return None
@@ -129,7 +129,7 @@ def evaluate_thresholds(
             )
             return None
 
-        # ── Condition 2: exploration has >= min_trades trades
+        # -- Condition 2: exploration has >= min_trades trades
         if expl_total_trades < min_trades:
             _log.debug(
                 "Threshold evaluator: exploration trades %d < %d minimum",
@@ -137,7 +137,7 @@ def evaluate_thresholds(
             )
             return None
 
-        # ── Condition 3: Wilson score intervals for win_rate don't overlap
+        # -- Condition 3: Wilson score intervals for win_rate don't overlap
         prod_wr_low, prod_wr_high = wilson_score_interval(prod_total_correct, prod_total_fired)
         expl_wr_low, expl_wr_high = wilson_score_interval(expl_total_correct, expl_total_fired)
 
@@ -162,7 +162,7 @@ def evaluate_thresholds(
             )
             return None
 
-        # ── All conditions met: propose threshold change
+        # -- All conditions met: propose threshold change
         proposal = {
             "entry_threshold": avg_expl_threshold,
             "source": "threshold_evaluator",

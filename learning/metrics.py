@@ -117,7 +117,7 @@ def _sharpe(returns: np.ndarray) -> float:
     return float(returns.mean() / std) if std > 0 else 0.0
 
 
-# ── Dollar-math metrics (for backtest evaluation) ────────────────────────────
+# -- Dollar-math metrics (for backtest evaluation) ----------------------------
 # These functions operate on lists of P&L values in USD.
 # Used by time_travel backtest and any future dollar-math reporting.
 

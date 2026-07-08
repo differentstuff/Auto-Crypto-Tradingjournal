@@ -69,7 +69,7 @@ class HypotheticalTracker:
             _log.error("Failed to read closed hypothetical trades: %s", e, exc_info=True)
             return []
 
-    # ── Exit logic (mirrors RequestExit + ApproveExit) ────────────────────────
+    # -- Exit logic (mirrors RequestExit + ApproveExit) ------------------------
 
     @staticmethod
     def _check_exits(substrate: Any, positions: List[Dict]) -> List[Dict]:
@@ -325,7 +325,7 @@ class HypotheticalTracker:
         )
 
 
-# ── Trailing stop logic (mirrors ApproveExit._update_trailing_stop) ──────────
+# -- Trailing stop logic (mirrors ApproveExit._update_trailing_stop) ----------
 
 def _update_trailing_stop(position: Dict, substrate: Any) -> Dict:
     """Update trailing stop state for a hypothetical position.
@@ -399,7 +399,7 @@ def _update_trailing_stop(position: Dict, substrate: Any) -> Dict:
     return {**position, "trailing_active": trailing_active, "trailing_sl": trailing_sl, "peak_price": peak_price}
 
 
-# ── Signal reversal check (mirrors RequestExit._check_signal_reversal) ────────
+# -- Signal reversal check (mirrors RequestExit._check_signal_reversal) --------
 
 def _count_reversed_signals(position: Dict, sym_indicators: Dict, substrate: Any) -> int:
     """Count how many indicators have reversed against the position direction."""
@@ -442,7 +442,7 @@ def _count_reversed_signals(position: Dict, sym_indicators: Dict, substrate: Any
     return reversed_count
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 
 def _get_atr_for_symbol(substrate: Any, symbol: str) -> float:
     """Extract ATR value from substrate indicators for a given symbol."""

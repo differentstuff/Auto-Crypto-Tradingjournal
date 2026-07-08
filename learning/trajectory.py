@@ -26,7 +26,7 @@ _log = logging.getLogger(__name__)
 
 
 
-# ── Trajectory classification (pure function) ──────────────────────────────
+# -- Trajectory classification (pure function) ------------------------------
 
 def classify_trajectory(
     indicator_history: List[Dict],
@@ -120,7 +120,7 @@ def classify_trajectory(
         return ("sudden_snap", "high")
 
 
-# ── Update trajectory accuracy from closed trades ──────────────────────────
+# -- Update trajectory accuracy from closed trades --------------------------
 
 def update_trajectory_accuracy(
     strategy_name: str,
@@ -231,7 +231,7 @@ def update_trajectory_accuracy(
         _log.error("Failed to update trajectory accuracy for '%s': %s", strategy_name, e, exc_info=True)
 
 
-# ── Read trajectory verdicts ───────────────────────────────────────────────
+# -- Read trajectory verdicts -----------------------------------------------
 
 def get_trajectory_verdicts(strategy_name: str, strategy_uid: str = "legacy") -> Dict[str, str]:
     """Return {pattern: verdict} dict from trajectory_accuracy table."""

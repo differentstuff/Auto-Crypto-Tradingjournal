@@ -15,7 +15,7 @@ import pytest
 from learning.metrics import pbo, _sharpe, sharpe_ratio
 
 
-# ── PBO unit tests ────────────────────────────────────────────────────────────
+# -- PBO unit tests ------------------------------------------------------------
 
 class TestPBOFunction:
     """Test the pbo() function from learning/metrics.py."""
@@ -56,7 +56,7 @@ class TestPBOFunction:
         assert 0.0 <= result <= 1.0
 
 
-# ── Sharpe helper tests ────────────────────────────────────────────────────────
+# -- Sharpe helper tests --------------------------------------------------------
 
 class TestSharpeHelper:
     """Test the _sharpe() helper used by PBO."""

@@ -34,7 +34,7 @@ from enzymes.market_geometry import (
 from core.trailing_stop import lookup_trail_schedule as _lookup_trail_schedule
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+# -- Fixtures ------------------------------------------------------------------
 
 def _make_bullish_prices(n=50, base=100000.0):
     """Generate price arrays for a bullish trend (rising highs and lows)."""
@@ -79,7 +79,7 @@ def substrate_with_structure():
     return Substrate(config=config)
 
 
-# ── 1. Swing detection ───────────────────────────────────────────────────────
+# -- 1. Swing detection -------------------------------------------------------
 
 class TestSwingDetection:
     def test_detect_swings_returns_list(self):
@@ -112,7 +112,7 @@ class TestSwingDetection:
         assert len(swings) <= 6
 
 
-# ── 2. Trend direction ───────────────────────────────────────────────────────
+# -- 2. Trend direction -------------------------------------------------------
 
 class TestTrendDirection:
     def test_bullish_trend_detected(self):
@@ -159,7 +159,7 @@ class TestTrendDirection:
         assert result == "ranging"
 
 
-# ── 3. Phase classification ──────────────────────────────────────────────────
+# -- 3. Phase classification --------------------------------------------------
 
 class TestPhaseClassification:
     def test_impulse_phase_bullish(self):
@@ -203,7 +203,7 @@ class TestPhaseClassification:
         assert phase == "range"
 
 
-# ── 4. Pullback depth ────────────────────────────────────────────────────────
+# -- 4. Pullback depth --------------------------------------------------------
 
 class TestPullbackDepth:
     def test_shallow_pullback(self):
@@ -244,7 +244,7 @@ class TestPullbackDepth:
         assert depth == "moderate"
 
 
-# ── 5. Structure break detection ─────────────────────────────────────────────
+# -- 5. Structure break detection ---------------------------------------------
 
 class TestStructureBreak:
     def test_bullish_structure_break(self):
@@ -283,7 +283,7 @@ class TestStructureBreak:
         assert result is False
 
 
-# ── 6. MarketGeometry enzyme integration ─────────────────────────────────────
+# -- 6. MarketGeometry enzyme integration -------------------------------------
 
 class TestMarketGeometryEnzyme:
     def test_can_activate_with_ohlcv_no_geometry(self, substrate):
@@ -341,7 +341,7 @@ class TestMarketGeometryEnzyme:
         assert "previous_phase" in geometry
 
 
-# ── 7. Structure-aware exits in RequestExit ──────────────────────────────────
+# -- 7. Structure-aware exits in RequestExit ----------------------------------
 
 class TestStructureAwareExits:
     def test_structure_break_tightens_trailing_stop_not_exit(self, substrate_with_structure):
@@ -482,7 +482,7 @@ class TestStructureAwareExits:
         assert exit_req is None
 
 
-# ── 8. Progressive trailing stop ─────────────────────────────────────────────
+# -- 8. Progressive trailing stop ---------------------------------------------
 
 class TestProgressiveTrailingStop:
     def test_trail_schedule_lookup(self):
@@ -572,7 +572,7 @@ class TestProgressiveTrailingStop:
         assert result == 1.0
 
 
-# ── 9. Trail schedule lookup ─────────────────────────────────────────────────
+# -- 9. Trail schedule lookup -------------------------------------------------
 
 class TestTrailScheduleLookup:
     def test_at_entry_level(self):
@@ -591,7 +591,7 @@ class TestTrailScheduleLookup:
         assert _lookup_trail_schedule(None, 2.0) == 1.0
 
 
-# ── 10. Fallback to ATR when structure absent ────────────────────────────────
+# -- 10. Fallback to ATR when structure absent --------------------------------
 
 class TestFallbackBehavior:
     def test_atr_trail_works_without_progressive(self, substrate):

@@ -36,7 +36,7 @@ from enzymes.collect_pre_trade_context import (
 )
 
 
-# ── P7: Timeframe helpers ────────────────────────────────────────────────────
+# -- P7: Timeframe helpers ----------------------------------------------------
 
 class TestTimeframeToMinutes:
     """P7: timeframe_to_minutes converts timeframe strings to minutes."""
@@ -148,7 +148,7 @@ class TestShouldRefreshOHLCV:
         assert should_refresh_ohlcv("4H", "not-a-timestamp", now) is True
 
 
-# ── P7: CollectOHLCV activation ─────────────────────────────────────────────
+# -- P7: CollectOHLCV activation ---------------------------------------------
 
 class TestCollectOHLCVActivation:
     """P7: CollectOHLCV smart activation based on candle boundaries."""
@@ -228,7 +228,7 @@ class TestCollectOHLCVActivation:
         assert enz.can_activate(sub) is True
 
 
-# ── P7: Substrate preserves indicators across reset_cycle ────────────────────
+# -- P7: Substrate preserves indicators across reset_cycle --------------------
 
 class TestSubstrateResetPreservesIndicators:
     """P7: reset_cycle() no longer clears indicators or last_candle_close_ts."""
@@ -275,7 +275,7 @@ class TestSubstrateResetPreservesIndicators:
         assert sub.decisions["action"] == ""
 
 
-# ── P2: Per-candle-close history ─────────────────────────────────────────────
+# -- P2: Per-candle-close history ---------------------------------------------
 
 class TestHistoryTrimByTime:
     """P2: History is trimmed by time span, not bar count."""
@@ -339,7 +339,7 @@ class TestHistoryTrimByTime:
         assert "ETHUSDT" not in history
 
 
-# ── P8: Time-based trajectory sufficiency ────────────────────────────────────
+# -- P8: Time-based trajectory sufficiency ------------------------------------
 
 class TestComputeHistorySpanHours:
     """P8: _compute_history_span_hours measures real time span, not bar count."""
@@ -510,7 +510,7 @@ class TestPreTradeContextTimeBasedSufficiency:
         assert ctx.get("trajectory_type") == "insufficient_data"
 
 
-# ── P8: Trajectory classification (unchanged behavior) ──────────────────────
+# -- P8: Trajectory classification (unchanged behavior) ----------------------
 
 class TestClassifyTrajectory:
     """P8: _classify_trajectory still works correctly with real history entries."""
@@ -572,7 +572,7 @@ class TestClassifyTrajectory:
         assert result["coincidence_risk"] == "high"
 
 
-# ── Integration: CollectOHLCV preserves indicators when no new candle ────────
+# -- Integration: CollectOHLCV preserves indicators when no new candle --------
 
 class TestCollectOHLCVPreservesIndicators:
     """P7: CollectOHLCV preserves existing indicators when no new candle."""
@@ -611,7 +611,7 @@ class TestCollectOHLCVPreservesIndicators:
         assert sub.market["last_candle_close_ts"] == {}
 
 
-# ── P2: Config keys ─────────────────────────────────────────────────────────
+# -- P2: Config keys ---------------------------------------------------------
 # NOTE: Config key consistency tests have been moved to test_config_consistency.py
 # which uses dynamic file discovery. This avoids hardcoded file references
 # that break when strategy YAMLs are added, removed, or renamed.

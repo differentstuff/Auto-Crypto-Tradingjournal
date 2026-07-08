@@ -524,18 +524,18 @@ def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
         _log.warning("Failed to record trade exit in DB: %s", e)
 
 
-def _compute_pnl(position: dict) -> dict:
+def _compute_gross_pnl(position: dict) -> dict:
     """Compute gross PnL for a closing position.
 
-    Delegates to core.position_sizing.compute_pnl for the actual calculation.
+    Delegates to core.position_sizing.compute_gross_pnl for the actual calculation.
     This wrapper extracts position dict fields and maps mark_price to exit_price.
 
     Returns gross P&L (no fees). Live trading uses broker fills which
-    already include actual fees — never apply compute_net_pnl to live data.
+    already include actual fees — never apply fee functions to live data.
     """
-    from core.position_sizing import compute_pnl
+    from core.position_sizing import compute_gross_pnl
 
-    return compute_pnl(
+    return compute_gross_pnl(
         entry_price=position.get("entry_price", 0),
         exit_price=position.get("mark_price", 0),
         direction=position.get("direction", "Long"),
@@ -620,14 +620,14 @@ class RecordTradeOutcome(Enzyme):
                 # Try to find position in portfolio (may still be there briefly)
                 for pos in substrate.portfolio.get("open_positions", []):
                     if pos.get("symbol") == symbol:
-                        pnl = _compute_pnl(pos)
+                        pnl = _compute_gross_pnl(pos)
                         break
 
                 # Override with exit_approved PnL if available
                 if "pnl_pct" in exit_approved:
                     pnl = {
                         "pnl_pct": exit_approved.get("pnl_pct", 0.0),
-                        "pnl_usdt": exit_approved.get("pnl_usdt", 0.0),
+                        "pnl_usdt": exit_approved.get("net_pnl_usdt", 0.0),
                     }
 
                 _record_trade_exit(symbol, exit_approved, exit_reason, pnl,

@@ -111,7 +111,7 @@ class RequestExit(Enzyme):
             if not mark_price:
                 continue
 
-            # ── Structure-aware signals (NOT exits — tighten trailing stop) ──
+            # -- Structure-aware signals (NOT exits — tighten trailing stop) --
             # structure_break and phase_range are NOT exit signals.
             # They tighten the trailing stop via core/trailing_stop.py
             # (apply_structure_tightening). Only counter_breakout is an exit.

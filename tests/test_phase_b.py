@@ -24,7 +24,7 @@ from conftest import make_full_config
 import enzymes  # noqa: F401
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+# -- Fixtures ------------------------------------------------------------------
 
 @pytest.fixture
 def sample_ohlcv():
@@ -99,7 +99,7 @@ def substrate():
     return Substrate(config=config)
 
 
-# ── 1. Indicator modules ─────────────────────────────────────────────────────
+# -- 1. Indicator modules -----------------------------------------------------
 
 class TestMomentumIndicators:
     def test_rsi_returns_dict(self, sample_ohlcv):
@@ -257,7 +257,7 @@ class TestStructureIndicators:
         assert result["support_dist_pct"] is not None
 
 
-# ── 2. Registry ──────────────────────────────────────────────────────────────
+# -- 2. Registry --------------------------------------------------------------
 
 class TestRegistry:
     def test_list_available(self):
@@ -291,7 +291,7 @@ class TestRegistry:
         assert not is_registered("nonexistent")
 
 
-# ── 3. Enzyme activation ─────────────────────────────────────────────────────
+# -- 3. Enzyme activation -----------------------------------------------------
 
 class TestEnzymeActivation:
     def test_collect_ohlcv_activates_when_empty(self, substrate):
@@ -362,7 +362,7 @@ class TestEnzymeActivation:
         assert not enz.can_activate(substrate)
 
 
-# ── 4. Enzyme pipeline (unit test) ───────────────────────────────────────────
+# -- 4. Enzyme pipeline (unit test) -------------------------------------------
 
 class TestEnzymePipeline:
     def test_score_confluence_transform(self, substrate, sample_ohlcv):
@@ -450,7 +450,7 @@ class TestEnzymePipeline:
             assert zone["tp1"] > zone["entry_price"]  # TP above entry for long
 
 
-# ── 5. Substrate reset_cycle ─────────────────────────────────────────────────
+# -- 5. Substrate reset_cycle -------------------------------------------------
 
 class TestSubstrateReset:
     def test_reset_clears_market(self, substrate):
@@ -493,7 +493,7 @@ class TestSubstrateReset:
         assert substrate.learning["total_trades_recorded"] == 10
 
 
-# ── 6. Enzyme registry ───────────────────────────────────────────────────────
+# -- 6. Enzyme registry -------------------------------------------------------
 
 class TestEnzymeRegistry:
     def test_all_phase_b_enzymes_registered(self):
@@ -524,7 +524,7 @@ class TestEnzymeRegistry:
         assert enz is None
 
 
-# ── 7. Exchange module ───────────────────────────────────────────────────────
+# -- 7. Exchange module -------------------------------------------------------
 
 class TestExchange:
     def test_symbol_conversion(self):

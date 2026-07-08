@@ -159,7 +159,7 @@ def _momentum_quality_fn(df: pd.DataFrame, **params) -> dict | None:
     )
 
 
-# ── Registry: name -> function ──────────────────────────────────────────────
+# -- Registry: name -> function ----------------------------------------------
 
 _REGISTRY: dict[str, IndicatorFn] = {
     "rsi": _rsi_fn,

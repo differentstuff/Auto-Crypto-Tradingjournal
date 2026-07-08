@@ -25,7 +25,7 @@ from core.substrate import Substrate
 from conftest import make_full_config
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────────
+# -- Helpers ----------------------------------------------------------------------
 
 def _make_substrate(**config_overrides):
     """Create a substrate with external_signals module enabled by default."""
@@ -48,7 +48,7 @@ def _make_substrate(**config_overrides):
     return Substrate(config=make_full_config(**overrides))
 
 
-# ── Sample API responses ─────────────────────────────────────────────────────────
+# -- Sample API responses ---------------------------------------------------------
 
 SAMPLE_PREMIUM_INDEX = [
     {"symbol": "BTCUSDT", "lastFundingRate": "-0.00050", "markPrice": "68000.00"},
@@ -80,7 +80,7 @@ SAMPLE_LIQUIDATIONS = [
 ]
 
 
-# ── Activation Tests ─────────────────────────────────────────────────────────────
+# -- Activation Tests -------------------------------------------------------------
 
 class TestActivation:
     """Test CollectExternalSignals activation conditions."""
@@ -137,7 +137,7 @@ class TestActivation:
         assert enzyme.enzyme_class == EnzymeClass.SENSOR
 
 
-# ── Funding Rate Tests ───────────────────────────────────────────────────────────
+# -- Funding Rate Tests -----------------------------------------------------------
 
 class TestFundingRate:
     """Test funding rate fetching and funding_squeeze signal."""
@@ -195,7 +195,7 @@ class TestFundingRate:
         assert "funding_squeeze" not in result.analysis["confluence"]
 
 
-# ── Fear & Greed Index Tests ─────────────────────────────────────────────────────
+# -- Fear & Greed Index Tests -----------------------------------------------------
 
 class TestFearGreedIndex:
     """Test FGI fetching and fgi_contrarian signal."""
@@ -254,7 +254,7 @@ class TestFearGreedIndex:
         assert mock_fetch.call_count == 2
 
 
-# ── Liquidation Cascade Tests ────────────────────────────────────────────────────
+# -- Liquidation Cascade Tests ----------------------------------------------------
 
 class TestLiquidationCascade:
     """Test liquidation cascade detection."""
@@ -349,7 +349,7 @@ class TestLiquidationCascade:
         assert isinstance(result["cluster_walls"], dict)
 
 
-# ── Cache Tests ──────────────────────────────────────────────────────────────────
+# -- Cache Tests ------------------------------------------------------------------
 
 class TestCache:
     """Test TTL-based caching behavior."""
@@ -389,7 +389,7 @@ class TestCache:
         assert len(_cache) == 0
 
 
-# ── Integration Tests ────────────────────────────────────────────────────────────
+# -- Integration Tests ------------------------------------------------------------
 
 class TestIntegration:
     """Integration tests for the full transform pipeline."""

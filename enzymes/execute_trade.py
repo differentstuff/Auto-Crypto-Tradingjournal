@@ -26,6 +26,7 @@ from typing import Optional
 
 from core.enzyme import Enzyme, EnzymeClass, register_enzyme
 from core.substrate import Substrate
+from core.fees import compute_entry_fee
 
 _log = logging.getLogger(__name__)
 
@@ -94,6 +95,14 @@ class ExecuteTrade(Enzyme):
             self._log.info(
                 "PAPER ENTRY: %s %s entry=%.2f sl=%.2f tp1=%.2f tp2=%.2f size=%.2f atr_pct=%.4f",
                 direction, symbol, entry_price, sl_price, tp1, tp2, size_usdt, atr_pct,
+            )
+            entry_fee = compute_entry_fee(size_usdt, substrate.cfg("fees.taker_rate"))
+            substrate.portfolio["equity"] = round(
+                substrate.portfolio.get("equity", 0) - entry_fee, 2
+            )
+            self._log.info(
+                "Entry fee deducted: %.4f USDT (rate=%.4f notional=%.2f)",
+                entry_fee, substrate.cfg("fees.taker_rate"), size_usdt,
             )
         else:
             # Live mode: place order with preset SL/TP

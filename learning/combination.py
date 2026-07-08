@@ -28,7 +28,7 @@ _log = logging.getLogger(__name__)
 
 
 
-# ── Chi-squared significance ───────────────────────────────────────────────
+# -- Chi-squared significance -----------------------------------------------
 
 def chi_squared_p_value(won: int, trades: int) -> float:
     """
@@ -84,7 +84,7 @@ def chi_squared_p_value(won: int, trades: int) -> float:
         return max(0.0, min(1.0, math.exp(-chi2 / 2)))
 
 
-# ── Pairwise extraction ────────────────────────────────────────────────────
+# -- Pairwise extraction ----------------------------------------------------
 
 def extract_aligned_pairs(
     signals: Dict[str, Dict], direction: str = "Long"
@@ -138,7 +138,7 @@ def extract_aligned_pairs(
     return pairs
 
 
-# ── Direction state label ──────────────────────────────────────────────────
+# -- Direction state label --------------------------------------------------
 
 def _direction_state(signals: Dict[str, Dict], direction: str) -> str:
     """
@@ -173,7 +173,7 @@ def _direction_state(signals: Dict[str, Dict], direction: str) -> str:
         return "both_bullish" if direction_lower == "long" else "both_bearish"
 
 
-# ── Update combination accuracy ────────────────────────────────────────────
+# -- Update combination accuracy --------------------------------------------
 
 def update_combination_accuracy(
     strategy_name: str,
@@ -294,7 +294,7 @@ def update_combination_accuracy(
         _log.error("Failed to update combination accuracy for '%s': %s", strategy_name, e, exc_info=True)
 
 
-# ── Read significant combinations ──────────────────────────────────────────
+# -- Read significant combinations ------------------------------------------
 
 def get_significant_combinations(strategy_name: str, strategy_uid: str = "legacy") -> List[Dict]:
     """

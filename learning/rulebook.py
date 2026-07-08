@@ -34,7 +34,7 @@ _log = logging.getLogger(__name__)
 
 
 
-# ── Should we regenerate? ──────────────────────────────────────────────────
+# -- Should we regenerate? --------------------------------------------------
 
 def should_regenerate(
     strategy_name: str,
@@ -108,7 +108,7 @@ def should_regenerate(
         return False
 
 
-# ── Source readers (modular, independent) ──────────────────────────────────
+# -- Source readers (modular, independent) ----------------------------------
 
 def _read_combination_accuracy(conn, strategy_uid: str = "legacy") -> List[Dict]:
     """Read combination accuracy candidates. Independent of other sources."""
@@ -295,7 +295,7 @@ def _read_idle_condition_accuracy(conn, strategy_uid: str = "legacy") -> List[Di
     return candidates
 
 
-# ── Generate rulebook ──────────────────────────────────────────────────────
+# -- Generate rulebook ------------------------------------------------------
 
 def generate_rulebook(
     strategy_name: str,
@@ -346,7 +346,7 @@ def generate_rulebook(
         _log.error("Failed to open DB for rulebook generation: %s", e, exc_info=True)
         return ""
 
-    # ── Rank and select top max_rules ──────────────────────────────────────
+    # -- Rank and select top max_rules --------------------------------------
     candidates.sort(key=lambda c: c["priority"], reverse=True)
     rules = candidates[:max_rules]
 
@@ -354,12 +354,12 @@ def generate_rulebook(
         _log.info("No rulebook candidates for '%s' — all accuracy tables empty or insufficient", strategy_name)
         return ""
 
-    # ── Format rulebook ─────────────────────────────────────────────────────
+    # -- Format rulebook -----------------------------------------------------
     rulebook_text = ""
     for i, rule in enumerate(rules):
         rulebook_text += f"Rule {i + 1}: {rule['text']}\n"
 
-    # ── Write to DB ─────────────────────────────────────────────────────────
+    # -- Write to DB ---------------------------------------------------------
     version = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S")
     source_counts = {}
     for rule in rules:
@@ -389,7 +389,7 @@ def generate_rulebook(
     return rulebook_text
 
 
-# ── Read latest rulebook ──────────────────────────────────────────────────
+# -- Read latest rulebook --------------------------------------------------
 
 def get_latest_rulebook(strategy_name: str, strategy_uid: str = "legacy") -> Optional[str]:
     """

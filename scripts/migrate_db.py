@@ -37,9 +37,9 @@ DEFAULT_DB_PATH = os.environ.get(
 log = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 # SCHEMA DEFINITIONS
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 
 # Tables to DROP (substrate persistence removed — exchange is truth)
 DROP_TABLES = [
@@ -175,7 +175,7 @@ def migrate_db(db_path: str = DEFAULT_DB_PATH, fresh: bool = False) -> List[str]
     try:
         cur = conn.cursor()
 
-        # ── FRESH: Drop and recreate everything ──────────────────────────────
+        # -- FRESH: Drop and recreate everything ------------------------------
         if fresh:
             # Drop tables that are being removed (exchange-as-truth)
             for table in DROP_TABLES:
@@ -190,7 +190,7 @@ def migrate_db(db_path: str = DEFAULT_DB_PATH, fresh: bool = False) -> List[str]
 
             conn.commit()
 
-        # ── STEP 1: Drop substrate persistence tables ───────────────────────
+        # -- STEP 1: Drop substrate persistence tables -----------------------
         for table in DROP_TABLES:
             if table_exists(cur, table):
                 cur.execute(f"DROP TABLE IF EXISTS {table}")
@@ -198,7 +198,7 @@ def migrate_db(db_path: str = DEFAULT_DB_PATH, fresh: bool = False) -> List[str]
             else:
                 applied.append(f"Skip: table {table} does not exist (already removed)")
 
-        # ── STEP 2: Create new learning data tables ─────────────────────────
+        # -- STEP 2: Create new learning data tables -------------------------
         for table_name, create_sql in NEW_TABLES.items():
             if not table_exists(cur, table_name):
                 cur.execute(create_sql)
@@ -206,7 +206,7 @@ def migrate_db(db_path: str = DEFAULT_DB_PATH, fresh: bool = False) -> List[str]
             else:
                 applied.append(f"Skip: table {table_name} already exists")
 
-        # ── STEP 3: Add position_metadata columns if missing ────────────────
+        # -- STEP 3: Add position_metadata columns if missing ----------------
         if table_exists(cur, "position_metadata"):
             new_columns = {
                 "strategy_uid": "TEXT NOT NULL DEFAULT 'legacy'",
@@ -224,7 +224,7 @@ def migrate_db(db_path: str = DEFAULT_DB_PATH, fresh: bool = False) -> List[str]
                     cur.execute(f"ALTER TABLE position_metadata ADD COLUMN {col_name} {col_def}")
                     applied.append(f"Added column position_metadata.{col_name}")
 
-        # ── STEP 4: Migrate learning data from substrate_state (if exists) ──
+        # -- STEP 4: Migrate learning data from substrate_state (if exists) --
         # If the old substrate_state table still has data, try to extract
         # learning fields and write them to the new tables.
         # This is a BEST-EFFORT migration — if it fails, learning data
@@ -321,7 +321,7 @@ def migrate_db(db_path: str = DEFAULT_DB_PATH, fresh: bool = False) -> List[str]
             except Exception as e:
                 applied.append(f"Learning data migration skipped (best-effort): {e}")
 
-        # ── STEP 5: Record migration in schema_version ──────────────────────
+        # -- STEP 5: Record migration in schema_version ----------------------
         cur.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 version    INTEGER PRIMARY KEY,

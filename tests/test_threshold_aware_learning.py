@@ -22,7 +22,7 @@ sys.path.insert(0, PROJECT_ROOT)
 from conftest import make_full_config
 
 
-# ── Step 1: Database migration ─────────────────────────────────────────────
+# -- Step 1: Database migration ---------------------------------------------
 
 class TestMigration51:
     """Test that migration 51 creates the signal_accuracy_by_threshold table."""
@@ -129,7 +129,7 @@ class TestMigration51:
             assert row["name"] == "baseline_v1"
 
 
-# ── Step 2: time_travel.py changes ────────────────────────────────────────
+# -- Step 2: time_travel.py changes ----------------------------------------
 
 class TestTimeTravelChanges:
     """Test --min-threshold CLI arg and _threshold_bucket tagging."""
@@ -223,7 +223,7 @@ class TestTimeTravelChanges:
         assert hasattr(rd, 'run_replay')
 
 
-# ── Step 3: analyzer.py bucket parameter ───────────────────────────────────
+# -- Step 3: analyzer.py bucket parameter -----------------------------------
 
 class TestAnalyzerBucketParameter:
     """Test the bucket parameter in update_signal_accuracy."""
@@ -441,7 +441,7 @@ class TestAnalyzerBucketParameter:
             assert row["total_fired"] == 1
 
 
-# ── Step 4: threshold_evaluator.py ─────────────────────────────────────────
+# -- Step 4: threshold_evaluator.py -----------------------------------------
 
 class TestThresholdEvaluator:
     """Test the evaluate_thresholds function."""
@@ -604,7 +604,7 @@ class TestThresholdEvaluator:
         assert proposal is None
 
 
-# ── Step 5: update_learning.py integration ─────────────────────────────────
+# -- Step 5: update_learning.py integration ---------------------------------
 
 class TestUpdateLearningIntegration:
     """Test that UpdateLearning enzyme calls threshold evaluator when enabled."""
@@ -653,7 +653,7 @@ class TestUpdateLearningIntegration:
         assert result is not None
 
 
-# ── Step 6: Config ─────────────────────────────────────────────────────────
+# -- Step 6: Config ---------------------------------------------------------
 
 class TestThresholdEvaluatorConfig:
     """Test that threshold_evaluator config section is properly defined."""

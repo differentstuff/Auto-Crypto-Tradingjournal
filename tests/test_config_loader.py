@@ -108,6 +108,15 @@ class TestConfigLoader:
         )
         assert loader.paper_mode is True  # default.yaml has paper_mode: True
 
+    def test_fees_taker_rate_from_default_yaml(self, config_dir):
+        """fees.taker_rate is deep-merged from default.yaml into strategy config."""
+        loader = ConfigLoader(
+            strategy_name="test_strategy",
+            config_dir=str(config_dir),
+        )
+        assert loader.get("fees.taker_rate") == 0.0006
+        assert loader.get("fees.maker_rate") == 0.0002
+
     def test_symbols_always_watch(self, config_dir):
         """symbols_always_watch returns the configured list."""
         loader = ConfigLoader(

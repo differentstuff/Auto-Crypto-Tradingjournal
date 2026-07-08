@@ -43,4 +43,4 @@
 
 - Channel: https://t.me/autocryptotradingjournal
 - Forum group: https://t.me/autotradingjournal
-- GitHub: https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal
+- GitHub: https://github.com/anvilfilbert/Auto-Trader

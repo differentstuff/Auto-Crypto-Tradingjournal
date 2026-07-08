@@ -1,8 +1,7 @@
 """
 tests/test_time_travel_metrics.py -- Tests for dollar-math aggregate metrics.
 
-Validates the new metrics added to learning/metrics.py and the
-reporting functions in scripts/time_travel/reporting.py.
+Validates the metrics added to learning/metrics.py.
 """
 
 import pytest
@@ -19,7 +18,7 @@ from learning.metrics import (
 )
 
 
-# ── Learning metrics (new functions) ─────────────────────────────────────────
+# -- Learning metrics (new functions) -----------------------------------------
 
 class TestExpectancy:
     def test_positive_expectancy(self):
@@ -97,7 +96,7 @@ class TestTotalReturnPct:
         assert total_return_pct([], 1000) == 0.0
 
 
-# ── Existing metrics (regression check) ───────────────────────────────────────
+# -- Existing metrics (regression check) ---------------------------------------
 
 class TestProfitFactorRegression:
     def test_profit_factor_basic(self):

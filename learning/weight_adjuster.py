@@ -87,7 +87,7 @@ def compute_adjusted_weights(
 
     from core.database import db_conn
 
-    # ── Check if we have enough trades ──────────────────────────────────────
+    # -- Check if we have enough trades --------------------------------------
     try:
         with db_conn() as conn:
             total_trades = conn.execute(
@@ -107,7 +107,7 @@ def compute_adjusted_weights(
         _log.error("Failed to count trades for weight adjustment: %s", e, exc_info=True)
         return current_weights
 
-    # ── Read signal verdicts ────────────────────────────────────────────────
+    # -- Read signal verdicts ------------------------------------------------
     try:
         with db_conn() as conn:
             rows = conn.execute(
@@ -127,7 +127,7 @@ def compute_adjusted_weights(
         _log.error("Failed to read signal verdicts for weight adjustment: %s", e, exc_info=True)
         return current_weights
 
-    # ── Apply adjustments ───────────────────────────────────────────────────
+    # -- Apply adjustments ---------------------------------------------------
     original_total = sum(v for v in current_weights.values() if v > 0)
     adjusted: Dict[str, float] = {}
     changes: Dict[str, Dict] = {}  # indicator_name → {old, new, justification}
@@ -189,13 +189,13 @@ def compute_adjusted_weights(
             # Unknown verdict → keep original
             adjusted[indicator] = weight
 
-    # ── Safety guard: cannot zero out everything ────────────────────────────
+    # -- Safety guard: cannot zero out everything ----------------------------
     positive_sum = sum(v for v in adjusted.values() if v > 0)
     if positive_sum == 0:
         _log.warning("All weights would be ≤0 — safety guard: returning original weights")
         return current_weights
 
-    # ── Re-normalize positive weights ───────────────────────────────────────
+    # -- Re-normalize positive weights ---------------------------------------
     # Positive weights should sum to the original total (preserving relative scale).
     # Negative weights are left as-is — they represent contrarian signals.
     if positive_sum > 0 and original_total > 0:
@@ -204,7 +204,7 @@ def compute_adjusted_weights(
             if adjusted[indicator] > 0:
                 adjusted[indicator] *= scale
 
-    # ── Write weight_history for changes ────────────────────────────────────
+    # -- Write weight_history for changes ------------------------------------
     if changes:
         try:
             with db_conn() as conn:

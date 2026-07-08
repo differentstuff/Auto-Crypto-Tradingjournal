@@ -317,6 +317,10 @@ def make_full_config(**overrides) -> dict:
             "trajectory_penalty_ratio": 0.5,
             "trajectory_medium_ratio": 0.2,
         },
+        "fees": {
+            "taker_rate": 0.0006,
+            "maker_rate": 0.0002,
+        },
     }
     if overrides:
         _deep_update(cfg, overrides)

@@ -8,12 +8,8 @@ All functions take explicit parameters — no substrate dependency.
 Live enzymes wrap these with substrate.cfg() calls; backtest calls them
 directly with config values.
 
-Fee handling:
-  - compute_pnl() returns GROSS P&L (no fees). Live trading uses this
-    because the broker provides actual fill prices with fees baked in.
-  - compute_net_pnl() deducts simulated fees. For paper/backtest ONLY.
-    Never call compute_net_pnl() with live trade data — that would
-    double-count fees already included in broker fills.
+Fee simulation has moved to core/fees.py (compute_entry_fee,
+compute_exit_fee). This module only handles gross P&L and sizing.
 
 Position sizing philosophy:
   - Sizing is RISK-%-BASED, not nominal-based. A coin at $0.0000222 can
@@ -30,7 +26,7 @@ Position sizing philosophy:
 from __future__ import annotations
 
 
-# ── Position sizing ──────────────────────────────────────────────────────────
+# -- Position sizing ----------------------------------------------------------
 
 
 def kelly_fraction(
@@ -148,38 +144,23 @@ def compute_size(
     if not equity or not entry_price or not sl_price:
         return _empty
 
-    # Stop distance
     stop_dist_pct = abs(entry_price - sl_price) / entry_price
     if stop_dist_pct == 0:
         return _empty
 
-    # Risk amount
     risk_amt = equity * risk_per_trade_pct / 100
-
-    # Notional from risk
     notional = risk_amt / stop_dist_pct
-
-    # Apply Kelly fraction
     notional *= kelly_frac
 
-    # Cap at max_size_pct of equity, leverage-enabled.
-    # Leverage allows taking larger positions with the same risk_per_trade_pct
-    # because the exchange provides the additional capital as margin loan.
     max_notional = equity * max_size_pct / 100 * leverage
     if notional > max_notional:
         notional = max_notional
 
-    # Hard notional exposure ceiling — prevents excessive exposure at high
-    # leverage. Even with 25x leverage, never expose more than this % of
-    # equity as notional. Flash crash protection: if SL fails, loss is
-    # bounded by notional × move_pct, not the full leveraged position.
     if max_notional_exposure_pct > 0:
         exposure_ceiling = equity * max_notional_exposure_pct / 100
         if notional > exposure_ceiling:
             notional = exposure_ceiling
 
-    # Volatility cap: reduce position for volatile assets (ATR%-based).
-    # Uses relative ATR% so the cap is asset-price-agnostic.
     volatility_cap_applied = False
     volatility_cap_notional = 0.0
     if atr_pct > 0 and volatility_cap_pct > 0:
@@ -188,9 +169,6 @@ def compute_size(
             notional = volatility_cap_notional
             volatility_cap_applied = True
 
-    # Floor at min_size_pct of equity (only when volatility cap doesn't bind).
-    # When volatility cap is applied, it's a hard maximum that overrides the
-    # soft floor — the asset is too volatile for a normal-sized position.
     if not volatility_cap_applied:
         min_notional = equity * min_size_pct / 100
         if notional < min_notional:
@@ -208,10 +186,10 @@ def compute_size(
     }
 
 
-# ── P&L computation ─────────────────────────────────────────────────────────
+# -- P&L computation ---------------------------------------------------------
 
 
-def compute_pnl(
+def compute_gross_pnl(
     entry_price: float,
     exit_price: float,
     direction: str,
@@ -221,8 +199,8 @@ def compute_pnl(
 
     This is the GROSS P&L — no fees deducted. For live trading, the broker
     provides actual fill prices with fees baked in, so gross P&L is the
-    correct measure. For backtest/paper mode, use compute_net_pnl() to
-    deduct simulated fees on top of this gross figure.
+    correct measure. For backtest/paper mode, use core.fees to deduct
+    simulated fees on top of this gross figure.
 
     Args:
         entry_price: Entry price
@@ -247,49 +225,4 @@ def compute_pnl(
     return {
         "pnl_pct": round(pnl_pct, 2),
         "pnl_usdt": round(pnl_usdt, 2),
-    }
-
-
-def compute_net_pnl(
-    gross_pnl_usdt: float,
-    position_size_usdt: float,
-    fee_rate: float,
-) -> dict:
-    """Compute net P&L after simulated exchange fees.
-
-    For paper trading and backtest ONLY. Live trading uses broker-provided
-    fills which already include actual fees — never call this function
-    with live trade data, as that would double-count fees.
-
-    Deducts entry fee and exit fee from gross P&L.
-
-    Args:
-        gross_pnl_usdt: Gross P&L in USDT (from compute_pnl)
-        position_size_usdt: Position notional size in USDT
-        fee_rate: Exchange fee rate per side (e.g., 0.0006 for 0.06%)
-
-    Returns:
-        Dict with:
-            net_pnl_usdt: P&L after fees
-            entry_fee_usdt: Fee paid at entry
-            exit_fee_usdt: Fee paid at exit
-            total_fees_usdt: Total fees paid
-    """
-    entry_fee = position_size_usdt * fee_rate
-
-    # Exit notional = position_size + gross_pnl (can be negative)
-    # For a winning long: exit_notional > position_size
-    # For a losing long: exit_notional < position_size
-    # We take abs() to handle short positions correctly
-    exit_notional = position_size_usdt + gross_pnl_usdt
-    exit_fee = abs(exit_notional) * fee_rate
-
-    total_fees = entry_fee + exit_fee
-    net_pnl = gross_pnl_usdt - total_fees
-
-    return {
-        "net_pnl_usdt": round(net_pnl, 2),
-        "entry_fee_usdt": round(entry_fee, 4),
-        "exit_fee_usdt": round(exit_fee, 4),
-        "total_fees_usdt": round(total_fees, 4),
     }

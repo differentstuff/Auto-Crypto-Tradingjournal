@@ -95,12 +95,12 @@ def main():
     sep   = "─" * 28
 
     channel_msg = (
-        f"{badge} <b>Crypto Trading Journal {tag}</b>\n"
+        f"{badge} <b>Auto-Trader {tag}</b>\n"
         f"<i>{name}</i>\n\n"
         f"{notes}\n\n"
         f"{sep}\n"
         f'🔗 <a href="{url}">Full release notes on GitHub</a>\n'
-        f'⭐ <a href="https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal">Star the project</a>'
+        f'⭐ <a href="https://github.com/anvilfilbert/Auto-Trader">Star the project</a>'
     )
 
     group_msg = (

@@ -35,7 +35,7 @@ import re
 import sys
 from pathlib import Path
 
-# ── Regex patterns ──────────────────────────────────────────────────────────
+# -- Regex patterns ----------------------------------------------------------
 
 RE_CYCLE_START = re.compile(r"Cycle (\d+) started")
 RE_CYCLE_COMPLETE = re.compile(
@@ -63,7 +63,7 @@ RE_CONFLUENCE = re.compile(r"Scored confluence: (\d+)/(\d+) symbols above relaxe
 RE_MARK_PRICES = re.compile(r"Updated mark prices for (\d+)/(\d+) positions")
 
 
-# ── Log Analysis ────────────────────────────────────────────────────────────
+# -- Log Analysis ------------------------------------------------------------
 
 def analyze_log(log_path: str, summary_only: bool = False, include_exits: bool = False,
                 cycle_filter: int | None = None, action_filter: str | None = None):
@@ -134,7 +134,7 @@ def analyze_log(log_path: str, summary_only: bool = False, include_exits: bool =
     other = stats.get("other", 0)
     if other:
         print(f"  Other cycles:      {other:>8,}")
-    print(f"  ─────────────────────────────")
+    print(f"  -----------------------------")
     print(f"  Cycles shown:      {stats['shown']:>8,}")
     pct = (stats["shown"] / stats["total"] * 100) if stats["total"] else 0
     print(f"  ({pct:.2f}% of total)")
@@ -257,9 +257,9 @@ def _print_cycle_detail(cycle_num: int, action: str, lines: list[str]):
     """Print full detail of a cycle with extracted trade info."""
     info = _extract_trade_info(lines)
 
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print(f"  CYCLE {cycle_num}  |  action={action}")
-    print("─" * 80)
+    print("-" * 80)
 
     # Print extracted trade info first
     if info:
@@ -313,7 +313,7 @@ def _print_cycle_detail(cycle_num: int, action: str, lines: list[str]):
             print(f"  {stripped}")
 
 
-# ── Results Analysis ────────────────────────────────────────────────────────
+# -- Results Analysis --------------------------------------------------------
 
 def find_latest_result(results_path: str) -> Path:
     """Find the latest JSON result file in a directory, or return the path if it's a file."""
@@ -373,7 +373,7 @@ def analyze_results(results_path: str, trades_only: bool = False):
     else:
         print(f"  {'#':>3}  {'Symbol':<10} {'Dir':<5} {'Entry':>12} {'Exit':>12} "
               f"{'SL':>12} {'TP1':>12} {'Size':>6} {'PnL':>10} {'Result':<8} {'Reason':<20}")
-        print(f"  {'─'*3}  {'─'*10} {'─'*5} {'─'*12} {'─'*12} {'─'*12} {'─'*12} {'─'*6} {'─'*10} {'─'*8} {'─'*20}")
+        print(f"  {'-'*3}  {'-'*10} {'-'*5} {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*6} {'-'*10} {'-'*8} {'-'*20}")
         for i, t in enumerate(trades):
             entry = t.get("entry_price")
             exit_p = t.get("exit_price")
@@ -413,7 +413,7 @@ def analyze_results(results_path: str, trades_only: bool = False):
             print(f"  Total PnL:     {total_pnl:.2f} USDT")
 
 
-# ── CLI ─────────────────────────────────────────────────────────────────────
+# -- CLI ---------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(

@@ -23,7 +23,7 @@ from indicators.momentum_quality import (
 from indicators.registry import compute_indicator, is_registered
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 def _make_df(prices: list[float], volume: float = 1000.0) -> pd.DataFrame:
     """
@@ -65,7 +65,7 @@ def _random_walk_df(n: int = 100, start: float = 100.0, seed: int = 42) -> pd.Da
     return _make_df(prices)
 
 
-# ── Registry integration ─────────────────────────────────────────────────────
+# -- Registry integration -----------------------------------------------------
 
 class TestRegistry:
     """momentum_quality is registered in the indicator pipeline."""
@@ -81,7 +81,7 @@ class TestRegistry:
         assert "r_squared" in result
 
 
-# ── DoD 1: momentum_quality computed as slope × R² ───────────────────────────
+# -- DoD 1: momentum_quality computed as slope × R² ---------------------------
 
 class TestMomentumQualityComputation:
     """slope × R² is computed correctly."""
@@ -123,7 +123,7 @@ class TestMomentumQualityComputation:
         assert result["r_squared"] > 0.99, "Perfect exponential trend should have R² ≈ 1.0 on log scale"
 
 
-# ── DoD 2: R² acts as quality filter ────────────────────────────────────────
+# -- DoD 2: R² acts as quality filter ----------------------------------------
 
 class TestRSquaredFilter:
     """Symbols below min_r_squared are excluded from ranking."""
@@ -174,7 +174,7 @@ class TestRSquaredFilter:
             assert result_low["filtered"] is False
 
 
-# ── DoD 3: Timeframe lookback adapts based on R² quality ────────────────────
+# -- DoD 3: Timeframe lookback adapts based on R² quality --------------------
 
 class TestAdaptiveLookback:
     """Adaptive lookback: shorter when R² is high, longer when low."""
@@ -230,7 +230,7 @@ class TestAdaptiveLookback:
         assert 30 <= result["adaptive_lookback"] <= 90
 
 
-# ── Edge cases ───────────────────────────────────────────────────────────────
+# -- Edge cases ---------------------------------------------------------------
 
 class TestEdgeCases:
     """Edge cases and boundary conditions."""
@@ -287,7 +287,7 @@ class TestEdgeCases:
         assert 0.0 <= result["r_squared"] <= 1.0
 
 
-# ── DoD 5: Config-driven (no hardcoded values) ──────────────────────────────
+# -- DoD 5: Config-driven (no hardcoded values) ------------------------------
 
 class TestConfigDriven:
     """All parameters are configurable, not hardcoded."""

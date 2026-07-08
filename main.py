@@ -119,7 +119,7 @@ def main() -> None:
     log.info("Log level:  %s", log_level)
     log.info("Project:    %s", PROJECT_ROOT)
 
-    # ── Initialize daemon ──────────────────────────────────────────────────────
+    # -- Initialize daemon ------------------------------------------------------
     daemon = Daemon(
         strategy_name=args.strategy,
         paper_mode=args.paper,
@@ -131,7 +131,7 @@ def main() -> None:
         log.error("Failed to initialize daemon: %s", e, exc_info=True)
         sys.exit(1)
 
-    # ── Initialize LLM router ──────────────────────────────────────────────────
+    # -- Initialize LLM router --------------------------------------------------
     try:
         merged_config = daemon.config.config
         keys_config = _build_llm_keys_from_env()
@@ -140,7 +140,7 @@ def main() -> None:
     except Exception as e:
         log.warning("LLM router initialization failed (non-fatal): %s", e)
 
-    # ── Initialize Exchange ─────────────────────────────────────────────────────
+    # -- Initialize Exchange -----------------------------------------------------
     exchange = None
     try:
         exchange = Exchange(daemon.config)
@@ -151,14 +151,14 @@ def main() -> None:
     except Exception as e:
         log.warning("Exchange initialization failed (non-fatal): %s", e)
 
-    # ── Exchange reachability check (live mode only) ────────────────────────────
+    # -- Exchange reachability check (live mode only) ----------------------------
     # If exchange is unreachable in live mode, abort daemon.
     # Paper mode doesn't need exchange connectivity.
     daemon.exchange = exchange
     if not args.paper:
         daemon.check_exchange_reachable()
 
-    # ── Initial reconciliation from exchange (live mode only) ───────────────────
+    # -- Initial reconciliation from exchange (live mode only) -------------------
     if not args.paper:
         try:
             daemon.reconcile_from_exchange()
@@ -168,7 +168,7 @@ def main() -> None:
             log.error("Cannot start daemon without exchange reconciliation. Fix connectivity and restart.")
             sys.exit(1)
 
-    # ── Register enzymes ────────────────────────────────────────────────────────
+    # -- Register enzymes --------------------------------------------------------
     def _register(name: str, **kwargs) -> None:
         enz = create_enzyme(name, config=daemon.substrate._config)
         if enz is None:
@@ -218,7 +218,7 @@ def main() -> None:
 
     log.info("Registered %d enzymes: %s", len(daemon.enzymes), [e.name for e in daemon.enzymes])
 
-    # ── Run ─────────────────────────────────────────────────────────────────────
+    # -- Run ---------------------------------------------------------------------
     if args.cycle_once:
         log.info("Running single cycle...")
         result = daemon.run_cycle()

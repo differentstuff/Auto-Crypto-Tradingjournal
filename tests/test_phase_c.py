@@ -235,6 +235,10 @@ def _make_config(overrides: dict | None = None) -> dict:
                 "field_key": "coincidence_risk",
             },
         ],
+        "fees": {
+            "taker_rate": 0.0006,
+            "maker_rate": 0.0002,
+        },
     }
     if overrides:
         # Deep-merge one level

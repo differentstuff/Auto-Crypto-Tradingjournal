@@ -27,7 +27,7 @@ from core.substrate import Substrate
 from enzymes.dynamic_filter import DynamicFilter, _hours_since
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 def _make_ohlcv_df(n_bars: int = 100, trend: str = "up") -> pd.DataFrame:
     """Create a synthetic OHLCV DataFrame for testing."""
@@ -103,7 +103,7 @@ def _make_substrate_with_combined_mode(
     return Substrate(config=config)
 
 
-# ── _hours_since tests ───────────────────────────────────────────────────────
+# -- _hours_since tests -------------------------------------------------------
 
 class TestHoursSince:
     def test_empty_string_returns_inf(self):
@@ -126,7 +126,7 @@ class TestHoursSince:
         assert _hours_since("not-a-timestamp") == float("inf")
 
 
-# ── Static mode tests ────────────────────────────────────────────────────────
+# -- Static mode tests --------------------------------------------------------
 
 class TestStaticMode:
     def test_static_mode_transform_is_noop(self):
@@ -168,7 +168,7 @@ class TestStaticMode:
         assert enzyme.can_activate(substrate) is False
 
 
-# ── Combined mode activation tests ───────────────────────────────────────────
+# -- Combined mode activation tests -------------------------------------------
 
 class TestCombinedModeActivation:
     def test_combined_mode_activates_on_cold_start(self):
@@ -199,7 +199,7 @@ class TestCombinedModeActivation:
         assert enzyme.can_activate(substrate) is False
 
 
-# ── Combined mode pipeline tests ─────────────────────────────────────────────
+# -- Combined mode pipeline tests ---------------------------------------------
 
 class TestCombinedModePipeline:
     def test_combined_mode_merges_and_ranks(self):
@@ -441,7 +441,7 @@ class TestCombinedModePipeline:
         assert len(dynamic_only) <= 3
 
 
-# ── Flux score tests ─────────────────────────────────────────────────────────
+# -- Flux score tests ---------------------------------------------------------
 
 class TestFluxScore:
     def test_flux_score_zero_when_cannot_activate(self):

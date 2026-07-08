@@ -762,7 +762,7 @@ class Daemon:
             # Evaluate ISC conditions after each step
             self._evaluate_isc(self.substrate, isc_results)
 
-        # ── Post-enzyme: Trailing stop maintenance + exchange push ──────
+        # -- Post-enzyme: Trailing stop maintenance + exchange push ------
         from core.trailing_stop import maintain_trailing_stops
         maintain_trailing_stops(self.substrate)
 
@@ -788,7 +788,7 @@ class Daemon:
             duration_ms,
         )
 
-        # ── Post-cycle: Challenger branch (non-blocking) ──────────────────
+        # -- Post-cycle: Challenger branch (non-blocking) ------------------
         if not self.replay_mode and self.config.get("challenger.enabled", False):
             try:
                 self._run_challenger_branch()
@@ -798,7 +798,7 @@ class Daemon:
                     e, exc_info=True,
                 )
 
-        # ── Post-cycle: Karpathy experiment loop (non-blocking) ───────────
+        # -- Post-cycle: Karpathy experiment loop (non-blocking) -----------
         if not self.replay_mode and self.config.get("karpathy.enabled", False):
             try:
                 from learning.karpathy_method import KarpathyMethod
@@ -809,7 +809,7 @@ class Daemon:
                     e, exc_info=True,
                 )
 
-        # ── Post-cycle: Hyperopt prefilter (non-blocking) ─────────────────
+        # -- Post-cycle: Hyperopt prefilter (non-blocking) -----------------
         if not self.replay_mode and self.config.get("hyperopt.enabled", False):
             try:
                 from learning.hyperopt_prefilter import HyperoptPrefilter

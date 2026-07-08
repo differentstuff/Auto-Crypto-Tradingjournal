@@ -70,6 +70,7 @@ class OutcomeRecorder:
                     "exit_price": None,
                     "exit_reason": None,
                     "net_pnl_usd": None,
+                    "gross_pnl_usd": None,
                     "is_winner": None,
                 })
 
@@ -83,12 +84,12 @@ class OutcomeRecorder:
                     if trade["symbol"] == symbol and trade["exit_timestamp"] is None:
                         trade["exit_timestamp"] = t_cursor.isoformat()
                         trade["exit_reason"] = exit_approved.get("reason", "")
-                        # Compute PnL from exit_approved if available
                         trade["exit_price"] = exit_approved.get("exit_price", None)
-                        trade["net_pnl_usd"] = exit_approved.get("pnl_usdt", None)
+                        trade["net_pnl_usd"] = exit_approved.get("net_pnl_usdt", None)
+                        trade["gross_pnl_usd"] = exit_approved.get("gross_pnl_usdt", None)
                         trade["is_winner"] = (
-                            exit_approved.get("pnl_usdt", 0) >= 0
-                            if "pnl_usdt" in exit_approved
+                            exit_approved.get("net_pnl_usdt", 0) >= 0
+                            if "net_pnl_usdt" in exit_approved
                             else None
                         )
                         break
@@ -119,6 +120,10 @@ class OutcomeRecorder:
 
         win_rate = (len(wins) / len(closed_trades) * 100) if closed_trades else 0.0
         total_pnl = sum(t.get("net_pnl_usd", 0) or 0 for t in closed_trades)
+        total_fees = sum(
+            (t.get("gross_pnl_usd", 0) or 0) - (t.get("net_pnl_usd", 0) or 0)
+            for t in closed_trades
+        )
 
         results = {
             "strategy": self._strategy_name,
@@ -134,6 +139,7 @@ class OutcomeRecorder:
                 "losses": len(losses),
                 "win_rate_pct": round(win_rate, 2),
                 "total_pnl_usd": round(total_pnl, 2),
+                "total_fees_usd": round(total_fees, 4),
             },
             "trades": self._trades,
             "equity_curve": self._equity_curve,

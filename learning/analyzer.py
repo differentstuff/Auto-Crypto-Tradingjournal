@@ -34,7 +34,7 @@ from typing import Dict, Optional, Tuple
 _log = logging.getLogger(__name__)
 
 
-# ── Parameter validation ──────────────────────────────────────────────────
+# -- Parameter validation --------------------------------------------------
 
 def _validate_required_params(**kwargs) -> None:
     """
@@ -53,7 +53,7 @@ def _validate_required_params(**kwargs) -> None:
         )
 
 
-# ── Wilson score interval ──────────────────────────────────────────────────
+# -- Wilson score interval --------------------------------------------------
 
 def wilson_score_interval(correct: int, total: int, z: float = 1.96) -> Tuple[float, float]:
     """
@@ -91,7 +91,7 @@ def wilson_score_interval(correct: int, total: int, z: float = 1.96) -> Tuple[fl
     return (lower, upper)
 
 
-# ── Verdict classification ─────────────────────────────────────────────────
+# -- Verdict classification -------------------------------------------------
 
 def classify_verdict(
     accuracy_pct: float,
@@ -147,7 +147,7 @@ def classify_verdict(
     return "review"
 
 
-# ── Update signal accuracy from closed trades ──────────────────────────────
+# -- Update signal accuracy from closed trades ------------------------------
 
 def update_signal_accuracy(
     strategy_name: str,
@@ -374,7 +374,7 @@ def update_signal_accuracy(
         _log.error("Failed to update signal accuracy for '%s': %s", strategy_name, e, exc_info=True)
 
 
-# ── Read signal verdicts ───────────────────────────────────────────────────
+# -- Read signal verdicts ---------------------------------------------------
 
 def get_signal_verdicts(strategy_name: str, strategy_uid: str = "legacy") -> Dict[str, str]:
     """

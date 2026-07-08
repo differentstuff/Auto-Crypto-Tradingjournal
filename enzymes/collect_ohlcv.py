@@ -36,7 +36,7 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-# ── Timeframe helpers (module-level for testability) ─────────────────────────
+# -- Timeframe helpers (module-level for testability) -------------------------
 
 def timeframe_to_minutes(timeframe: str) -> int:
     """

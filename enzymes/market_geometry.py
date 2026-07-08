@@ -30,7 +30,7 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-# ── Swing detection (module-level for testability) ────────────────────────────
+# -- Swing detection (module-level for testability) ----------------------------
 
 def detect_swings(highs: list[float], lows: list[float], lookback: int = 5) -> list[dict]:
     """
@@ -314,7 +314,7 @@ def compute_nearest_ema(
     return nearest
 
 
-# ── MarketGeometry Enzyme ────────────────────────────────────────────────────
+# -- MarketGeometry Enzyme ----------------------------------------------------
 
 @register_enzyme
 class MarketGeometry(Enzyme):

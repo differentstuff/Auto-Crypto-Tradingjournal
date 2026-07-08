@@ -18,7 +18,7 @@ import sqlite3
 import sys
 from datetime import datetime
 
-# ── CLI ─────────────────────────────────────────────────────────────────────
+# -- CLI ---------------------------------------------------------------------
 
 parser = argparse.ArgumentParser(description="Verify learning system results")
 parser.add_argument("--strategy", required=True, help="Strategy name (e.g. paper_learning_test)")
@@ -40,7 +40,7 @@ OUTPUT_DIR = args.output_dir or os.path.join(PROJECT_ROOT, "data")
 STRATEGY_NAME = args.strategy
 STRATEGY_UID = args.uid or "legacy"
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
+# -- Helpers -----------------------------------------------------------------
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -75,7 +75,7 @@ def fmt_num(val, decimals=2):
     except (TypeError, ValueError):
         return "N/A"
 
-# ── Checks ──────────────────────────────────────────────────────────────────
+# -- Checks ------------------------------------------------------------------
 
 def check_l1_signal_accuracy():
     """L1: Signal accuracy verdicts have converged beyond 'insufficient_data'."""
@@ -263,7 +263,7 @@ def check_trade_summary():
     return equity_curve
 
 
-# ── Charts ──────────────────────────────────────────────────────────────────
+# -- Charts ------------------------------------------------------------------
 
 def generate_charts(equity_curve):
     """Generate PNG charts if matplotlib is available."""
@@ -279,7 +279,7 @@ def generate_charts(equity_curve):
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # ── Chart 1: Equity curve ──────────────────────────────────────────────
+    # -- Chart 1: Equity curve ----------------------------------------------
     if equity_curve:
         fig, ax = plt.subplots(figsize=(12, 5))
         trade_nums = [e["trade_num"] for e in equity_curve]
@@ -304,7 +304,7 @@ def generate_charts(equity_curve):
         plt.close(fig)
         print(f"\n  📊 Equity curve saved to {path}")
 
-    # ── Chart 2: Signal accuracy with Wilson CI ────────────────────────────
+    # -- Chart 2: Signal accuracy with Wilson CI ----------------------------
     signal_rows = query(
         """SELECT indicator_name, total_fired, accuracy_pct,
                   confidence_95_low, confidence_95_high, verdict
@@ -357,7 +357,7 @@ def generate_charts(equity_curve):
         plt.close(fig)
         print(f"  📊 Accuracy chart saved to {path}")
 
-    # ── Chart 3: Weight evolution ──────────────────────────────────────────
+    # -- Chart 3: Weight evolution ------------------------------------------
     weight_rows = query(
         """SELECT indicator_name, old_weight, new_weight, accuracy_at_time
            FROM weight_history
@@ -407,7 +407,7 @@ def generate_charts(equity_curve):
         print(f"  📊 Weight chart saved to {path}")
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# -- Main --------------------------------------------------------------------
 
 def main():
     print("=" * 70)
@@ -430,7 +430,7 @@ def main():
     if not args.no_charts:
         generate_charts(equity_curve)
 
-    # ── Summary ─────────────────────────────────────────────────────────────
+    # -- Summary -------------------------------------------------------------
     print("\n" + "=" * 70)
     print("VERIFICATION SUMMARY")
     print("=" * 70)

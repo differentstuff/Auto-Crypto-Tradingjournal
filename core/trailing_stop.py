@@ -177,7 +177,7 @@ def update_trailing_stop(position: dict, substrate: Substrate) -> dict:
         if mark_price < peak_price:
             peak_price = mark_price
 
-    # ── Progressive trailing stop ──────────────────────────────────────
+    # -- Progressive trailing stop --------------------------------------
     if progressive_trail_enabled and atr_value:
         # Compute profit in ATR units
         if direction == "long":
@@ -234,7 +234,7 @@ def update_trailing_stop(position: dict, substrate: Substrate) -> dict:
         return {**position, "trailing_active": trailing_active, "trailing_sl": trailing_sl,
                 "peak_price": peak_price, "max_profit_atr": max_profit_atr}
 
-    # ── Standard ATR trailing stop (backward compatible) ───────────────
+    # -- Standard ATR trailing stop (backward compatible) ---------------
     trail_atr_mult = substrate.cfg("exit_rules.trailing_stop.trail_atr_multiplier", 1.0)
 
     # Apply structure-aware stop adjustment

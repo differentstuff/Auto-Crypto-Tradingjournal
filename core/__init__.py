@@ -21,8 +21,11 @@ from core.position_sizing import (
     kelly_fraction,
     compute_volatility_cap,
     compute_size,
-    compute_pnl,
-    compute_net_pnl,
+    compute_gross_pnl,
+)
+from core.fees import (
+    compute_entry_fee,
+    compute_exit_fee,
 )
 from core.daemon import Daemon
 from core.virtual_clock import VirtualClock
@@ -47,8 +50,9 @@ __all__ = [
     "kelly_fraction",
     "compute_volatility_cap",
     "compute_size",
-    "compute_pnl",
-    "compute_net_pnl",
+    "compute_gross_pnl",
+    "compute_entry_fee",
+    "compute_exit_fee",
     "VirtualClock",
     "ReplayExchange",
     "OutcomeRecorder",

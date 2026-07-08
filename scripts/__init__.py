@@ -1,1 +1,1 @@
-# scripts/__init__.py -- Make scripts a package for `python -m scripts.time_travel`
+# scripts/__init__.py -- Make scripts a package for `python -m scripts.migrate_db`

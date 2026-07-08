@@ -15,7 +15,7 @@ from core.substrate import Substrate
 from tests.conftest import make_full_config
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+# -- Fixtures ------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def substrate_no_volatility_cap():
     return Substrate(cfg)
 
 
-# ── 1. compute_volatility_cap pure function ─────────────────────────────────────────
+# -- 1. compute_volatility_cap pure function -----------------------------------------
 
 
 class TestComputeVolatilityCap:
@@ -94,7 +94,7 @@ class TestComputeVolatilityCap:
         assert cap_btc == cap_shib  # Same cap for same relative volatility
 
 
-# ── 2. compute_size with volatility cap ────────────────────────────────────────────
+# -- 2. compute_size with volatility cap --------------------------------------------
 
 
 class TestComputeSizeVolatilityCap:
@@ -230,7 +230,7 @@ class TestComputeSizeVolatilityCap:
         assert sizing_zero["volatility_cap_notional"] > 0
 
 
-# ── 3. Leverage-aware max_notional_exposure_pct ─────────────────────────────────────
+# -- 3. Leverage-aware max_notional_exposure_pct -------------------------------------
 
 
 class TestMaxNotionalExposure:
@@ -263,7 +263,7 @@ class TestMaxNotionalExposure:
         assert sizing["size_usdt"] > 0
 
 
-# ── 4. Integration with ApproveTrade enzyme ──────────────────────────────────────
+# -- 4. Integration with ApproveTrade enzyme --------------------------------------
 
 
 class TestApproveTradeVolatilityCap:

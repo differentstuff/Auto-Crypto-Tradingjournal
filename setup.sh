@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-# ── Colors ─────────────────────────────────────────────────────────────────────
+# -- Colors ---------------------------------------------------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -30,7 +30,7 @@ ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail()  { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# -- Config ---------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -51,7 +51,7 @@ echo "  Directory: $SCRIPT_DIR"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# ── Step 1: System packages ────────────────────────────────────────────────────
+# -- Step 1: System packages ----------------------------------------------------
 if $SKIP_APT; then
     info "Skipping system package installation (--skip-apt)"
 else
@@ -117,7 +117,7 @@ else
     ok "System packages installed"
 fi
 
-# ── Step 2: Create virtual environment ─────────────────────────────────────────
+# -- Step 2: Create virtual environment -----------------------------------------
 if [[ -d "$VENV_DIR" && -x "$PYTHON_VENV" ]]; then
     ok "Virtual environment already exists at $VENV_DIR"
     PY_VER=$($PYTHON_VENV --version 2>&1 | head -1)
@@ -136,13 +136,13 @@ else
     ok "Virtual environment created: $($PYTHON_VENV --version 2>&1 | head -1)"
 fi
 
-# ── Step 3: Install Python dependencies ────────────────────────────────────────
+# -- Step 3: Install Python dependencies ----------------------------------------
 info "Installing Python dependencies..."
 $PIP install --upgrade pip --quiet
 $PIP install -r requirements.txt --quiet 2>&1 | tail -5
 ok "Python dependencies installed"
 
-# ── Step 4: Copy config templates (never overwrite) ───────────────────────────
+# -- Step 4: Copy config templates (never overwrite) ---------------------------
 info "Setting up configuration files..."
 
 # .env
@@ -166,12 +166,12 @@ else
     ok "config/strategies/paper_test.yaml created (minimal 1-symbol strategy for testing)"
 fi
 
-# ── Step 5: Create directories ─────────────────────────────────────────────────
+# -- Step 5: Create directories -------------------------------------------------
 mkdir -p logs
 mkdir -p data
 ok "Directories created: logs/, data/"
 
-# ── Step 6: Smoke test ─────────────────────────────────────────────────────────
+# -- Step 6: Smoke test ---------------------------------------------------------
 info "Running smoke test..."
 
 SMOKE_PASSED=true
@@ -224,7 +224,7 @@ else
     warn "Single cycle test had issues (may be expected if exchange/LLM keys not configured)"
 fi
 
-# ── Summary ────────────────────────────────────────────────────────────────────
+# -- Summary --------------------------------------------------------------------
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
 if $SMOKE_PASSED; then

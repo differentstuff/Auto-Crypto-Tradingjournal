@@ -86,7 +86,7 @@ class TestOutcomeRecorder:
         recorder.capture_cycle(substrate, t1)
         substrate.decisions = {
             "action": "trade_closed",
-            "exit_approved": {"symbol": "BTCUSDT", "reason": "tp1_hit", "pnl_usdt": 20.0},
+            "exit_approved": {"symbol": "BTCUSDT", "reason": "tp1_hit", "net_pnl_usdt": 20.0, "gross_pnl_usdt": 20.0},
         }
         t2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
         recorder.capture_cycle(substrate, t2)

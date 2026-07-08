@@ -21,7 +21,7 @@ import pytest
 from tests.conftest import make_full_config
 
 
-# ── Helper: create a substrate with HMM enabled ──────────────────────────────
+# -- Helper: create a substrate with HMM enabled ------------------------------
 
 def _make_hmm_config(**hmm_overrides) -> dict:
     """Return a full config with HMM enabled and optional overrides."""
@@ -64,7 +64,7 @@ def _make_mock_exchange(returns_length=800):
     return exchange
 
 
-# ── Tests: _identify_states ──────────────────────────────────────────────────
+# -- Tests: _identify_states --------------------------------------------------
 
 class TestIdentifyStates:
     """Test the _identify_states helper function."""
@@ -100,7 +100,7 @@ class TestIdentifyStates:
         assert spike == 1
 
 
-# ── Tests: can_activate ──────────────────────────────────────────────────────
+# -- Tests: can_activate ------------------------------------------------------
 
 class TestCanActivate:
     """Test DetectRegime.can_activate() behavior."""
@@ -125,7 +125,7 @@ class TestCanActivate:
         assert enzyme.can_activate(substrate)
 
 
-# ── Tests: Model fitting ─────────────────────────────────────────────────────
+# -- Tests: Model fitting -----------------------------------------------------
 
 class TestModelFitting:
     """Test GaussianMixture fitting on synthetic data."""
@@ -183,7 +183,7 @@ class TestModelFitting:
         assert normal_var < spike_var
 
 
-# ── Tests: Prediction and substrate writes ───────────────────────────────────
+# -- Tests: Prediction and substrate writes -----------------------------------
 
 class TestPrediction:
     """Test regime prediction and substrate field writes."""
@@ -253,7 +253,7 @@ class TestPrediction:
         assert substrate.market["regime"]["state_label"] == "Spike"
 
 
-# ── Tests: Graceful degradation ──────────────────────────────────────────────
+# -- Tests: Graceful degradation ----------------------------------------------
 
 class TestGracefulDegradation:
     """Test fail-open behavior when model is not fitted."""
@@ -295,7 +295,7 @@ class TestGracefulDegradation:
         assert result.confluence["regime_normal"] is True  # Fail-open
 
 
-# ── Tests: Refit schedule ────────────────────────────────────────────────────
+# -- Tests: Refit schedule ----------------------------------------------------
 
 class TestRefitSchedule:
     """Test model refit scheduling logic."""
@@ -343,7 +343,7 @@ class TestRefitSchedule:
         assert enzyme._should_fit(substrate) is False
 
 
-# ── Tests: Confidence threshold ──────────────────────────────────────────────
+# -- Tests: Confidence threshold ----------------------------------------------
 
 class TestConfidenceThreshold:
     """Test confidence threshold application."""
@@ -390,7 +390,7 @@ class TestConfidenceThreshold:
         assert regime_normal is True
 
 
-# ── Tests: ScoreConfluence regime gate ───────────────────────────────────────
+# -- Tests: ScoreConfluence regime gate ---------------------------------------
 
 class TestScoreConfluenceRegimeGate:
     """Test that ScoreConfluence respects the regime gate."""
@@ -477,7 +477,7 @@ class TestScoreConfluenceRegimeGate:
         assert enzyme.can_activate(substrate)
 
 
-# ── Tests: Substrate confluence namespace ────────────────────────────────────
+# -- Tests: Substrate confluence namespace ------------------------------------
 
 class TestSubstrateConfluence:
     """Test that substrate.confluence namespace works correctly."""
@@ -513,7 +513,7 @@ class TestSubstrateConfluence:
         assert substrate.confluence["regime_normal"] is False
 
 
-# ── Tests: Flux score ───────────────────────────────────────────────────────
+# -- Tests: Flux score -------------------------------------------------------
 
 class TestFluxScore:
     """Test DetectRegime flux_score behavior."""

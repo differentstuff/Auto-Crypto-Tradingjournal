@@ -25,7 +25,7 @@
 
 set -euo pipefail
 
-# ── Colors ─────────────────────────────────────────────────────────────────────
+# -- Colors ---------------------------------------------------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -42,7 +42,7 @@ p_fail() { echo -e "  ${RED}❌ FAIL${NC}  $1"; ((FAIL++)); }
 p_warn() { echo -e "  ${YELLOW}⚠  WARN${NC}  $1"; ((WARN++)); }
 p_skip() { echo -e "  ${CYAN}⏭  SKIP${NC}  $1"; ((SKIP++)); }
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# -- Config ---------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
@@ -70,8 +70,8 @@ echo "  Time:     $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# ── 1. Daemon process alive ────────────────────────────────────────────────────
-echo "── 1. Daemon Process ──────────────────────────────────────────"
+# -- 1. Daemon process alive ----------------------------------------------------
+echo "-- 1. Daemon Process ------------------------------------------"
 
 # Check systemd service first, then fall back to process check
 if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
@@ -87,9 +87,9 @@ else
     echo "         Or:         systemctl start $SERVICE_NAME"
 fi
 
-# ── 2. Database exists with tables ─────────────────────────────────────────────
+# -- 2. Database exists with tables ---------------------------------------------
 echo ""
-echo "── 2. Database ────────────────────────────────────────────────"
+echo "-- 2. Database ------------------------------------------------"
 
 if [[ ! -f "$DB_PATH" ]]; then
     p_fail "Database file not found: $DB_PATH"
@@ -115,9 +115,9 @@ else
     fi
 fi
 
-# ── 3. Cycles completing ───────────────────────────────────────────────────────
+# -- 3. Cycles completing -------------------------------------------------------
 echo ""
-echo "── 3. Cycle Execution ─────────────────────────────────────────"
+echo "-- 3. Cycle Execution -----------------------------------------"
 
 if ! $QUICK && [[ -f "$DB_PATH" ]]; then
     CYCLE_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM cycle_log" 2>/dev/null || echo "0")
@@ -142,9 +142,9 @@ else
     p_skip "Cycle check (quick mode or no DB)"
 fi
 
-# ── 4. Substrate state persisting ─────────────────────────────────────────────
+# -- 4. Substrate state persisting ---------------------------------------------
 echo ""
-echo "── 4. Substrate Persistence ───────────────────────────────────"
+echo "-- 4. Substrate Persistence -----------------------------------"
 
 if ! $QUICK && [[ -f "$DB_PATH" ]]; then
     SUB_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM substrate_state" 2>/dev/null || echo "0")
@@ -157,9 +157,9 @@ else
     p_skip "Substrate check (quick mode or no DB)"
 fi
 
-# ── 5. Enzymes firing ──────────────────────────────────────────────────────────
+# -- 5. Enzymes firing ----------------------------------------------------------
 echo ""
-echo "── 5. Enzyme Activation ───────────────────────────────────────"
+echo "-- 5. Enzyme Activation ---------------------------------------"
 
 if ! $QUICK && [[ -f "$DB_PATH" ]]; then
     # Check what enzymes have been fired
@@ -180,9 +180,9 @@ else
     p_skip "Enzyme check (quick mode or no DB)"
 fi
 
-# ── 6. ISC checks running ─────────────────────────────────────────────────────
+# -- 6. ISC checks running -----------------------------------------------------
 echo ""
-echo "── 6. ISC Verification ────────────────────────────────────────"
+echo "-- 6. ISC Verification ----------------------------------------"
 
 if ! $QUICK && [[ -f "$DB_PATH" ]]; then
     ISC_RESULTS=$(sqlite3 "$DB_PATH" "SELECT isc_results FROM cycle_log WHERE isc_results IS NOT NULL AND isc_results != '{}' ORDER BY id DESC LIMIT 1" 2>/dev/null || echo "")
@@ -198,9 +198,9 @@ else
     p_skip "ISC check (quick mode or no DB)"
 fi
 
-# ── 7. Paper trades simulated ─────────────────────────────────────────────────
+# -- 7. Paper trades simulated -------------------------------------------------
 echo ""
-echo "── 7. Paper Trading ───────────────────────────────────────────"
+echo "-- 7. Paper Trading -------------------------------------------"
 
 if ! $QUICK && [[ -f "$DB_PATH" ]]; then
     TRADE_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM trade_learning" 2>/dev/null || echo "0")
@@ -220,9 +220,9 @@ else
     p_skip "Trade check (quick mode or no DB)"
 fi
 
-# ── 8. Learning tables active ──────────────────────────────────────────────────
+# -- 8. Learning tables active --------------------------------------------------
 echo ""
-echo "── 8. Learning Engine ─────────────────────────────────────────"
+echo "-- 8. Learning Engine -----------------------------------------"
 
 if ! $QUICK && [[ -f "$DB_PATH" ]]; then
     SIG_ROWS=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM signal_accuracy" 2>/dev/null || echo "0")
@@ -248,9 +248,9 @@ else
     p_skip "Learning check (quick mode or no DB)"
 fi
 
-# ── 9. Performance ─────────────────────────────────────────────────────────────
+# -- 9. Performance -------------------------------------------------------------
 echo ""
-echo "── 9. Performance ─────────────────────────────────────────────"
+echo "-- 9. Performance ---------------------------------------------"
 
 if ! $QUICK && [[ -f "$DB_PATH" ]]; then
     AVG_DURATION=$(sqlite3 "$DB_PATH" "SELECT AVG(duration_ms) FROM cycle_log" 2>/dev/null || echo "0")
@@ -292,9 +292,9 @@ else
     p_skip "Memory check (daemon not running or no pgrep)"
 fi
 
-# ── 10. Log file ───────────────────────────────────────────────────────────────
+# -- 10. Log file ---------------------------------------------------------------
 echo ""
-echo "── 10. Log File ───────────────────────────────────────────────"
+echo "-- 10. Log File -----------------------------------------------"
 
 if [[ -f "$LOG_FILE" ]]; then
     LOG_SIZE=$(du -h "$LOG_FILE" | cut -f1)
@@ -314,9 +314,9 @@ else
     p_fail "Log file not found: $LOG_FILE"
 fi
 
-# ── 11. Error scan ─────────────────────────────────────────────────────────────
+# -- 11. Error scan -------------------------------------------------------------
 echo ""
-echo "── 11. Error Scan ─────────────────────────────────────────────"
+echo "-- 11. Error Scan ---------------------------------------------"
 
 if [[ -f "$LOG_FILE" ]]; then
     ERROR_COUNT=$(grep -ciE "error|exception|traceback" "$LOG_FILE" 2>/dev/null || echo "0")
@@ -337,9 +337,9 @@ else
     p_skip "Error scan (no log file)"
 fi
 
-# ── 12. Config hot-reload ──────────────────────────────────────────────────────
+# -- 12. Config hot-reload ------------------------------------------------------
 echo ""
-echo "── 12. Config Hot-Reload ──────────────────────────────────────"
+echo "-- 12. Config Hot-Reload --------------------------------------"
 
 if [[ -f "$LOG_FILE" ]]; then
     if grep -q "Config reloaded" "$LOG_FILE" 2>/dev/null; then
@@ -353,7 +353,7 @@ else
     p_skip "Config check (no log file)"
 fi
 
-# ── Summary ────────────────────────────────────────────────────────────────────
+# -- Summary --------------------------------------------------------------------
 TOTAL=$((PASS + FAIL + WARN + SKIP))
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
