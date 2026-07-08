@@ -86,7 +86,7 @@ class TestOutcomeRecorder:
         recorder.capture_cycle(substrate, t1)
         substrate.decisions = {
             "action": "trade_closed",
-            "exit_approved": {"symbol": "BTCUSDT", "reason": "tp1_hit", "net_pnl_usdt": 20.0, "gross_pnl_usdt": 20.0},
+            "exit_approved": {"symbol": "BTCUSDT", "reason": "tp1_hit", "net_pnl_usdt": 20.0, "gross_pnl_usdt": 20.0, "exit_fee_usdt": 0.0},
         }
         t2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
         recorder.capture_cycle(substrate, t2)
@@ -107,6 +107,54 @@ class TestOutcomeRecorder:
             data = json.load(f)
         assert data["strategy"] == "test_strategy"
         assert data["summary"]["total_cycles"] == 1
+
+    def test_fee_accumulation_across_partial_and_full_close(self):
+        """Entry + TP1 partial + final close: total_fees_usd sums all fees correctly."""
+        recorder = OutcomeRecorder("test", "2025-01-01", "2025-01-31")
+
+        # 1. Entry
+        substrate = MagicMock()
+        substrate.decisions = {
+            "action": "trade_open",
+            "trade_approved": {
+                "symbol": "BTCUSDT", "direction": "Long",
+                "entry_price": 50000.0, "sl_price": 48000.0,
+                "tp1": 52000.0, "size_usdt": 500.0,
+                "atr_value": 1500.0, "score": 7.5,
+                "entry_fee_usdt": 0.3,
+            },
+        }
+        substrate.portfolio = {"equity": 10000.0, "open_positions": [{"symbol": "BTCUSDT"}]}
+        t1 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t1)
+
+        # 2. TP1 partial close
+        substrate.decisions = {
+            "action": "trade_managed",
+            "exit_approved": {
+                "symbol": "BTCUSDT", "exit_fee_usdt": 0.1248,
+            },
+        }
+        t2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t2)
+
+        # 3. Final close
+        substrate.decisions = {
+            "action": "trade_closed",
+            "exit_approved": {
+                "symbol": "BTCUSDT", "reason": "trailing_stop_hit",
+                "net_pnl_usdt": -6.1764, "gross_pnl_usdt": -6.0,
+                "exit_fee_usdt": 0.1764, "exit_price": 49000.0,
+            },
+        }
+        t3 = datetime(2025, 1, 3, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t3)
+
+        trade = recorder._trades[0]
+        assert trade["entry_fee_usd"] == 0.3
+        assert trade["exit_fees_usd"] == pytest.approx(0.1248 + 0.1764, abs=0.001)
+        assert trade["total_fees_usd"] == pytest.approx(0.3 + 0.1248 + 0.1764, abs=0.001)
+        assert trade["is_winner"] is False
 
 
 class TestDaemonReplayMode:

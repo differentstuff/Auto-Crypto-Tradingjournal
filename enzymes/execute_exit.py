@@ -138,6 +138,7 @@ class ExecuteExit(Enzyme):
             exit_approved["pnl_pct"] = round(pnl_pct, 4)
             exit_approved["gross_pnl_usdt"] = round(gross_pnl_usdt, 4)
             exit_approved["net_pnl_usdt"] = round(net_pnl_usdt, 4)
+            exit_approved["exit_fee_usdt"] = round(exit_fee, 4)
             exit_approved["exit_price"] = exit_price
             exit_approved["sold_usdt"] = round(sold_usdt, 2)
             exit_approved["remaining_usdt"] = remaining_usdt
@@ -206,6 +207,7 @@ class ExecuteExit(Enzyme):
             exit_approved["pnl_pct"] = round(pnl_pct, 4)
             exit_approved["gross_pnl_usdt"] = round(gross_pnl_usdt, 4)
             exit_approved["net_pnl_usdt"] = round(net_pnl_usdt, 4)
+            exit_approved["exit_fee_usdt"] = round(exit_fee, 4)
             exit_approved["exit_price"] = exit_price
             substrate.decisions["exit_approved"] = exit_approved
 

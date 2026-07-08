@@ -130,24 +130,24 @@ class TestComputeGrossPnl:
     def test_long_winner(self):
         result = compute_gross_pnl(entry_price=100, exit_price=110, direction="Long", size_usdt=1000)
         assert result["pnl_pct"] == pytest.approx(10.0)
-        assert result["pnl_usdt"] == pytest.approx(100.0)
+        assert result["gross_pnl_usdt"] == pytest.approx(100.0)
 
     def test_long_loser(self):
         result = compute_gross_pnl(entry_price=100, exit_price=90, direction="Long", size_usdt=1000)
         assert result["pnl_pct"] == pytest.approx(-10.0)
-        assert result["pnl_usdt"] == pytest.approx(-100.0)
+        assert result["gross_pnl_usdt"] == pytest.approx(-100.0)
 
     def test_short_winner(self):
         result = compute_gross_pnl(entry_price=100, exit_price=90, direction="Short", size_usdt=1000)
         assert result["pnl_pct"] == pytest.approx(10.0)
-        assert result["pnl_usdt"] == pytest.approx(100.0)
+        assert result["gross_pnl_usdt"] == pytest.approx(100.0)
 
     def test_short_loser(self):
         result = compute_gross_pnl(entry_price=100, exit_price=110, direction="Short", size_usdt=1000)
         assert result["pnl_pct"] == pytest.approx(-10.0)
-        assert result["pnl_usdt"] == pytest.approx(-100.0)
+        assert result["gross_pnl_usdt"] == pytest.approx(-100.0)
 
     def test_zero_size_returns_zero(self):
         result = compute_gross_pnl(entry_price=100, exit_price=110, direction="Long", size_usdt=0)
         assert result["pnl_pct"] == 0.0
-        assert result["pnl_usdt"] == 0.0
+        assert result["gross_pnl_usdt"] == 0.0

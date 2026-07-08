@@ -488,7 +488,8 @@ def _record_trade_exit(symbol: str, position: dict, exit_reason: str,
         from core.database import db_conn
 
         with db_conn() as conn:
-            # SQLite-safe: subquery finds the single row to update
+            # pnl_usdt column: holds fee-adjusted (net) PnL for paper/replay trades,
+            # gross-equals-net for live trades (fees baked into exchange fills).
             conn.execute(
                 """UPDATE trade_learning
                    SET exit_time = ?,
@@ -617,10 +618,10 @@ class RecordTradeOutcome(Enzyme):
                 #  so we compute PnL from exit_approved data if available)
                 pnl = {"pnl_pct": 0.0, "pnl_usdt": 0.0}
 
-                # Try to find position in portfolio (may still be there briefly)
                 for pos in substrate.portfolio.get("open_positions", []):
                     if pos.get("symbol") == symbol:
-                        pnl = _compute_gross_pnl(pos)
+                        result = _compute_gross_pnl(pos)
+                        pnl = {"pnl_pct": result["pnl_pct"], "pnl_usdt": result["gross_pnl_usdt"]}
                         break
 
                 # Override with exit_approved PnL if available

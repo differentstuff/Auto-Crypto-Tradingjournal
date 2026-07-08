@@ -372,14 +372,15 @@ def analyze_results(results_path: str, trades_only: bool = False):
         print("  No trades recorded.")
     else:
         print(f"  {'#':>3}  {'Symbol':<10} {'Dir':<5} {'Entry':>12} {'Exit':>12} "
-              f"{'SL':>12} {'TP1':>12} {'Size':>6} {'PnL':>10} {'Result':<8} {'Reason':<20}")
-        print(f"  {'-'*3}  {'-'*10} {'-'*5} {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*6} {'-'*10} {'-'*8} {'-'*20}")
+              f"{'SL':>12} {'TP1':>12} {'Size':>6} {'PnL':>10} {'Fees':>8} {'Result':<8} {'Reason':<20}")
+        print(f"  {'-'*3}  {'-'*10} {'-'*5} {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*6} {'-'*10} {'-'*8} {'-'*8} {'-'*20}")
         for i, t in enumerate(trades):
             entry = t.get("entry_price")
             exit_p = t.get("exit_price")
             sl = t.get("sl_price")
             tp1 = t.get("tp1")
             pnl = t.get("net_pnl_usd")
+            fees = t.get("total_fees_usd")
             is_winner = t.get("is_winner")
             reason = t.get("exit_reason") or ""
 
@@ -391,11 +392,13 @@ def analyze_results(results_path: str, trades_only: bool = False):
             elif exit_p is not None:
                 result = "CLOSED"
 
+            fees_str = f"{fees:.4f}" if fees is not None else "—"
             print(f"  {i+1:>3}  {t.get('symbol',''):<10} {t.get('direction',''):<5} "
                   f"{entry:>12.2f} {exit_p if exit_p else '—':>12} "
                   f"{sl if sl else '—':>12} {tp1 if tp1 else '—':>12} "
                   f"{t.get('size_usdt',0):>6.2f} "
                   f"{pnl if pnl is not None else '—':>10} "
+                  f"{fees_str:>8} "
                   f"{result:<8} {reason:<20}")
 
         # Trade stats
@@ -407,10 +410,12 @@ def analyze_results(results_path: str, trades_only: bool = False):
             wins = [t for t in closed if t.get("is_winner")]
             losses = [t for t in closed if t.get("is_winner") is False]
             total_pnl = sum(t.get("net_pnl_usd", 0) for t in closed)
+            total_fees = sum(t.get("total_fees_usd", 0) or 0 for t in closed)
             print(f"  Wins:          {len(wins)}")
             print(f"  Losses:        {len(losses)}")
             print(f"  Win rate:      {len(wins)/len(closed)*100:.1f}%")
             print(f"  Total PnL:     {total_pnl:.2f} USDT")
+            print(f"  Total Fees:    {total_fees:.4f} USDT")
 
 
 # -- CLI ---------------------------------------------------------------------

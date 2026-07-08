@@ -209,10 +209,10 @@ def compute_gross_pnl(
         size_usdt: Position notional size in USDT
 
     Returns:
-        Dict with pnl_pct and pnl_usdt (gross, before fees)
+        Dict with pnl_pct and gross_pnl_usdt (gross, before fees)
     """
     if not entry_price or not exit_price or not size_usdt:
-        return {"pnl_pct": 0.0, "pnl_usdt": 0.0}
+        return {"pnl_pct": 0.0, "gross_pnl_usdt": 0.0}
 
     d = direction.lower()
     if d == "long":
@@ -224,5 +224,5 @@ def compute_gross_pnl(
 
     return {
         "pnl_pct": round(pnl_pct, 2),
-        "pnl_usdt": round(pnl_usdt, 2),
+        "gross_pnl_usdt": round(pnl_usdt, 2),
     }

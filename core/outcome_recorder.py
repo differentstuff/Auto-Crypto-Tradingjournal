@@ -65,14 +65,28 @@ class OutcomeRecorder:
                     "size_usdt": trade.get("size_usdt", 0),
                     "atr_value": trade.get("atr_value", 0),
                     "confluence_score": trade.get("score", 0),
+                    "entry_fee_usd": trade.get("entry_fee_usdt", None),
                     # Exit fields filled when exit captured
                     "exit_timestamp": None,
                     "exit_price": None,
                     "exit_reason": None,
                     "net_pnl_usd": None,
                     "gross_pnl_usd": None,
+                    "exit_fees_usd": 0.0,
+                    "total_fees_usd": None,
                     "is_winner": None,
                 })
+
+        # Capture partial close (TP1, TP2)
+        elif action == "trade_managed":
+            exit_approved = substrate.decisions.get("exit_approved", {})
+            if exit_approved and self._trades:
+                symbol = exit_approved.get("symbol", "")
+                partial_fee = exit_approved.get("exit_fee_usdt", 0.0) or 0.0
+                for trade in reversed(self._trades):
+                    if trade["symbol"] == symbol and trade["exit_timestamp"] is None:
+                        trade["exit_fees_usd"] = trade.get("exit_fees_usd", 0.0) + partial_fee
+                        break
 
         # Capture exit
         elif action == "trade_closed":
@@ -87,6 +101,9 @@ class OutcomeRecorder:
                         trade["exit_price"] = exit_approved.get("exit_price", None)
                         trade["net_pnl_usd"] = exit_approved.get("net_pnl_usdt", None)
                         trade["gross_pnl_usd"] = exit_approved.get("gross_pnl_usdt", None)
+                        final_exit_fee = exit_approved.get("exit_fee_usdt", 0.0) or 0.0
+                        trade["exit_fees_usd"] = trade.get("exit_fees_usd", 0.0) + final_exit_fee
+                        trade["total_fees_usd"] = (trade.get("entry_fee_usd", 0.0) or 0.0) + trade["exit_fees_usd"]
                         trade["is_winner"] = (
                             exit_approved.get("net_pnl_usdt", 0) >= 0
                             if "net_pnl_usdt" in exit_approved
@@ -120,10 +137,7 @@ class OutcomeRecorder:
 
         win_rate = (len(wins) / len(closed_trades) * 100) if closed_trades else 0.0
         total_pnl = sum(t.get("net_pnl_usd", 0) or 0 for t in closed_trades)
-        total_fees = sum(
-            (t.get("gross_pnl_usd", 0) or 0) - (t.get("net_pnl_usd", 0) or 0)
-            for t in closed_trades
-        )
+        total_fees = sum(t.get("total_fees_usd", 0) or 0 for t in closed_trades)
 
         results = {
             "strategy": self._strategy_name,

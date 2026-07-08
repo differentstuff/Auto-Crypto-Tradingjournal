@@ -104,6 +104,7 @@ class ExecuteTrade(Enzyme):
                 "Entry fee deducted: %.4f USDT (rate=%.4f notional=%.2f)",
                 entry_fee, substrate.cfg("fees.taker_rate"), size_usdt,
             )
+            trade_approved["entry_fee_usdt"] = entry_fee
         else:
             # Live mode: place order with preset SL/TP
             if self.exchange is not None:
