@@ -14,7 +14,7 @@ Only the latest commit on `main` is maintained.
 
 Please **do not** open a public GitHub issue for security vulnerabilities.
 
-Instead, use [GitHub Private Vulnerability Reporting](https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal/security/advisories/new)
+Instead, use [GitHub Private Vulnerability Reporting](https://github.com/anvilfilbert/Auto-Trader/security/advisories/new)
 to submit a report confidentially.
 
 Include:

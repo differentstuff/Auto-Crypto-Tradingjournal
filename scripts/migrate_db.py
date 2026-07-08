@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/migrate_db.py -- Database migration script for Auto-Crypto-Tradingjournal.
+scripts/migrate_db.py -- Database migration script for Auto-Trader.
 
 Exchange-as-truth architecture: substrate persistence is removed.
 This script handles the clean migration to the new schema.
@@ -15,7 +15,7 @@ Key changes:
 
 Usage:
     python3 scripts/migrate_db.py
-    python3 scripts/migrate_db.py --db-path /path/to/trading_journal.db
+    python3 scripts/migrate_db.py --db-path /path/to/auto_trader.db
     python3 scripts/migrate_db.py --dry-run
     python3 scripts/migrate_db.py --fresh  (wipe and recreate all tables)
 """
@@ -31,7 +31,7 @@ from typing import List, Optional
 # Default DB path (same as core/database.py)
 DEFAULT_DB_PATH = os.environ.get(
     "DB_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "trading_journal.db"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "auto_trader.db"),
 )
 
 log = logging.getLogger(__name__)
@@ -130,10 +130,7 @@ NEW_TABLES = {
 #   trajectory_accuracy, idle_cycles, idle_condition_accuracy,
 #   weight_history, rulebook_versions, challenger_log,
 #   karpathy_log, hyperopt_log, signal_accuracy_by_threshold,
-#   positions, orders, wallet_snapshots, analyzed_calls,
-#   pending_limits, trader_rulebook, trade_hindsight, settings,
-#   import_log, token_usage, optimizer_runs, entry_watcher_recs,
-#   schema_version
+#   token_usage, schema_version
 
 
 def column_exists(cursor: sqlite3.Cursor, table: str, column: str) -> bool:
@@ -414,7 +411,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Database migration script for Auto-Crypto-Tradingjournal (exchange-as-truth)"
+        description="Database migration script for Auto-Trader (exchange-as-truth)"
     )
     parser.add_argument(
         "--db-path", default=DEFAULT_DB_PATH,

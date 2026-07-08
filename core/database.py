@@ -10,6 +10,14 @@ Exchange-as-truth architecture:
   - Learning data tables KEPT (signal_accuracy, combination_accuracy, etc.)
   - New learning tables ADDED (adjusted_weights, adjusted_thresholds, etc.)
 
+Flask-journal legacy tables REMOVED (positions, orders, wallet_snapshots,
+analyzed_calls, pending_limits, trader_rulebook, trader_rulebook_history,
+trade_hindsight, settings, import_log, optimizer_runs, entry_watcher_recs)
+— this was originally a manual trading journal fork; the current system is
+fully automated, no manual trading was ever deployed against this schema.
+Also removed: trade_learning.trade_id column (dangling FK to removed
+positions table, never populated by any INSERT).
+
 The substrate is a cache of exchange state. It is rebuilt fresh on every
 startup and reconciled from the exchange every cycle. No persistence needed.
 """
@@ -26,7 +34,7 @@ _log = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get(
     "DB_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "data/trading_journal.db"),
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "data/auto_trader.db"),
 )
 
 SCHEMA_VERSION = 1  # Bump when adding new migrations
@@ -92,224 +100,9 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
     # If the DB is existing, IF NOT EXISTS skips already-present tables,
     # and _apply_migration handles ALTERs for columns added later.
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS positions (
-            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol                 TEXT    NOT NULL,
-            base_asset             TEXT    NOT NULL,
-            direction              TEXT    NOT NULL,
-            margin_mode            TEXT,
-            open_time              TEXT    NOT NULL,
-            close_time             TEXT    NOT NULL,
-            duration_minutes       INTEGER,
-            entry_price            REAL,
-            close_price            REAL,
-            size_contracts         TEXT,
-            size_usdt              REAL,
-            position_pnl           REAL,
-            realized_pnl           REAL,
-            opening_fee            REAL,
-            closing_fee            REAL,
-            total_fees             REAL,
-            notes                  TEXT    DEFAULT '',
-            tags                   TEXT    DEFAULT '',
-            is_manual              INTEGER DEFAULT 0,
-            analyst                TEXT    DEFAULT '',
-            execution_grade        TEXT,
-            execution_grade_reason TEXT,
-            setup_type             TEXT    DEFAULT '',
-            call_id                INTEGER,
-            external_id            TEXT,
-            exchange               TEXT    DEFAULT 'bitget',
-            leverage               INTEGER,
-            market_regime          TEXT,
-            mfe_price              REAL,
-            mae_price              REAL,
-            mfe_pct                REAL,
-            mae_pct                REAL,
-            setup_score            INTEGER,
-            funding_pnl            REAL,
-            signal_price           REAL,
-            execution_lag_minutes  INTEGER,
-            created_at             TEXT    DEFAULT (datetime('now')),
-            updated_at             TEXT    DEFAULT (datetime('now'))
-        )
-    """)
+    # ── token_usage ─────────────────────────────────────────────────────
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS orders (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_id         TEXT    UNIQUE,
-            date             TEXT,
-            direction        TEXT,
-            symbol           TEXT,
-            order_source     TEXT,
-            transaction_type TEXT,
-            price            REAL,
-            avg_price        REAL,
-            order_amount     REAL,
-            executed          REAL,
-            trading_volume   REAL,
-            realized_pnl     REAL,
-            net_profits      REAL,
-            status           TEXT,
-            position_id      INTEGER REFERENCES positions(id)
-        )
-    """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS wallet_snapshots (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_ref      TEXT,
-            date           TEXT,
-            symbol         TEXT,
-            futures        TEXT,
-            margin_mode    TEXT,
-            type           TEXT,
-            amount         REAL,
-            fee            REAL,
-            wallet_balance REAL
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS analyzed_calls (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol              TEXT    NOT NULL,
-            direction           TEXT    NOT NULL,
-            call_text           TEXT,
-            entry_price         REAL,
-            dca_price           REAL,
-            sl_price            REAL,
-            tp1_price           REAL,
-            tp2_price           REAL,
-            avg_entry           REAL,
-            total_notional      REAL,
-            margin_needed       REAL,
-            risk_pct            REAL,
-            risk_amount         REAL,
-            leverage            INTEGER,
-            has_dca             INTEGER DEFAULT 0,
-            has_candle_close_sl INTEGER DEFAULT 0,
-            setup_score         INTEGER,
-            setup_label         TEXT,
-            rr_ratio            TEXT,
-            trade_type          TEXT,
-            sl_warning          TEXT,
-            entry_timing        TEXT,
-            analysis_json       TEXT,
-            status              TEXT    DEFAULT 'saved',
-            matched_at          TEXT,
-            exchange            TEXT    DEFAULT 'bitget',
-            cot_reasoning       TEXT,
-            analyst             TEXT    DEFAULT '',
-            notes               TEXT    DEFAULT '',
-            outcome             TEXT,
-            outcome_pnl         REAL,
-            hit_tp1             INTEGER DEFAULT 0,
-            hit_tp2             INTEGER DEFAULT 0,
-            hit_sl              INTEGER DEFAULT 0,
-            outcome_at          TEXT,
-            gemini_score        INTEGER,
-            consensus_score     REAL,
-            consensus_flag      TEXT,
-            risk_verdict_json   TEXT,
-            monitor_alert       INTEGER DEFAULT 0,
-            chart_png_b64       TEXT,
-            regime_label        TEXT,
-            ml_win_prob         REAL,
-            created_at          TEXT    DEFAULT (datetime('now'))
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS pending_limits (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            call_id         INTEGER REFERENCES analyzed_calls(id) ON DELETE SET NULL,
-            symbol          TEXT NOT NULL,
-            direction       TEXT NOT NULL,
-            limit_price     REAL NOT NULL,
-            size_usdt       REAL,
-            leverage        INTEGER DEFAULT 10,
-            sl_price        REAL,
-            tp1_price       REAL,
-            tp2_price       REAL,
-            analyst         TEXT DEFAULT '',
-            status          TEXT DEFAULT 'waiting',
-            triggered_at    TEXT,
-            analysis_json   TEXT,
-            notes           TEXT DEFAULT '',
-            bitget_order_id TEXT,
-            created_at      TEXT DEFAULT (datetime('now'))
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS trader_rulebook (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            rule_type    TEXT NOT NULL,
-            title        TEXT NOT NULL,
-            rule         TEXT NOT NULL,
-            confidence   TEXT DEFAULT 'medium',
-            data_points  INTEGER DEFAULT 0,
-            generated_at TEXT DEFAULT (datetime('now'))
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS trader_rulebook_history (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            version     INTEGER NOT NULL,
-            rules_json  TEXT    NOT NULL,
-            trade_count INTEGER,
-            saved_at    TEXT    DEFAULT (datetime('now'))
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS trade_hindsight (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            position_id      INTEGER UNIQUE REFERENCES positions(id),
-            analyzed_at      TEXT DEFAULT (datetime('now')),
-            setup_score      INTEGER,
-            setup_label      TEXT,
-            would_enter      INTEGER,
-            rec_direction    TEXT,
-            direction_match  INTEGER,
-            rec_entry_low    REAL,
-            rec_entry_high   REAL,
-            rec_sl           REAL,
-            rec_tp1          REAL,
-            rec_tp2          REAL,
-            rec_rr           TEXT,
-            key_conditions   TEXT,
-            risks            TEXT,
-            skip_reason      TEXT,
-            actual_pnl       REAL,
-            hypothetical_pnl REAL,
-            verdict          TEXT,
-            analysis_json    TEXT,
-            input_tokens     INTEGER,
-            output_tokens    INTEGER
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key   TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS import_log (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename       TEXT,
-            file_type       TEXT,
-            rows_imported  INTEGER,
-            imported_at    TEXT DEFAULT (datetime('now'))
-        )
-    """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS token_usage (
@@ -323,51 +116,13 @@ def _init_db_inner(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS optimizer_runs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts          TEXT    NOT NULL DEFAULT (datetime('now')),
-            symbol      TEXT    NOT NULL,
-            timeframe   TEXT    NOT NULL,
-            days        INTEGER NOT NULL,
-            n_trials    INTEGER NOT NULL,
-            best_sharpe REAL,
-            best_params TEXT,
-            duration_sec REAL
-        )
-    """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS entry_watcher_recs (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol            TEXT NOT NULL,
-            direction         TEXT NOT NULL,
-            alert_type        TEXT NOT NULL,
-            entry_low         REAL,
-            entry_high        REAL,
-            sl_price          REAL,
-            tp1_price         REAL,
-            tp2_price         REAL,
-            score             REAL,
-            archetype         TEXT,
-            rationale         TEXT,
-            key_conditions    TEXT,
-            status            TEXT DEFAULT 'active',
-            invalidation_reason TEXT,
-            replaced_by       TEXT,
-            created_at        TEXT DEFAULT (datetime('now')),
-            expires_at        TEXT,
-            invalidated_at    TEXT,
-            analysis_json     TEXT
-        )
-    """)
 
     # ── Learning tables (final form) ────────────────────────────────────────────
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS trade_learning (
             id                          INTEGER PRIMARY KEY AUTOINCREMENT,
-            trade_id                    INTEGER REFERENCES positions(id),
             symbol                      TEXT NOT NULL,
             direction                   TEXT NOT NULL,
             strategy_name               TEXT NOT NULL,

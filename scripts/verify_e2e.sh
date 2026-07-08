@@ -47,7 +47,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-DB_PATH="${DB_PATH:-trading_journal.db}"
+DB_PATH="${DB_PATH:-auto_trader.db}"
 LOG_FILE="${LOG_FILE:-logs/auto-trader.log}"
 SERVICE_NAME="auto-trader"
 

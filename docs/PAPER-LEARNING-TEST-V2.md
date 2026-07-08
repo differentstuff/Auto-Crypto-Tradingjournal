@@ -42,17 +42,17 @@ adjustment → better scoring → better trades.
 
 ```bash
 # From the KnowledgeBase staging area to the live project root
-sudo cp /opt/KnowledgeBase/user_workspaces/code/Auto-Crypto-Tradingjournal/config/strategies/paper_v2_learning_test.yaml \
-        /opt/Auto-Crypto-Tradingjournal/config/strategies/
+sudo cp /opt/KnowledgeBase/user_workspaces/code/Auto-Trader/config/strategies/paper_v2_learning_test.yaml \
+        /opt/Auto-Trader/config/strategies/
 
-sudo cp /opt/KnowledgeBase/user_workspaces/code/Auto-Crypto-Tradingjournal/auto-trader-learning-v2.service \
-        /opt/Auto-Crypto-Tradingjournal/auto-trader-learning-v2.service
+sudo cp /opt/KnowledgeBase/user_workspaces/code/Auto-Trader/auto-trader-learning-v2.service \
+        /opt/Auto-Trader/auto-trader-learning-v2.service
 ```
 
 ### 2.2 One-time setup (if not already done)
 
 ```bash
-cd /opt/Auto-Crypto-Tradingjournal
+cd /opt/Auto-Trader
 
 # Create venv if it doesn't exist
 python3 -m venv venv
@@ -66,7 +66,7 @@ python3 -c "from core.database import init_db; init_db()"
 ### 2.3 Quick smoke test (single cycle, ~30s)
 
 ```bash
-cd /opt/Auto-Crypto-Tradingjournal
+cd /opt/Auto-Trader
 source venv/bin/activate
 python3 main.py --paper --strategy paper_v2_learning_test --cycle-once --log-level INFO
 ```
@@ -81,10 +81,10 @@ Check the last few lines for:
 
 ```bash
 # Create log dir if needed
-sudo -u trader mkdir -p /opt/Auto-Crypto-Tradingjournal/logs
+sudo -u trader mkdir -p /opt/Auto-Trader/logs
 
 # Install service file
-sudo cp /opt/Auto-Crypto-Tradingjournal/auto-trader-learning-v2.service \
+sudo cp /opt/Auto-Trader/auto-trader-learning-v2.service \
         /etc/systemd/system/auto-trader-learning-v2.service
 
 # Reload systemd, enable, start
@@ -104,11 +104,11 @@ to grep and tail later.
 
 ```bash
 # Primary log file (rotating, 10MB × 5 backups)
-tail -n 100 /opt/Auto-Crypto-Tradingjournal/logs/auto-trader.log
+tail -n 100 /opt/Auto-Trader/logs/auto-trader.log
 
 # systemd stdout/stderr (append-only, easier to grep for "ERROR" or "Updated")
-sudo tail -n 100 /opt/Auto-Crypto-Tradingjournal/logs/v2-learning-stdout.log
-sudo grep -i "error\|exception\|traceback" /opt/Auto-Crypto-Tradingjournal/logs/v2-learning-stderr.log
+sudo tail -n 100 /opt/Auto-Trader/logs/v2-learning-stdout.log
+sudo grep -i "error\|exception\|traceback" /opt/Auto-Trader/logs/v2-learning-stderr.log
 ```
 
 ### 2.6 Stop / restart / switch strategy
@@ -140,10 +140,10 @@ staging area.
 ### 3.1 Quick status check (run after 24h)
 
 ```bash
-cd /opt/Auto-Crypto-Tradingjournal
+cd /opt/Auto-Trader
 
 # How many closed trades so far?
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   SELECT COUNT(*) AS closed_trades
   FROM trade_learning
   WHERE strategy_name = 'paper_v2_learning_test'
@@ -151,7 +151,7 @@ sqlite3 data/trading_journal.db "
 "
 
 # Current equity (from last substrate snapshot)
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   SELECT json_extract(substrate_json, '$.portfolio.equity') AS equity
   FROM substrate_state
   WHERE strategy_name = 'paper_v2_learning_test'
@@ -169,7 +169,7 @@ closed trade. If equity is exactly 1000.00, no trade has closed yet.
 ### 3.2 L1: Signal accuracy verdicts (target: day 2-3)
 
 ```bash
-sqlite3 -header -column data/trading_journal.db "
+sqlite3 -header -column data/auto_trader.db "
   SELECT
     indicator_name,
     total_fired,
@@ -194,7 +194,7 @@ sqlite3 -header -column data/trading_journal.db "
 ### 3.3 L2: Weight adjustments (target: day 3-4)
 
 ```bash
-sqlite3 -header -column data/trading_journal.db "
+sqlite3 -header -column data/auto_trader.db "
   SELECT
     indicator_name,
     ROUND(old_weight, 4) AS old_w,
@@ -218,7 +218,7 @@ sqlite3 -header -column data/trading_journal.db "
 ### 3.4 L3: Rulebook generation (target: day 4-5)
 
 ```bash
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   SELECT rulebook_text
   FROM rulebook_versions
   WHERE strategy_uid = 'b2c3d4e5-6789-0abc-def1-2345678901bc'
@@ -234,7 +234,7 @@ sqlite3 data/trading_journal.db "
 ### 3.5 Combination accuracy (bonus)
 
 ```bash
-sqlite3 -header -column data/trading_journal.db "
+sqlite3 -header -column data/auto_trader.db "
   SELECT
     combination_name,
     direction_state,
@@ -253,7 +253,7 @@ sqlite3 -header -column data/trading_journal.db "
 ### 3.6 Trade equity curve (visual)
 
 ```bash
-sqlite3 -header -column data/trading_journal.db "
+sqlite3 -header -column data/auto_trader.db "
   SELECT
     exit_time,
     direction,
@@ -274,12 +274,12 @@ sqlite3 -header -column data/trading_journal.db "
 A script that checks L1, L2, L3 and generates charts:
 
 ```bash
-cd /opt/Auto-Crypto-Tradingjournal
+cd /opt/Auto-Trader
 source venv/bin/activate
 python3 scripts/verify_learning.py \
   --strategy paper_v2_learning_test \
   --uid b2c3d4e5-6789-0abc-def1-2345678901bc \
-  --db data/trading_journal.db
+  --db data/auto_trader.db
 ```
 
 Outputs:
@@ -331,7 +331,7 @@ signals should get negative weights in `weight_history`.
 To wipe learning data and start over:
 
 ```bash
-sqlite3 /opt/Auto-Crypto-Tradingjournal/data/trading_journal.db "
+sqlite3 /opt/Auto-Trader/data/auto_trader.db "
   DELETE FROM trade_learning WHERE strategy_name = 'paper_v2_learning_test';
   DELETE FROM signal_accuracy WHERE strategy_uid = 'b2c3d4e5-6789-0abc-def1-2345678901bc';
   DELETE FROM combination_accuracy WHERE strategy_uid = 'b2c3d4e5-6789-0abc-def1-2345678901bc';

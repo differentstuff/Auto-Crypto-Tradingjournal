@@ -5,6 +5,11 @@ Exchange-as-truth: substrate_state and cycle_log tables are DROPPED.
 No save_substrate, load_latest_substrate, or save_cycle_log functions.
 New tables: position_metadata, adjusted_weights, adjusted_thresholds,
 suppressed_signals, highlight_signals, challenger_state.
+
+Flask-journal legacy: positions, orders, wallet_snapshots, analyzed_calls,
+pending_limits, trader_rulebook, trader_rulebook_history, trade_hindsight,
+settings, import_log, optimizer_runs, entry_watcher_recs tables REMOVED.
+trade_learning.trade_id column (dangling FK to removed positions) REMOVED.
 """
 
 import os
@@ -28,11 +33,8 @@ class TestDatabaseInit:
             ).fetchall()
             table_names = [t["name"] for t in tables]
 
-            # Legacy tables
-            for expected in ["positions", "orders", "wallet_snapshots",
-                             "analyzed_calls", "pending_limits", "trader_rulebook",
-                             "trade_hindsight", "settings", "import_log", "token_usage"]:
-                assert expected in table_names, f"Missing legacy table: {expected}"
+            # Token usage table (live, previously in legacy block)
+            assert "token_usage" in table_names, "Missing token_usage table"
 
             # Learning tables
             for expected in ["trade_learning", "signal_accuracy", "combination_accuracy",
@@ -46,12 +48,17 @@ class TestDatabaseInit:
                 assert expected in table_names, f"Missing exchange-as-truth table: {expected}"
 
     def test_obsolete_tables_dropped(self, temp_db):
-        """Exchange-as-truth: substrate_state and cycle_log tables are dropped."""
+        """Exchange-as-truth and Flask-journal legacy: removed tables are absent."""
         with db_conn() as conn:
             tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('substrate_state', 'cycle_log')"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+                "('substrate_state', 'cycle_log', 'positions', 'orders', "
+                "'wallet_snapshots', 'analyzed_calls', 'pending_limits', "
+                "'trader_rulebook', 'trader_rulebook_history', 'trade_hindsight', "
+                "'settings', 'import_log', 'optimizer_runs', 'entry_watcher_recs')"
             ).fetchall()
-            assert len(tables) == 0, "substrate_state and cycle_log should be dropped"
+            assert len(tables) == 0, \
+                "substrate_state, cycle_log, and Flask-journal legacy tables should be dropped"
 
     def test_init_idempotent(self, temp_db):
         """Calling init_db multiple times is safe."""

@@ -190,7 +190,7 @@ indicators/               Indicator computations + registry
 learning/                 Accuracy, combinations, trajectory, weight adjuster, rulebook
 llm/                      Multi-provider router, key manager, prompt builder
 tools/                    Utility scripts
-scripts/                  backup_db.sh, migrate_db.py, self_test.py, verify_e2e.sh
+scripts/                  backup_db.sh, migrate_db.py, verify_e2e.sh
 tests/                    Unit + integration tests
 ```
 

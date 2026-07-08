@@ -1,4 +1,4 @@
-# Auto-Crypto-Tradingjournal
+# Auto-Trader
 
 # API keys and secrets -- NEVER commit (secrets live in .env)
 *.db

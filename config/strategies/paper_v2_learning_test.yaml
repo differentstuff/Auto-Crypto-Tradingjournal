@@ -1,0 +1,233 @@
+# paper_v2_learning_test.yaml -- Fast-iteration paper strategy for learning validation.
+#
+# Purpose: Generate enough trades in 48-72h for the learning engine to produce
+# first weight adjustments, then rulebook entries, with statistically meaningful
+# verdicts by day 7-10.
+#
+# Differences from paper_learning_test.yaml (the long-run 7-14 day test):
+#   - 1h timeframe (vs 4h) → 24 bars/day for trajectory classification
+#   - 5-min cycle (vs 10-min) → faster decision loop, more opportunities
+#   - 7 symbols (vs 5) → more candidates per cycle
+#   - Lower entry threshold (5.0 vs 5.5) → more entries
+#   - Lower confluence_min_signals (2 vs 3) → accept partial confluence
+#   - Lower min_trades_before_adjusting (8 vs 15) → first weight adjustment at ~day 3-4
+#   - Lower min_trades_per_signal (5 vs 10) → verdicts after 5 observations
+#   - Lower retrain_every_n_trades (3 vs 5) → more frequent rulebook updates
+#
+# Statistical guards remain active:
+#   - Wilson score 95% CI on accuracy
+#   - chi-squared p<0.05 for combination significance
+#   - 75% accuracy required for "valid" verdict
+#   - Safety guard: if all signals would be zeroed, keep original weights
+#   - Re-normalization preserves positive weight sum after adjustment
+# This means early verdicts are CONSERVATIVE — a 4/5 = 80% accuracy on 5 trades
+# has a Wilson interval of [38%, 96%], so it won't be called "valid" until more
+# data arrives.
+#
+# Run: python main.py --paper --strategy paper_v2_learning_test
+#
+# Telegram note: modules.telegram_logs and SendTelegramLog enzyme are wired but
+# not implemented (postponed indefinitely). Keep telegram_logs: false.
+
+description: |
+  Fast-iteration paper trading strategy for learning system validation.
+  Tuned for 48-72h validation runs with statistically meaningful verdicts
+  by day 7-10. Uses the same indicators as momentum_rising but with relaxed
+  thresholds to generate more trades per day on 1h candles.
+
+strategy:
+  name: paper_v2_learning_test
+  uid: "b2c3d4e5-6789-0abc-def1-2345678901bc"   # Fixed UID — learning data keyed to this
+  timeframe: "1h"
+  confirmation_tf: null                             # Skip 2nd timeframe, fewer API calls
+  max_positions: 3
+  cycle_interval_minutes: 5
+
+symbols:
+  mode: "static"                    # "static" = always_watch only (no dynamic filtering)
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - XRPUSDT
+  never_trade: []
+  dynamic_filter:
+    universe_source: "exchange"     # fetch all USDT-M perps from Bitget API
+    limit: 0                        # 0 = no dynamic symbols (static mode)
+    min_volume_24h_usd: 5000000           # no volume filter
+    min_open_interest_usd: 1000000        # no OI filter
+    min_r_squared: 0.15             # minimum R² for momentum quality
+    refresh_interval_hours: 4       # how often to re-fetch universe and re-rank
+
+indicators:
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.25
+    description: "RSI overbought/oversold. Look for divergence at structure."
+
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.25
+    description: "MACD histogram rising = momentum building. Cross above signal = bullish."
+
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.30
+    description: "EMA stack alignment confirms trend direction."
+
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.20
+    description: "ADX confirms trend strength. Avoid entries when ADX < 15."
+
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR for SL sizing. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "S/R levels for entry zone validation. Not a directional signal."
+
+scoring:
+  entry_threshold: 5.0              # Lower than 5.5/6.5 for more entries
+  confluence_min_signals: 2         # Accept partial confluence (vs 3)
+  rr_minimum: 1.5                   # Keep moderate
+  min_candidate_pct: 0.20
+  rsi_signal_high: 55
+  rsi_signal_low: 45
+  momentum_cap: 1.5
+  momentum_dampening: 0.5
+  modifier_weights:
+    volume: 0.15
+    cvd: 0.1
+    order_flow: 0.1
+  label_thresholds:
+    strong: 0.60
+    weak: 0.33
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 1.5
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 0.5
+    trail_atr_multiplier: 1.0
+    breakeven_at_activation: true
+    distance_pct: 1.0
+    move_to_breakeven_at_pct: 1.5
+  # ── Structure-aware exits (disabled for learning test) ──
+  structure_aware_exits: false
+  structure_break_exit: true
+  phase_range_exit: true
+  counter_breakout_exit: true
+  deep_pullback_stop_multiplier: 0.5
+  shallow_pullback_stop_multiplier: 1.0
+  # ── Progressive trailing stop (disabled for learning test) ──
+  progressive_trail: false
+  progressive_trail_schedule:
+    0: 1.0
+    1: 0.75
+    2: 0.5
+    3: 0.25
+  pullback_trail_tighten: 0.75
+  deep_pullback_trail_tighten: 0.5
+  soft_exit:
+    requires_indicators_reversed: 2
+    requires_confirmation_tf: false
+    urgency: "soft"
+  soft_reversal_profit_threshold: 0.5
+  near_sl_urgency_pct: 0.5
+
+# ── Structure detection config ────────────────────────────────────────────────
+structure:
+  swing_lookback: 5
+  min_swing_points: 4
+  trend_violation_tolerance_pct: 0.5
+
+learning:
+  min_trades_before_adjusting: 8    # Lower from 15 → first weight adjustment at ~day 3-4
+  min_trades_per_signal: 5          # Lower from 10 → verdicts after 5 observations
+  significance_level: 0.05
+  rulebook_max_rules: 10
+  retrain_every_n_trades: 3         # Lower from 5 → more frequent rulebook updates
+  track_idle_cycles: true
+  trajectory_lookback_hours: 24     # 1h * 24 = 24 bars lookback (matches 1h TF)
+  trajectory_min_hours: 4
+  trajectory_thresholds:
+    stable_consensus: 10
+    gradual_alignment: 8
+    earlier_min: 3
+    recent_min: 2
+    earlier_low: 2
+    min_alignment: 4
+  contrarian_win_rate: 30.0
+  highlight_threshold: 75.0
+  monitor_low_threshold: 55.0
+  suppress_range: [45.0, 55.0]
+  contrarian_threshold: 30.0
+
+portfolio:
+  max_positions: 3
+  risk_per_trade_pct: 1.0
+  leverage: 5
+  max_total_risk_pct: 3.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: false
+  max_same_direction: 3
+  volatility_cap_pct: 20.0              # Volatility backstop (ATR%-based, asset-price-agnostic)
+  max_notional_exposure_pct: 100.0      # Hard ceiling on notional exposure (flash crash protection)
+
+risk:
+  kelly_min: 0.05
+  kelly_max: 0.25
+  kelly_win_rate_base: 0.35
+  kelly_win_rate_range: 0.40
+  kelly_avg_win_r: 2.0
+  max_size_pct_of_equity: 25.0
+  min_size_pct_of_equity: 5.0
+
+noise:
+  conflict_max_ratio: 0.5
+  volume_low_ratio: 0.7
+  volume_very_low_ratio: 0.5
+  adx_no_trend: 15
+  adx_overextended: 40
+  noise_severity_min_reasons: 2
+
+telegram:
+  idle_notify_every: 10
+
+modules:
+  macro_context: false
+  regime_detection: false
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false           # ⚠️ NOT IMPLEMENTED — postponed indefinitely
+  telegram_interaction: false    # ⚠️ NOT IMPLEMENTED — postponed indefinitely
+
+# LLM override for this strategy
+# enabled: true → LLM validates entry zones (costs ~$0.29/day)
+# relax_factor: 0.8 → candidates scoring 4.0-5.0 get LLM review
+#   If LLM says "proceed", trade is allowed despite sub-threshold score.
+#   Set to 1.0 to disable override (only above-threshold trades).
+llm:
+  enabled: false
+  relax_factor: 0.8

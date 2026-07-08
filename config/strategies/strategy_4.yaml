@@ -1,0 +1,340 @@
+# strategy_4.yaml -- EMA-Trend-Following strategy (long + short)
+# ────────────────────────────────────────────────────────────────────
+# EMA stack is the PRIMARY signal — structure drives entries, not momentum.
+# Key differences from momentum_rising_v2:
+#   - EMA stack is primary (weight 0.40), not MACD
+#   - ADX is strong cofactor (weight 0.25) — only enter in confirmed trends
+#   - MACD is secondary confirmation (weight 0.20) — not the driver
+#   - RSI is safety valve (weight 0.15) — avoid extremes
+#   - Longer timeframe: 4h primary, 1d confirmation — catches macro moves
+#   - Wider stops (2.0x ATR) — trends need room to breathe
+#   - More positions (5) — diversification across multiple trends
+#   - Lower leverage (3x) — longer holds = more overnight exposure
+#   - Slower cycle (30 min) — 4h candles don't need fast polling
+#   - Higher entry threshold (6.5) — only strong structural setups
+#
+# Enzyme analogy: EMA alignment is the substrate (structural trend = the
+# signal transformed into a trade). ADX is the essential cofactor — it
+# must confirm trend existence. MACD confirms momentum direction.
+# RSI prevents entries at exhaustion.
+
+description: |
+  EMA-primary trend-following strategy for both long and short entries.
+
+  Philosophy: Trade WITH the structure, not the momentum.
+  EMA stack alignment = the trend IS your friend. ADX confirms the trend
+  is real. MACD confirms momentum aligns with structure. RSI prevents
+  chasing exhausted moves.
+
+  Entry logic:
+    - EMA stack alignment = PRIMARY signal (weight 0.40)
+      Full alignment (21 > 55 > 200) = strong bullish structure.
+      Partial alignment still contributes — early trend formation.
+    - ADX > 25 = strong trend cofactor (weight 0.25)
+      Only enter when the trend has genuine strength.
+      ADX scales contribution — stronger trend = higher conviction.
+    - MACD direction = momentum confirmation (weight 0.20)
+      MACD must align with EMA direction. Fading MACD penalized.
+    - RSI as safety valve (weight 0.15)
+      Avoid longs above 70, shorts below 30.
+
+  Timeframe: 1h primary Macro moves, fewer whipsaws.
+  Wider stops (2.0x ATR) — trends need room.
+  Lower leverage (3x) — longer holds, more exposure.
+  Up to 5 concurrent positions across different trending assets.
+
+strategy:
+  name: strategy_4
+  uid: "0a79d098-e7a8-4af1-99b0-d79712340a39" #Fresh UID — no prior learning data
+  timeframe: "1h"
+  confirmation_tf: null                # neutralized (Fix 3) — code stays, kill-switch no-ops when null
+  max_positions: 5                      # diversification across multiple trends
+  cycle_interval_minutes: 30          # 4h/2 = 120 min (Fix 5)
+  direction_mode: "both"               # Fix 4: allow both long and short
+  long_weight: 1.0                     # Fix 4: no weight penalty for longs
+  short_weight: 1.0                    # Fix 4: no weight penalty for shorts
+  reentry_cooldown_candles: 2          # Fix 2: wait 2 candles after close before re-entry
+  reentry_require_signal_confirm: true # Fix 2: require fresh signal after cooldown
+
+daemon:
+  jitter_seconds: 45             # wider jitter for slower cycle
+
+symbols:
+  mode: "static"                     # always_watch + dynamic top-N
+  always_watch:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - SHIBUSDT
+    - HYPEUSDT
+    - ETCUSDT
+  never_trade:
+    - BOMEUSDT
+  dynamic_filter:
+    universe_source: "exchange"
+    limit: 20                           # more symbols — diversification
+    min_volume_24h_usd: 20000000        # higher volume threshold — liquid trends only
+    min_open_interest_usd: 5000000      # higher OI threshold — institutional presence
+    min_r_squared: 0.20                 # stricter R² — only clean trends
+    refresh_interval_hours: 6           # refresh less often — 4h candles change slowly
+
+indicators:
+  # ── PRIMARY signal ──────────────────────────────────────────────
+  - name: "ema_stack"
+    params:
+      periods: [21, 55, 200]
+    weight: 0.40
+    description: "PRIMARY: EMA 21 above 55 above 200 = bullish structure. Full alignment = strong trend. Partial alignment = trend forming. This is the structural substrate — the trend itself."
+
+  # ── Trend strength cofactor ──────────────────────────────────────
+  - name: "adx"
+    params:
+      period: 14
+    weight: 0.25
+    description: "COFACTOR: ADX measures trend strength. ADX > 25 = strong trend (high conviction). ADX < 20 = weak/no trend (avoid). Scales contribution — stronger trend = higher score."
+
+  # ── Momentum confirmation ───────────────────────────────────────
+  - name: "macd"
+    params:
+      fast: 12
+      slow: 26
+      signal: 9
+    weight: 0.20
+    description: "CONFIRMATION: MACD must align with EMA direction. Growing histogram = momentum supports the structural trend. Fading histogram penalized (0.3 multiplier) — trend may be weakening."
+
+  # ── Safety valve ────────────────────────────────────────────────
+  - name: "rsi"
+    params:
+      period: 14
+    weight: 0.15
+    description: "SAFETY: RSI above 55 contributes bullish, below 45 bearish. Dead-band 45-55 = neutral. Prevents entries at exhaustion — RSI > 70 adds risk to longs, RSI < 30 adds risk to shorts."
+
+  # ── Non-scoring indicators (weight 0) ───────────────────────────
+  - name: "atr"
+    params:
+      period: 14
+    weight: 0.0
+    description: "ATR determines stop loss width and entry zone size. Not a directional signal."
+
+  - name: "sr_levels"
+    params:
+      tolerance: 0.004
+      min_touches: 3
+    weight: 0.0
+    description: "Support and resistance levels define entry zones. Require at least 3 touches for validity."
+
+  - name: "momentum_quality"
+    params:
+      ranking_window: 90
+      min_r_squared: 0.20
+      lookback_short: 30
+      lookback_long: 90
+      r_squared_high: 0.5
+      r_squared_low: 0.3
+    weight: 0.0
+    description: "Momentum quality ranking (slope × R²) for dynamic symbol filter. Higher min_r_squared = only clean trends."
+
+scoring:
+  entry_threshold: 5.5                # higher threshold — only strong structural setups
+  confluence_min_signals: 3            # EMA + ADX + one more — need full alignment
+  rr_minimum: 2.5                      # wider stops need better R:R to compensate
+  min_candidate_pct: 0.25              # higher bar — fewer but better candidates
+  rsi_signal_high: 55
+  rsi_signal_low: 40                    # Fix 4: wider bearish signal band (was 45)
+  momentum_cap: 1.5
+  momentum_dampening: 0.5
+  modifier_weights:
+    volume: 0.20                        # volume more important for trend confirmation
+    cvd: 0.1
+    order_flow: 0.1
+  label_thresholds:
+    strong: 0.60
+    weak: 0.33
+  score_calibration:
+    suppress_below_pct: 55
+    highlight_above_pct: 75
+    review_range_pct: [55, 60]
+  # ── Formula overrides ────────────────────────────────────────────
+  # EMA-driven strategy: full alignment is the key signal.
+  # Fading MACD penalized harder — trend must be confirmed by momentum.
+  # Partial EMA alignment still contributes (0.5) — early trends are valid.
+  formula:
+    macd_aligned_fading: 0.3           # penalize fading MACD — trend weakening
+    ema_full_alignment: 1.2            # boost full alignment — this IS the primary
+
+exit_rules:
+  hard_stop:
+    placement: "below_support"
+    width_atr_multiplier: 2.0           # WIDER stops — trends need room
+    always_active: true
+  trailing_stop:
+    enabled: true
+    activation_profit_pct: 1.0          # activate later — let the trend develop
+    trail_atr_multiplier: 1.5          # wider trail — don't get stopped out by noise
+    breakeven_at_activation: true
+    distance_pct: 1.5                  # wider trailing distance
+    move_to_breakeven_at_pct: 2.0      # move to BE later — more room
+  # ── Structure-aware exits ─────────────────────────────────────────
+  structure_aware_exits: true
+  structure_break_exit: true           # exit on structure break — critical for trend following
+  phase_range_exit: true               # exit when phase shifts to range — trend is over
+  counter_breakout_exit: true          # exit on counter-structure breakout
+  deep_pullback_stop_multiplier: 0.75  # less aggressive tightening — trends have deep pullbacks
+  shallow_pullback_stop_multiplier: 1.0
+  # ── Progressive trailing stop ─────────────────────────────────────
+  progressive_trail: true
+  progressive_trail_schedule:           # slower tightening — ride the trend longer
+    0: 1.5                              # at entry: 1.5x ATR (wider)
+    1: 1.0                              # at +1x ATR profit: 1x ATR
+    2: 0.75                             # at +2x ATR profit: 0.75x
+    3: 0.5                              # at +3x ATR profit: 0.5x
+    4: 0.25                             # at +4x ATR profit: 0.25x
+  pullback_trail_tighten: 0.85          # less aggressive pullback tightening
+  deep_pullback_trail_tighten: 0.65     # moderate deep pullback tightening
+  soft_exit:
+    requires_indicators_reversed: 3      # need 3 indicators reversed — trend changes are gradual
+    requires_confirmation_tf: true       # daily TF must confirm reversal
+    urgency: "soft"
+  soft_reversal_profit_threshold: 1.0   # ignore reversals when profit > 1%
+  near_sl_urgency_pct: 0.5
+  # ── Take-profit partials ──────────────────────────────────────────
+  tp1_sell_pct: 30.0              # smaller TP1 — let more of the position ride the trend
+  tp2_sell_pct: 30.0              # smaller TP2 — keep remainder for trailing
+
+# ── Structure detection config ────────────────────────────────────────────────
+structure:
+  swing_lookback: 7                     # more bars — cleaner swing detection on 4h
+  min_swing_points: 5                   # more swings needed — stronger structure
+  trend_violation_tolerance_pct: 0.8    # more tolerance — 4h candles have wider ranges
+
+learning:
+  min_trades_before_adjusting: 30
+  min_trades_per_signal: 15
+  significance_level: 0.05
+  rulebook_max_rules: 10
+  retrain_every_n_trades: 10
+  track_idle_cycles: true
+  trajectory_lookback_hours: 96         # longer lookback — 4h candles need more history
+  trajectory_min_hours: 16              # minimum 16h before trajectory is valid
+  trajectory_thresholds:
+    stable_consensus: 10
+    gradual_alignment: 8
+    earlier_min: 3
+    recent_min: 2
+    earlier_low: 2
+    min_alignment: 4
+  contrarian_win_rate: 30.0
+  highlight_threshold: 75.0
+  monitor_low_threshold: 55.0
+  suppress_range: [45.0, 55.0]
+  contrarian_threshold: 30.0
+  adjustment_boost: 1.2
+  adjustment_review_reduce: 0.9
+
+portfolio:
+  max_positions: 5                      # diversification across multiple trends
+  risk_per_trade_pct: 0.8              # lower risk per trade — more positions = more total exposure
+  leverage: 10                           # LOWER leverage — longer holds, overnight risk
+  max_total_risk_pct: 4.0
+  fallback_equity_usdt: 1000.0
+  correlation_check: true
+  max_same_direction: 4                 # allow up to 4 same-direction (trend following is directional)
+  max_same_direction_long: 4           # Fix 4: per-direction cap for longs
+  max_same_direction_short: 4          # Fix 4: per-direction cap for shorts
+  volatility_cap_pct: 15.0              # tighter volatility cap — longer holds can't survive huge swings
+  max_notional_exposure_pct: 80.0       # lower exposure — conservative for long holds
+
+risk:
+  kelly_min: 0.05
+  kelly_max: 0.30                       # lower Kelly max — conservative sizing for trend riding
+  kelly_win_rate_base: 0.40             # higher base win rate — trend following has better win rate
+  kelly_win_rate_range: 0.35           # smaller range — less aggressive scaling
+  kelly_avg_win_r: 2.5                 # higher avg R:R — trends produce bigger winners
+  max_size_pct_of_equity: 20.0          # lower max — more positions = smaller each
+  min_size_pct_of_equity: 5.0          # lower min — many small positions
+
+noise:
+  conflict_max_ratio: 0.4              # stricter — conflicting signals are worse in trends
+  volume_low_ratio: 0.7
+  volume_very_low_ratio: 0.5
+  adx_no_trend: 20                      # higher threshold — trend following needs real trends
+  adx_overextended: 45                  # higher overextended — strong trends can sustain higher ADX
+  noise_severity_min_reasons: 2
+
+telegram:
+  idle_notify_every: 10
+
+macro:
+  vix_risk_off: 25                      # lower threshold — trend following is more sensitive to VIX
+  vix_neutral: 18
+  yfinance_period: "5d"                # longer period — macro context matters more
+  yfinance_interval: "1h"
+
+exchange:
+  ohlcv_limit: 300                      # more candles — 4h needs longer history
+
+validity:
+  - id: ISC-001
+    criterion: "entry_threshold met before any trade opens"
+    verification: "analysis.candidates not empty AND score >= threshold"
+    field: "analysis.candidates"
+    operator: "any_score_gte"
+    value_ref: "scoring.entry_threshold"
+    field_key: "score"
+  - id: ISC-002
+    criterion: "stop loss always set before position opens"
+    verification: "decisions.trade_approved.sl_price > 0"
+    field: "decisions.trade_approved"
+    operator: "sl_set_or_no_trade"
+    value_ref: ""
+    field_key: "sl_price"
+  - id: ISC-003
+    criterion: "position size within risk limit"
+    verification: "trade_approved.size_usdt <= equity * risk_per_trade_pct / 100"
+    field: "decisions.trade_approved"
+    operator: "size_within_risk"
+    value_ref: ""
+    field_key: "size_usdt"
+  - id: ISC-004
+    criterion: "max concurrent positions not exceeded"
+    verification: "portfolio.open_positions count < strategy.max_positions"
+    field: "portfolio.open_positions"
+    operator: "count_lt"
+    value_ref: "strategy.max_positions"
+    field_key: ""
+
+soft_penalties:
+  noise_penalty_ratio: 0.35            # heavier noise penalty — trends hate noise
+  confluence_penalty_ratio: 0.35       # heavier confluence penalty — need full alignment
+  trajectory_penalty_ratio: 0.5
+  trajectory_medium_ratio: 0.2
+
+challenger:
+  enabled: false
+  min_trades: 5
+  min_improvement: 0.1
+
+karpathy:
+  enabled: false
+  step_size: 0.05
+  max_experiments_per_cycle: 1
+
+hyperopt:
+  enabled: false
+  n_trials: 100
+  top_n_candidates: 3
+  search_interval_hours: 24
+
+modules:
+  macro_context: true                   # ENABLED — macro context matters for trend following
+  regime_detection: true                # ENABLED — avoid ranging markets at all costs
+  sentiment: false
+  onchain: false
+  liquidation: false
+  model_consensus: false
+  telegram_logs: false
+  telegram_interaction: false
+
+llm:
+  enabled: false
+  relax_factor: 0.8

@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-DB="${DB_PATH:-trading_journal.db}"
+DB="${DB_PATH:-auto_trader.db}"
 BACKUP_DIR="${BACKUP_DIR:-backups}"
 KEEP="${KEEP_BACKUPS:-7}"
 
@@ -25,7 +25,7 @@ if [[ ! -f "$DB" ]]; then
 fi
 
 TS=$(date +%Y%m%d_%H%M%S)
-DEST="$BACKUP_DIR/trading_journal_$TS.db"
+DEST="$BACKUP_DIR/auto_trader_$TS.db"
 
 # .backup is safe during live reads (uses SQLite online backup API)
 if sqlite3 "$DB" ".backup '$DEST'" 2>/dev/null; then
@@ -37,7 +37,7 @@ else
 fi
 
 # Keep only the N most recent backups
-ls -t "$BACKUP_DIR"/trading_journal_*.db 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
+ls -t "$BACKUP_DIR"/auto_trader_*.db 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
 
-REMAINING=$(ls -1 "$BACKUP_DIR"/trading_journal_*.db 2>/dev/null | wc -l)
+REMAINING=$(ls -1 "$BACKUP_DIR"/auto_trader_*.db 2>/dev/null | wc -l)
 echo "OK  Backups kept: $REMAINING (max $KEEP)"

@@ -8,7 +8,7 @@ Generates equity curve, weight evolution, and accuracy bar charts.
 Usage:
     python3 scripts/verify_learning.py --strategy paper_learning_test
     python3 scripts/verify_learning.py --strategy paper_learning_test --uid a1b2c3d4-5678-9abc-def0-1234567890ab
-    python3 scripts/verify_learning.py --strategy paper_learning_test --db data/trading_journal.db --output-dir data
+    python3 scripts/verify_learning.py --strategy paper_learning_test --db data/auto_trader.db --output-dir data
 """
 
 import argparse
@@ -23,7 +23,7 @@ from datetime import datetime
 parser = argparse.ArgumentParser(description="Verify learning system results")
 parser.add_argument("--strategy", required=True, help="Strategy name (e.g. paper_learning_test)")
 parser.add_argument("--uid", default=None, help="Strategy UID (defaults to 'legacy')")
-parser.add_argument("--db", default=None, help="Path to trading_journal.db")
+parser.add_argument("--db", default=None, help="Path to auto_trader.db")
 parser.add_argument("--output-dir", default=None, help="Directory for chart PNGs")
 parser.add_argument("--no-charts", action="store_true", help="Skip chart generation (DB queries only)")
 parser.add_argument("--verbose", "-v", action="store_true", help="Show all DB rows, not just summaries")
@@ -34,7 +34,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if args.db:
     DB_PATH = args.db
 else:
-    DB_PATH = os.path.join(PROJECT_ROOT, "data", "trading_journal.db")
+    DB_PATH = os.path.join(PROJECT_ROOT, "data", "auto_trader.db")
 
 OUTPUT_DIR = args.output_dir or os.path.join(PROJECT_ROOT, "data")
 STRATEGY_NAME = args.strategy

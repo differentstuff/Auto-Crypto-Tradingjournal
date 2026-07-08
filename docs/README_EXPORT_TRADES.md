@@ -109,6 +109,6 @@ python -m scripts.time_travel.export_trades --source live
 
 ## Data Source
 
-Reads from `trade_learning` table in `data/trading_journal.db`.
+Reads from `trade_learning` table in `data/auto_trader.db`.
 
 For `time_travel` trades, prices and threshold metadata are stored inside `signals_at_entry_json` (prefixed with `_`) — this script unpacks them automatically. Live trades may not have `_entry_price` / `_exit_price` populated (they come from the exchange fill, not OHLCV).

@@ -117,7 +117,6 @@ auto-trader/
   scripts/
     time_travel.py                # Fast-forward daemon: replay scoring on historical data
     verify_learning.py            # Learning verification script
-    self_test.py                  # End-to-end self-test
   llm/
     key_manager.py                # API key rotation (multi-key per provider, auto-switch on 429/529)
     router.py                     # Cost-aware model selection
@@ -129,11 +128,10 @@ auto-trader/
   tools/
     backtest/                     # Backtesting engine (PBO, deflated Sharpe)
   data/
-    trading_journal.db            # SQLite WAL database
+    auto_trader.db            # SQLite WAL database
   tests/                          # Pytest suite
   scripts/
     verify_learning.py            # Learning verification script
-    self_test.py                  # End-to-end self-test
 ```
 
 ---
@@ -257,7 +255,6 @@ New ISC conditions can be added in strategy YAML without touching Python code.
 **SQLite WAL** — safe for concurrent reads during sync. All migrations are idempotent.
 
 **Key tables:**
-- `positions`, `orders`, `wallet_snapshots` — legacy trade journal
 - `trade_learning` — per-trade signal recording, trajectory, outcome
 - `signal_accuracy` — per-indicator accuracy with Wilson CI, verdicts (production bucket only)
 - `signal_accuracy_by_threshold` — per-indicator per-bucket accuracy (production/exploration), with profit_factor and win_rate
@@ -317,7 +314,7 @@ python3 -m pytest tests/ -v
 - **Pi path:** `/home/<user>/auto-trader`
 - **Dev path:** local clone of this repo
 - **Log file:** `logs/auto-trader.log` (10MB rotating, 5 backups)
-- **Database:** `data/trading_journal.db` — never rsync to Pi, production DB lives on Pi only
+- **Database:** `data/auto_trader.db` — never rsync to Pi, production DB lives on Pi only
 
 ---
 

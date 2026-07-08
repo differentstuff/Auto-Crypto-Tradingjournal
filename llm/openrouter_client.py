@@ -27,8 +27,8 @@ _log = logging.getLogger(__name__)
 
 # Required headers for free-tier eligibility on OpenRouter
 _DEFAULT_HEADERS = {
-    "HTTP-Referer": "https://github.com/anvilfilbert/Auto-Crypto-Tradingjournal",
-    "X-Title": "Trading Journal",
+    "HTTP-Referer": "https://github.com/anvilfilbert/Auto-Trader",
+    "X-Title": "Auto-Trader",
 }
 
 

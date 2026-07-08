@@ -17,7 +17,6 @@ Reuses:
   - db_conn() from database.py
 
 Decision D4: No duplication — reuses existing code.
-Decision D5: This is a core system enhancement, not just a time_travel addon.
 """
 
 from __future__ import annotations

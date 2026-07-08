@@ -38,7 +38,7 @@ If all three hold, the learning loop is closed: trades → accuracy → weight a
 
 ```bash
 # Clone / navigate to project
-cd /opt/Auto-Crypto-Tradingjournal
+cd /opt/Auto-Trader
 
 # Create venv if it doesn't exist
 python3 -m venv venv
@@ -74,22 +74,22 @@ Wants=network-online.target
 Type=simple
 User=trader
 Group=trader
-WorkingDirectory=/opt/Auto-Crypto-Tradingjournal
-ExecStart=/opt/Auto-Crypto-Tradingjournal/venv/bin/python main.py --paper --strategy paper_learning_test
-ExecStopPost=/opt/Auto-Crypto-Tradingjournal/scripts/backup_db.sh
+WorkingDirectory=/opt/Auto-Trader
+ExecStart=/opt/Auto-Trader/venv/bin/python main.py --paper --strategy paper_learning_test
+ExecStopPost=/opt/Auto-Trader/scripts/backup_db.sh
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=/opt/Auto-Crypto-Tradingjournal/.env
+EnvironmentFile=/opt/Auto-Trader/.env
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/Auto-Crypto-Tradingjournal /opt/Auto-Crypto-Tradingjournal/logs /opt/Auto-Crypto-Tradingjournal/data /opt/Auto-Crypto-Tradingjournal/backups
+ReadWritePaths=/opt/Auto-Trader /opt/Auto-Trader/logs /opt/Auto-Trader/data /opt/Auto-Trader/backups
 
 # Logging
-StandardOutput=append:/opt/Auto-Crypto-Tradingjournal/logs/learning-test-stdout.log
-StandardError=append:/opt/Auto-Crypto-Tradingjournal/logs/learning-test-stderr.log
+StandardOutput=append:/opt/Auto-Trader/logs/learning-test-stdout.log
+StandardError=append:/opt/Auto-Trader/logs/learning-test-stderr.log
 
 [Install]
 WantedBy=multi-user.target
@@ -100,7 +100,7 @@ EOF
 
 ```bash
 # Create log directory if needed
-sudo -u trader mkdir -p /opt/Auto-Crypto-Tradingjournal/logs
+sudo -u trader mkdir -p /opt/Auto-Trader/logs
 
 # Reload systemd and start
 sudo systemctl daemon-reload
@@ -113,7 +113,7 @@ sudo systemctl status auto-trader-learning.service
 # Watch live logs
 sudo journalctl -u auto-trader-learning.service -f
 # Or:
-tail -f /opt/Auto-Crypto-Tradingjournal/logs/learning-test-stdout.log
+tail -f /opt/Auto-Trader/logs/learning-test-stdout.log
 ```
 
 ### 2.5 Stop / restart
@@ -142,11 +142,11 @@ All queries below use this UID. Run them after **at least 24 hours** of continuo
 ### 3.1 Quick status check
 
 ```bash
-cd /opt/Auto-Crypto-Tradingjournal
+cd /opt/Auto-Trader
 source venv/bin/activate
 
 # How many closed trades do we have?
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   SELECT COUNT(*) AS closed_trades
   FROM trade_learning
   WHERE strategy_name = 'paper_learning_test'
@@ -154,7 +154,7 @@ sqlite3 data/trading_journal.db "
 "
 
 # Current equity (from last substrate snapshot)
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   SELECT json_extract(substrate_json, '$.portfolio.equity') AS equity
   FROM substrate_state
   WHERE strategy_name = 'paper_learning_test'
@@ -168,7 +168,7 @@ Equity should differ from 1000.00 (the starting value).
 ### 3.2 L1: Signal accuracy verdicts
 
 ```bash
-sqlite3 -header -column data/trading_journal.db "
+sqlite3 -header -column data/auto_trader.db "
   SELECT
     indicator_name,
     total_fired,
@@ -191,7 +191,7 @@ sqlite3 -header -column data/trading_journal.db "
 ### 3.3 L2: Weight adjustments
 
 ```bash
-sqlite3 -header -column data/trading_journal.db "
+sqlite3 -header -column data/auto_trader.db "
   SELECT
     indicator_name,
     ROUND(old_weight, 4) AS old_w,
@@ -213,7 +213,7 @@ sqlite3 -header -column data/trading_journal.db "
 ### 3.4 L3: Rulebook generation
 
 ```bash
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   SELECT rulebook_text
   FROM rulebook_versions
   WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab'
@@ -229,7 +229,7 @@ sqlite3 data/trading_journal.db "
 ### 3.5 Combination accuracy (bonus)
 
 ```bash
-sqlite3 -header -column data/trading_journal.db "
+sqlite3 -header -column data/auto_trader.db "
   SELECT
     combination_name,
     direction_state,
@@ -249,7 +249,7 @@ sqlite3 -header -column data/trading_journal.db "
 
 ```bash
 # Generate a simple ASCII equity chart from closed trades
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   SELECT
     exit_time,
     direction,
@@ -273,7 +273,7 @@ A script that checks L1, L2, L3 and generates charts:
 python3 scripts/verify_learning.py \
   --strategy paper_learning_test \
   --uid a1b2c3d4-5678-9abc-def0-1234567890ab \
-  --db data/trading_journal.db
+  --db data/auto_trader.db
 ```
 
 This script is at `scripts/verify_learning.py`. It outputs:
@@ -319,7 +319,7 @@ A signal with ≤30% accuracy is **not useless** — it's a reliably wrong signa
 To wipe learning data and start over:
 
 ```bash
-sqlite3 data/trading_journal.db "
+sqlite3 data/auto_trader.db "
   DELETE FROM trade_learning WHERE strategy_name = 'paper_learning_test';
   DELETE FROM signal_accuracy WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
   DELETE FROM combination_accuracy WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
