@@ -108,6 +108,69 @@ class TestOutcomeRecorder:
         assert data["strategy"] == "test_strategy"
         assert data["summary"]["total_cycles"] == 1
 
+    def test_pnl_accumulation_across_partial_and_full_close(self):
+        """TP1 partial (profitable) + final close (loss on remaining): whole-trade PnL must sum both legs."""
+        recorder = OutcomeRecorder("test", "2025-01-01", "2025-01-31")
+
+        # 1. Entry
+        substrate = MagicMock()
+        substrate.decisions = {
+            "action": "trade_open",
+            "trade_approved": {
+                "symbol": "BTCUSDT", "direction": "Long",
+                "entry_price": 50000.0, "sl_price": 48000.0,
+                "tp1": 52000.0, "size_usdt": 500.0,
+                "atr_value": 1500.0, "score": 7.5,
+                "entry_fee_usdt": 0.3,
+            },
+        }
+        substrate.portfolio = {"equity": 10000.0, "open_positions": [{"symbol": "BTCUSDT"}]}
+        t1 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t1)
+
+        # 2. TP1 partial close — profitable leg
+        substrate.decisions = {
+            "action": "trade_managed",
+            "exit_approved": {
+                "symbol": "BTCUSDT",
+                "exit_fee_usdt": 0.06,
+                "gross_pnl_usdt": 15.0,
+                "net_pnl_usdt": 14.94,
+            },
+        }
+        t2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t2)
+
+        # 3. Final close — loss on remaining position
+        substrate.decisions = {
+            "action": "trade_closed",
+            "exit_approved": {
+                "symbol": "BTCUSDT", "reason": "trailing_stop_hit",
+                "net_pnl_usdt": -6.18, "gross_pnl_usdt": -6.0,
+                "exit_fee_usdt": 0.12, "exit_price": 49000.0,
+            },
+        }
+        t3 = datetime(2025, 1, 3, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t3)
+
+        trade = recorder._trades[0]
+
+        # Accumulators should contain the sum of both legs
+        assert trade["realized_gross_pnl_usd"] == pytest.approx(15.0 + (-6.0), abs=0.01)
+        assert trade["realized_net_pnl_usd"] == pytest.approx(14.94 + (-6.18), abs=0.01)
+
+        # net_pnl_usd / gross_pnl_usd reflect the whole trade, not just the final leg
+        assert trade["net_pnl_usd"] == pytest.approx(14.94 + (-6.18), abs=0.01)
+        assert trade["gross_pnl_usd"] == pytest.approx(15.0 + (-6.0), abs=0.01)
+
+        # Whole trade is net profitable (14.94 - 6.18 = 8.76 > 0), even though
+        # the final leg alone was a loss — is_winner must be True (regression case)
+        assert trade["is_winner"] is True
+
+        # Fee accumulation still correct
+        assert trade["exit_fees_usd"] == pytest.approx(0.06 + 0.12, abs=0.001)
+        assert trade["total_fees_usd"] == pytest.approx(0.3 + 0.06 + 0.12, abs=0.001)
+
     def test_fee_accumulation_across_partial_and_full_close(self):
         """Entry + TP1 partial + final close: total_fees_usd sums all fees correctly."""
         recorder = OutcomeRecorder("test", "2025-01-01", "2025-01-31")

@@ -66,7 +66,8 @@ class OutcomeRecorder:
                     "atr_value": trade.get("atr_value", 0),
                     "confluence_score": trade.get("score", 0),
                     "entry_fee_usd": trade.get("entry_fee_usdt", None),
-                    # Exit fields filled when exit captured
+                    "realized_gross_pnl_usd": 0.0,
+                    "realized_net_pnl_usd": 0.0,
                     "exit_timestamp": None,
                     "exit_price": None,
                     "exit_reason": None,
@@ -83,32 +84,35 @@ class OutcomeRecorder:
             if exit_approved and self._trades:
                 symbol = exit_approved.get("symbol", "")
                 partial_fee = exit_approved.get("exit_fee_usdt", 0.0) or 0.0
+                partial_gross = exit_approved.get("gross_pnl_usdt", 0.0) or 0.0
+                partial_net = exit_approved.get("net_pnl_usdt", 0.0) or 0.0
                 for trade in reversed(self._trades):
                     if trade["symbol"] == symbol and trade["exit_timestamp"] is None:
                         trade["exit_fees_usd"] = trade.get("exit_fees_usd", 0.0) + partial_fee
+                        trade["realized_gross_pnl_usd"] = trade.get("realized_gross_pnl_usd", 0.0) + partial_gross
+                        trade["realized_net_pnl_usd"] = trade.get("realized_net_pnl_usd", 0.0) + partial_net
                         break
 
         # Capture exit
         elif action == "trade_closed":
             exit_approved = substrate.decisions.get("exit_approved", {})
             if exit_approved and self._trades:
-                # Find the most recent open trade for this symbol
                 symbol = exit_approved.get("symbol", "")
                 for trade in reversed(self._trades):
                     if trade["symbol"] == symbol and trade["exit_timestamp"] is None:
                         trade["exit_timestamp"] = t_cursor.isoformat()
                         trade["exit_reason"] = exit_approved.get("reason", "")
                         trade["exit_price"] = exit_approved.get("exit_price", None)
-                        trade["net_pnl_usd"] = exit_approved.get("net_pnl_usdt", None)
-                        trade["gross_pnl_usd"] = exit_approved.get("gross_pnl_usdt", None)
+                        final_gross = exit_approved.get("gross_pnl_usdt", 0.0) or 0.0
+                        final_net = exit_approved.get("net_pnl_usdt", 0.0) or 0.0
+                        trade["realized_gross_pnl_usd"] = trade.get("realized_gross_pnl_usd", 0.0) + final_gross
+                        trade["realized_net_pnl_usd"] = trade.get("realized_net_pnl_usd", 0.0) + final_net
+                        trade["gross_pnl_usd"] = round(trade["realized_gross_pnl_usd"], 4)
+                        trade["net_pnl_usd"] = round(trade["realized_net_pnl_usd"], 4)
                         final_exit_fee = exit_approved.get("exit_fee_usdt", 0.0) or 0.0
                         trade["exit_fees_usd"] = trade.get("exit_fees_usd", 0.0) + final_exit_fee
                         trade["total_fees_usd"] = (trade.get("entry_fee_usd", 0.0) or 0.0) + trade["exit_fees_usd"]
-                        trade["is_winner"] = (
-                            exit_approved.get("net_pnl_usdt", 0) >= 0
-                            if "net_pnl_usdt" in exit_approved
-                            else None
-                        )
+                        trade["is_winner"] = trade["net_pnl_usd"] >= 0
                         break
 
     def write_results(self, output_dir: Optional[str] = None) -> str:
