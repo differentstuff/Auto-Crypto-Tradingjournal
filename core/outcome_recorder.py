@@ -107,8 +107,9 @@ class OutcomeRecorder:
                         final_net = exit_approved.get("net_pnl_usdt", 0.0) or 0.0
                         trade["realized_gross_pnl_usd"] = trade.get("realized_gross_pnl_usd", 0.0) + final_gross
                         trade["realized_net_pnl_usd"] = trade.get("realized_net_pnl_usd", 0.0) + final_net
+                        entry_fee = trade.get("entry_fee_usd", 0.0) or 0.0
                         trade["gross_pnl_usd"] = round(trade["realized_gross_pnl_usd"], 4)
-                        trade["net_pnl_usd"] = round(trade["realized_net_pnl_usd"], 4)
+                        trade["net_pnl_usd"] = round(trade["realized_net_pnl_usd"] - entry_fee, 4)
                         final_exit_fee = exit_approved.get("exit_fee_usdt", 0.0) or 0.0
                         trade["exit_fees_usd"] = trade.get("exit_fees_usd", 0.0) + final_exit_fee
                         trade["total_fees_usd"] = (trade.get("entry_fee_usd", 0.0) or 0.0) + trade["exit_fees_usd"]
