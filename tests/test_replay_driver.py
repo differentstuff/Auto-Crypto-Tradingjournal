@@ -159,17 +159,125 @@ class TestOutcomeRecorder:
         assert trade["realized_gross_pnl_usd"] == pytest.approx(15.0 + (-6.0), abs=0.01)
         assert trade["realized_net_pnl_usd"] == pytest.approx(14.94 + (-6.18), abs=0.01)
 
-        # net_pnl_usd / gross_pnl_usd reflect the whole trade, not just the final leg
-        assert trade["net_pnl_usd"] == pytest.approx(14.94 + (-6.18), abs=0.01)
+        # net_pnl_usd now includes entry fee: realized_net - entry_fee
+        assert trade["net_pnl_usd"] == pytest.approx(14.94 + (-6.18) - 0.3, abs=0.01)
         assert trade["gross_pnl_usd"] == pytest.approx(15.0 + (-6.0), abs=0.01)
 
-        # Whole trade is net profitable (14.94 - 6.18 = 8.76 > 0), even though
+        # Whole trade is net profitable (14.94 - 6.18 - 0.3 = 8.46 > 0), even though
         # the final leg alone was a loss — is_winner must be True (regression case)
         assert trade["is_winner"] is True
 
         # Fee accumulation still correct
         assert trade["exit_fees_usd"] == pytest.approx(0.06 + 0.12, abs=0.001)
         assert trade["total_fees_usd"] == pytest.approx(0.3 + 0.06 + 0.12, abs=0.001)
+
+    def test_net_pnl_deducts_entry_fee(self):
+        """net_pnl_usd must equal gross_pnl_usd - total_fees_usd (entry fee included)."""
+        recorder = OutcomeRecorder("test", "2025-01-01", "2025-01-31")
+
+        # 1. Entry with known entry fee
+        substrate = MagicMock()
+        substrate.decisions = {
+            "action": "trade_open",
+            "trade_approved": {
+                "symbol": "BTCUSDT", "direction": "Long",
+                "entry_price": 50000.0, "sl_price": 48000.0,
+                "tp1": 52000.0, "size_usdt": 500.0,
+                "atr_value": 1500.0, "score": 7.5,
+                "entry_fee_usdt": 0.3,
+            },
+        }
+        substrate.portfolio = {"equity": 10000.0, "open_positions": [{"symbol": "BTCUSDT"}]}
+        t1 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t1)
+
+        # 2. TP1 partial close
+        substrate.decisions = {
+            "action": "trade_managed",
+            "exit_approved": {
+                "symbol": "BTCUSDT",
+                "exit_fee_usdt": 0.06,
+                "gross_pnl_usdt": 15.0,
+                "net_pnl_usdt": 14.94,
+            },
+        }
+        t2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t2)
+
+        # 3. Final close
+        substrate.decisions = {
+            "action": "trade_closed",
+            "exit_approved": {
+                "symbol": "BTCUSDT", "reason": "trailing_stop_hit",
+                "net_pnl_usdt": -6.12, "gross_pnl_usdt": -6.0,
+                "exit_fee_usdt": 0.12, "exit_price": 49000.0,
+            },
+        }
+        t3 = datetime(2025, 1, 3, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t3)
+
+        trade = recorder._trades[0]
+
+        # Core invariant: net_pnl_usd == gross_pnl_usd - total_fees_usd
+        assert trade["net_pnl_usd"] == pytest.approx(
+            trade["gross_pnl_usd"] - trade["total_fees_usd"], abs=0.01
+        )
+
+        # Explicit regression check: entry fee must reduce net_pnl_usd
+        # gross = 15.0 + (-6.0) = 9.0, total_fees = 0.3 + 0.06 + 0.12 = 0.48
+        # net = 9.0 - 0.48 = 8.52
+        assert trade["gross_pnl_usd"] == pytest.approx(9.0, abs=0.01)
+        assert trade["total_fees_usd"] == pytest.approx(0.48, abs=0.01)
+        assert trade["net_pnl_usd"] == pytest.approx(8.52, abs=0.01)
+
+    def test_net_pnl_summary_matches_equity_delta(self, tmp_path):
+        """summary.total_pnl_usd must equal equity_curve delta for a run with no open trades."""
+        import json
+        recorder = OutcomeRecorder("test", "2025-01-01", "2025-01-31")
+
+        substrate = MagicMock()
+
+        # Cycle 0: initial equity
+        substrate.decisions = {"action": "wait"}
+        substrate.portfolio = {"equity": 10000.0, "open_positions": []}
+        t0 = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t0)
+
+        # Cycle 1: trade open (equity drops by entry fee)
+        substrate.decisions = {
+            "action": "trade_open",
+            "trade_approved": {
+                "symbol": "BTCUSDT", "direction": "Long",
+                "entry_price": 50000.0, "sl_price": 48000.0,
+                "tp1": 52000.0, "size_usdt": 500.0,
+                "atr_value": 1500.0, "score": 7.5,
+                "entry_fee_usdt": 0.3,
+            },
+        }
+        substrate.portfolio = {"equity": 9999.7, "open_positions": [{"symbol": "BTCUSDT"}]}
+        t1 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t1)
+
+        # Cycle 2: trade closed (equity reflects entry fee + exit fee + net PnL)
+        # Final equity = 10000.0 - 0.3 (entry fee) + 14.94 (TP1 net) - 6.18 (final net) = 10008.46
+        substrate.decisions = {
+            "action": "trade_closed",
+            "exit_approved": {
+                "symbol": "BTCUSDT", "reason": "trailing_stop_hit",
+                "net_pnl_usdt": 8.76, "gross_pnl_usdt": 9.0,
+                "exit_fee_usdt": 0.18, "exit_price": 51000.0,
+            },
+        }
+        substrate.portfolio = {"equity": 10008.46, "open_positions": []}
+        t2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+        recorder.capture_cycle(substrate, t2)
+
+        filepath = recorder.write_results(output_dir=str(tmp_path))
+        with open(filepath) as f:
+            data = json.load(f)
+
+        equity_delta = data["equity_curve"][-1]["equity"] - data["equity_curve"][0]["equity"]
+        assert data["summary"]["total_pnl_usd"] == pytest.approx(equity_delta, abs=0.02)
 
     def test_fee_accumulation_across_partial_and_full_close(self):
         """Entry + TP1 partial + final close: total_fees_usd sums all fees correctly."""
