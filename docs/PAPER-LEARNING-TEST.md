@@ -1,20 +1,6 @@
-# Paper Learning Test — Manual (V1, long-run)
+# Paper Learning Test — Runbook
 
-Run the paper trading strategy `paper_learning_test` for 7–14 days, then verify
-that the learning engine actually improved indicator weights and produced a rulebook.
-
-> **⚠️ This is the LONG-RUN variant.** It is tuned for high statistical confidence
-> over 7-14 days. If you want to validate the learning loop in **48-72 hours**,
-> use the V2 strategy instead: `paper_v2_learning_test` — see
-> [`PAPER-LEARNING-TEST-V2.md`](./PAPER-LEARNING-TEST-V2.md). V1 needs ~15
-> closed trades before any verdict (vs V2's ~5) and ~15 trades before any
-> weight adjustment (vs V2's ~8).
-
-> **⚠️ Telegram is NOT implemented.** `modules.telegram_logs`,
-> `modules.telegram_interaction`, and the `SendTelegramLog` enzyme are wired in
-> code but **not implemented** — the feature is postponed indefinitely. Keep
-> both flags at `false` in your strategy YAML. Enabling them logs "no Telegram
-> token configured" and exits cleanly. This applies to **all** strategies.
+Run the paper trading strategy for 7–14 days, then verify that the learning engine improved indicator weights and produced a rulebook.
 
 ---
 
@@ -37,15 +23,10 @@ If all three hold, the learning loop is closed: trades → accuracy → weight a
 ### 2.1 One-time setup
 
 ```bash
-# Clone / navigate to project
 cd /opt/Auto-Trader
-
-# Create venv if it doesn't exist
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-
-# Initialize the database
 python3 -c "from core.database import init_db; init_db()"
 ```
 
@@ -82,12 +63,10 @@ RestartSec=10
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/opt/Auto-Trader/.env
 
-# Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/opt/Auto-Trader /opt/Auto-Trader/logs /opt/Auto-Trader/data /opt/Auto-Trader/backups
 
-# Logging
 StandardOutput=append:/opt/Auto-Trader/logs/learning-test-stdout.log
 StandardError=append:/opt/Auto-Trader/logs/learning-test-stderr.log
 
@@ -99,20 +78,16 @@ EOF
 ### 2.4 Start the service
 
 ```bash
-# Create log directory if needed
 sudo -u trader mkdir -p /opt/Auto-Trader/logs
-
-# Reload systemd and start
 sudo systemctl daemon-reload
 sudo systemctl enable auto-trader-learning.service
 sudo systemctl start auto-trader-learning.service
-
-# Verify it's running
 sudo systemctl status auto-trader-learning.service
+```
 
-# Watch live logs
-sudo journalctl -u auto-trader-learning.service -f
-# Or:
+Watch logs:
+
+```bash
 tail -f /opt/Auto-Trader/logs/learning-test-stdout.log
 ```
 
@@ -121,23 +96,21 @@ tail -f /opt/Auto-Trader/logs/learning-test-stdout.log
 ```bash
 sudo systemctl stop auto-trader-learning.service
 sudo systemctl restart auto-trader-learning.service
-
-# To switch back to the production strategy:
-# Edit ExecStart in the service file, change --strategy paper_learning_test
-# to --strategy momentum_rising, then restart.
 ```
 
 ---
 
 ## 3. Verify learning results
 
-The strategy UID for `paper_learning_test` is fixed:
-```
-a1b2c3d4-5678-9abc-def0-1234567890ab
+The strategy UID for `paper_learning_test` is auto-generated on first load. Check it:
+
+```bash
+sqlite3 data/auto_trader.db "
+  SELECT strategy_uid FROM signal_accuracy ORDER BY id DESC LIMIT 1;
+"
 ```
 
-All queries below use this UID. Run them after **at least 24 hours** of continuous paper trading
-(ideally 48 hours for more trades).
+Replace `<UID>` in the queries below with the actual value.
 
 ### 3.1 Quick status check
 
@@ -145,7 +118,6 @@ All queries below use this UID. Run them after **at least 24 hours** of continuo
 cd /opt/Auto-Trader
 source venv/bin/activate
 
-# How many closed trades do we have?
 sqlite3 data/auto_trader.db "
   SELECT COUNT(*) AS closed_trades
   FROM trade_learning
@@ -153,7 +125,6 @@ sqlite3 data/auto_trader.db "
     AND exit_time IS NOT NULL;
 "
 
-# Current equity (from last substrate snapshot)
 sqlite3 data/auto_trader.db "
   SELECT json_extract(substrate_json, '$.portfolio.equity') AS equity
   FROM substrate_state
@@ -162,8 +133,7 @@ sqlite3 data/auto_trader.db "
 "
 ```
 
-Expected: 10+ closed trades after 24h, 25+ after 48h.
-Equity should differ from 1000.00 (the starting value).
+Expected: 5+ closed trades after 48h. Equity should differ from the starting value.
 
 ### 3.2 L1: Signal accuracy verdicts
 
@@ -178,15 +148,15 @@ sqlite3 -header -column data/auto_trader.db "
     ROUND(confidence_95_low, 1) AS ci_low,
     ROUND(confidence_95_high, 1) AS ci_high
   FROM signal_accuracy
-  WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab'
+  WHERE strategy_uid = '<UID>'
   ORDER BY total_fired DESC;
 "
 ```
 
 **What to look for:**
-- All 4 weighted indicators (rsi, macd, ema_stack, adx) should have rows
-- `verdict` should be something other than `insufficient_data` (means ≥15 trades per signal)
-- `accuracy_pct` above 60% = signal is useful; below 40% = contrarian candidate
+- All weighted indicators should have rows
+- `verdict` should be something other than `insufficient_data`
+- `accuracy_pct` above 75% = signal is useful; below 30% = contrarian candidate
 
 ### 3.3 L2: Weight adjustments
 
@@ -200,15 +170,15 @@ sqlite3 -header -column data/auto_trader.db "
     ROUND(accuracy_at_time, 1) AS accuracy,
     sample_size_at_time AS n
   FROM weight_history
-  WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab'
+  WHERE strategy_uid = '<UID>'
   ORDER BY id;
 "
 ```
 
 **What to look for:**
 - Rows exist (learning actually triggered weight changes)
-- `justification` column explains why (e.g. "accuracy 78% (valid), highlight boost +20%")
-- Negative weights = contrarian signals inverted (this is the key insight — a reliably wrong signal is as valuable as a reliably right one)
+- `justification` column explains why
+- Negative weights = contrarian signals inverted
 
 ### 3.4 L3: Rulebook generation
 
@@ -216,15 +186,15 @@ sqlite3 -header -column data/auto_trader.db "
 sqlite3 data/auto_trader.db "
   SELECT rulebook_text
   FROM rulebook_versions
-  WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab'
+  WHERE strategy_uid = '<UID>'
   ORDER BY id DESC LIMIT 1;
 "
 ```
 
 **What to look for:**
 - Non-empty output
-- Rules ranked by priority (trades × |win_rate − 50|)
-- Contrarian rules marked with `[!]`
+- Rules ranked by priority
+- Contrarian rules marked with `ANTI-SIGNAL`
 
 ### 3.5 Combination accuracy (bonus)
 
@@ -239,7 +209,7 @@ sqlite3 -header -column data/auto_trader.db "
     ROUND(p_value, 4) AS p_value,
     significance
   FROM combination_accuracy
-  WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab'
+  WHERE strategy_uid = '<UID>'
     AND significance != 'insufficient_data'
   ORDER BY trades DESC;
 "
@@ -248,7 +218,6 @@ sqlite3 -header -column data/auto_trader.db "
 ### 3.6 Trade equity curve (visual)
 
 ```bash
-# Generate a simple ASCII equity chart from closed trades
 sqlite3 data/auto_trader.db "
   SELECT
     exit_time,
@@ -267,20 +236,17 @@ sqlite3 data/auto_trader.db "
 
 ## 4. Automated verification script
 
-A script that checks L1, L2, L3 and generates charts:
-
 ```bash
 python3 scripts/verify_learning.py \
   --strategy paper_learning_test \
-  --uid a1b2c3d4-5678-9abc-def0-1234567890ab \
+  --uid <UID> \
   --db data/auto_trader.db
 ```
 
-This script is at `scripts/verify_learning.py`. It outputs:
-
-1. **Pass/Fail for L1, L2, L3** — with details
+Outputs:
+1. **Pass/Fail for L1, L2, L3** with details
 2. **Equity curve chart** — PNG saved to `data/learning_test_equity.png`
-3. **Weight evolution chart** — shows original vs adjusted weights per indicator
+3. **Weight evolution chart** — original vs adjusted weights per indicator
 4. **Accuracy bar chart** — per-indicator accuracy with Wilson CI error bars
 
 If all three checks pass, the learning loop is verified working.
@@ -301,37 +267,36 @@ If all three checks pass, the learning loop is verified working.
 
 ### Warning signs
 
-| Pattern | Meaning |
-|---------|---------|
-| All verdicts "insufficient_data" | Not enough trades yet — wait longer |
-| All verdicts "monitor" (55–75%) | No signal is strong enough to adjust — may need different indicators or more data |
-| Weight history empty | `min_trades_before_adjusting` threshold not met (default 30 in code, 15 in YAML) |
-| Equity flat at 1000 | No trades closed, or PnL not being applied to equity (bug) |
+| Pattern | Meaning | Action |
+|---------|---------|--------|
+| All verdicts "insufficient_data" | Not enough trades yet | Wait 1-2 more days |
+| All verdicts "monitor" (55-75%) | No signal is strong enough to adjust | Needs 10+ samples per signal for "valid" |
+| Weight history empty | `min_trades_before_adjusting` threshold not met | Check trade count |
+| Equity flat at 1000 | No trades closed, or PnL not applied | Check if candidates above threshold |
 
 ### The contrarian insight
 
-A signal with ≤30% accuracy is **not useless** — it's a reliably wrong signal. If RSI fires "bullish" but the trade loses 70% of the time, then RSI-bullish is actually a **bearish** signal. The weight adjuster assigns negative weights to contrarian signals, which makes `ScoreConfluence` subtract their contribution instead of adding it. This is the most important thing to verify: contrarian signals should get negative weights in `weight_history`.
+A signal with ≤30% accuracy is **not useless** — it's a reliably wrong signal. If RSI fires "bullish" but the trade loses 70% of the time, then RSI-bullish is actually a **bearish** signal. The weight adjuster assigns negative weights to contrarian signals, which makes `ScoreConfluence` subtract their contribution instead of adding it.
 
 ---
 
 ## 6. Reset for a fresh test
 
-To wipe learning data and start over:
-
 ```bash
 sqlite3 data/auto_trader.db "
   DELETE FROM trade_learning WHERE strategy_name = 'paper_learning_test';
-  DELETE FROM signal_accuracy WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
-  DELETE FROM combination_accuracy WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
-  DELETE FROM trajectory_accuracy WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
-  DELETE FROM idle_condition_accuracy WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
-  DELETE FROM weight_history WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
-  DELETE FROM rulebook_versions WHERE strategy_uid = 'a1b2c3d4-5678-9abc-def0-1234567890ab';
+  DELETE FROM signal_accuracy WHERE strategy_uid = '<UID>';
+  DELETE FROM combination_accuracy WHERE strategy_uid = '<UID>';
+  DELETE FROM trajectory_accuracy WHERE strategy_uid = '<UID>';
+  DELETE FROM idle_condition_accuracy WHERE strategy_uid = '<UID>';
+  DELETE FROM weight_history WHERE strategy_uid = '<UID>';
+  DELETE FROM rulebook_versions WHERE strategy_uid = '<UID>';
   DELETE FROM substrate_state WHERE strategy_name = 'paper_learning_test';
 "
 ```
 
 Then restart the service:
+
 ```bash
 sudo systemctl restart auto-trader-learning.service
 ```
@@ -366,7 +331,7 @@ Better scoring → better entries → better trades → better accuracy data
     └─── The loop is closed.
 ```
 
-The equity update path (Gap 2 fix):
+The equity update path:
 ```
 ExecuteExit computes PnL → substrate.portfolio["equity"] += pnl_usdt
     │

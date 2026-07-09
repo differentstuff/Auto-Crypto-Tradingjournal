@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-**Autonomous, self-improving, 24/7 crypto futures trading daemon** based on the Reaction Network architecture. Not a web app. Not a Telegram bot. A daemon that runs continuously, trades your account using your strategy, learns from every trade, and adapts over time.
+**Autonomous, self-improving, 24/7 crypto futures trading daemon** based on the Reaction Network architecture. A daemon that runs continuously, trades your account using your strategy, learns from every trade, and adapts over time. No user interaction required.
 
-Runs as a systemd service on a Raspberry Pi 5. Single entrypoint: `python3 main.py`.
+Runs as a systemd service on Linux. Single entrypoint: `python3 main.py`.
 
 **Core principle:** Enzymes, not agents. Substrate, not contracts. Attractors, not endpoints. The system fires whichever enzyme moves the substrate closest to an attractor — no stochastic tool selection, no LLM-driven orchestration.
 
@@ -24,7 +24,6 @@ Runs as a systemd service on a Raspberry Pi 5. Single entrypoint: `python3 main.
 │                     SUBSTRATE (shared state)                 │
 │  strategy | portfolio | market | analysis | decisions |     │
 │  learning | validity | pending                               │
-│  See: docs/reaction-design/substrate-schema.yaml             │
 └──────────────────────────┬──────────────────────────────────┘
                            │
            ┌───────────────┼───────────────┐
@@ -46,16 +45,18 @@ Runs as a systemd service on a Raspberry Pi 5. Single entrypoint: `python3 main.
 
 | Class | Role | Current Enzymes |
 |-------|------|-----------------|
-| **Sensor** | Extract data from environment | CollectOHLCV, CollectPreTradeContext, CollectMacroContext, RequestExit |
+| **Sensor** | Extract data from environment | CollectOHLCV, CollectPreTradeContext, CollectMacroContext, CollectExternalSignals, RequestExit |
 | **Oxidoreductase** | Evaluate, score, rank | ScoreConfluence, ValidateEntryZone, DetectNoise |
 | **Regulator** | Override authority, gate decisions | ApproveTrade, ApproveExit |
 | **Transporter** | Execute on exchange, send notifications | ExecuteTrade, ExecuteExit, SyncPositions, SendTelegramLog, UpdateMarkPrices |
 | **Synthase** | Build new knowledge | UpdateLearning, UpdateRulebook, RecordTradeOutcome |
 | **Isomerase** | Default state transform | Wait |
 
+Other enzymes: DynamicFilter, DetectRegime, MarketGeometry
+
 **Attractors (goal states):** `watching`, `trade_opened`, `trade_managed`, `trade_closed`, `learning_updated`
 
-**ISC (Ideal State Criteria):** Config-driven hard-to-vary conditions that MUST pass before any trade. No ISC bypass possible. See `substrate.py DEFAULT_ISCS`.
+**ISC (Ideal State Criteria):** Config-driven hard-to-vary conditions that MUST pass before any trade. No ISC bypass possible. Defined in strategy YAML under `validity`.
 
 ---
 
@@ -81,13 +82,18 @@ auto-trader/
     exchange.py                   # CCXT wrapper (Bitget primary, Binance/Bybit fallback)
     scheduler.py                  # Cycle timing with jitter
     replay_driver.py              # Historical replay driver (runs full enzyme pipeline)
+    replay_exchange.py            # Exchange wrapper for replay mode
+    virtual_clock.py              # Time virtualization for replay
+    outcome_recorder.py           # Captures trade decisions per cycle, writes JSON
     fees.py                       # Fee simulation for paper/backtest (entry + exit fees)
+    position_sizing.py            # Kelly criterion + ATR cap position sizing
   enzymes/                        # Each enzyme = one file
     collect_ohlcv.py              # Sensor: fetch OHLCV, compute indicators
     collect_pre_trade_context.py  # Sensor: trajectory analysis, coincidence risk
     collect_macro_context.py      # Sensor: VIX, DXY, BTC dominance (optional)
+    collect_external_signals.py   # Sensor: external signal collection
     score_confluence.py           # Oxidoreductase: weighted confluence scoring
-    validate_entry_zone.py       # Oxidoreductase: S/R entry zones, R:R validation
+    validate_entry_zone.py        # Oxidoreductase: S/R entry zones, R:R validation
     detect_noise.py               # Oxidoreductase: noise detection, kill zones
     approve_trade.py              # Regulator: RiskManager approval gate
     approve_exit.py               # Regulator: RiskManager exit approval
@@ -95,11 +101,14 @@ auto-trader/
     execute_trade.py              # Transporter: place order on exchange
     execute_exit.py               # Transporter: close position on exchange
     sync_positions.py             # Transporter: sync open positions with exchange
-    send_telegram_log.py          # Transporter: one-way push notifications
+    send_telegram_log.py          # Transporter: one-way push notifications (disabled by default)
     update_mark_prices.py         # Transporter: update mark prices for open positions
     update_learning.py            # Synthase: per-signal accuracy tracking
     update_rulebook.py            # Synthase: auto-generated rulebook from accuracy data
     record_trade_outcome.py       # Synthase: record trade outcome in learning DB
+    dynamic_filter.py             # Symbol universe filtering and ranking
+    detect_regime.py              # Regime detection
+    market_geometry.py            # Swing detection, trend classification
     wait.py                       # Isomerase: default resting state
   indicators/                     # Pure computation, no API calls, no side effects
     momentum.py                   # rsi, macd, adx, wavetrend
@@ -110,14 +119,14 @@ auto-trader/
     structure.py                  # sr_levels, pivots, fib
     registry.py                   # name → function lookup
   learning/
-    analyzer.py                   # Per-signal accuracy with Wilson CI (supports bucket parameter)
+    analyzer.py                   # Per-signal accuracy with Wilson CI
     combination.py                # Pairwise signal combination significance
     trajectory.py                 # Pre-trade trajectory pattern classification
     rulebook.py                   # Auto-generated rules (max 10)
     weight_adjuster.py            # Adjust indicator weights from accuracy verdicts
     threshold_evaluator.py        # Compare production vs exploration bucket accuracy
-   scripts/
-     verify_learning.py            # Learning verification script
+    metrics.py                    # Backtest quality metrics (PBO, Deflated Sharpe, Bootstrap CI)
+    karpathy_method.py            # Karpathy experiment loop
   llm/
     key_manager.py                # API key rotation (multi-key per provider, auto-switch on 429/529)
     router.py                     # Cost-aware model selection
@@ -126,13 +135,20 @@ auto-trader/
     openrouter_client.py          # Optional provider
     prompt_builder.py              # Dynamic budget with rulebook priority
     response_parser.py             # Parse LLM responses
-  tools/
-    backtest/                     # Backtesting engine (PBO, deflated Sharpe)
-  data/
-    auto_trader.db            # SQLite WAL database
-  tests/                          # Pytest suite
   scripts/
+    analyze_backtest.py           # Backtest log and result analyzer
     verify_learning.py            # Learning verification script
+    backup_db.sh                  # Database backup
+    estimate_fee_adjusted_pnl.py  # Fee-adjusted PnL estimation
+    migrate_db.py                 # Database migrations
+  data/
+    auto_trader.db                # SQLite WAL database
+  tests/                          # Pytest suite
+  docs/
+    Network_Framework.md          # Architecture overview
+    ReactionNetworkModel.md       # Reaction network design
+    README_BACKTEST_ANALYZER.md   # Backtest analyzer usage
+    PAPER-LEARNING-TEST.md        # Paper learning test runbook (dev)
 ```
 
 ---
@@ -146,7 +162,7 @@ python3 main.py --paper --strategy momentum_rising
 # Single cycle (for testing):
 python3 main.py --cycle-once --paper
 
-# Live mode (requires API keys in config/exchange.yaml):
+# Live mode (requires API keys in .env):
 python3 main.py --strategy momentum_rising
 
 # Verbose logging:
@@ -223,7 +239,7 @@ The unique selling point. Tracks:
 4. **Idle cycle tracking** — When no trade was made, WHY? Prevents false "high win rate" from cherry-picking.
 5. **Weight adjustment** — Signals with ≥75% accuracy get boosted (+20%). Signals with ≤30% accuracy get NEGATIVE weights (contrarian). Coin-flip signals (45-55%) get suppressed (weight=0).
 6. **Rulebook generation** — Max 10 rules, auto-generated from findings, injected into prompts.
-7. **Threshold-aware learning** — Trades are tagged with `_threshold_bucket` (production or exploration). Per-bucket accuracy is tracked separately in `signal_accuracy_by_threshold`. The threshold evaluator compares production vs exploration buckets and proposes threshold changes to CandidateQueue when exploration outperforms with statistical significance (Wilson interval non-overlap + PF improvement ≥ 20% + min 30 trades). Disabled by default (`threshold_evaluator.enabled: false`).
+7. **Soft penalties with learning feedback** — Noise, low confluence, and trajectory coincidence apply multiplicative penalties instead of hard-blocking trades. The learning engine adjusts penalty ratios based on trade outcomes.
 
 **Verdict classification:**
 - `valid` (≥75%): highlight, boost weight
@@ -279,11 +295,32 @@ New ISC conditions can be added in strategy YAML without touching Python code.
 
 ## LLM Integration
 
+LLM integration is optional — the system is designed to run fully without it.
+
 - **Primary:** Anthropic Claude (Sonnet for analysis, Haiku for quick tasks)
 - **Fallback:** Google Gemini (automatic on 429/529 from Anthropic)
 - **Optional:** OpenRouter, Grok
 - Key rotation: multiple keys per provider, auto-switch on overload (429/529)
 - All LLM calls are OPTIONAL — enzymes fall back to rule-based logic if no keys configured
+
+---
+
+## Backtest
+
+The replay driver runs the daemon's exact enzyme pipeline on historical data:
+
+```bash
+python -m core.replay_driver --start 2025-01-01 --end 2025-06-01 --strategy momentum_rising
+```
+
+Results saved to `temp/backtest_<timestamp>/`. Analyze with:
+
+```bash
+python scripts/analyze_backtest.py --results temp/results/
+python scripts/analyze_backtest.py --log logs/backtest-stdout.log --summary
+```
+
+See `docs/README_BACKTEST_ANALYZER.md` for full usage.
 
 ---
 
@@ -301,21 +338,11 @@ python3 -m pytest tests/ -v
 - `test_database.py` — DB init, migrations, substrate persistence
 - `test_daemon.py` — daemon loop, attractor detection, cycle execution
 - `test_momentum_quality.py` — momentum_quality indicator (slope × R²)
-- `test_phase_b.py` through `test_phase_e.py` — enzyme integration tests
+- `test_walk_forward_pbo.py` — walk-forward PBO calculation
+- `test_karpathy.py` — Karpathy experiment loop
 - `test_learning_config.py` — learning engine with config
 
 **Key test pattern:** `Substrate(config=make_full_config())` — always use `make_full_config()` from conftest. Never create a Substrate with partial config (it will raise ValueError on missing keys).
-
----
-
-## Deployment
-
-- **Pi SSH:** `<user>@<Pi-IP>` (use expect — no BatchMode)
-- **Service:** `sudo systemctl restart auto-trader`
-- **Pi path:** `/home/<user>/auto-trader`
-- **Dev path:** local clone of this repo
-- **Log file:** `logs/auto-trader.log` (10MB rotating, 5 backups)
-- **Database:** `data/auto_trader.db` — never rsync to Pi, production DB lives on Pi only
 
 ---
 
@@ -327,28 +354,6 @@ python3 -m pytest tests/ -v
 - **Signal accuracy**: Wilson score confidence interval for binomial proportion. Verdict at 95% CI.
 - **Combination significance**: Chi-squared test, p < 0.05 = statistically significant.
 - **Position sizing**: `size_usdt = equity × risk_per_trade_pct / 100`. Capped by `max_size_pct_of_equity`. Correlation check reduces size for same-direction positions.
-
----
-
-## System Goals
-
-**The completed Auto-Trader is:**
-
-1. **Autonomous** — runs 24/7 without human intervention. Trades, learns, adapts on its own.
-2. **Self-improving** — every trade feeds back into signal accuracy, combination significance, trajectory classification, and weight adjustment. The system gets better at its own strategy over time.
-3. **Dynamically scoped** — not limited to a static watchlist. The system discovers the best symbols from the exchange in real time, filtered by volume, OI, and momentum quality. `always_watch` always overrides inclusion; `never_trade` always overrides exclusion (applied last).
-4. **Validated** — every weight change is paper-forward tested against the previous weights before going live. Profit factor decides: new weights must earn their place. The challenger runs the same daemon with the same data, strictly separated actions, full `challenger_log` DB table for traceability.
-5. **Risk-calibrated** — position sizing accounts for volatility via ATR caps. No single position exceeds its ATR-based limit, regardless of what Kelly or risk-per-trade suggests.
-
----
-
-## What This System Is NOT
-
-- ❌ NOT a Flask web app — there is no HTTP server
-- ❌ NOT a Telegram bot — SendTelegramLog is one-way push only
-- ❌ NOT a browser-based UI — no HTML, no JS frontend
-- ❌ NOT a multi-agent pipeline — enzymes fire based on activation conditions and flux scores
-- ❌ NOT stochastic — the daemon selects enzymes deterministically (highest flux score wins)
 
 ---
 
