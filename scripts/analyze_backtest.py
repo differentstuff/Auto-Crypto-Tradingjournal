@@ -409,8 +409,8 @@ def analyze_results(results_path: str, trades_only: bool = False):
         if closed:
             wins = [t for t in closed if t.get("is_winner")]
             losses = [t for t in closed if t.get("is_winner") is False]
-            total_pnl = sum(t.get("net_pnl_usd", 0) for t in closed)
-            total_fees = sum(t.get("total_fees_usd", 0) or 0 for t in closed)
+            total_pnl = summary.get("total_pnl_usd", 0)
+            total_fees = summary.get("total_fees_usd", 0)
             print(f"  Wins:          {len(wins)}")
             print(f"  Losses:        {len(losses)}")
             print(f"  Win rate:      {len(wins)/len(closed)*100:.1f}%")
