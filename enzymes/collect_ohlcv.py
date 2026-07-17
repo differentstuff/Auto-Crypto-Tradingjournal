@@ -36,7 +36,7 @@ from core.substrate import Substrate
 _log = logging.getLogger(__name__)
 
 
-# -- Timeframe helpers (module-level for testability) -------------------------
+# ── Timeframe helpers (module-level for testability) ─────────────────────────
 
 def timeframe_to_minutes(timeframe: str) -> int:
     """
@@ -186,7 +186,7 @@ class CollectOHLCV(Enzyme):
         symbols = substrate.market.get("symbols_watched", [])
         if not symbols:
             self._log.info("No symbols to watch, skipping")
-            substrate.market["last_scan_at"] = substrate._now_iso()
+            substrate.market["last_scan_at"] = substrate.now_iso()
             return substrate
 
         # Get indicator config from substrate's config reference
@@ -335,7 +335,7 @@ class CollectOHLCV(Enzyme):
                 continue
 
             snapshot = {
-                "timestamp": substrate._now_iso(),
+                "timestamp": substrate.now_iso(),
                 "indicators": tf_inds,
                 "signal": self._compute_signal_direction(tf_inds),
             }

@@ -312,8 +312,17 @@ def run_replay(
         # Capture decisions for outcome recording
         recorder.capture_cycle(daemon.substrate, t_cursor)
 
-        # Progress log every 100 cycles
+        # Periodic memory maintenance + progress log every 100 cycles
         if (i + 1) % 100 == 0:
+            # gc.collect + malloc_trim: release fragmented CPython arena pages to OS.
+            # Prevents RSS growth from pymalloc fragmentation on long replay runs.
+            gc.collect()
+            try:
+                import ctypes
+                ctypes.CDLL("libc.so.6").malloc_trim(0)
+            except Exception:
+                pass
+
             action = daemon.substrate.decisions.get("action", "")
             equity = daemon.substrate.portfolio.get("equity", 0)
             n_pos = len(daemon.substrate.portfolio.get("open_positions", []))
