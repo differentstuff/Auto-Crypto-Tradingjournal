@@ -26,6 +26,7 @@ Enzymes disabled in replay mode:
 from __future__ import annotations
 
 import argparse
+import gc
 import logging
 import os
 import signal
