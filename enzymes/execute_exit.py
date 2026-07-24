@@ -8,18 +8,10 @@ In live mode, calls exchange via core/exchange.py.
 Exchange-as-truth architecture:
   - On full close: cancel remaining exchange orders, then close position
   - On partial close: update position size in substrate
-  - PnL is applied to portfolio.equity for paper trading (net of fees)
-  - In live mode, equity comes from exchange.fetch_balance(), not computed PnL
+  - PnL is applied to portfolio.equity for paper trading
 
 DB recording of trade outcomes is handled by RecordTradeOutcome (Synthase),
 which runs after this enzyme in the pipeline.
-
-Fee simulation (paper/replay only):
-  - Exit fee is deducted from gross PnL before applying to equity.
-  - Entry fee was already deducted at trade open (execute_trade.py).
-  - For partial closes, exit fee uses the sold portion's notional only.
-  - For full closes, exit fee uses the remaining position's notional.
-  - Live mode: no fee deduction (fees baked into broker fills).
 
 Enzyme class: Transporter
 Activates when: decisions.exit_approved is set
@@ -34,7 +26,6 @@ from typing import Optional
 
 from core.enzyme import Enzyme, EnzymeClass, register_enzyme
 from core.substrate import Substrate
-from core.fees import compute_exit_fee
 
 _log = logging.getLogger(__name__)
 
@@ -99,6 +90,10 @@ class ExecuteExit(Enzyme):
         full_size_usdt = target_pos.get("size_usdt", 0)
 
         # Fix 1: SL/trailing fills use stop price, not mark_price.
+        # In live mode, the exchange fills at the stop price (stop-loss order).
+        # In replay mode, mark_price is the candle close, which can be far
+        # below the stop — inflating SL losses 5-25x. Using the stop price
+        # matches real exchange fill behavior.
         if exit_reason == "hard_sl_breach":
             exit_price = target_pos.get("sl_price", mark_price)
         elif exit_reason == "trailing_stop_hit":
@@ -113,32 +108,24 @@ class ExecuteExit(Enzyme):
             else:
                 pnl_pct = ((entry_price - exit_price) / entry_price) * 100
 
-        fee_rate = substrate.cfg("fees.taker_rate") if paper_mode else 0.0
-
         if is_partial:
-            # -- Partial close: sell a % of the position, keep the rest --
+            # ── Partial close: sell a % of the position, keep the rest ──
             sold_usdt = full_size_usdt * (sell_pct / 100.0)
             remaining_usdt = round(full_size_usdt - sold_usdt, 2)
-            gross_pnl_usdt = sold_usdt * pnl_pct / 100
+            pnl_usdt = sold_usdt * pnl_pct / 100
 
-            exit_fee = compute_exit_fee(sold_usdt + gross_pnl_usdt, fee_rate) if paper_mode else 0.0
-            net_pnl_usdt = gross_pnl_usdt - exit_fee
-
-            # Apply net PnL from sold portion to equity
+            # Apply PnL from sold portion to equity
             current_equity = substrate.portfolio.get("equity", 0)
             if current_equity > 0:
-                substrate.portfolio["equity"] = round(current_equity + net_pnl_usdt, 2)
+                substrate.portfolio["equity"] = round(current_equity + pnl_usdt, 2)
                 self._log.info(
-                    "Equity updated: %.2f → %.2f (partial PnL: %+.2f USDT gross=%.4f net=%.4f fee=%.4f)",
-                    current_equity, substrate.portfolio["equity"], net_pnl_usdt,
-                    gross_pnl_usdt, net_pnl_usdt, exit_fee,
+                    "Equity updated: %.2f → %.2f (partial PnL: %+.2f USDT)",
+                    current_equity, substrate.portfolio["equity"], pnl_usdt,
                 )
 
             # Write PnL back to exit_approved for outcome recording
             exit_approved["pnl_pct"] = round(pnl_pct, 4)
-            exit_approved["gross_pnl_usdt"] = round(gross_pnl_usdt, 4)
-            exit_approved["net_pnl_usdt"] = round(net_pnl_usdt, 4)
-            exit_approved["exit_fee_usdt"] = round(exit_fee, 4)
+            exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
             exit_approved["exit_price"] = exit_price
             exit_approved["sold_usdt"] = round(sold_usdt, 2)
             exit_approved["remaining_usdt"] = remaining_usdt
@@ -159,16 +146,16 @@ class ExecuteExit(Enzyme):
             if paper_mode:
                 self._log.info(
                     "PAPER PARTIAL CLOSE: %s %s reason=%s sold=%.2f USDT (%.1f%%) "
-                    "remaining=%.2f USDT pnl=%.2f%% gross=%.4f net=%.4f fee=%.4f",
+                    "remaining=%.2f USDT pnl=%.2f%% (%.2f USDT)",
                     direction, symbol, exit_reason, sold_usdt, sell_pct,
-                    remaining_usdt, pnl_pct, gross_pnl_usdt, net_pnl_usdt, exit_fee,
+                    remaining_usdt, pnl_pct, pnl_usdt,
                 )
             else:
                 self._log.info(
                     "LIVE PARTIAL CLOSE: %s %s reason=%s sold=%.2f USDT (%.1f%%) "
-                    "remaining=%.2f USDT pnl=%.2f%%",
+                    "remaining=%.2f USDT pnl=%.2f%% (%.2f USDT)",
                     direction, symbol, exit_reason, sold_usdt, sell_pct,
-                    remaining_usdt, pnl_pct,
+                    remaining_usdt, pnl_pct, pnl_usdt,
                 )
 
             # Reassign position in list (shallow-copy safe)
@@ -187,27 +174,21 @@ class ExecuteExit(Enzyme):
             return substrate
 
         else:
-            # -- Full close: remove position entirely --
-            gross_pnl_usdt = full_size_usdt * pnl_pct / 100
+            # ── Full close: remove position entirely ──
+            pnl_usdt = full_size_usdt * pnl_pct / 100
 
-            exit_fee = compute_exit_fee(full_size_usdt + gross_pnl_usdt, fee_rate) if paper_mode else 0.0
-            net_pnl_usdt = gross_pnl_usdt - exit_fee
-
-            # Apply net PnL to portfolio equity
+            # Apply PnL to portfolio equity (both paper and live)
             current_equity = substrate.portfolio.get("equity", 0)
             if current_equity > 0:
-                substrate.portfolio["equity"] = round(current_equity + net_pnl_usdt, 2)
+                substrate.portfolio["equity"] = round(current_equity + pnl_usdt, 2)
                 self._log.info(
-                    "Equity updated: %.2f → %.2f (PnL: %+.2f USDT gross=%.4f net=%.4f fee=%.4f)",
-                    current_equity, substrate.portfolio["equity"], net_pnl_usdt,
-                    gross_pnl_usdt, net_pnl_usdt, exit_fee,
+                    "Equity updated: %.2f → %.2f (PnL: %+.2f USDT)",
+                    current_equity, substrate.portfolio["equity"], pnl_usdt,
                 )
 
             # Write PnL back to exit_approved
             exit_approved["pnl_pct"] = round(pnl_pct, 4)
-            exit_approved["gross_pnl_usdt"] = round(gross_pnl_usdt, 4)
-            exit_approved["net_pnl_usdt"] = round(net_pnl_usdt, 4)
-            exit_approved["exit_fee_usdt"] = round(exit_fee, 4)
+            exit_approved["pnl_usdt"] = round(pnl_usdt, 4)
             exit_approved["exit_price"] = exit_price
             substrate.decisions["exit_approved"] = exit_approved
 
@@ -218,15 +199,15 @@ class ExecuteExit(Enzyme):
 
             if paper_mode:
                 self._log.info(
-                    "PAPER CLOSE: %s %s reason=%s pnl=%.2f%% gross=%.4f net=%.4f fee=%.4f",
+                    "PAPER CLOSE: %s %s reason=%s pnl=%.2f%% (%.2f USDT)",
                     target_pos.get("direction", "?"), symbol, exit_reason,
-                    pnl_pct, gross_pnl_usdt, net_pnl_usdt, exit_fee,
+                    pnl_pct, pnl_usdt,
                 )
             else:
                 self._log.info(
-                    "LIVE CLOSE: %s %s reason=%s pnl=%.2f%%",
+                    "LIVE CLOSE: %s %s reason=%s pnl=%.2f%% (%.2f USDT)",
                     target_pos.get("direction", "?"), symbol, exit_reason,
-                    pnl_pct,
+                    pnl_pct, pnl_usdt,
                 )
 
             # Remove position from portfolio (shallow-copy safe)
@@ -235,6 +216,8 @@ class ExecuteExit(Enzyme):
             ]
 
             # Fix 2: Record position close for re-entry guard.
+            # Stores the candle timestamp at close time so the three-layer
+            # guard in ApproveTrade can enforce cooldown and bar confirmation.
             primary_tf = substrate.strategy.get("timeframe", "4H")
             candle_key = f"{symbol}_{primary_tf}"
             last_close_ts = substrate.market.get("last_candle_close_ts", {}).get(candle_key, "")
@@ -289,6 +272,7 @@ class ExecuteExit(Enzyme):
                 direction=direction,
                 size_usdt=size_usdt,
                 reduce_only=False,
+                price=position.get("mark_price", 0),
             )
             if result:
                 self._log.info(
