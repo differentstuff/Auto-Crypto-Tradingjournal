@@ -1,0 +1,23 @@
+# live_validation.yaml — Strategy config for live validation scripts.
+# 1x leverage, paper_mode=false, minimal settings.
+# Used by scripts/live_validation/ to test exchange API actions against real Bitget.
+#
+# IMPORTANT: This strategy is NOT for production trading.
+# It exists solely to give ConfigLoader a valid strategy YAML with
+# paper_mode=false and leverage=1 so validation scripts can call
+# the real exchange API.
+
+strategy:
+  name: live_validation
+  timeframe: "30m"
+  cycle_interval_minutes: 15
+  max_positions: 1
+
+daemon:
+  paper_mode: false
+
+exchange:
+  mode: live
+
+portfolio:
+  leverage: 1

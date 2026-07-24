@@ -523,6 +523,7 @@ class Exchange:
         trigger_price: float,
         size_pct: float = 100.0,
         size_usdt: float = 0.0,
+        entry_price: float = None,
         order_type: str = "tp",
         reduce_only: bool = True,
     ) -> Optional[dict]:
@@ -543,6 +544,8 @@ class Exchange:
             trigger_price: Price at which the order triggers
             size_pct: Percentage of position to close (0-100)
             size_usdt: Position size in USDT (for computing contract amount)
+            entry_price: Entry price used to convert size_usdt to contracts.
+                If None, fetches current ticker price.
             order_type: "tp" for take-profit, "sl" for stop-loss
             reduce_only: True for partial exits
 
@@ -569,6 +572,18 @@ class Exchange:
             ccxt_symbol = _to_ccxt_symbol(symbol)
             side = "sell" if direction.lower() == "long" else "buy"
 
+            # Convert size_usdt to contracts: contracts = usdt_notional / price
+            # CCXT requires amount in contracts (base currency units), not USDT.
+            price = entry_price
+            if not price or price <= 0:
+                ticker = self.fetch_ticker(symbol)
+                price = ticker.get("last", 0) if ticker else 0
+            if not price or price <= 0:
+                _log.error("place_tpsl_order: cannot determine price for %s", symbol)
+                return None
+
+            contracts = (size_usdt * (size_pct / 100.0)) / price if size_usdt > 0 else 0
+
             params = {
                 "holdSide": direction.lower(),
                 "reduceOnly": reduce_only,
@@ -587,13 +602,13 @@ class Exchange:
                 symbol=ccxt_symbol,
                 type="market",
                 side=side,
-                amount=size_usdt * (size_pct / 100.0) if size_usdt > 0 else 0,
+                amount=contracts,
                 params=params,
             )
 
             _log.info(
-                "LIVE TPSL ORDER placed: %s %s type=%s trigger=%.2f order_id=%s",
-                direction, symbol, order_type, trigger_price, order.get("id", "?"),
+                "LIVE TPSL ORDER placed: %s %s type=%s trigger=%.2f contracts=%.4f order_id=%s",
+                direction, symbol, order_type, trigger_price, contracts, order.get("id", "?"),
             )
 
             return {
@@ -616,9 +631,25 @@ class Exchange:
         order_id: str,
         new_sl_price: float = None,
         new_tp_price: float = None,
+        direction: str = None,
     ) -> bool:
         """
-        Modify an existing TP/SL order via modify-tpsl-order endpoint.
+        Modify an existing TP/SL order in place via Bitget's native endpoint.
+
+        Bitget supports in-place modification of TP/SL plan orders:
+          POST /api/v2/mix/order/modify-tpsl-order
+
+        CCXT's edit_order() routes to this endpoint for contract markets
+        when stopLossPrice / takeProfitPrice are passed in params.
+        Verified against Bitget API docs (Modify Tpsl Order) and CCXT wiki.
+
+        SAFETY: in-place modification — the position is NEVER left without
+        a stop-loss. On failure the EXISTING SL/TP order remains active on
+        the exchange and this method returns False, so the caller (daemon)
+        retries on the next cycle instead of silently skipping.
+
+        Requires ccxt>=4.5.54 (PR #27674: edit_order accepts amount=None
+        for TPSL-only updates without sending newSize).
 
         Used for trailing stop updates — push new SL to exchange when
         trailing_sl actually changes.
@@ -631,6 +662,8 @@ class Exchange:
             order_id: Exchange order ID of the SL/TP order to modify
             new_sl_price: New stop-loss price (None = don't change)
             new_tp_price: New take-profit price (None = don't change)
+            direction: "Long" or "Short" — determines closing side.
+                Defaults to closing side "sell" (long position).
 
         Returns: True if successful, False otherwise.
         """
@@ -641,22 +674,32 @@ class Exchange:
             )
             return True
 
+        if new_sl_price is None and new_tp_price is None:
+            _log.warning("modify_tpsl_order called with no price change for %s", symbol)
+            return True
+
         try:
             exchange = self._get_trade_exchange()
             ccxt_symbol = _to_ccxt_symbol(symbol)
 
             params = {}
             if new_sl_price is not None:
-                params["stopLossPrice"] = str(new_sl_price)
+                params["stopLossPrice"] = new_sl_price
             if new_tp_price is not None:
-                params["stopSurplusPrice"] = str(new_tp_price)
+                params["takeProfitPrice"] = new_tp_price
 
-            # Use CCXT's edit_order to modify the TP/SL order
+            side = "sell"
+            if direction and direction.lower() == "short":
+                side = "buy"
+
+            # amount=None + price=None → TPSL-only update routed to
+            # /api/v2/mix/order/modify-tpsl-order (ccxt>=4.5.54, PR #27674).
+            # In-place: on failure the old SL/TP order stays active.
             exchange.edit_order(
                 id=order_id,
                 symbol=ccxt_symbol,
                 type="market",
-                side="sell",  # TP/SL orders are always closing
+                side=side,
                 amount=None,
                 price=None,
                 params=params,
@@ -669,6 +712,9 @@ class Exchange:
             return True
 
         except Exception as e:
+            # Modification failed — the EXISTING SL/TP order is still active
+            # on the exchange (position never left naked). The daemon does not
+            # update _exchange_sl_last_pushed on False, so it retries next cycle.
             _log.error("modify_tpsl_order failed for %s order_id=%s: %s", symbol, order_id, e)
             return False
 
@@ -860,12 +906,21 @@ class Exchange:
         direction: str = None,
         size_usdt: float = 0,
         reduce_only: bool = True,
+        price: float = None,
     ) -> Optional[dict]:
         """
         Close an existing position at market.
 
         In paper mode: logs and returns mock data.
         In live mode: calls the exchange API.
+
+        Args:
+            symbol: Journal format symbol (e.g. "BTCUSDT")
+            direction: "Long" or "Short"
+            size_usdt: Position size in USDT notional
+            reduce_only: True for partial close, False for full close
+            price: Current price to convert size_usdt to contracts.
+                If None, fetches current ticker price.
 
         Returns dict with: order_id, symbol, status, paper
         """
@@ -884,17 +939,30 @@ class Exchange:
             ccxt_symbol = _to_ccxt_symbol(symbol)
             side = "sell" if direction.lower() == "long" else "buy"
 
+            # Convert size_usdt (USDT notional) to contracts (base currency units).
+            # CCXT create_market_order requires amount in contracts, not USDT.
+            # For DOGEUSDT at $0.20: $5 notional = 25 DOGE contracts, not 5.
+            close_price = price
+            if not close_price or close_price <= 0:
+                ticker = self.fetch_ticker(symbol)
+                close_price = ticker.get("last", 0) if ticker else 0
+            if not close_price or close_price <= 0:
+                _log.error("close_position: cannot determine price for %s", symbol)
+                return None
+
+            contracts = size_usdt / close_price if close_price > 0 else 0
+
             params = {"reduceOnly": reduce_only}
 
             order = exchange.create_market_order(
                 symbol=ccxt_symbol,
                 side=side,
-                amount=size_usdt,
+                amount=contracts,
                 params=params,
             )
 
-            _log.info("LIVE CLOSE: %s %s size=%.2f order_id=%s",
-                       direction, symbol, size_usdt, order.get("id", "?"))
+            _log.info("LIVE CLOSE: %s %s contracts=%.4f (size_usdt=%.2f price=%.2f) order_id=%s",
+                       direction, symbol, contracts, size_usdt, close_price, order.get("id", "?"))
 
             return {
                 "order_id": order.get("id", ""),
