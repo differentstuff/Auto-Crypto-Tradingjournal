@@ -30,7 +30,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 from helpers import (
     create_exchange, get_current_price, wait_for_sync,
     cleanup_position, TestResult,
-    SYMBOL, LEVERAGE, TEST_SIZE_USDT,
+    SYMBOL, LEVERAGE, compute_test_contracts,
 )
 
 
@@ -42,6 +42,7 @@ def main() -> None:
 
     result = TestResult("Full Close")
     exchange = None
+    entry_price = None
 
     try:
         exchange = create_exchange()
@@ -49,18 +50,19 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
 
         # ── Compute SL ────────────────────────────────────────────────────
         sl_price = round(price * 0.97, 6)   # 3% below
 
         print(f"\n   Opening Long {SYMBOL}:")
-        print(f"     size=${TEST_SIZE_USDT}, SL=${sl_price:.6f}")
+        print(f"     size=${notional_usdt:.2f}, SL=${sl_price:.6f}")
 
         # ── Step 1: Open position ──────────────────────────────────────────
         order = exchange.place_order(
             symbol=SYMBOL,
             direction="Long",
-            size_usdt=TEST_SIZE_USDT,
+            size_usdt=notional_usdt,
             entry_price=price,
             sl_price=sl_price,
             leverage=LEVERAGE,
@@ -80,7 +82,8 @@ def main() -> None:
 
         if target_before:
             pos = target_before[0]
-            size_usdt = pos.get("size_usdt", TEST_SIZE_USDT)
+            entry_price = pos.get("entry_price")
+            size_usdt = pos.get("size_usdt", notional_usdt)
             total_contracts = pos.get("total_contracts", 0)
             mark_price = pos.get("mark_price", 0)
             entry = pos.get("entry_price", 0)
@@ -88,7 +91,7 @@ def main() -> None:
             print(f"   Position before close:")
             print(f"     entry_price=${entry:.6f}")
             print(f"     size_usdt=${size_usdt} (notional in USDT)")
-            print(f"     total_contracts={total_contracts} (actual DOGE amount)")
+            print(f"     total_contracts={total_contracts} (actual contracts amount)")
             print(f"     mark_price=${mark_price:.6f}")
 
             expected_contracts = size_usdt / mark_price if mark_price > 0 else 0
@@ -148,7 +151,7 @@ def main() -> None:
 
     finally:
         if exchange:
-            cleanup_position(exchange, SYMBOL)
+            cleanup_position(exchange, SYMBOL, our_entry_price=entry_price)
 
     passed = result.report()
     sys.exit(result.exit_code())

@@ -39,9 +39,16 @@ SCRIPTS = [
 
 
 def main() -> None:
+    # Import helpers for the safety warning
+    sys.path.insert(0, SCRIPT_DIR)
+    from helpers import print_safety_warning, SYMBOL
+
+    print_safety_warning()
+
     print(f"\n{'═' * 60}")
     print(f"  AUTO-TRADER LIVE VALIDATION — ALL 8 TESTS")
-    print(f"  Symbol: DOGEUSDT | Leverage: 1x | Budget: ~$35 USDT")
+    print(f"  Symbol: {SYMBOL} | Leverage: 1x | Budget: ~$35 USDT")
+    print(f"  Notional: dynamically computed (5-10 USDT per test)")
     print(f"  Estimated total fees: ~$0.12 (worst case ~$3)")
     print(f"{'═' * 60}")
 

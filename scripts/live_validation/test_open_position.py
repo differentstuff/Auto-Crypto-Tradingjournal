@@ -30,7 +30,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 from helpers import (
     create_exchange, get_current_price, wait_for_sync,
     cleanup_position, TestResult,
-    SYMBOL, LEVERAGE, TEST_SIZE_USDT,
+    SYMBOL, LEVERAGE, compute_test_contracts,
 )
 
 
@@ -42,6 +42,7 @@ def main() -> None:
 
     result = TestResult("Open Position")
     exchange = None
+    entry_price = None
 
     try:
         exchange = create_exchange()
@@ -49,13 +50,14 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
 
         # ── Compute SL/TP (safe distances for testing) ────────────────────
         sl_price = round(price * 0.97, 6)   # 3% below entry
         tp_price = round(price * 1.05, 6)   # 5% above entry
 
         print(f"\n   Opening Long {SYMBOL}:")
-        print(f"     size=${TEST_SIZE_USDT}, entry≈${price:.6f}")
+        print(f"     size=${notional_usdt:.2f}, entry≈${price:.6f}")
         print(f"     SL=${sl_price:.6f} (-3%), TP=${tp_price:.6f} (+5%)")
         print(f"     leverage={LEVERAGE}x")
 
@@ -63,7 +65,7 @@ def main() -> None:
         order = exchange.place_order(
             symbol=SYMBOL,
             direction="Long",
-            size_usdt=TEST_SIZE_USDT,
+            size_usdt=notional_usdt,
             entry_price=price,
             sl_price=sl_price,
             tp_price=tp_price,
@@ -113,6 +115,7 @@ def main() -> None:
 
         if target:
             pos = target[0]
+            entry_price = pos.get("entry_price")
 
             result.check(
                 pos.get("direction") == "Long",
@@ -172,7 +175,7 @@ def main() -> None:
 
     finally:
         if exchange:
-            cleanup_position(exchange, SYMBOL)
+            cleanup_position(exchange, SYMBOL, our_entry_price=entry_price)
 
     passed = result.report()
     sys.exit(result.exit_code())

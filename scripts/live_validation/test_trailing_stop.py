@@ -31,7 +31,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 from helpers import (
     create_exchange, get_current_price, wait_for_sync,
     cleanup_position, TestResult,
-    SYMBOL, LEVERAGE, TEST_SIZE_USDT,
+    SYMBOL, LEVERAGE, compute_test_contracts,
 )
 
 
@@ -43,6 +43,7 @@ def main() -> None:
 
     result = TestResult("Trailing Stop")
     exchange = None
+    entry_price = None
 
     try:
         exchange = create_exchange()
@@ -50,6 +51,7 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
 
         # ── Compute SL and trailing stop params ───────────────────────────
         sl_price = round(price * 0.97, 6)         # 3% below (safety net)
@@ -63,7 +65,7 @@ def main() -> None:
         order = exchange.place_order(
             symbol=SYMBOL,
             direction="Long",
-            size_usdt=TEST_SIZE_USDT,
+            size_usdt=notional_usdt,
             entry_price=price,
             sl_price=sl_price,
             leverage=LEVERAGE,
@@ -128,6 +130,7 @@ def main() -> None:
 
         if target:
             pos = target[0]
+            entry_price = pos.get("entry_price")
             print(f"   Position after trailing stop:")
             print(f"     entry_price={pos.get('entry_price'):.6f}")
             print(f"     size_usdt={pos.get('size_usdt')}")
@@ -140,7 +143,7 @@ def main() -> None:
 
     finally:
         if exchange:
-            cleanup_position(exchange, SYMBOL)
+            cleanup_position(exchange, SYMBOL, our_entry_price=entry_price)
 
     passed = result.report()
     sys.exit(result.exit_code())

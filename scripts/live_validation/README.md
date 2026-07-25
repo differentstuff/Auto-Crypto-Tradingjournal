@@ -4,6 +4,12 @@
 
 Validate all live execution actions against a **real Bitget futures account** before running 24/7.
 
+## ⚠️ Safety Notice
+
+These scripts open and close **REAL positions** on your Bitget futures account using your API credentials. After each test, all open orders for the test symbol are cancelled and the test position is closed. Manual positions on the same symbol are **NOT** closed, but manual orders ARE cancelled.
+
+Estimated cost per test: ~$0.01 in fees (worst case ~$0.50 if SL hits).
+
 ## Prerequisites
 
 1. **Bitget API credentials** in `.env`:
@@ -48,9 +54,12 @@ python scripts/live_validation/run_all.py
 
 ## Test Parameters
 
-- **Symbol**: DOGEUSDT (minimum notional well under $5)
+- **Symbol**: DOGEUSDT (default — change `SYMBOL` in helpers.py to use any pair)
 - **Leverage**: 1x (minimal risk)
-- **Position size**: $5 USDT notional
+- **Position size**: Dynamically computed (5-10 USDT notional)
+  - Fetches current price and market limits
+  - Calculates minimum contracts to stay above Bitget's $5 notional minimum
+  - Adapts to any price: BTC at $300k, DOGE at $0.01, etc.
 - **Sync delay**: 5 seconds between open and close
 - **SL distance**: 3% below entry
 - **TP distance**: 5% above entry
@@ -63,13 +72,11 @@ python scripts/live_validation/run_all.py
 ## Cleanup
 
 Every script cleans up after itself:
-1. Cancels all orders for the symbol
-2. Closes any remaining position via `Exchange.close_position()` with `price=mark_price`
-3. Verifies no orphan positions or orders remain
+1. Cancels all orders for the symbol (including manual ones)
+2. Closes the test position (matched by entry price — manual positions left untouched)
+3. Verifies the test position is gone
 
 ## Bugs Fixed in This Implementation
-
-Three root-cause bugs were fixed in `core/exchange.py`:
 
 1. **`close_position()` passed `size_usdt` as `amount` (contracts)**
    - Fix: Added `price` parameter; computes `contracts = size_usdt / price`
@@ -87,6 +94,24 @@ Three root-cause bugs were fixed in `core/exchange.py`:
    - Safety: on failure the EXISTING SL order stays active (never naked),
      and the daemon retries next cycle (only updates `_exchange_sl_last_pushed` on success).
    - `daemon.py` now passes `direction` for correct closing side.
+
+4. **`place_order()` used wrong SL/TP params (Type 2 triggers instead of Type 3 attached)**
+   - Fix: use CCXT unified Type 3: `{'stopLoss': {'triggerPrice': X}, 'takeProfit': {'triggerPrice': Y}}`
+
+5. **`place_tpsl_order()` used raw Bitget params (holdSide, stopSurplusTriggerPrice)**
+   - Fix: use CCXT unified Type 2: `takeProfitPrice`/`stopLossPrice` (one per call)
+
+6. **`place_trailing_stop()` passed `amount=0` — invalid**
+   - Fix: fetch position contracts from `fetch_positions()`, use `createTrailingPercentOrder()`
+
+7. **`cancel_orders()` treated "no orders" (code 22001) as failure**
+   - Fix: catch Bitget error code 22001 and return `True` (nothing to cancel = success)
+
+8. **CCXT 4.x constructor incompatibility (`**kwargs` → `config` dict)**
+   - Fix: `exchange_class(config)` instead of `exchange_class(**kwargs)`
+
+9. **`load_dotenv()` never called in validation scripts**
+   - Fix: `helpers.py` calls `load_dotenv()` at import time
 
 ## After All Tests Pass
 

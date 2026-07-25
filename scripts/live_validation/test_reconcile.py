@@ -31,7 +31,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 from helpers import (
     create_exchange, get_current_price, wait_for_sync,
     cleanup_position, TestResult,
-    SYMBOL, LEVERAGE, TEST_SIZE_USDT,
+    SYMBOL, LEVERAGE, compute_test_contracts,
 )
 
 # All fields required for reconciliation (from exchange.py fetch_positions)
@@ -53,6 +53,7 @@ def main() -> None:
 
     result = TestResult("Reconciliation")
     exchange = None
+    entry_price = None
 
     try:
         exchange = create_exchange()
@@ -60,6 +61,7 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
 
         # ── Compute SL/TP ─────────────────────────────────────────────────
         sl_price = round(price * 0.97, 6)     # 3% below
@@ -72,7 +74,7 @@ def main() -> None:
         order = exchange.place_order(
             symbol=SYMBOL,
             direction="Long",
-            size_usdt=TEST_SIZE_USDT,
+            size_usdt=notional_usdt,
             entry_price=price,
             sl_price=sl_price,
             tp_price=tp_price,
@@ -98,6 +100,7 @@ def main() -> None:
 
         if target:
             pos = target[0]
+            entry_price = pos.get("entry_price")
 
             # ── Check all required fields exist ────────────────────────────
             for field in REQUIRED_FIELDS:
@@ -189,7 +192,7 @@ def main() -> None:
 
     finally:
         if exchange:
-            cleanup_position(exchange, SYMBOL)
+            cleanup_position(exchange, SYMBOL, our_entry_price=entry_price)
 
     passed = result.report()
     sys.exit(result.exit_code())
