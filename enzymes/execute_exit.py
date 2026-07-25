@@ -273,6 +273,7 @@ class ExecuteExit(Enzyme):
                 size_usdt=size_usdt,
                 reduce_only=False,
                 price=position.get("mark_price", 0),
+                total_contracts=position.get("total_contracts"),
             )
             if result:
                 self._log.info(

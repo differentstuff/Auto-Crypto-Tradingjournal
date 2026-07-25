@@ -308,6 +308,7 @@ def cleanup_position(exchange: Exchange, symbol: str = SYMBOL,
                     size_usdt=size_usdt,
                     reduce_only=False,
                     price=mark_price,
+                    total_contracts=pos.get("total_contracts"),
                 )
                 if result:
                     print(f"   ✅ Position closed (order_id={result.get('order_id', '?')})")

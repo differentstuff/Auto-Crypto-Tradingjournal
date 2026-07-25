@@ -442,28 +442,23 @@ class Exchange:
             except Exception:
                 contracts = round(contracts)  # Fallback: round to nearest integer
 
-            # Build params with attached SL/TP using CCXT unified Type 3.
-            # Bitget has 3 types of SL/TP params:
-            #   Type 1: triggerPrice (standalone trigger order)
-            #   Type 2: stopLossPrice OR takeProfitPrice (one at a time)
-            #   Type 3: stopLoss/takeProfit objects (attached to entry, both allowed)
-            # We use Type 3 for preset SL+TP on the entry order.
-            # Ref: ccxt/ccxt#18760, ccxt/ccxt#28239, Bitget createOrder docs
-            params = {}
-            if sl_price and tp_price:
-                params['stopLoss'] = {'triggerPrice': sl_price}
-                params['takeProfit'] = {'triggerPrice': tp_price}
-            elif sl_price:
-                params['stopLoss'] = {'triggerPrice': sl_price}
-            elif tp_price:
-                params['takeProfit'] = {'triggerPrice': tp_price}
+            # NOTE: SL/TP are NOT attached to the entry order via params.
+            # Bitget silently ignores stopLoss/takeProfit objects on market
+            # orders, leaving the position with NO protection (BUG-10).
+            # Instead, SL and TP are placed as separate trigger orders via
+            # place_tpsl_order() AFTER the position is opened.
+            # The daemon (execute_trade.py) handles this correctly:
+            #   1. place_order() — open position (no SL/TP)
+            #   2. place_tpsl_order(sl) — separate SL trigger order
+            #   3. place_tpsl_order(tp) — separate TP trigger order
+            #   4. place_tpsl_order(tp1) — partial TP1 trigger order
+            # This gives each SL/TP its own order_id for modify_tpsl_order().
 
-            # Place market order with attached SL/TP
+            # Place market order (no attached SL/TP)
             order = exchange.create_market_order(
                 symbol=ccxt_symbol,
                 side=side,
                 amount=contracts,
-                params=params if params else None,
             )
 
             _log.info(
@@ -839,7 +834,7 @@ class Exchange:
                 amount=contracts,
                 trailingPercent=trail_pct,
                 params={
-                    'triggerPrice': trigger_price,
+                    'trailingTriggerPrice': trigger_price,
                     'reduceOnly': True,
                 },
             )
@@ -977,6 +972,7 @@ class Exchange:
         size_usdt: float = 0,
         reduce_only: bool = True,
         price: float = None,
+        total_contracts: float = None,
     ) -> Optional[dict]:
         """
         Close an existing position at market.
@@ -991,6 +987,9 @@ class Exchange:
             reduce_only: True for partial close, False for full close
             price: Current price to convert size_usdt to contracts.
                 If None, fetches current ticker price.
+            total_contracts: Actual contract amount from the position.
+                If provided, used directly instead of computing from
+                size_usdt/price (avoids rounding errors that leave 1 contract).
 
         Returns dict with: order_id, symbol, status, paper
         """
@@ -1009,18 +1008,19 @@ class Exchange:
             ccxt_symbol = _to_ccxt_symbol(symbol)
             side = "sell" if direction.lower() == "long" else "buy"
 
-            # Convert size_usdt (USDT notional) to contracts (base currency units).
-            # CCXT create_market_order requires amount in contracts, not USDT.
-            # For DOGEUSDT at $0.20: $5 notional = 25 DOGE contracts, not 5.
-            close_price = price
-            if not close_price or close_price <= 0:
-                ticker = self.fetch_ticker(symbol)
-                close_price = ticker.get("last", 0) if ticker else 0
-            if not close_price or close_price <= 0:
-                _log.error("close_position: cannot determine price for %s", symbol)
-                return None
-
-            contracts = size_usdt / close_price if close_price > 0 else 0
+            # Use actual contract count if provided (avoids rounding errors
+            # that leave 1 contract behind). Fall back to size_usdt/price.
+            if total_contracts and total_contracts > 0:
+                contracts = total_contracts
+            else:
+                close_price = price
+                if not close_price or close_price <= 0:
+                    ticker = self.fetch_ticker(symbol)
+                    close_price = ticker.get("last", 0) if ticker else 0
+                if not close_price or close_price <= 0:
+                    _log.error("close_position: cannot determine price for %s", symbol)
+                    return None
+                contracts = size_usdt / close_price if close_price > 0 else 0
 
             # Round to exchange's amount precision
             try:
