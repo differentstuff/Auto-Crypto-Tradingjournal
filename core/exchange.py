@@ -158,6 +158,23 @@ class Exchange:
             self._trade_exchange.options['defaultType'] = 'future'
             if sandbox:
                 self._trade_exchange.options['sandboxMode'] = True
+
+            # Ensure position mode is synced with exchange.
+            # Bitget accounts default to one-way (unilateral) mode, but CCXT
+            # may internally assume hedge mode when stopLoss/takeProfit objects
+            # are used. Calling set_position_mode(False) syncs CCXT's internal
+            # state with the exchange, preventing error 40774
+            # ("The order type for unilateral position must also be the
+            # unilateral position type").
+            # This is a no-op if already in one-way mode — safe to call every time.
+            # Ref: ccxt/ccxt#20729, ccxt/ccxt#19140, ccxt/ccxt#22547
+            if exchange_id == "bitget":
+                try:
+                    self._trade_exchange.set_position_mode(False, None)
+                    _log.info("Bitget position mode set to one-way (unilateral)")
+                except Exception as e:
+                    _log.warning("Could not set Bitget position mode: %s", e)
+
             _log.info("Trade exchange created: %s (auth=%s)", exchange_id, bool(creds.get("api_key")))
 
         return self._trade_exchange
@@ -201,7 +218,8 @@ class Exchange:
             df.index = pd.to_datetime(df["ts"], unit="ms")
 
             if len(df) < 30:
-                _log.warning("Insufficient data for %s %s: %d bars", symbol, timeframe, len(df))
+                _log.debug("Limited data for %s %s: %d bars (need 30+ for indicators)",
+                           symbol, timeframe, len(df))
 
             return df
 
@@ -1243,10 +1261,10 @@ class Exchange:
             "paper_mode": self._paper_mode,
         }
 
-        # Test data exchange
+        # Test data exchange — fetch enough bars to avoid spurious warnings
         try:
-            df = self.fetch_ohlcv("BTCUSDT", "1h", limit=5)
-            result["data_ok"] = df is not None and len(df) >= 3
+            df = self.fetch_ohlcv("BTCUSDT", "1h", limit=100)
+            result["data_ok"] = df is not None and len(df) >= 30
         except Exception as e:
             _log.warning("Data exchange test failed: %s", e)
 
