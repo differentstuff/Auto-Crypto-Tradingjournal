@@ -8,10 +8,11 @@ Verifies:
   - SL price is updated on exchange after modification
   - SL moved in the expected direction
 
-modify_tpsl_order() uses Bitget's native in-place modify endpoint
-(POST /api/v2/mix/order/modify-tpsl-order) via CCXT edit_order with
-amount=None (requires ccxt>=4.5.54, PR #27674). On failure the existing
-SL order remains active — the position is never left without a stop-loss.
+modify_tpsl_order() calls Bitget's modify-tpsl-order endpoint directly
+(POST /api/v2/mix/order/modify-tpsl-order) with planType + triggerPrice
++ size. CCXT's edit_order does not route plan order modifications correctly.
+On failure the existing SL order remains active — the position is never
+left without a stop-loss.
 
 Cleanup: Closes position and cancels orders.
 
@@ -52,7 +53,7 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
-        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL, price=price)
 
         # ── Compute SL/TP ─────────────────────────────────────────────────
         original_sl = round(price * 0.97, 6)    # 3% below entry

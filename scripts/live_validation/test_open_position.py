@@ -9,7 +9,7 @@ Verifies:
   - Position direction is Long, leverage is 1x
   - SL and TP are set on exchange (sl_price, tp_price > 0)
   - SL and TP order IDs exist (for modify_tpsl_order later)
-  - Position ID exists (pos_id, for reconciliation)
+  - Position ID field present (pos_id, empty in one-way mode)
 
 Cleanup: Closes position and cancels orders.
 
@@ -50,7 +50,7 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
-        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL, price=price)
 
         # ── Compute SL/TP (safe distances for testing) ────────────────────
         sl_price = round(price * 0.97, 6)   # 3% below entry
@@ -186,9 +186,9 @@ def main() -> None:
                 f"tp_order_id={pos.get('tp_order_id')}",
             )
             result.check(
-                bool(pos.get("pos_id")),
-                "Position ID exists (needed for reconciliation)",
-                f"pos_id={pos.get('pos_id')}",
+                "pos_id" in pos,
+                "Position ID field present (empty in one-way mode)",
+                f"pos_id={pos.get('pos_id') or 'N/A (one-way mode)'}",
             )
             result.check(
                 pos.get("total_contracts", 0) > 0,

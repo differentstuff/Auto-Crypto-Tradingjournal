@@ -51,7 +51,7 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
-        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL, price=price)
 
         # ── Compute SL and TP1 ────────────────────────────────────────────
         # TP1 at ~2% above entry — safe distance, won't trigger during test

@@ -7,7 +7,7 @@ Verifies:
   - fetch_positions() returns complete data for reconciliation
   - All required fields are present (symbol, direction, entry_price, etc.)
   - Position data is consistent (size, leverage match expected values)
-  - Reconciliation fields are populated (pos_id, sl_order_id, etc.)
+  - Reconciliation fields are populated (sl_order_id, etc.; pos_id may be empty in one-way mode)
 
 This is the most thorough test — it checks every field that the daemon's
 reconciliation logic depends on.
@@ -61,7 +61,7 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
-        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL, price=price)
 
         # ── Compute SL/TP ─────────────────────────────────────────────────
         sl_price = round(price * 0.97, 6)     # 3% below

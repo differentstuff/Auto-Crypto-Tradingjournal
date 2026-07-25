@@ -51,7 +51,7 @@ def main() -> None:
 
         # ── Get current price ─────────────────────────────────────────────
         price = get_current_price(exchange, SYMBOL)
-        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL)
+        contracts, notional_usdt = compute_test_contracts(exchange, SYMBOL, price=price)
 
         # ── Compute SL and trailing stop params ───────────────────────────
         sl_price = round(price * 0.97, 6)         # 3% below (safety net)

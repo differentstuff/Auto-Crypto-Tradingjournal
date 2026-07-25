@@ -40,7 +40,7 @@ load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 SYMBOL = "DOGEUSDT"
 LEVERAGE = 1
-MIN_SYNC_SECONDS = 3
+MIN_SYNC_SECONDS = 5
 # Notional target range: 5-10 USDT (Bitget USDT-M futures minimum is 5 USDT).
 # The exact contract count is computed dynamically in compute_test_contracts()
 # based on the current price and market's minimum contract size.
@@ -117,20 +117,26 @@ def create_exchange() -> Exchange:
 # ── Dynamic contract calculation ─────────────────────────────────────────────
 
 
-def compute_test_contracts(exchange: Exchange, symbol: str = SYMBOL) -> tuple[float, float]:
+def compute_test_contracts(exchange: Exchange, symbol: str = SYMBOL, price: float = None) -> tuple[float, float]:
     """
     Compute the minimum number of contracts to stay within 5-10 USDT notional.
 
     Dynamically adapts to any symbol at any price:
-    - Fetches current price
+    - Fetches current price (if not provided)
     - Reads market limits (min contract size, precision)
     - Calculates contracts needed for ~$6 USDT notional (above $5 minimum)
     - Handles edge cases: BTC at $300k, DOGE at any price, etc.
 
+    Args:
+        exchange: Exchange instance
+        symbol: Journal format symbol
+        price: Pre-fetched current price (avoids duplicate API call + log)
+
     Returns:
         (contracts, notional_usdt) — the number of contracts and actual notional value.
     """
-    price = get_current_price(exchange, symbol)
+    if price is None:
+        price = get_current_price(exchange, symbol)
 
     # Get market info for precision and minimums
     raw_exchange = exchange._get_trade_exchange()

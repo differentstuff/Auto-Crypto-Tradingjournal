@@ -301,7 +301,7 @@ class Exchange:
         Returns list of dicts with ALL fields needed for reconciliation:
           symbol, direction, entry_price, mark_price, size_usdt,
           unrealized_pnl, unrealized_pct, leverage,
-          pos_id (exchange position ID for modify-tpsl-order),
+          pos_id (exchange position ID, empty in one-way mode),
           achieved_profits (> 0 means TP1 hit),
           sl_price (current SL on exchange),
           tp_price (current TP on exchange),
@@ -339,7 +339,11 @@ class Exchange:
 
                 # Raw fields from Bitget for reconciliation and order management
                 info = p.get("info", {})
-                pos_id = info.get("posId", "") or str(p.get("id", ""))
+                # Bitget has no posId for USDT-M futures (positions identified
+                # by symbol+holdSide). Avoid str(None) -> "None" string bug.
+                pos_id = info.get("posId") or p.get("id") or ""
+                if pos_id is None:
+                    pos_id = ""
                 achieved_profits = float(info.get("achievedProfits", 0) or 0)
 
                 # Current SL/TP on exchange — read from position data.
