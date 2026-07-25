@@ -396,26 +396,49 @@ class Exchange:
 
     def _enrich_positions_with_orders(self, exchange, positions: list) -> None:
         """
-        Enrich position dicts with SL/TP data from open plan orders.
+        Enrich position dicts with SL/TP data from pending plan orders.
 
-        Bitget's position endpoint may not include SL/TP order IDs for
-        pos_loss/pos_profit plan types. This method fetches open orders
-        and matches them to positions by symbol + holdSide.
+        Bitget's position endpoint does NOT reliably include SL/TP info for
+        pos_loss/pos_profit plan orders. The plan-pending endpoint is the
+        source of truth for these orders.
 
-        Updates positions in-place: sets sl_price, tp_price, sl_order_id, tp_order_id.
+        IMPORTANT: this method resets sl_price/tp_price/sl_order_id/tp_order_id
+        to 0/"" before filling from plan orders. If a plan order was cancelled,
+        it will NOT appear in the pending list, and the fields will correctly
+        show as empty (exchange-as-truth). This prevents stale values from
+        persisting after cancel_orders().
+
+        Updates positions in-place.
         """
         if not positions:
             return
 
-        # Get symbols we need orders for
         symbols = set(p["symbol"] for p in positions)
 
         for symbol in symbols:
             ccxt_symbol = _to_ccxt_symbol(symbol)
             try:
-                open_orders = exchange.fetch_open_orders(ccxt_symbol)
+                market = exchange.market(ccxt_symbol)
+                plan_orders = []
+
+                # Fetch TP/SL plan orders (profit_plan, loss_plan, moving_plan, pos_*)
+                for plan_filter in ("profit_loss", "normal_plan"):
+                    try:
+                        response = exchange.private_mix_get_v2_mix_order_orders_plan_pending({
+                            "symbol": market["id"],
+                            "productType": "USDT-FUTURES",
+                            "planType": plan_filter,
+                        })
+                        if isinstance(response, dict):
+                            data = response.get("data", {})
+                            if isinstance(data, dict):
+                                plan_orders.extend(data.get("entrustedList", []) or [])
+                            elif isinstance(data, list):
+                                plan_orders.extend(data)
+                    except Exception as e:
+                        _log.warning("Could not fetch %s orders for %s: %s", plan_filter, symbol, e)
             except Exception as e:
-                _log.warning("Could not fetch open orders for %s: %s", symbol, e)
+                _log.warning("Could not fetch plan orders for %s: %s", symbol, e)
                 continue
 
             # Find matching position
@@ -426,44 +449,37 @@ class Exchange:
             pos = target_positions[0]
             direction = pos.get("direction", "Long")
 
+            # Reset SL/TP fields — plan orders are the source of truth.
+            # If no matching plan order exists, fields stay empty (correct
+            # after cancel_orders — no stale values persist).
+            pos["sl_price"] = 0.0
+            pos["tp_price"] = 0.0
+            pos["sl_order_id"] = ""
+            pos["tp_order_id"] = ""
+
             # In one-way mode: holdSide = 'buy' for Long, 'sell' for Short
             expected_hold_side = "buy" if direction.lower() == "long" else "sell"
 
-            for order in open_orders:
-                info = order.get("info", {})
-                plan_type = info.get("planType", "")
-                order_id = order.get("id", "") or info.get("orderId", "")
-                trigger_price = float(info.get("triggerPrice", 0) or order.get("triggerPrice", 0) or 0)
-                hold_side = info.get("holdSide", "").lower()
+            for order in plan_orders:
+                plan_type = order.get("planType", "")
+                order_id = order.get("orderId", "")
+                try:
+                    trigger_price = float(order.get("triggerPrice", 0) or 0)
+                except (ValueError, TypeError):
+                    trigger_price = 0.0
+                hold_side = str(order.get("holdSide", "")).lower()
 
                 # Skip orders that don't match our position's direction
                 if hold_side and hold_side != expected_hold_side:
                     continue
 
-                # Match plan types to position fields
-                if plan_type == "pos_loss" and trigger_price > 0:
-                    if not pos.get("sl_price"):
-                        pos["sl_price"] = trigger_price
-                    if not pos.get("sl_order_id"):
-                        pos["sl_order_id"] = str(order_id)
-                elif plan_type == "pos_profit" and trigger_price > 0:
-                    if not pos.get("tp_price"):
-                        pos["tp_price"] = trigger_price
-                    if not pos.get("tp_order_id"):
-                        pos["tp_order_id"] = str(order_id)
-                elif plan_type == "loss_plan" and trigger_price > 0:
-                    # Independent stop-loss plan order — still record it
-                    if not pos.get("sl_price"):
-                        pos["sl_price"] = trigger_price
-                    if not pos.get("sl_order_id"):
-                        pos["sl_order_id"] = str(order_id)
-                elif plan_type == "profit_plan" and trigger_price > 0:
-                    # Independent take-profit plan order (TP1) — record as tp1
-                    # Don't overwrite pos_profit TP2
-                    if not pos.get("tp_price"):
-                        pos["tp_price"] = trigger_price
-                    if not pos.get("tp_order_id"):
-                        pos["tp_order_id"] = str(order_id)
+                # Match plan types to position fields (last one wins for SL/TP)
+                if plan_type in ("pos_loss", "loss_plan") and trigger_price > 0:
+                    pos["sl_price"] = trigger_price
+                    pos["sl_order_id"] = str(order_id)
+                elif plan_type in ("pos_profit", "profit_plan") and trigger_price > 0:
+                    pos["tp_price"] = trigger_price
+                    pos["tp_order_id"] = str(order_id)
 
     # --- Order Methods (paper mode guarded) ------------------------------------
 
@@ -478,19 +494,24 @@ class Exchange:
         leverage: int = None,
     ) -> Optional[dict]:
         """
-        Place a market order to open a position.
+        Place a market order to open a position, optionally with SL/TP.
 
-        SL/TP are NOT attached to the entry order — they are placed separately
-        via place_tpsl_order() AFTER the position is opened. This is because
-        Bitget silently ignores stopLoss/takeProfit params on market orders.
+        If sl_price / tp_price are provided, they are placed as position-level
+        plan orders (pos_loss / pos_profit) AFTER the market order fills and
+        the position registers on the exchange. This is the safe-by-default
+        behavior: every caller (daemon, scripts) gets SL/TP on exchange
+        without needing to call place_tpsl_order() separately.
 
-        The daemon (execute_trade.py) calls place_tpsl_order() for SL and TP
-        after place_order() succeeds. This gives each SL/TP its own order_id
-        for modify_tpsl_order().
+        SL/TP cannot be attached to the market order itself — Bitget silently
+        ignores stopLoss/takeProfit params on market orders.
+
+        The daemon (execute_trade.py) passes sl_price and tp_price; TP1 is
+        placed separately by the daemon as a profit_plan (partial close).
 
         In paper mode: logs the order and returns mock data.
 
-        Returns dict with: order_id, symbol, direction, size_usdt, status
+        Returns dict with: order_id, symbol, direction, size_usdt, status,
+            sl_order_id, tp_order_id (if SL/TP were placed)
         """
         if leverage is None:
             leverage = self._config.get("portfolio", {}).get("leverage")
@@ -546,13 +567,63 @@ class Exchange:
                 direction, symbol, contracts, size_usdt, order.get("id", "?"),
             )
 
-            return {
+            result = {
                 "order_id": order.get("id", ""),
                 "symbol": symbol,
                 "direction": direction,
                 "size_usdt": size_usdt,
                 "status": order.get("status") or "filled",  # CCXT may return None for market orders
             }
+
+            # If sl_price / tp_price were provided, place them as position-level
+            # plan orders (pos_loss / pos_profit) after the position settles.
+            # This makes place_order() safe-by-default for ALL callers:
+            # the daemon (execute_trade.py) passes sl_price/tp_price expecting
+            # them to be set on exchange, and now they actually are.
+            if sl_price or tp_price:
+                # Wait briefly for the position to register on Bitget
+                import time as _time
+                settled = False
+                for _ in range(10):  # up to 5 seconds
+                    _time.sleep(0.5)
+                    positions = self.fetch_positions()
+                    if any(p.get("symbol") == symbol for p in positions):
+                        settled = True
+                        break
+                if not settled:
+                    _log.warning("Position for %s not visible after order — SL/TP placement may fail", symbol)
+
+                if sl_price:
+                    sl_result = self.place_tpsl_order(
+                        symbol=symbol,
+                        direction=direction,
+                        trigger_price=sl_price,
+                        order_type="sl",
+                        size_pct=100.0,
+                        size_usdt=0.0,
+                    )
+                    if sl_result:
+                        result["sl_order_id"] = sl_result.get("order_id", "")
+                        result["sl_price"] = sl_price
+                    else:
+                        _log.error("Failed to place SL for %s — position has NO stop-loss!", symbol)
+
+                if tp_price:
+                    tp_result = self.place_tpsl_order(
+                        symbol=symbol,
+                        direction=direction,
+                        trigger_price=tp_price,
+                        order_type="tp",
+                        size_pct=100.0,
+                        size_usdt=0.0,
+                    )
+                    if tp_result:
+                        result["tp_order_id"] = tp_result.get("order_id", "")
+                        result["tp_price"] = tp_price
+                    else:
+                        _log.error("Failed to place TP for %s", symbol)
+
+            return result
 
         except Exception as e:
             _log.error("place_order failed for %s: %s", symbol, e)
@@ -803,8 +874,14 @@ class Exchange:
         """
         Modify an existing TP/SL order in place via Bitget's native endpoint.
 
-        Bitget supports in-place modification of TP/SL plan orders:
+        Calls Bitget's modify-tpsl-order endpoint directly:
           POST /api/v2/mix/order/modify-tpsl-order
+
+        This is used INSTEAD of CCXT's edit_order because CCXT doesn't
+        properly route plan order modifications — it maps stopLossPrice/
+        takeProfitPrice to the wrong endpoint parameters. The Bitget
+        endpoint requires planType + triggerPrice, which CCXT's generic
+        edit_order doesn't provide.
 
         SAFETY: in-place modification — the position is NEVER left without
         a stop-loss. On failure the EXISTING SL/TP order remains active on
@@ -837,33 +914,64 @@ class Exchange:
         try:
             exchange = self._get_trade_exchange()
             ccxt_symbol = _to_ccxt_symbol(symbol)
+            market = exchange.market(ccxt_symbol)
 
-            params = {}
+            # Bitget's modify-tpsl-order endpoint requires planType and
+            # triggerPrice — NOT stopLossPrice/takeProfitPrice. CCXT's
+            # edit_order doesn't properly route to this endpoint or map
+            # these params. Call the Bitget endpoint directly for full
+            # control (same pattern as place_tpsl_order).
+
+            # Determine which plan orders to modify.
+            # SL → pos_loss, TP → pos_profit. In practice the daemon
+            # only modifies one at a time (trailing stop = SL only).
+            modifications = []
             if new_sl_price is not None:
-                params["stopLossPrice"] = new_sl_price
+                modifications.append(("pos_loss", new_sl_price))
             if new_tp_price is not None:
-                params["takeProfitPrice"] = new_tp_price
+                modifications.append(("pos_profit", new_tp_price))
 
-            side = "sell"
-            if direction and direction.lower() == "short":
-                side = "buy"
+            # Fetch position for contract amount. Bitget's modify-tpsl-order
+            # may require newSize (code 400172 'Order quantity cannot be empty').
+            positions = self.fetch_positions()
+            target = [p for p in positions if p.get("symbol") == symbol]
+            amount = None
+            if target:
+                amount = float(target[0].get("total_contracts", 0)) or None
+                if amount:
+                    try:
+                        amount = float(exchange.amount_to_precision(ccxt_symbol, amount))
+                    except Exception:
+                        amount = round(amount)
 
-            # Use CCXT edit_order for in-place modification.
-            # amount=None + price=None → TPSL-only update (ccxt>=4.5.54, PR #27674).
-            exchange.edit_order(
-                id=order_id,
-                symbol=ccxt_symbol,
-                type="market",
-                side=side,
-                amount=None,
-                price=None,
-                params=params,
-            )
+            # Call Bitget's modify-tpsl-order endpoint for each modification.
+            for plan_type, trigger_price in modifications:
+                # Round trigger_price to market's price precision
+                try:
+                    trigger_price = float(exchange.price_to_precision(ccxt_symbol, trigger_price))
+                except Exception:
+                    trigger_price = round(trigger_price, 5)
 
-            _log.info(
-                "LIVE MODIFY TPSL: %s order_id=%s sl=%s tp=%s",
-                symbol, order_id, new_sl_price, new_tp_price,
-            )
+                request = {
+                    "symbol": market["id"],
+                    "productType": "USDT-FUTURES",
+                    "marginCoin": "USDT",
+                    "orderId": order_id,
+                    "planType": plan_type,
+                    "triggerPrice": str(trigger_price),
+                }
+
+                # Include newSize when available (prevents code 400172)
+                if amount and amount > 0:
+                    request["newSize"] = str(int(amount)) if amount == int(amount) else str(amount)
+
+                exchange.private_mix_post_v2_mix_order_modify_tpsl_order(request)
+
+                _log.info(
+                    "LIVE MODIFY TPSL: %s order_id=%s planType=%s triggerPrice=%.6f",
+                    symbol, order_id, plan_type, trigger_price,
+                )
+
             return True
 
         except Exception as e:
@@ -1070,10 +1178,17 @@ class Exchange:
 
     def cancel_orders(self, symbol: str) -> bool:
         """
-        Cancel all open orders for a symbol.
+        Cancel all open orders for a symbol — BOTH regular orders AND plan orders.
+
+        Bitget separates order types into two categories:
+          - Regular orders: limit/market orders on the order book
+          - Plan orders: trigger/SL/TP/trailing orders (pos_loss, pos_profit,
+            profit_plan, loss_plan, moving_plan, normal_plan, track_plan)
+
+        CCXT's cancel_all_orders() only cancels REGULAR orders. Plan orders
+        require the separate plan-pending endpoint + cancel-plan-order.
 
         In paper mode: no-op, returns True.
-        In live mode: calls the exchange API, returns True on success.
 
         Returns: True if successful
         """
@@ -1081,22 +1196,93 @@ class Exchange:
             _log.info("PAPER CANCEL: %s (no-op)", symbol)
             return True
 
+        success = True
+
+        # Step 1: Cancel regular orders
         try:
             exchange = self._get_trade_exchange()
             ccxt_symbol = _to_ccxt_symbol(symbol)
             orders = exchange.cancel_all_orders(ccxt_symbol)
-            return {
-                "symbol": symbol,
-                "cancelled": True,
-            }
         except Exception as e:
             error_str = str(e)
             # Bitget code 22001 = "No order to cancel" — not an error.
             if '"code":"22001"' in error_str or 'No order to cancel' in error_str:
-                _log.info("cancel_orders: no open orders for %s (already clean)", symbol)
-                return True
-            _log.error("cancel_orders failed for %s: %s", symbol, e)
-            return False
+                _log.info("cancel_orders: no regular orders for %s (already clean)", symbol)
+            else:
+                _log.error("cancel_orders (regular) failed for %s: %s", symbol, e)
+                success = False
+
+        # Step 2: Cancel plan orders (SL/TP/trigger/trailing)
+        try:
+            exchange = self._get_trade_exchange()
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+            market = exchange.market(ccxt_symbol)
+
+            # Fetch pending plan orders for this symbol
+            response = exchange.private_mix_get_v2_mix_order_orders_plan_pending({
+                "symbol": market["id"],
+                "productType": "USDT-FUTURES",
+                "planType": "profit_loss",  # covers profit/loss/moving/pos plans
+            })
+
+            plan_orders = []
+            if isinstance(response, dict):
+                data = response.get("data", {})
+                if isinstance(data, dict):
+                    plan_orders = data.get("entrustedList", []) or []
+                elif isinstance(data, list):
+                    plan_orders = data
+
+            # Also fetch trigger orders (normal_plan/track_plan)
+            try:
+                response2 = exchange.private_mix_get_v2_mix_order_orders_plan_pending({
+                    "symbol": market["id"],
+                    "productType": "USDT-FUTURES",
+                    "planType": "normal_plan",
+                })
+                if isinstance(response2, dict):
+                    data2 = response2.get("data", {})
+                    if isinstance(data2, dict):
+                        plan_orders.extend(data2.get("entrustedList", []) or [])
+                    elif isinstance(data2, list):
+                        plan_orders.extend(data2)
+            except Exception as e2:
+                _log.warning("Could not fetch normal_plan orders for %s: %s", symbol, e2)
+
+            # Cancel each plan order
+            cancelled_count = 0
+            for po in plan_orders:
+                try:
+                    order_id = po.get("orderId", "")
+                    plan_type = po.get("planType", "")
+                    if not order_id:
+                        continue
+                    exchange.private_mix_post_v2_mix_order_cancel_plan_order({
+                        "symbol": market["id"],
+                        "productType": "USDT-FUTURES",
+                        "orderId": order_id,
+                        "planType": plan_type,
+                    })
+                    cancelled_count += 1
+                except Exception as ce:
+                    _log.warning("Could not cancel plan order %s for %s: %s", po.get("orderId"), symbol, ce)
+                    success = False
+
+            if cancelled_count > 0:
+                _log.info("Cancelled %d plan order(s) for %s", cancelled_count, symbol)
+
+        except Exception as e:
+            error_str = str(e)
+            if '"code":"22001"' in error_str or 'No order to cancel' in error_str:
+                _log.info("cancel_orders: no plan orders for %s (already clean)", symbol)
+            else:
+                _log.error("cancel_orders (plan) failed for %s: %s", symbol, e)
+                success = False
+
+        return {
+            "symbol": symbol,
+            "cancelled": success,
+        }
 
     def close_position(
         self,
