@@ -931,8 +931,12 @@ class Exchange:
             if new_tp_price is not None:
                 modifications.append(("pos_profit", new_tp_price))
 
-            # Fetch position for contract amount. Bitget's modify-tpsl-order
-            # may require newSize (code 400172 'Order quantity cannot be empty').
+            # Bitget's modify-tpsl-order requires 'size' (not 'newSize'):
+            #   - pos_loss / pos_profit: size must be "" (empty string)
+            #     These are position-attached, close the full position.
+            #   - profit_plan / loss_plan: size must be the contract amount
+            #     These are independent orders that need explicit quantity.
+            # Ref: https://www.bitget.com/api-doc/contract/plan/Modify-Tpsl-Order
             positions = self.fetch_positions()
             target = [p for p in positions if p.get("symbol") == symbol]
             amount = None
@@ -961,9 +965,19 @@ class Exchange:
                     "triggerPrice": str(trigger_price),
                 }
 
-                # Include newSize when available (prevents code 400172)
-                if amount and amount > 0:
-                    request["newSize"] = str(int(amount)) if amount == int(amount) else str(amount)
+                # 'size' is REQUIRED by Bitget's modify-tpsl-order endpoint.
+                # For pos_loss/pos_profit: empty string (position-attached, closes full position)
+                # For profit_plan/loss_plan: contract amount string (independent order)
+                if plan_type in ("pos_loss", "pos_profit"):
+                    request["size"] = ""
+                elif amount and amount > 0:
+                    request["size"] = str(int(amount)) if amount == int(amount) else str(amount)
+                else:
+                    _log.warning(
+                        "modify_tpsl_order: no position size for %s planType=%s — sending size=\"\"",
+                        symbol, plan_type,
+                    )
+                    request["size"] = ""
 
                 exchange.private_mix_post_v2_mix_order_modify_tpsl_order(request)
 
