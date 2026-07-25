@@ -551,7 +551,7 @@ class Exchange:
                 "symbol": symbol,
                 "direction": direction,
                 "size_usdt": size_usdt,
-                "status": order.get("status", "unknown"),
+                "status": order.get("status") or "filled",  # CCXT may return None for market orders
             }
 
         except Exception as e:
@@ -721,6 +721,14 @@ class Exchange:
             # We call this directly via CCXT's implicit API method for full
             # control over the planType parameter.
             market = exchange.market(ccxt_symbol)
+
+            # Round trigger_price to market's price precision to avoid
+            # Bitget 'checkBDScale' errors (e.g. DOGEUSDT requires 5 decimals).
+            try:
+                trigger_price = float(exchange.price_to_precision(ccxt_symbol, trigger_price))
+            except Exception:
+                trigger_price = round(trigger_price, 5)
+
             request = {
                 "symbol": market["id"],  # Bitget format: "DOGEUSDT"
                 "productType": "USDT-FUTURES",
@@ -931,7 +939,17 @@ class Exchange:
 
             # Use Bitget's place-tpsl-order with planType=moving_plan.
             # This is the native trailing stop — managed by Bitget.
+            # NOTE: moving_plan does NOT use executePrice — it always
+            # executes at market price when triggered. Including it causes
+            # 'Parameter verification failed executePrice' error.
             market = exchange.market(ccxt_symbol)
+
+            # Round trigger_price to market's price precision
+            try:
+                trigger_price = float(exchange.price_to_precision(ccxt_symbol, trigger_price))
+            except Exception:
+                trigger_price = round(trigger_price, 5)
+
             request = {
                 "symbol": market["id"],
                 "productType": "USDT-FUTURES",
@@ -940,7 +958,6 @@ class Exchange:
                 "triggerPrice": str(trigger_price),
                 "triggerType": "mark_price",
                 "holdSide": hold_side,
-                "executePrice": "0",  # Market execution
                 "size": str(int(contracts)) if contracts == int(contracts) else str(contracts),
                 "rangeRate": str(trail_pct),
             }
