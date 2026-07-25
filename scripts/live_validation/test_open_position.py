@@ -9,7 +9,7 @@ Verifies:
   - Position direction is Long, leverage is 1x
   - SL and TP are set on exchange (sl_price, tp_price > 0)
   - SL and TP order IDs exist (for modify_tpsl_order later)
-  - Position ID field present (pos_id, empty in one-way mode)
+  - Position ID field present (pos_id = symbol:direction in one-way mode)
 
 Cleanup: Closes position and cancels orders.
 
@@ -187,8 +187,8 @@ def main() -> None:
             )
             result.check(
                 "pos_id" in pos,
-                "Position ID field present (empty in one-way mode)",
-                f"pos_id={pos.get('pos_id') or 'N/A (one-way mode)'}",
+                "Position ID field present",
+                f"pos_id={pos.get('pos_id')}",
             )
             result.check(
                 pos.get("total_contracts", 0) > 0,

@@ -301,7 +301,7 @@ class Exchange:
         Returns list of dicts with ALL fields needed for reconciliation:
           symbol, direction, entry_price, mark_price, size_usdt,
           unrealized_pnl, unrealized_pct, leverage,
-          pos_id (exchange position ID, empty in one-way mode),
+          pos_id (position key: numeric ID if available, else symbol:direction),
           achieved_profits (> 0 means TP1 hit),
           sl_price (current SL on exchange),
           tp_price (current TP on exchange),
@@ -339,11 +339,15 @@ class Exchange:
 
                 # Raw fields from Bitget for reconciliation and order management
                 info = p.get("info", {})
-                # Bitget has no posId for USDT-M futures (positions identified
-                # by symbol+holdSide). Avoid str(None) -> "None" string bug.
-                pos_id = info.get("posId") or p.get("id") or ""
-                if pos_id is None:
-                    pos_id = ""
+                # Bitget has no numeric posId for USDT-M futures in one-way
+                # mode — positions are identified by symbol+holdSide.
+                # Use a synthetic key (e.g. "DOGEUSDT:Long") so the field is
+                # always meaningful instead of empty.
+                raw_pos_id = info.get("posId") or p.get("id") or ""
+                if raw_pos_id is None or str(raw_pos_id).strip() == "":
+                    pos_id = f"{symbol}:{direction}"
+                else:
+                    pos_id = str(raw_pos_id)
                 achieved_profits = float(info.get("achievedProfits", 0) or 0)
 
                 # Current SL/TP on exchange — read from position data.
@@ -1314,6 +1318,14 @@ class Exchange:
         """
         Close an existing position at market.
 
+        Always uses the exchange's actual contract count for the close order,
+        avoiding rounding errors from size_usdt/price computation that can
+        leave a dust position (1 contract). The contract count is obtained:
+
+          1. From total_contracts param if provided (no extra API call)
+          2. From fetch_positions() if not provided (one extra API call, reliable)
+          3. From size_usdt/price computation as last resort (with warning)
+
         In paper mode: logs and returns mock data.
         In live mode: calls the exchange API.
 
@@ -1345,23 +1357,44 @@ class Exchange:
             ccxt_symbol = _to_ccxt_symbol(symbol)
             side = "sell" if direction.lower() == "long" else "buy"
 
-            # Use actual contract count if provided (avoids rounding errors
-            # that leave 1 contract behind). Fall back to size_usdt/price.
+            # Use actual contract count — avoids rounding errors that leave
+            # dust positions. Priority:
+            #   1. total_contracts param (caller already has it)
+            #   2. fetch_positions() from exchange (one extra API call, reliable)
+            #   3. size_usdt/price computation (last resort, may leave dust)
             close_price = price
+            contracts = None
+
             if total_contracts and total_contracts > 0:
+                # Path 1: caller provided exact contracts
                 contracts = float(total_contracts)
-                # Still need close_price for logging
                 if not close_price or close_price <= 0:
                     ticker = self.fetch_ticker(symbol)
                     close_price = ticker.get("last", 0) if ticker else 0
             else:
-                if not close_price or close_price <= 0:
-                    ticker = self.fetch_ticker(symbol)
-                    close_price = ticker.get("last", 0) if ticker else 0
-                if not close_price or close_price <= 0:
-                    _log.error("close_position: cannot determine price for %s", symbol)
-                    return None
-                contracts = size_usdt / close_price if close_price > 0 else 0
+                # Path 2: fetch actual contracts from exchange
+                positions = self.fetch_positions()
+                target = [p for p in positions if p.get("symbol") == symbol]
+                if target:
+                    ex_contracts = float(target[0].get("total_contracts", 0) or 0)
+                    if ex_contracts > 0:
+                        contracts = ex_contracts
+                        close_price = close_price or target[0].get("mark_price", 0)
+
+                # Path 3: fallback to size_usdt/price (may leave dust)
+                if contracts is None or contracts <= 0:
+                    _log.warning(
+                        "close_position: no contracts from exchange for %s — "
+                        "falling back to size_usdt/price (may leave dust position)",
+                        symbol,
+                    )
+                    if not close_price or close_price <= 0:
+                        ticker = self.fetch_ticker(symbol)
+                        close_price = ticker.get("last", 0) if ticker else 0
+                    if not close_price or close_price <= 0:
+                        _log.error("close_position: cannot determine price for %s", symbol)
+                        return None
+                    contracts = size_usdt / close_price if close_price > 0 else 0
 
             # Round to exchange's amount precision
             try:

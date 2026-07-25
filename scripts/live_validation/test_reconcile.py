@@ -7,7 +7,7 @@ Verifies:
   - fetch_positions() returns complete data for reconciliation
   - All required fields are present (symbol, direction, entry_price, etc.)
   - Position data is consistent (size, leverage match expected values)
-  - Reconciliation fields are populated (sl_order_id, etc.; pos_id may be empty in one-way mode)
+  - Reconciliation fields are populated (sl_order_id, etc.; pos_id = symbol:direction in one-way mode)
 
 This is the most thorough test — it checks every field that the daemon's
 reconciliation logic depends on.
