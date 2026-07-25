@@ -408,24 +408,49 @@ class Exchange:
             except Exception as e:
                 _log.warning("Could not set leverage for %s: %s", symbol, e)
 
-            # Build params with preset SL/TP (exchange-as-truth: SL/TP on exchange from trade open)
-            params = {}
-            if sl_price:
-                params["stopLossPrice"] = sl_price
-            if tp_price:
-                params["takeProfitPrice"] = tp_price
+            # Compute contracts from USDT notional and entry price.
+            # For market orders, entry_price is an estimate — the exchange fills
+            # at the market price. We use it to compute the approximate contract
+            # amount and let the exchange handle the fill.
+            contracts = size_usdt / (entry_price or 1) if entry_price else 0
+            if not contracts or contracts <= 0:
+                _log.error("place_order: cannot compute contracts for %s (size_usdt=%.2f entry_price=%s)",
+                           symbol, size_usdt, entry_price)
+                return None
 
-            # Place market order with preset SL/TP
+            # Round to exchange's amount precision (e.g. DOGE requires integer)
+            try:
+                contracts = float(exchange.amount_to_precision(ccxt_symbol, contracts))
+            except Exception:
+                contracts = round(contracts)  # Fallback: round to nearest integer
+
+            # Build params with attached SL/TP using CCXT unified Type 3.
+            # Bitget has 3 types of SL/TP params:
+            #   Type 1: triggerPrice (standalone trigger order)
+            #   Type 2: stopLossPrice OR takeProfitPrice (one at a time)
+            #   Type 3: stopLoss/takeProfit objects (attached to entry, both allowed)
+            # We use Type 3 for preset SL+TP on the entry order.
+            # Ref: ccxt/ccxt#18760, ccxt/ccxt#28239, Bitget createOrder docs
+            params = {}
+            if sl_price and tp_price:
+                params['stopLoss'] = {'triggerPrice': sl_price}
+                params['takeProfit'] = {'triggerPrice': tp_price}
+            elif sl_price:
+                params['stopLoss'] = {'triggerPrice': sl_price}
+            elif tp_price:
+                params['takeProfit'] = {'triggerPrice': tp_price}
+
+            # Place market order with attached SL/TP
             order = exchange.create_market_order(
                 symbol=ccxt_symbol,
                 side=side,
-                amount=size_usdt / (entry_price or 1),
+                amount=contracts,
                 params=params if params else None,
             )
 
             _log.info(
-                "LIVE ORDER placed: %s %s size=%.2f order_id=%s sl=%s tp=%s",
-                direction, symbol, size_usdt, order.get("id", "?"),
+                "LIVE ORDER placed: %s %s contracts=%.4f (size_usdt=%.2f) order_id=%s sl=%s tp=%s",
+                direction, symbol, contracts, size_usdt, order.get("id", "?"),
                 sl_price, tp_price,
             )
 
@@ -584,19 +609,22 @@ class Exchange:
 
             contracts = (size_usdt * (size_pct / 100.0)) / price if size_usdt > 0 else 0
 
-            params = {
-                "holdSide": direction.lower(),
-                "reduceOnly": reduce_only,
-            }
+            # Round to exchange's amount precision
+            try:
+                contracts = float(exchange.amount_to_precision(ccxt_symbol, contracts))
+            except Exception:
+                contracts = round(contracts)
+
+            # Use CCXT unified Type 2 params for separate SL/TP orders.
+            # Bitget allows stopLossPrice OR takeProfitPrice (one at a time),
+            # NOT both together in a single createOrder call.
+            # Ref: ccxt/ccxt#28239, Bitget createOrder docs
+            params = {'reduceOnly': reduce_only}
 
             if order_type == "tp":
-                params["stopSurplusTriggerPrice"] = str(trigger_price)
-                if size_pct < 100 and size_usdt > 0:
-                    # Compute contract amount for partial close
-                    # size_pct of total position
-                    params["stopSurplusSize"] = str(size_pct)
+                params['takeProfitPrice'] = trigger_price
             elif order_type == "sl":
-                params["stopLossTriggerPrice"] = str(trigger_price)
+                params['stopLossPrice'] = trigger_price
 
             order = exchange.create_order(
                 symbol=ccxt_symbol,
@@ -764,25 +792,43 @@ class Exchange:
             ccxt_symbol = _to_ccxt_symbol(symbol)
             side = "sell" if direction.lower() == "long" else "buy"
 
-            params = {
-                "planType": "trailing",
-                "holdSide": direction.lower(),
-                "triggerPrice": str(trigger_price),
-                "trailPercentage": str(trail_pct),
-                "reduceOnly": True,
-            }
+            # Fetch current position to get actual contract amount.
+            # Bitget requires a valid amount for trailing stop orders.
+            positions = self.fetch_positions()
+            target = [p for p in positions if p.get("symbol") == symbol]
+            if not target:
+                _log.error("place_trailing_stop: no open position for %s", symbol)
+                return None
 
-            order = exchange.create_order(
+            contracts = float(target[0].get("available_contracts", 0) or target[0].get("total_contracts", 0))
+            if contracts <= 0:
+                _log.error("place_trailing_stop: no contracts for %s", symbol)
+                return None
+
+            # Round to exchange's amount precision
+            try:
+                contracts = float(exchange.amount_to_precision(ccxt_symbol, contracts))
+            except Exception:
+                contracts = round(contracts)
+
+            # Use CCXT unified createTrailingPercentOrder.
+            # Bitget supports this (has.createTrailingPercentOrder = True).
+            # Ref: CCXT docs, Bitget place-plan-order with planType=track_plan
+            order = exchange.create_trailing_percent_order(
                 symbol=ccxt_symbol,
                 type="market",
                 side=side,
-                amount=0,  # trailing stop closes entire remaining position
-                params=params,
+                amount=contracts,
+                trailingPercent=trail_pct,
+                params={
+                    'triggerPrice': trigger_price,
+                    'reduceOnly': True,
+                },
             )
 
             _log.info(
-                "LIVE TRAILING STOP placed: %s %s trigger=%.2f trail=%.2f%% order_id=%s",
-                direction, symbol, trigger_price, trail_pct, order.get("id", "?"),
+                "LIVE TRAILING STOP placed: %s %s trigger=%.2f trail=%.2f%% contracts=%.4f order_id=%s",
+                direction, symbol, trigger_price, trail_pct, contracts, order.get("id", "?"),
             )
 
             return {
@@ -897,6 +943,12 @@ class Exchange:
                 "cancelled": True,
             }
         except Exception as e:
+            error_str = str(e)
+            # Bitget code 22001 = "No order to cancel" — not an error,
+            # just means there are no open orders. Return success.
+            if '"code":"22001"' in error_str or 'No order to cancel' in error_str:
+                _log.info("cancel_orders: no open orders for %s (already clean)", symbol)
+                return True
             _log.error("cancel_orders failed for %s: %s", symbol, e)
             return False
 
@@ -951,6 +1003,12 @@ class Exchange:
                 return None
 
             contracts = size_usdt / close_price if close_price > 0 else 0
+
+            # Round to exchange's amount precision
+            try:
+                contracts = float(exchange.amount_to_precision(ccxt_symbol, contracts))
+            except Exception:
+                contracts = round(contracts)
 
             params = {"reduceOnly": reduce_only}
 
