@@ -112,8 +112,8 @@ def main() -> None:
 
     if all_passed:
         print(f"\n  🎉 ALL 8 VALIDATIONS PASSED!")
-        print(f"  → Verify in Bitget GUI that positions/orders appeared and disappeared")
-        print(f"  → You are cleared to run strategy_15 at 1x leverage 24/7")
+        print(f"  → Verify in Exchange GUI that positions/orders appeared and disappeared")
+        print(f"  → You are ready to run your strategy in live trading now")
     else:
         print(f"\n  ⚠️  Some validations failed — review errors above before going live.")
         failed_names = [desc for _, desc, p, _ in results if not p]
