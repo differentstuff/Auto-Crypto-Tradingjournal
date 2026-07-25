@@ -1,5 +1,4 @@
-"""
-core/exchange.py -- Unified CCXT exchange wrapper.
+""" core/exchange.py -- Unified CCXT exchange wrapper.
 
 Provides a single interface for all exchange operations:
   - OHLCV data fetching (public, no auth required)
@@ -17,6 +16,15 @@ Exchange-as-truth architecture:
   - SL/TP are pushed to exchange at trade open
   - Trailing stop updates are pushed via modify-tpsl-order
   - Native trailing stop (track_plan) activates after TP1
+
+Position TP/SL architecture (Bitget):
+  - SL: planType=pos_loss — attached to position, close-only, auto-cancelled
+  - TP2: planType=pos_profit — attached to position, close-only, auto-cancelled
+  - TP1: planType=profit_plan — independent partial close, reduce-only
+  - pos_loss/pos_profit are managed by Bitget as part of the position object
+  - When position closes, pos_loss/pos_profit are automatically cancelled
+  - profit_plan (TP1) is independent but reduce-only, so it cannot open new positions
+  - fetch_positions() reads back SL/TP from position data + open plan orders
 
 Port of: ccxt_client.py, bitget_client.py (unified into one wrapper)
 """
@@ -163,9 +171,7 @@ class Exchange:
             # Bitget accounts default to one-way (unilateral) mode, but CCXT
             # may internally assume hedge mode when stopLoss/takeProfit objects
             # are used. Calling set_position_mode(False) syncs CCXT's internal
-            # state with the exchange, preventing error 40774
-            # ("The order type for unilateral position must also be the
-            # unilateral position type").
+            # state with the exchange, preventing error 40774.
             # This is a no-op if already in one-way mode — safe to call every time.
             # Ref: ccxt/ccxt#20729, ccxt/ccxt#19140, ccxt/ccxt#22547
             if exchange_id == "bitget":
@@ -336,9 +342,14 @@ class Exchange:
                 pos_id = info.get("posId", "") or str(p.get("id", ""))
                 achieved_profits = float(info.get("achievedProfits", 0) or 0)
 
-                # Current SL/TP on exchange
-                sl_price = float(info.get("stopLoss", 0) or 0)
-                tp_price = float(info.get("takeProfit", 0) or 0)
+                # Current SL/TP on exchange — read from position data.
+                # Bitget returns presetStopLossPrice and presetStopSurplusPrice
+                # on the position itself. These are the position-level SL/TP
+                # set via pos_loss/pos_profit plan types.
+                # For independent plan orders (profit_plan/loss_plan), we also
+                # fetch open orders below and match them.
+                sl_price = float(info.get("presetStopLossPrice", 0) or info.get("stopLoss", 0) or 0)
+                tp_price = float(info.get("presetStopSurplusPrice", 0) or info.get("takeProfit", 0) or 0)
 
                 # Order IDs for modify-tpsl-order
                 sl_order_id = info.get("stopLossId", "") or ""
@@ -368,11 +379,91 @@ class Exchange:
                     "available_contracts": available_contracts,
                 })
 
+            # ── Enrich with open plan orders ──────────────────────────────────
+            # Position-level SL/TP (pos_loss/pos_profit) may not appear in
+            # the position data. Fetch open orders and match them to positions
+            # to extract sl_price, tp_price, sl_order_id, tp_order_id.
+            try:
+                self._enrich_positions_with_orders(exchange, result)
+            except Exception as e:
+                _log.warning("Could not enrich positions with order data: %s", e)
+
             return result
 
         except Exception as e:
             _log.error("fetch_positions failed: %s", e)
             return []
+
+    def _enrich_positions_with_orders(self, exchange, positions: list) -> None:
+        """
+        Enrich position dicts with SL/TP data from open plan orders.
+
+        Bitget's position endpoint may not include SL/TP order IDs for
+        pos_loss/pos_profit plan types. This method fetches open orders
+        and matches them to positions by symbol + holdSide.
+
+        Updates positions in-place: sets sl_price, tp_price, sl_order_id, tp_order_id.
+        """
+        if not positions:
+            return
+
+        # Get symbols we need orders for
+        symbols = set(p["symbol"] for p in positions)
+
+        for symbol in symbols:
+            ccxt_symbol = _to_ccxt_symbol(symbol)
+            try:
+                open_orders = exchange.fetch_open_orders(ccxt_symbol)
+            except Exception as e:
+                _log.warning("Could not fetch open orders for %s: %s", symbol, e)
+                continue
+
+            # Find matching position
+            target_positions = [p for p in positions if p["symbol"] == symbol]
+            if not target_positions:
+                continue
+
+            pos = target_positions[0]
+            direction = pos.get("direction", "Long")
+
+            # In one-way mode: holdSide = 'buy' for Long, 'sell' for Short
+            expected_hold_side = "buy" if direction.lower() == "long" else "sell"
+
+            for order in open_orders:
+                info = order.get("info", {})
+                plan_type = info.get("planType", "")
+                order_id = order.get("id", "") or info.get("orderId", "")
+                trigger_price = float(info.get("triggerPrice", 0) or order.get("triggerPrice", 0) or 0)
+                hold_side = info.get("holdSide", "").lower()
+
+                # Skip orders that don't match our position's direction
+                if hold_side and hold_side != expected_hold_side:
+                    continue
+
+                # Match plan types to position fields
+                if plan_type == "pos_loss" and trigger_price > 0:
+                    if not pos.get("sl_price"):
+                        pos["sl_price"] = trigger_price
+                    if not pos.get("sl_order_id"):
+                        pos["sl_order_id"] = str(order_id)
+                elif plan_type == "pos_profit" and trigger_price > 0:
+                    if not pos.get("tp_price"):
+                        pos["tp_price"] = trigger_price
+                    if not pos.get("tp_order_id"):
+                        pos["tp_order_id"] = str(order_id)
+                elif plan_type == "loss_plan" and trigger_price > 0:
+                    # Independent stop-loss plan order — still record it
+                    if not pos.get("sl_price"):
+                        pos["sl_price"] = trigger_price
+                    if not pos.get("sl_order_id"):
+                        pos["sl_order_id"] = str(order_id)
+                elif plan_type == "profit_plan" and trigger_price > 0:
+                    # Independent take-profit plan order (TP1) — record as tp1
+                    # Don't overwrite pos_profit TP2
+                    if not pos.get("tp_price"):
+                        pos["tp_price"] = trigger_price
+                    if not pos.get("tp_order_id"):
+                        pos["tp_order_id"] = str(order_id)
 
     # --- Order Methods (paper mode guarded) ------------------------------------
 
@@ -387,13 +478,17 @@ class Exchange:
         leverage: int = None,
     ) -> Optional[dict]:
         """
-        Place a market or limit order with preset SL/TP.
+        Place a market order to open a position.
+
+        SL/TP are NOT attached to the entry order — they are placed separately
+        via place_tpsl_order() AFTER the position is opened. This is because
+        Bitget silently ignores stopLoss/takeProfit params on market orders.
+
+        The daemon (execute_trade.py) calls place_tpsl_order() for SL and TP
+        after place_order() succeeds. This gives each SL/TP its own order_id
+        for modify_tpsl_order().
 
         In paper mode: logs the order and returns mock data.
-        In live mode: calls the exchange API with presetStopLossPrice
-        and presetStopSurplusPrice for SL/TP in a single call.
-
-        leverage defaults to portfolio.leverage from config if not passed.
 
         Returns dict with: order_id, symbol, direction, size_usdt, status
         """
@@ -427,9 +522,6 @@ class Exchange:
                 _log.warning("Could not set leverage for %s: %s", symbol, e)
 
             # Compute contracts from USDT notional and entry price.
-            # For market orders, entry_price is an estimate — the exchange fills
-            # at the market price. We use it to compute the approximate contract
-            # amount and let the exchange handle the fill.
             contracts = size_usdt / (entry_price or 1) if entry_price else 0
             if not contracts or contracts <= 0:
                 _log.error("place_order: cannot compute contracts for %s (size_usdt=%.2f entry_price=%s)",
@@ -442,18 +534,6 @@ class Exchange:
             except Exception:
                 contracts = round(contracts)  # Fallback: round to nearest integer
 
-            # NOTE: SL/TP are NOT attached to the entry order via params.
-            # Bitget silently ignores stopLoss/takeProfit objects on market
-            # orders, leaving the position with NO protection (BUG-10).
-            # Instead, SL and TP are placed as separate trigger orders via
-            # place_tpsl_order() AFTER the position is opened.
-            # The daemon (execute_trade.py) handles this correctly:
-            #   1. place_order() — open position (no SL/TP)
-            #   2. place_tpsl_order(sl) — separate SL trigger order
-            #   3. place_tpsl_order(tp) — separate TP trigger order
-            #   4. place_tpsl_order(tp1) — partial TP1 trigger order
-            # This gives each SL/TP its own order_id for modify_tpsl_order().
-
             # Place market order (no attached SL/TP)
             order = exchange.create_market_order(
                 symbol=ccxt_symbol,
@@ -462,9 +542,8 @@ class Exchange:
             )
 
             _log.info(
-                "LIVE ORDER placed: %s %s contracts=%.4f (size_usdt=%.2f) order_id=%s sl=%s tp=%s",
+                "LIVE ORDER placed: %s %s contracts=%.4f (size_usdt=%.2f) order_id=%s",
                 direction, symbol, contracts, size_usdt, order.get("id", "?"),
-                sl_price, tp_price,
             )
 
             return {
@@ -566,12 +645,24 @@ class Exchange:
         reduce_only: bool = True,
     ) -> Optional[dict]:
         """
-        Place a TP/SL order via place-tpsl-order endpoint.
+        Place a TP/SL order via Bitget's place-tpsl-order endpoint.
 
-        Used for:
-          - Partial TP1 exit (order_type="tp", size_pct=40, reduce_only=True)
-          - Full TP2 exit (order_type="tp", size_pct=100)
-          - Separate SL order (order_type="sl")
+        Uses position-level plan types (pos_loss/pos_profit) for SL and TP2,
+        and profit_plan for partial TP1. This is the correct architecture:
+
+          - pos_loss: Position stop-loss — attached to position, close-only,
+            auto-cancelled when position closes. No size needed.
+          - pos_profit: Position take-profit (TP2) — same as pos_loss but for TP.
+          - profit_plan: Independent take-profit (TP1) — partial close, needs size.
+            reduce_only=True ensures it can never open a new position.
+
+        SAFETY:
+          - pos_loss/pos_profit are managed by Bitget as part of the position
+            object. They CANNOT open new positions — only close the existing one.
+          - profit_plan (TP1) with reduce_only=True can only reduce the position.
+          - When the position closes, pos_loss/pos_profit are auto-cancelled.
+          - If SL hits and position closes, stale TP1 (profit_plan) remains but
+            reduce_only=True prevents it from opening a new position.
 
         In paper mode: logs and returns mock data.
         In live mode: calls the exchange API.
@@ -580,12 +671,12 @@ class Exchange:
             symbol: Journal format symbol (e.g. "BTCUSDT")
             direction: "Long" or "Short"
             trigger_price: Price at which the order triggers
-            size_pct: Percentage of position to close (0-100)
-            size_usdt: Position size in USDT (for computing contract amount)
-            entry_price: Entry price used to convert size_usdt to contracts.
-                If None, fetches current ticker price.
+            size_pct: Percentage of position to close (0-100).
+                Only used for profit_plan (TP1). Ignored for pos_loss/pos_profit.
+            size_usdt: Position size in USDT (for computing contract amount for TP1).
+            entry_price: Entry price for contract conversion (TP1 only).
             order_type: "tp" for take-profit, "sl" for stop-loss
-            reduce_only: True for partial exits
+            reduce_only: True for partial exits (always True for safety)
 
         Returns dict with: order_id, symbol, status, paper
         """
@@ -608,57 +699,84 @@ class Exchange:
         try:
             exchange = self._get_trade_exchange()
             ccxt_symbol = _to_ccxt_symbol(symbol)
-            side = "sell" if direction.lower() == "long" else "buy"
 
-            # Convert size_usdt to contracts: contracts = usdt_notional / price
-            # CCXT requires amount in contracts (base currency units), not USDT.
-            price = entry_price
-            if not price or price <= 0:
-                ticker = self.fetch_ticker(symbol)
-                price = ticker.get("last", 0) if ticker else 0
-            if not price or price <= 0:
-                _log.error("place_tpsl_order: cannot determine price for %s", symbol)
+            # For one-way mode: holdSide = 'buy' for Long, 'sell' for Short
+            hold_side = "buy" if direction.lower() == "long" else "sell"
+
+            # Determine plan type based on order type and size_pct.
+            # - Full SL (size_pct=100): pos_loss — attached to position
+            # - Full TP (size_pct=100): pos_profit — attached to position
+            # - Partial TP1 (size_pct<100): profit_plan — independent, reduce-only
+            is_partial = size_pct < 100 and size_usdt > 0
+
+            if order_type == "sl":
+                plan_type = "loss_plan" if is_partial else "pos_loss"
+            elif order_type == "tp":
+                plan_type = "profit_plan" if is_partial else "pos_profit"
+            else:
+                _log.error("place_tpsl_order: unknown order_type '%s'", order_type)
                 return None
 
-            contracts = (size_usdt * (size_pct / 100.0)) / price if size_usdt > 0 else 0
+            # Build request for Bitget's place-tpsl-order endpoint.
+            # We call this directly via CCXT's implicit API method for full
+            # control over the planType parameter.
+            market = exchange.market(ccxt_symbol)
+            request = {
+                "symbol": market["id"],  # Bitget format: "DOGEUSDT"
+                "productType": "USDT-FUTURES",
+                "marginCoin": "USDT",
+                "planType": plan_type,
+                "triggerPrice": str(trigger_price),
+                "triggerType": "mark_price",
+                "holdSide": hold_side,
+                "executePrice": "0",  # Market execution
+            }
 
-            # Round to exchange's amount precision
-            try:
-                contracts = float(exchange.amount_to_precision(ccxt_symbol, contracts))
-            except Exception:
-                contracts = round(contracts)
+            # Size is required for profit_plan/loss_plan, NOT for pos_loss/pos_profit
+            if plan_type in ("profit_plan", "loss_plan"):
+                price = entry_price
+                if not price or price <= 0:
+                    ticker = self.fetch_ticker(symbol)
+                    price = ticker.get("last", 0) if ticker else 0
+                if not price or price <= 0:
+                    _log.error("place_tpsl_order: cannot determine price for %s", symbol)
+                    return None
 
-            # Use CCXT unified Type 2 params for separate SL/TP orders.
-            # Bitget allows stopLossPrice OR takeProfitPrice (one at a time),
-            # NOT both together in a single createOrder call.
-            # Ref: ccxt/ccxt#28239, Bitget createOrder docs
-            params = {'reduceOnly': reduce_only}
+                contracts = (size_usdt * (size_pct / 100.0)) / price if size_usdt > 0 else 0
+                try:
+                    contracts = float(exchange.amount_to_precision(ccxt_symbol, contracts))
+                except Exception:
+                    contracts = round(contracts)
 
-            if order_type == "tp":
-                params['takeProfitPrice'] = trigger_price
-            elif order_type == "sl":
-                params['stopLossPrice'] = trigger_price
+                request["size"] = str(int(contracts)) if contracts == int(contracts) else str(contracts)
 
-            order = exchange.create_order(
-                symbol=ccxt_symbol,
-                type="market",
-                side=side,
-                amount=contracts,
-                params=params,
-            )
+            # Call Bitget's place-tpsl-order endpoint directly.
+            # This gives us full control over planType (pos_loss vs loss_plan).
+            response = exchange.private_mix_post_v2_mix_order_place_tpsl_order(request)
+
+            # Extract order ID from response
+            order_id = ""
+            if isinstance(response, dict):
+                data = response.get("data", response)
+                if isinstance(data, dict):
+                    order_id = str(data.get("orderId", data.get("clientOid", "")))
+                elif isinstance(data, str):
+                    order_id = data
 
             _log.info(
-                "LIVE TPSL ORDER placed: %s %s type=%s trigger=%.2f contracts=%.4f order_id=%s",
-                direction, symbol, order_type, trigger_price, contracts, order.get("id", "?"),
+                "LIVE TPSL ORDER placed: %s %s planType=%s trigger=%.2f order_id=%s",
+                direction, symbol, plan_type, trigger_price, order_id,
             )
 
             return {
-                "order_id": order.get("id", ""),
+                "order_id": order_id,
                 "symbol": symbol,
                 "direction": direction,
                 "order_type": order_type,
+                "plan_type": plan_type,
                 "trigger_price": trigger_price,
-                "status": order.get("status", "unknown"),
+                "size_pct": size_pct,
+                "status": "live_pending",
                 "paper": False,
             }
 
@@ -680,20 +798,10 @@ class Exchange:
         Bitget supports in-place modification of TP/SL plan orders:
           POST /api/v2/mix/order/modify-tpsl-order
 
-        CCXT's edit_order() routes to this endpoint for contract markets
-        when stopLossPrice / takeProfitPrice are passed in params.
-        Verified against Bitget API docs (Modify Tpsl Order) and CCXT wiki.
-
         SAFETY: in-place modification — the position is NEVER left without
         a stop-loss. On failure the EXISTING SL/TP order remains active on
         the exchange and this method returns False, so the caller (daemon)
         retries on the next cycle instead of silently skipping.
-
-        Requires ccxt>=4.5.54 (PR #27674: edit_order accepts amount=None
-        for TPSL-only updates without sending newSize).
-
-        Used for trailing stop updates — push new SL to exchange when
-        trailing_sl actually changes.
 
         In paper mode: logs and returns True.
         In live mode: calls the exchange API.
@@ -704,7 +812,6 @@ class Exchange:
             new_sl_price: New stop-loss price (None = don't change)
             new_tp_price: New take-profit price (None = don't change)
             direction: "Long" or "Short" — determines closing side.
-                Defaults to closing side "sell" (long position).
 
         Returns: True if successful, False otherwise.
         """
@@ -733,9 +840,8 @@ class Exchange:
             if direction and direction.lower() == "short":
                 side = "buy"
 
-            # amount=None + price=None → TPSL-only update routed to
-            # /api/v2/mix/order/modify-tpsl-order (ccxt>=4.5.54, PR #27674).
-            # In-place: on failure the old SL/TP order stays active.
+            # Use CCXT edit_order for in-place modification.
+            # amount=None + price=None → TPSL-only update (ccxt>=4.5.54, PR #27674).
             exchange.edit_order(
                 id=order_id,
                 symbol=ccxt_symbol,
@@ -753,9 +859,6 @@ class Exchange:
             return True
 
         except Exception as e:
-            # Modification failed — the EXISTING SL/TP order is still active
-            # on the exchange (position never left naked). The daemon does not
-            # update _exchange_sl_last_pushed on False, so it retries next cycle.
             _log.error("modify_tpsl_order failed for %s order_id=%s: %s", symbol, order_id, e)
             return False
 
@@ -772,10 +875,11 @@ class Exchange:
         Activates after TP1 hit. The native trail is WIDER than the
         daemon's ATR-based trailing stop — it's a safety net, not a sniper.
 
-        Percentage formula: (2 × ATR / current_price) × 100
+        Uses Bitget's moving_plan planType via place-tpsl-order endpoint.
+        reduce_only=True ensures it can never open a new position.
 
         In paper mode: logs and returns mock data.
-        In live mode: calls the exchange API with planType="trailing".
+        In live mode: calls the exchange API.
 
         Args:
             symbol: Journal format symbol (e.g. "BTCUSDT")
@@ -803,10 +907,11 @@ class Exchange:
         try:
             exchange = self._get_trade_exchange()
             ccxt_symbol = _to_ccxt_symbol(symbol)
-            side = "sell" if direction.lower() == "long" else "buy"
+
+            # For one-way mode: holdSide = 'buy' for Long, 'sell' for Short
+            hold_side = "buy" if direction.lower() == "long" else "sell"
 
             # Fetch current position to get actual contract amount.
-            # Bitget requires a valid amount for trailing stop orders.
             positions = self.fetch_positions()
             target = [p for p in positions if p.get("symbol") == symbol]
             if not target:
@@ -824,33 +929,45 @@ class Exchange:
             except Exception:
                 contracts = round(contracts)
 
-            # Use CCXT unified createTrailingPercentOrder.
-            # Bitget supports this (has.createTrailingPercentOrder = True).
-            # Ref: CCXT docs, Bitget place-plan-order with planType=track_plan
-            order = exchange.create_trailing_percent_order(
-                symbol=ccxt_symbol,
-                type="market",
-                side=side,
-                amount=contracts,
-                trailingPercent=trail_pct,
-                params={
-                    'trailingTriggerPrice': trigger_price,
-                    'reduceOnly': True,
-                },
-            )
+            # Use Bitget's place-tpsl-order with planType=moving_plan.
+            # This is the native trailing stop — managed by Bitget.
+            market = exchange.market(ccxt_symbol)
+            request = {
+                "symbol": market["id"],
+                "productType": "USDT-FUTURES",
+                "marginCoin": "USDT",
+                "planType": "moving_plan",
+                "triggerPrice": str(trigger_price),
+                "triggerType": "mark_price",
+                "holdSide": hold_side,
+                "executePrice": "0",  # Market execution
+                "size": str(int(contracts)) if contracts == int(contracts) else str(contracts),
+                "rangeRate": str(trail_pct),
+            }
+
+            response = exchange.private_mix_post_v2_mix_order_place_tpsl_order(request)
+
+            # Extract order ID from response
+            order_id = ""
+            if isinstance(response, dict):
+                data = response.get("data", response)
+                if isinstance(data, dict):
+                    order_id = str(data.get("orderId", data.get("clientOid", "")))
+                elif isinstance(data, str):
+                    order_id = data
 
             _log.info(
                 "LIVE TRAILING STOP placed: %s %s trigger=%.2f trail=%.2f%% contracts=%.4f order_id=%s",
-                direction, symbol, trigger_price, trail_pct, contracts, order.get("id", "?"),
+                direction, symbol, trigger_price, trail_pct, contracts, order_id,
             )
 
             return {
-                "order_id": order.get("id", ""),
+                "order_id": order_id,
                 "symbol": symbol,
                 "direction": direction,
                 "trigger_price": trigger_price,
                 "trail_pct": trail_pct,
-                "status": order.get("status", "unknown"),
+                "status": "live_pending",
                 "paper": False,
             }
 
@@ -957,8 +1074,7 @@ class Exchange:
             }
         except Exception as e:
             error_str = str(e)
-            # Bitget code 22001 = "No order to cancel" — not an error,
-            # just means there are no open orders. Return success.
+            # Bitget code 22001 = "No order to cancel" — not an error.
             if '"code":"22001"' in error_str or 'No order to cancel' in error_str:
                 _log.info("cancel_orders: no open orders for %s (already clean)", symbol)
                 return True
@@ -1092,14 +1208,11 @@ class Exchange:
                     }
         except Exception as e:
             _log.warning("Bulk ticker fetch failed: %s — trying individual fetches", e)
-            # Fallback: try individual fetch_ticker() for each symbol
-            # This also tries the fallback exchange per symbol
             for symbol in symbols:
                 ticker = self.fetch_ticker(symbol)
                 if ticker:
                     results[symbol] = ticker
 
-        # Log any symbols we couldn't get data for
         missing = [s for s in symbols if s not in results]
         if missing:
             _log.warning("No real price data for %d symbols: %s", len(missing), missing)
@@ -1145,17 +1258,12 @@ class Exchange:
           - volume_24h_usd: 24h quote volume in USD (0.0 if unavailable)
           - open_interest_usd: open interest in USD (0.0 if unavailable)
 
-        Two-step process:
-          1. fetch_markets() — get instrument list + OI from metadata
-          2. fetch_tickers() — get real-time 24h volume from ticker endpoint
-
         No authentication required — both endpoints are public.
         """
         try:
             exchange = self._get_data_exchange()
             markets = exchange.fetch_markets()
 
-            # Step 1: Build symbol list from market metadata
             usdt_perps = []
             symbol_map = {}
             for market in markets:
@@ -1175,7 +1283,6 @@ class Exchange:
                 usdt_perps.append(entry)
                 symbol_map[ccxt_sym] = entry
 
-            # Step 2: Fetch real-time tickers for volume data
             n_with_volume = 0
             try:
                 all_tickers = exchange.fetch_tickers()
@@ -1183,7 +1290,6 @@ class Exchange:
                     ticker = all_tickers.get(p["ccxt_symbol"])
                     if not ticker:
                         continue
-                    # Primary: quoteVolume (24h volume in quote currency = USD for USDT pairs)
                     quote_volume = ticker.get("quoteVolume")
                     if quote_volume is not None:
                         try:
@@ -1191,7 +1297,6 @@ class Exchange:
                             n_with_volume += 1
                         except (ValueError, TypeError):
                             pass
-                    # Fallback: baseVolume × last price
                     if p["volume_24h_usd"] == 0.0:
                         base_volume = ticker.get("baseVolume")
                         last_price = ticker.get("last")
@@ -1207,7 +1312,6 @@ class Exchange:
                     te,
                 )
 
-            # Step 3: Extract OI from market info
             for market in markets:
                 if market.get("type") != "swap":
                     continue
@@ -1229,7 +1333,6 @@ class Exchange:
                     except (ValueError, TypeError):
                         pass
 
-            # Step 4: Build result list (exclude internal ccxt_symbol field)
             result = []
             for p in usdt_perps:
                 result.append({
