@@ -22,8 +22,17 @@ from typing import Optional
 
 from core.config_loader import ConfigLoader
 from core.exchange import Exchange
+from dotenv import load_dotenv
 
 _log = logging.getLogger(__name__)
+
+# ── Project root ──────────────────────────────────────────────────────────────
+# Resolve project root (3 levels up from scripts/live_validation/helpers.py)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Load .env into os.environ on import — same pattern as main.py and replay_driver.py.
+# This MUST happen before ConfigLoader reads os.getenv() for API keys.
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
