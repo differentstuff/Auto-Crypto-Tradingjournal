@@ -40,6 +40,9 @@ SCRIPTS = [
 
 def main() -> None:
     # Import helpers for the safety warning
+    # Project root must be on sys.path BEFORE importing helpers,
+    # because helpers.py imports core.config_loader at module level.
+    sys.path.insert(0, PROJECT_ROOT)
     sys.path.insert(0, SCRIPT_DIR)
     from helpers import print_safety_warning, SYMBOL
 
