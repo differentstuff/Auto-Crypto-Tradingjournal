@@ -140,20 +140,20 @@ class Exchange:
                 raise ValueError(f"Unsupported exchange: {exchange_id}")
 
             creds = self._config.get_exchange_creds(exchange_id)
-            kwargs = {
+            config = {
                 "apiKey": creds.get("api_key", ""),
                 "secret": creds.get("secret_key", ""),
             }
             # Bitget requires passphrase
             if exchange_id == "bitget" and creds.get("passphrase"):
-                kwargs["password"] = creds["passphrase"]
+                config["password"] = creds["passphrase"]
             # Blofin requires passphrase
             if exchange_id == "blofin" and creds.get("passphrase"):
-                kwargs["password"] = creds["passphrase"]
+                config["password"] = creds["passphrase"]
 
             sandbox = creds.get("sandbox", False)
 
-            self._trade_exchange = exchange_class(**kwargs)
+            self._trade_exchange = exchange_class(config)
             self._trade_exchange.enableRateLimit = True
             self._trade_exchange.options['defaultType'] = 'future'
             if sandbox:
