@@ -61,14 +61,12 @@ def main() -> None:
         print(f"     SL=${sl_price:.6f} (-3%), TP=${tp_price:.6f} (+5%)")
         print(f"     leverage={LEVERAGE}x")
 
-        # ── Place order with preset SL/TP ─────────────────────────────────
+        # ── Place order (no SL/TP on entry — placed separately below) ────
         order = exchange.place_order(
             symbol=SYMBOL,
             direction="Long",
             size_usdt=notional_usdt,
             entry_price=price,
-            sl_price=sl_price,
-            tp_price=tp_price,
             leverage=LEVERAGE,
         )
 
@@ -100,8 +98,43 @@ def main() -> None:
                 f"direction={order.get('direction')}",
             )
 
+        # ── Wait for position to settle ────────────────────────────────────
+        wait_for_sync(reason="position to settle on exchange")
+
+        # ── Place SL (pos_loss — attached to position, close-only) ────────
+        print(f"\n   Placing SL (pos_loss): trigger=${sl_price:.6f}")
+        sl_result = exchange.place_tpsl_order(
+            symbol=SYMBOL,
+            direction="Long",
+            trigger_price=sl_price,
+            order_type="sl",
+            size_pct=100.0,
+            size_usdt=0,  # Not needed for pos_loss
+        )
+        result.check(
+            sl_result is not None,
+            "place_tpsl_order(sl) returned result",
+            f"sl_order_id={sl_result.get('order_id', '?') if sl_result else 'None'}",
+        )
+
+        # ── Place TP (pos_profit — attached to position, close-only) ──────
+        print(f"   Placing TP (pos_profit): trigger=${tp_price:.6f}")
+        tp_result = exchange.place_tpsl_order(
+            symbol=SYMBOL,
+            direction="Long",
+            trigger_price=tp_price,
+            order_type="tp",
+            size_pct=100.0,
+            size_usdt=0,  # Not needed for pos_profit
+        )
+        result.check(
+            tp_result is not None,
+            "place_tpsl_order(tp) returned result",
+            f"tp_order_id={tp_result.get('order_id', '?') if tp_result else 'None'}",
+        )
+
         # ── Wait for exchange sync ────────────────────────────────────────
-        wait_for_sync(reason="position to appear on exchange")
+        wait_for_sync(reason="SL/TP orders to register on exchange")
 
         # ── Read back position ─────────────────────────────────────────────
         positions = exchange.fetch_positions()

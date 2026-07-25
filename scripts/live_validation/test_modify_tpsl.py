@@ -62,14 +62,12 @@ def main() -> None:
         print(f"\n   Opening Long {SYMBOL}:")
         print(f"     SL=${original_sl:.6f} → will modify to ${new_sl_price:.6f}")
 
-        # ── Step 1: Open position with SL ──────────────────────────────────
+        # ── Step 1: Open position (no SL on entry — placed separately below) ─
         order = exchange.place_order(
             symbol=SYMBOL,
             direction="Long",
             size_usdt=notional_usdt,
             entry_price=price,
-            sl_price=original_sl,
-            tp_price=tp_price,
             leverage=LEVERAGE,
         )
 
@@ -79,7 +77,25 @@ def main() -> None:
             f"order_id={order.get('order_id', '?') if order else 'None'}",
         )
 
-        wait_for_sync(reason="position and SL order to appear on exchange")
+        wait_for_sync(reason="position to settle on exchange")
+
+        # ── Step 2: Place SL (pos_loss — attached to position) ────────────
+        print(f"   Placing SL (pos_loss): trigger=${original_sl:.6f}")
+        sl_result = exchange.place_tpsl_order(
+            symbol=SYMBOL,
+            direction="Long",
+            trigger_price=original_sl,
+            order_type="sl",
+            size_pct=100.0,
+            size_usdt=0,
+        )
+        result.check(
+            sl_result is not None,
+            "place_tpsl_order(sl) returned result",
+            f"sl_order_id={sl_result.get('order_id', '?') if sl_result else 'None'}",
+        )
+
+        wait_for_sync(reason="SL order to appear on exchange")
 
         # ── Step 2: Read back position to get SL order ID ─────────────────
         positions = exchange.fetch_positions()
@@ -101,11 +117,11 @@ def main() -> None:
             result.check(
                 bool(sl_order_id),
                 "SL order ID available for modification",
-                f"sl_order_id={sl_order_id}",
+                f"sl_order_id={sl_order_id if sl_order_id else 'None'}",
             )
 
             print(f"   Original SL on exchange: ${original_sl_on_exchange:.6f}")
-            print(f"   SL order ID: {sl_order_id}")
+            print(f"   SL order ID: {sl_order_id if sl_order_id else 'None'}")
 
             # ── Step 3: Modify SL price ────────────────────────────────────
             if sl_order_id:
