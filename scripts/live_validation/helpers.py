@@ -40,7 +40,7 @@ load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 SYMBOL = "DOGEUSDT"
 LEVERAGE = 1
-MIN_SYNC_SECONDS = 5
+MIN_SYNC_SECONDS = 3
 # Notional target range: 5-10 USDT (Bitget USDT-M futures minimum is 5 USDT).
 # The exact contract count is computed dynamically in compute_test_contracts()
 # based on the current price and market's minimum contract size.
