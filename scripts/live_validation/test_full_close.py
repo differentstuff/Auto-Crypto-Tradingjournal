@@ -108,6 +108,7 @@ def main() -> None:
                 size_usdt=size_usdt,
                 reduce_only=False,
                 price=mark_price,
+                total_contracts=total_contracts,
             )
 
             result.check(

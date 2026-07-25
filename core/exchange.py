@@ -1010,10 +1010,14 @@ class Exchange:
 
             # Use actual contract count if provided (avoids rounding errors
             # that leave 1 contract behind). Fall back to size_usdt/price.
+            close_price = price
             if total_contracts and total_contracts > 0:
-                contracts = total_contracts
+                contracts = float(total_contracts)
+                # Still need close_price for logging
+                if not close_price or close_price <= 0:
+                    ticker = self.fetch_ticker(symbol)
+                    close_price = ticker.get("last", 0) if ticker else 0
             else:
-                close_price = price
                 if not close_price or close_price <= 0:
                     ticker = self.fetch_ticker(symbol)
                     close_price = ticker.get("last", 0) if ticker else 0
