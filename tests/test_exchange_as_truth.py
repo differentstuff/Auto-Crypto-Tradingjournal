@@ -357,6 +357,7 @@ class TestTrailingStopPushToExchange:
             symbol="BTCUSDT",
             order_id="sl-1",
             new_sl_price=95500.0,
+            direction="Long",
         )
 
     def test_trailing_sl_not_pushed_when_unchanged(self, config_dir, temp_db):
